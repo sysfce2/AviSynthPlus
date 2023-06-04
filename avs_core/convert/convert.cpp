@@ -649,6 +649,7 @@ PVideoFrame AddAlphaPlane::GetFrame(int n, IScriptEnvironment* env)
     }
     else {
       // default constant
+      const int rowsizeA = dst->GetRowSize(PLANAR_A);
       const int dst_pitchA = dst->GetPitch(PLANAR_A);
       BYTE* dstp_a = dst->GetWritePtr(PLANAR_A);
       const int heightA = dst->GetHeight(PLANAR_A);
@@ -656,13 +657,13 @@ PVideoFrame AddAlphaPlane::GetFrame(int n, IScriptEnvironment* env)
       switch (vi.ComponentSize())
       {
       case 1:
-        fill_plane<BYTE>(dstp_a, heightA, dst_pitchA, mask);
+        fill_plane<BYTE>(dstp_a, heightA, rowsizeA, dst_pitchA, mask);
         break;
       case 2:
-        fill_plane<uint16_t>(dstp_a, heightA, dst_pitchA, mask);
+        fill_plane<uint16_t>(dstp_a, heightA, rowsizeA, dst_pitchA, mask);
         break;
       case 4:
-        fill_plane<float>(dstp_a, heightA, dst_pitchA, mask_f);
+        fill_plane<float>(dstp_a, heightA, rowsizeA, dst_pitchA, mask_f);
         break;
       }
     }

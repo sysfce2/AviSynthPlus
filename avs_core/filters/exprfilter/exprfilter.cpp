@@ -4624,6 +4624,7 @@ PVideoFrame __stdcall Exprfilter::GetFrame(int n, IScriptEnvironment *env) {
     }
     else if (d.plane[plane] == poFill) { // avs+
       uint8_t *dstp = dst->GetWritePtr(plane_enum_d);
+      const int dst_rowsize = dst->GetRowSize(plane_enum_d);
       const int dst_stride = dst->GetPitch(plane_enum_d);
       const int h = dst->GetHeight(plane_enum_d);
 
@@ -4637,11 +4638,11 @@ PVideoFrame __stdcall Exprfilter::GetFrame(int n, IScriptEnvironment *env) {
       }
 
       if(bits_per_pixel == 8)
-        fill_plane<BYTE>(dstp, h, dst_stride, val_i);
+        fill_plane<BYTE>(dstp, h, dst_rowsize, dst_stride, val_i);
       else if(bits_per_pixel <= 16)
-        fill_plane<uint16_t>(dstp, h, dst_stride, val_i);
+        fill_plane<uint16_t>(dstp, h, dst_rowsize, dst_stride, val_i);
       else // 32 bit float
-        fill_plane<float>(dstp, h, dst_stride, val);
+        fill_plane<float>(dstp, h, dst_rowsize, dst_stride, val);
 
     } // plane modes
   } // for planes

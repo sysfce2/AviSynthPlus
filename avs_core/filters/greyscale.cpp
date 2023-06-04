@@ -157,14 +157,15 @@ PVideoFrame Greyscale::GetFrame(int n, IScriptEnvironment* env)
     BYTE* dstp_u = frame->GetWritePtr(PLANAR_U);
     BYTE* dstp_v = frame->GetWritePtr(PLANAR_V);
     const int height = frame->GetHeight(PLANAR_U);
+    const int rowsizeUV = frame->GetRowSize(PLANAR_U);
     const int dst_pitch = frame->GetPitch(PLANAR_U);
     switch (vi.ComponentSize())
     {
     case 1:
-      fill_chroma<BYTE>(dstp_u, dstp_v, height, dst_pitch, 0x80); // in convert_planar
+      fill_chroma<BYTE>(dstp_u, dstp_v, height, rowsizeUV, dst_pitch, 0x80); // in convert_planar
       break;
     case 2:
-      fill_chroma<uint16_t>(dstp_u, dstp_v, height, dst_pitch, 1 << (vi.BitsPerComponent() - 1));
+      fill_chroma<uint16_t>(dstp_u, dstp_v, height, rowsizeUV, dst_pitch, 1 << (vi.BitsPerComponent() - 1));
       break;
     case 4:
 #ifdef FLOAT_CHROMA_IS_HALF_CENTERED
@@ -172,7 +173,7 @@ PVideoFrame Greyscale::GetFrame(int n, IScriptEnvironment* env)
 #else
       const float shift = 0.0f;
 #endif
-      fill_chroma<float>(dstp_u, dstp_v, height, dst_pitch, shift);
+      fill_chroma<float>(dstp_u, dstp_v, height, rowsizeUV, dst_pitch, shift);
       break;
     }
     return frame;

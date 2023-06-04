@@ -597,25 +597,27 @@ PVideoFrame Histogram::DrawModeLuma(int n, IScriptEnvironment* env) {
       auto dstp_u = src->GetWritePtr(PLANAR_U);
       auto dstp_v = src->GetWritePtr(PLANAR_V);
       auto height_uv = src->GetHeight(PLANAR_U);
+      auto rowsize_uv = src->GetRowSize(PLANAR_U);
       auto pitch_uv = src->GetPitch(PLANAR_U);
       if (bits_per_pixel == 8)
-        fill_chroma<uint8_t>(dstp_u, dstp_v, height_uv, pitch_uv, 128);
+        fill_chroma<uint8_t>(dstp_u, dstp_v, height_uv, rowsize_uv, pitch_uv, 128);
       else if (bits_per_pixel <= 16)
-        fill_chroma<uint16_t>(dstp_u, dstp_v, height_uv, pitch_uv, 128 << (bits_per_pixel - 8));
+        fill_chroma<uint16_t>(dstp_u, dstp_v, height_uv, rowsize_uv, pitch_uv, 128 << (bits_per_pixel - 8));
       else // 32)
-        fill_chroma<float>(dstp_u, dstp_v, height_uv, pitch_uv, 0.0f);
+        fill_chroma<float>(dstp_u, dstp_v, height_uv, rowsize_uv, pitch_uv, 0.0f);
 
       // alpha
       if (vi.NumComponents() == 4) {
         auto dstp_a = src->GetWritePtr(PLANAR_A);
         auto height_a = src->GetHeight(PLANAR_A);
+        auto rowsize_a = src->GetRowSize(PLANAR_A);
         auto pitch_a = src->GetPitch(PLANAR_A);
         if (bits_per_pixel == 8)
-          fill_plane<uint8_t>(dstp_a, height_a, pitch_a, 255);
+          fill_plane<uint8_t>(dstp_a, height_a, rowsize_a, pitch_a, 255);
         else if (bits_per_pixel <= 16)
-          fill_plane<uint16_t>(dstp_a, height_a, pitch_a, (1 << bits_per_pixel) -  1);
+          fill_plane<uint16_t>(dstp_a, height_a, rowsize_a, pitch_a, (1 << bits_per_pixel) -  1);
         else // 32)
-          fill_chroma<float>(dstp_u, dstp_v, height_uv, pitch_uv, 1.0f);
+          fill_plane<float>(dstp_a, height_a, rowsize_a, pitch_a, 1.0f);
       }
     }
   }

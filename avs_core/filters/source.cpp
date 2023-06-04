@@ -157,12 +157,13 @@ static PVideoFrame CreateBlankFrame(const VideoInfo& vi, int color, int mode, co
       {
         int plane = planes[p];
         BYTE *dstp = frame->GetWritePtr(plane);
+        int rowsize = frame->GetRowSize(plane);
         int pitch = frame->GetPitch(plane);
         int height = frame->GetHeight(plane);
         switch (pixelsize) {
-        case 1: fill_plane<uint8_t>(dstp, height, pitch, clamp(colors[p], 0, 0xFF)); break;
-        case 2: fill_plane<uint16_t>(dstp, height, pitch, clamp(colors[p], 0, (1 << vi.BitsPerComponent()) - 1)); break;
-        case 4: fill_plane<float>(dstp, height, pitch, colors_f[p]); break;
+        case 1: fill_plane<uint8_t>(dstp, height, rowsize, pitch, clamp(colors[p], 0, 0xFF)); break;
+        case 2: fill_plane<uint16_t>(dstp, height, rowsize, pitch, clamp(colors[p], 0, (1 << vi.BitsPerComponent()) - 1)); break;
+        case 4: fill_plane<float>(dstp, height, rowsize, pitch, colors_f[p]); break;
         }
       }
     }
@@ -1748,12 +1749,13 @@ public:
   if (vi.IsYUVA() || vi.IsPlanarRGBA()) {
     // initialize planar alpha planes with zero (no transparency), like RGB32 does
     BYTE *dstp = frame->GetWritePtr(PLANAR_A);
+    int rowsize = frame->GetRowSize(PLANAR_A);
     int pitch = frame->GetPitch(PLANAR_A);
     int height = frame->GetHeight(PLANAR_A);
     switch (bits_per_pixel) {
-    case 8: fill_plane<uint8_t>(dstp, height, pitch, 0); break;
-    case 10: case 12: case 14: case 16: fill_plane<uint16_t>(dstp, height, pitch, 0); break;
-    case 32: fill_plane<float>(dstp, height, pitch, 0.0f); break;
+    case 8: fill_plane<uint8_t>(dstp, height, rowsize, pitch, 0); break;
+    case 10: case 12: case 14: case 16: fill_plane<uint16_t>(dstp, height, rowsize, pitch, 0); break;
+    case 32: fill_plane<float>(dstp, height, rowsize, pitch, 0.0f); break;
     }
   }
 

@@ -43,10 +43,10 @@
 
 // useful functions
 template <typename pixel_t>
-void fill_chroma(uint8_t * dstp_u, uint8_t * dstp_v, int height, int pitch, pixel_t val);
+void fill_chroma(uint8_t * dstp_u, uint8_t * dstp_v, int height, int row_size, int pitch, pixel_t val);
 
 template <typename pixel_t>
-void fill_plane(uint8_t * dstp, int height, int pitch, pixel_t val);
+void fill_plane(uint8_t * dstp, int height, int row_size, int pitch, pixel_t val);
 
 
 class ConvertToY : public GenericVideoFilter

@@ -459,6 +459,7 @@ PVideoFrame ResetMask::GetFrame(int n, IScriptEnvironment* env)
   env->MakeWritable(&f);
 
   if (vi.IsPlanarRGBA() || vi.IsYUVA()) {
+    const int dst_rowsizeA = f->GetRowSize(PLANAR_A);
     const int dst_pitchA = f->GetPitch(PLANAR_A);
     BYTE* dstp_a = f->GetWritePtr(PLANAR_A);
     const int heightA = f->GetHeight(PLANAR_A);
@@ -466,13 +467,13 @@ PVideoFrame ResetMask::GetFrame(int n, IScriptEnvironment* env)
     switch (vi.ComponentSize())
     {
     case 1:
-      fill_plane<BYTE>(dstp_a, heightA, dst_pitchA, mask);
+      fill_plane<BYTE>(dstp_a, heightA, dst_rowsizeA, dst_pitchA, mask);
       break;
     case 2:
-      fill_plane<uint16_t>(dstp_a, heightA, dst_pitchA, mask);
+      fill_plane<uint16_t>(dstp_a, heightA, dst_rowsizeA, dst_pitchA, mask);
       break;
     case 4:
-      fill_plane<float>(dstp_a, heightA, dst_pitchA, mask_f);
+      fill_plane<float>(dstp_a, heightA, dst_rowsizeA, dst_pitchA, mask_f);
       break;
     }
     return f;
@@ -1152,15 +1153,16 @@ PVideoFrame ShowChannel::GetFrame(int n, IScriptEnvironment* env)
       // fill chroma neutral
       if (!vi.IsY())
       {
+        int uvrowsize = dst->GetRowSize(PLANAR_U);
         int uvpitch = dst->GetPitch(PLANAR_U);
         int dstheight = dst->GetHeight(PLANAR_U);
         BYTE* dstp_u = dst->GetWritePtr(PLANAR_U);
         BYTE* dstp_v = dst->GetWritePtr(PLANAR_V);
         switch (pixelsize) {
-        case 1: fill_chroma<BYTE>(dstp_u, dstp_v, dstheight, uvpitch, (BYTE)0x80); break;
-        case 2: fill_chroma<uint16_t>(dstp_u, dstp_v, dstheight, uvpitch, 1 << (vi.BitsPerComponent() - 1)); break;
+        case 1: fill_chroma<BYTE>(dstp_u, dstp_v, dstheight, uvrowsize, uvpitch, (BYTE)0x80); break;
+        case 2: fill_chroma<uint16_t>(dstp_u, dstp_v, dstheight, uvrowsize, uvpitch, 1 << (vi.BitsPerComponent() - 1)); break;
         case 4:
-          fill_chroma<float>(dstp_u, dstp_v, dstheight, uvpitch, chroma_center_f);
+          fill_chroma<float>(dstp_u, dstp_v, dstheight, uvrowsize, uvpitch, chroma_center_f);
           break;
         }
       }
@@ -1297,14 +1299,15 @@ PVideoFrame ShowChannel::GetFrame(int n, IScriptEnvironment* env)
         // fill UV with neutral
         if (!vi.IsY())
         {
+          int uvrowsize = dst->GetRowSize(PLANAR_U);
           int uvpitch = dst->GetPitch(PLANAR_U);
           int dstheight = dst->GetHeight(PLANAR_U);
           BYTE* dstp_u = dst->GetWritePtr(PLANAR_U);
           BYTE* dstp_v = dst->GetWritePtr(PLANAR_V);
           switch (pixelsize) {
-          case 1: fill_chroma<uint8_t>(dstp_u, dstp_v, dstheight, uvpitch, (uint8_t)0x80); break;
-          case 2: fill_chroma<uint16_t>(dstp_u, dstp_v, dstheight, uvpitch, 1 << (vi.BitsPerComponent() - 1)); break;
-          case 4: fill_chroma<float>(dstp_u, dstp_v, dstheight, uvpitch, chroma_center_f); break;
+          case 1: fill_chroma<uint8_t>(dstp_u, dstp_v, dstheight, uvrowsize, uvpitch, (uint8_t)0x80); break;
+          case 2: fill_chroma<uint16_t>(dstp_u, dstp_v, dstheight, uvrowsize, uvpitch, 1 << (vi.BitsPerComponent() - 1)); break;
+          case 4: fill_chroma<float>(dstp_u, dstp_v, dstheight, uvrowsize, uvpitch, chroma_center_f); break;
           }
         }
       }
@@ -1358,6 +1361,7 @@ PVideoFrame ShowChannel::GetFrame(int n, IScriptEnvironment* env)
       }
       if (target_hasalpha) {
         // fill alpha with transparent
+        const int dst_rowsizeA = dst->GetRowSize(PLANAR_A);
         const int dst_pitchA = dst->GetPitch(PLANAR_A);
         BYTE* dstp_a = dst->GetWritePtr(PLANAR_A);
         const int heightA = dst->GetHeight(PLANAR_A);
@@ -1370,13 +1374,13 @@ PVideoFrame ShowChannel::GetFrame(int n, IScriptEnvironment* env)
           switch (vi.ComponentSize())
           {
           case 1:
-            fill_plane<uint8_t>(dstp_a, heightA, dst_pitchA, 0xFF);
+            fill_plane<uint8_t>(dstp_a, heightA, dst_rowsizeA, dst_pitchA, 0xFF);
             break;
           case 2:
-            fill_plane<uint16_t>(dstp_a, heightA, dst_pitchA, (1 << vi.BitsPerComponent()) - 1);
+            fill_plane<uint16_t>(dstp_a, heightA, dst_rowsizeA, dst_pitchA, (1 << vi.BitsPerComponent()) - 1);
             break;
           case 4:
-            fill_plane<float>(dstp_a, heightA, dst_pitchA, 1.0f);
+            fill_plane<float>(dstp_a, heightA, dst_rowsizeA, dst_pitchA, 1.0f);
             break;
           }
         }
@@ -1724,6 +1728,7 @@ PVideoFrame MergeRGB::GetFrame(int n, IScriptEnvironment* env)
     if (p == 3 && !alpha) {
       // fill alpha, but not ARGB mode
 
+      const int dst_rowsizeA = dst->GetRowSize(PLANAR_A);
       const int dst_pitchA = dst->GetPitch(PLANAR_A);
       BYTE* dstp_a = dst->GetWritePtr(PLANAR_A);
       const int heightA = dst->GetHeight(PLANAR_A);
@@ -1731,13 +1736,13 @@ PVideoFrame MergeRGB::GetFrame(int n, IScriptEnvironment* env)
       switch (vi.ComponentSize())
       {
       case 1:
-        fill_plane<uint8_t>(dstp_a, heightA, dst_pitchA, 0);
+        fill_plane<uint8_t>(dstp_a, heightA, dst_rowsizeA, dst_pitchA, 0);
         break;
       case 2:
-        fill_plane<uint16_t>(dstp_a, heightA, dst_pitchA, 0);
+        fill_plane<uint16_t>(dstp_a, heightA, dst_rowsizeA, dst_pitchA, 0);
         break;
       case 4:
-        fill_plane<float>(dstp_a, heightA, dst_pitchA, 0.0f);
+        fill_plane<float>(dstp_a, heightA, dst_rowsizeA, dst_pitchA, 0.0f);
         break;
       }
     }

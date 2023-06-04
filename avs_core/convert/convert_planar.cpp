@@ -61,27 +61,47 @@
 static ResamplingFunction* getResampler( const char* resampler, AVSValue param1, AVSValue param2, AVSValue param3, IScriptEnvironment* env);
 
 template <typename pixel_t>
-void fill_chroma(uint8_t * dstp_u, uint8_t * dstp_v, int height, int pitch, pixel_t val)
+void fill_chroma(uint8_t * dstp_u, uint8_t * dstp_v, int height, int row_size, int pitch, pixel_t val)
 {
-  size_t size = height * pitch / sizeof(pixel_t);
-  std::fill_n(reinterpret_cast<pixel_t*>(dstp_u), size, val);
-  std::fill_n(reinterpret_cast<pixel_t*>(dstp_v), size, val);
+  if (pitch == row_size) {
+    size_t size = height * pitch / sizeof(pixel_t);
+    std::fill_n(reinterpret_cast<pixel_t*>(dstp_u), size, val);
+    std::fill_n(reinterpret_cast<pixel_t*>(dstp_v), size, val);
+  }
+  else {
+    size_t size = row_size / sizeof(pixel_t);
+    for (int i = 0; i < height; i++) {
+      std::fill_n(reinterpret_cast<pixel_t*>(dstp_u), size, val);
+      std::fill_n(reinterpret_cast<pixel_t*>(dstp_v), size, val);
+      dstp_u += pitch;
+      dstp_v += pitch;
+    }
+  }
 }
 
 template <typename pixel_t>
-void fill_plane(uint8_t * dstp, int height, int pitch, pixel_t val)
+void fill_plane(uint8_t * dstp, int height, int row_size, int pitch, pixel_t val)
 {
-  size_t size = height * pitch / sizeof(pixel_t);
-  std::fill_n(reinterpret_cast<pixel_t*>(dstp), size, val);
+  if (pitch == row_size) {
+    size_t size = height * pitch / sizeof(pixel_t);
+    std::fill_n(reinterpret_cast<pixel_t*>(dstp), size, val);
+  }
+  else {
+    size_t size = row_size / sizeof(pixel_t);
+    for (int i = 0; i < height; i++) {
+      std::fill_n(reinterpret_cast<pixel_t*>(dstp), size, val);
+      dstp += pitch;
+    }
+  }
 }
 
 // specialize it
-template void fill_plane<uint8_t>(uint8_t * dstp, int height, int pitch, uint8_t val);
-template void fill_plane<uint16_t>(uint8_t * dstp, int height, int pitch, uint16_t val);
-template void fill_plane<float>(uint8_t * dstp, int height, int pitch, float val);
-template void fill_chroma<uint8_t>(uint8_t * dstp_u, uint8_t * dstp_v, int height, int pitch, uint8_t val);
-template void fill_chroma<uint16_t>(uint8_t * dstp_u, uint8_t * dstp_v, int height, int pitch, uint16_t val);
-template void fill_chroma<float>(uint8_t * dstp_u, uint8_t * dstp_v, int height, int pitch, float val);
+template void fill_plane<uint8_t>(uint8_t * dstp, int height, int row_size, int pitch, uint8_t val);
+template void fill_plane<uint16_t>(uint8_t * dstp, int height, int row_size, int pitch, uint16_t val);
+template void fill_plane<float>(uint8_t * dstp, int height, int row_size, int pitch, float val);
+template void fill_chroma<uint8_t>(uint8_t * dstp_u, uint8_t * dstp_v, int height, int row_size, int pitch, uint8_t val);
+template void fill_chroma<uint16_t>(uint8_t * dstp_u, uint8_t * dstp_v, int height, int row_size, int pitch, uint16_t val);
+template void fill_chroma<float>(uint8_t * dstp_u, uint8_t * dstp_v, int height, int row_size, int pitch, float val);
 
 ConvertToY::ConvertToY(PClip src, const char *matrix_name, IScriptEnvironment* env) : GenericVideoFilter(src) {
   yuy2_input = blit_luma_only = packed_rgb_input = planar_rgb_input = false;
@@ -866,6 +886,7 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
     if (targetHasAlpha) {
       dstpA = dst->GetWritePtr(PLANAR_A);
       int heightA = dst->GetHeight(PLANAR_A);
+      int rowsizeA = dst->GetRowSize(PLANAR_A);
       int dst_pitchA = dst->GetPitch(PLANAR_A);
         // simple copy
       if(src->GetRowSize(PLANAR_A)) // vi.IsYUVA() no-no! vi is already the target video type
@@ -875,13 +896,13 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
         switch (vi.ComponentSize())
         {
         case 1:
-          fill_plane<BYTE>(dstpA, heightA, dst_pitchA, 255);
+          fill_plane<BYTE>(dstpA, heightA, rowsizeA, dst_pitchA, 255);
           break;
         case 2:
-          fill_plane<uint16_t>(dstpA, heightA, dst_pitchA, (1 << vi.BitsPerComponent()) - 1);
+          fill_plane<uint16_t>(dstpA, heightA, rowsizeA, dst_pitchA, (1 << vi.BitsPerComponent()) - 1);
           break;
         case 4:
-          fill_plane<float>(dstpA, heightA, dst_pitchA, 1.0f);
+          fill_plane<float>(dstpA, heightA, rowsizeA, dst_pitchA, 1.0f);
           break;
         }
       }
@@ -1407,6 +1428,7 @@ PVideoFrame __stdcall ConvertToPlanarGeneric::GetFrame(int n, IScriptEnvironment
               src->GetRowSize(PLANAR_Y_ALIGNED), src->GetHeight(PLANAR_Y));
 
   // alpha. if pitch is zero -> no alpha channel
+  const int rowsizeA = dst->GetRowSize(PLANAR_A);
   const int dst_pitchA = dst->GetPitch(PLANAR_A);
   BYTE* dstp_a = (dst_pitchA == 0) ? nullptr : dst->GetWritePtr(PLANAR_A);
   const int heightA = dst->GetHeight(PLANAR_A);
@@ -1421,13 +1443,13 @@ PVideoFrame __stdcall ConvertToPlanarGeneric::GetFrame(int n, IScriptEnvironment
       switch (vi.ComponentSize())
       {
       case 1:
-        fill_plane<BYTE>(dstp_a, heightA, dst_pitchA, 255);
+        fill_plane<BYTE>(dstp_a, heightA, rowsizeA, dst_pitchA, 255);
         break;
       case 2:
-        fill_plane<uint16_t>(dstp_a, heightA, dst_pitchA, (1 << vi.BitsPerComponent()) - 1);
+        fill_plane<uint16_t>(dstp_a, heightA, rowsizeA, dst_pitchA, (1 << vi.BitsPerComponent()) - 1);
         break;
       case 4:
-        fill_plane<float>(dstp_a, heightA, dst_pitchA, 1.0f);
+        fill_plane<float>(dstp_a, heightA, rowsizeA, dst_pitchA, 1.0f);
         break;
       }
     }
@@ -1436,20 +1458,21 @@ PVideoFrame __stdcall ConvertToPlanarGeneric::GetFrame(int n, IScriptEnvironment
   BYTE* dstp_u = dst->GetWritePtr(PLANAR_U);
   BYTE* dstp_v = dst->GetWritePtr(PLANAR_V);
   const int height = dst->GetHeight(PLANAR_U);
+  const int rowsizeUV = dst->GetRowSize(PLANAR_U);
   const int dst_pitch = dst->GetPitch(PLANAR_U);
 
   if (Yinput) {
     switch (vi.ComponentSize())
     {
       case 1:
-        fill_chroma<BYTE>(dstp_u, dstp_v, height, dst_pitch, 0x80);
+        fill_chroma<BYTE>(dstp_u, dstp_v, height, rowsizeUV, dst_pitch, 0x80);
         break;
       case 2:
-        fill_chroma<uint16_t>(dstp_u, dstp_v, height, dst_pitch, 1 << (vi.BitsPerComponent() - 1));
+        fill_chroma<uint16_t>(dstp_u, dstp_v, height, rowsizeUV, dst_pitch, 1 << (vi.BitsPerComponent() - 1));
         break;
       case 4:
         const float half = 0.0f;
-        fill_chroma<float>(dstp_u, dstp_v, height, dst_pitch, half);
+        fill_chroma<float>(dstp_u, dstp_v, height, rowsizeUV, dst_pitch, half);
         break;
     }
   } else {
