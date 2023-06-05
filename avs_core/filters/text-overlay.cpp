@@ -89,11 +89,11 @@ extern const AVSFunction Text_filters[] = {
   "c[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f",
   ShowSMPTE::CreateTime },
 
-  { "Info", BUILTIN_FUNC_PREFIX, "c[font]s[size]f[text_color]i[halo_color]i", FilterInfo::Create },  // clip
+  { "Info", BUILTIN_FUNC_PREFIX, "c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b", FilterInfo::Create },  // clip
 
   { "Subtitle",BUILTIN_FUNC_PREFIX,
   "cs[x]f[y]f[first_frame]i[last_frame]i[font]s[size]f[text_color]i[halo_color]i"
-  "[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s[utf8]b",
+  "[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s[utf8]b[bold]b[italic]b",
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
     Subtitle::Create
 #else
@@ -107,7 +107,7 @@ extern const AVSFunction Text_filters[] = {
 
   { "Text",BUILTIN_FUNC_PREFIX,
   "cs[x]f[y]f[first_frame]i[last_frame]i[font]s[size]f[text_color]i[halo_color]i"
-  "[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s[utf8]b[bold]b[placement]s",
+  "[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s[utf8]b[bold]b[italic]b[placement]s",
     SimpleText::Create },
 
   { 0 }
@@ -122,9 +122,10 @@ extern const AVSFunction Text_filters[] = {
  *******   Anti-alias    ******
  *****************************/
 
-Antialiaser::Antialiaser(int width, int height, const char fontname[], int size, int _textcolor, int _halocolor, int font_width, int font_angle, bool _interlaced) :
+Antialiaser::Antialiaser(int width, int height, const char fontname[], int size, int _textcolor, int _halocolor, bool _bold, bool _italic, int font_width, int font_angle, bool _interlaced) :
   alpha_calcs(0), w(width), h(height), textcolor(_textcolor), halocolor(_halocolor),
-  dirty(true), interlaced(_interlaced)
+  dirty(true), interlaced(_interlaced),
+  bold(_bold), italic(_italic)
 {
   struct {
     BITMAPINFOHEADER bih;
@@ -155,7 +156,7 @@ Antialiaser::Antialiaser(int width, int height, const char fontname[], int size,
     0 );
   if (hbmAntialias) {
     hbmDefault = (HBITMAP)SelectObject(hdcAntialias, hbmAntialias);
-    HFONT newfont = LoadFont(fontname, size, true, false, font_width, font_angle);
+    HFONT newfont = LoadFont(fontname, size, bold, italic, font_width, font_angle);
     hfontDefault = newfont ? (HFONT)SelectObject(hdcAntialias, newfont) : 0;
 
     SetMapMode(hdcAntialias, MM_TEXT);
@@ -1627,7 +1628,8 @@ AVSValue __cdecl ShowSMPTE::CreateTime(AVSValue args, void*, IScriptEnvironment*
 Subtitle::Subtitle( PClip _child, const char _text[], int _x, int _y, int _firstframe,
                     int _lastframe, const char _fontname[], int _size, int _textcolor,
                     int _halocolor, int _align, int _spc, bool _multiline, int _lsp,
-                    int _font_width, int _font_angle, bool _interlaced, const char _font_filename[], const bool _utf8, IScriptEnvironment* env)
+                    int _font_width, int _font_angle, bool _interlaced, const char _font_filename[], const bool _utf8, 
+                    const bool _bold, const bool _italic, IScriptEnvironment* env)
  : GenericVideoFilter(_child),
   x(_x), y(_y),
   firstframe(_firstframe), lastframe(_lastframe), size(_size),
@@ -1636,6 +1638,7 @@ Subtitle::Subtitle( PClip _child, const char _text[], int _x, int _y, int _first
   halocolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor),
   align(_align), spc(_spc),
   fontname(_fontname), text(_text), font_filename(_font_filename), utf8(_utf8),
+  bold(_bold), italic(_italic),
   antialiaser(nullptr)
 {
   if (*font_filename) {
@@ -1714,6 +1717,8 @@ AVSValue __cdecl Subtitle::Create(AVSValue args, void*, IScriptEnvironment* env)
     const bool interlaced = args[15].AsBool(false);
     const char* font_filename = args[16].AsString("");
     const bool utf8 = args[17].AsBool(false);
+    const bool bold = args[18].AsBool(true);
+    const bool italic = args[19].AsBool(false);
 
     if ((align < 1) || (align > 9))
      env->ThrowError("Subtitle: Align values are 1 - 9 mapped to your numeric pad");
@@ -1755,12 +1760,13 @@ AVSValue __cdecl Subtitle::Create(AVSValue args, void*, IScriptEnvironment* env)
       y = (clip->GetVideoInfo().height >> 1) * 8;
 
     return new Subtitle(clip, text, x, y, first_frame, last_frame, font, size, text_color,
-                      halo_color, align, spc, multiline, lsp, font_width, font_angle, interlaced, font_filename, utf8, env);
+                      halo_color, align, spc, multiline, lsp, font_width, font_angle, interlaced, font_filename, utf8, 
+                      bold, italic, env);
 }
 
 void Subtitle::InitAntialiaser(IScriptEnvironment* env)
 {
-  antialiaser = new Antialiaser(vi.width, vi.height, fontname, size, textcolor, halocolor,
+  antialiaser = new Antialiaser(vi.width, vi.height, fontname, size, textcolor, halocolor, bold, italic,
                                 font_width, font_angle, interlaced);
 
   int real_x = x;
@@ -2066,9 +2072,10 @@ AVSValue __cdecl SimpleText::Create(AVSValue args, void*, IScriptEnvironment* en
   const bool interlaced = args[15].AsBool(false); // n/a
   const char* font_filename = args[16].AsString("");
   const bool utf8 = args[17].AsBool(false); // linux: n/a
-  const bool bold = args.ArraySize() >= 19 ? args[18].AsBool(false) : false; // different from SubTitle, guard array access of extra parameter
-  // "placement" as chroma location
-  const char* placement_name = args.ArraySize() >= 20 ? args[19].AsString(nullptr) : nullptr; // different from SubTitle, guard array access of extra parameter
+  const bool bold = args[18].AsBool(false); // valid SubTitle parameter since v3.7.3
+  const bool italic = args[19].AsBool(false); // valid SubTitle parameter since v3.7.3, but n/a
+  // "placement" as chroma location, only "Text"
+  const char* placement_name = args.ArraySize() >= 22 ? args[21].AsString(nullptr) : nullptr; // different from SubTitle, guard array access of extra parameter
 
   // parameters marked with n/a are ignored; parameter list is currently the same as SubTitle
 
@@ -2141,21 +2148,22 @@ AVSValue __cdecl SimpleText::Create(AVSValue args, void*, IScriptEnvironment* en
  *******   FilterInfo Filter    ******
  **********************************/
 
-FilterInfo::FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, IScriptEnvironment* env)
+FilterInfo::FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, IScriptEnvironment* env)
   : GenericVideoFilter(_child), vii(AdjustVi()), size(_size),
   text_color(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor),
   halo_color(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor)
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   ,antialiaser(vi.width, vi.height, _fontname, size,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
-    vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor)
+    vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
+    _bold, _italic)
 #endif
+  , bold(_bold), italic(_italic)
 {
   AVS_UNUSED(env);
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
 #else
   // internal font
-  const bool bold = true; // bold looks better
   chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
   current_font = GetBitmapFont(size, "Terminus", bold, false);
   if (current_font == nullptr)
@@ -2494,8 +2502,8 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
 
 AVSValue __cdecl FilterInfo::Create(AVSValue args, void*, IScriptEnvironment* env)
 {
-    // 0   1      2       3             4
-    // c[font]s[size]f[text_color]i[halo_color]i
+    // 0   1      2       3             4         5       6
+    // c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b
     PClip clip = args[0].AsClip();
     // new parameters 20160823
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
@@ -2512,8 +2520,10 @@ AVSValue __cdecl FilterInfo::Create(AVSValue args, void*, IScriptEnvironment* en
     // size <= 0 means autolarge over 640x480. Fixed font: up to size 32
     const int text_color = args[3].AsInt(0xFFFF00);
     const int halo_color = args[4].AsInt(0);
+    const bool bold = args[5].AsBool(true); // bold has better visibility on NO_WIN_GDI terminus was well
+    const bool italic = args[6].AsBool(false);
 
-    return new FilterInfo(clip, font, size, text_color, halo_color, env);
+    return new FilterInfo(clip, font, size, text_color, halo_color, bold, italic, env);
 }
 
 
@@ -2527,7 +2537,9 @@ Compare::Compare(PClip _child1, PClip _child2, const char* channels, const char 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   antialiaser(vi.width, vi.height, "Courier New", 16 * 8,
     (vi.IsYUV() || vi.IsYUVA()) ? 0xD21092 : 0xFFFF00,
-    (vi.IsYUV() || vi.IsYUVA()) ? 0x108080 : 0),
+    (vi.IsYUV() || vi.IsYUVA()) ? 0x108080 : 0,
+    true, false // bold, italic defaults
+  ),
 #endif
   child2(_child2),
   log(nullptr),
@@ -3253,8 +3265,10 @@ void ApplyMessage( PVideoFrame* frame, const VideoInfo& vi, const char* message,
     halocolor = RGB2YUV_Rec601(halocolor);
   }
 
+  const bool bold = true;
+  const bool italic = false;
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  Antialiaser antialiaser(vi.width, vi.height, "Arial", size, textcolor, halocolor);
+  Antialiaser antialiaser(vi.width, vi.height, "Arial", size, textcolor, halocolor, bold, italic);
   HDC hdcAntialias = antialiaser.GetDC();
   if  (hdcAntialias)
   {
@@ -3269,7 +3283,6 @@ void ApplyMessage( PVideoFrame* frame, const VideoInfo& vi, const char* message,
   size = size / 8; // size comes in GDI units (*8)
 
   // internal font
-  const bool bold = true; // bold terminus has better visibility
   current_font = GetBitmapFont(size, "Terminus", bold, false);
   if (current_font == nullptr)
   {

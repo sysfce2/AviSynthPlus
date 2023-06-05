@@ -61,7 +61,7 @@ class Antialiaser
 {
 public:
   Antialiaser(int width, int height, const char fontname[], int size,
-	  int textcolor, int halocolor, int font_width=0, int font_angle=0, bool _interlaced=false);
+	  int textcolor, int halocolor, bool _bold, bool _italic, int font_width=0, int font_angle=0, bool _interlaced=false);
   virtual ~Antialiaser();
   HDC GetDC();
   void FreeDC();
@@ -87,6 +87,7 @@ private:
   const int textcolor, halocolor;
   int xl, yt, xr, yb; // sub-rectangle containing live text
   bool dirty, interlaced;
+  bool bold, italic;
 
   void GetAlphaRect();
 };
@@ -205,7 +206,8 @@ class Subtitle : public GenericVideoFilter
 public:
   Subtitle( PClip _child, const char _text[], int _x, int _y, int _firstframe, int _lastframe,
             const char _fontname[], int _size, int _textcolor, int _halocolor, int _align,
-            int _spc, bool _multiline, int _lsp, int _font_width, int _font_angle, bool _interlaced, const char _font_filename[], const bool _utf8, IScriptEnvironment* env);
+            int _spc, bool _multiline, int _lsp, int _font_width, int _font_angle, bool _interlaced, const char _font_filename[], const bool _utf8,
+            const bool _bold, const bool _italic, IScriptEnvironment* env);
   virtual ~Subtitle(void);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
@@ -227,6 +229,8 @@ private:
   const char* const text;
   const char* const font_filename;
   const bool utf8;
+  const bool bold;
+  const bool italic;
   Antialiaser* antialiaser;
 };
 #endif
@@ -277,7 +281,7 @@ class FilterInfo : public GenericVideoFilter
  **/
 {
 public:
-  FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, IScriptEnvironment* env);
+  FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, IScriptEnvironment* env);
   virtual ~FilterInfo(void);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
   bool __stdcall GetParity(int n) override;
@@ -304,6 +308,8 @@ private:
   std::unique_ptr<BitmapFont> current_font;
   int chromaplacement;
 #endif
+  const bool bold;
+  const bool italic;
 };
 
 
