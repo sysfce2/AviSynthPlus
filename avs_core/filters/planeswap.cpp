@@ -277,16 +277,6 @@ SwapUVToY::SwapUVToY(PClip _child, int _mode, IScriptEnvironment* env)
   }
 }
 
-template <typename T>
-static void fill_plane(BYTE* dstp, int rowsize, int height, int pitch, T val)
-{
-  rowsize /= sizeof(T);
-  for (int y = 0; y < height; ++y) {
-    std::fill_n(reinterpret_cast<T*>(dstp), rowsize, val);
-    dstp += pitch;
-  }
-}
-
 PVideoFrame __stdcall SwapUVToY::GetFrame(int n, IScriptEnvironment* env)
 {
   PVideoFrame src = child->GetFrame(n, env);
@@ -385,18 +375,15 @@ PVideoFrame __stdcall SwapUVToY::GetFrame(int n, IScriptEnvironment* env)
   BYTE* dstp_v = dst->GetWritePtr(PLANAR_V);
 
   if (vi.ComponentSize() == 1) {  // 8bit
-    fill_plane<BYTE>(dstp_u, rowsize, height, pitch, 0x80);
-    fill_plane<BYTE>(dstp_v, rowsize, height, pitch, 0x80);
+    fill_chroma<BYTE>(dstp_u, dstp_v, height, rowsize, pitch, 0x80);
   }
   else if (vi.ComponentSize() == 2) {  // 16bit
     uint16_t grey_val = 1 << (vi.BitsPerComponent() - 1); // 0x8000 for 16 bit
-    fill_plane<uint16_t>(dstp_u, rowsize, height, pitch, grey_val);
-    fill_plane<uint16_t>(dstp_v, rowsize, height, pitch, grey_val);
+    fill_chroma<uint16_t>(dstp_u, dstp_v, height, rowsize, pitch, grey_val);
   }
   else {  // 32bit(float)
     float grey_val = uv8tof(128);
-    fill_plane<float>(dstp_u, rowsize, height, pitch, grey_val);
-    fill_plane<float>(dstp_v, rowsize, height, pitch, grey_val);
+    fill_chroma<float>(dstp_u, dstp_v, height, rowsize, pitch, grey_val);
   }
 
   return dst;
