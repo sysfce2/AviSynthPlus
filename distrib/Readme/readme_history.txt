@@ -5,8 +5,17 @@ Source: https://github.com/AviSynth/AviSynthPlus
 This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 
-20230604 3.7.3 WIP
+20230605 3.7.3 WIP
 ------------------
+- Address #358
+  - add "bold" and "italic" boolean parameters to "SubTitle" and "Info"
+  - add "italic" boolean parameter to "Text" ("bold" already existed)
+    "italic" is provided only to match the parameter list with SubTitle.
+
+  SubTitle: to mimic former working method, defaults are "bold"=true and "italic"=false.
+  Text: "bold"=false (as before); "italic" is not handled at all, either true or false, it does not affect output. 
+        "italic" Parameter exists only because on non-Windows systems "Subtitle" is aliased to "Text"
+        (Each Subtitle parameters must exist in "Text" as well)
 - Fix #360: plane fill wrongly assumed that pitch is rowsize, which is not the case after a Crop
   It would result in crash e.g. in HistogramRGBParade
 - Enhancement: much quicker YV24 to RGB32/RGB24 conversion when AVX2 instruction set is supported. (+50% fps at i7-11700)
