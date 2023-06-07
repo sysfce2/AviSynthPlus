@@ -5,17 +5,23 @@ Source: https://github.com/AviSynth/AviSynthPlus
 This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 
-20230605 3.7.3 WIP
+20230607 3.7.3 WIP
 ------------------
-- Address #358
-  - add "bold" and "italic" boolean parameters to "SubTitle" and "Info"
-  - add "italic" boolean parameter to "Text" ("bold" already existed)
-    "italic" is provided only to match the parameter list with SubTitle.
+- Add "bold"=true (linux/NO_WIN_GDI: false), "italic"=false, "noaa"=false parameters to 
+  "ShowFrameNumber", "ShowCRC32", "ShowSMPTE", "ShowTime" filters.
+  As noted below, "italic" and "noaa" parameters are ineffective in NO_WIN_GDI builds (e.g. Linux)
+- Add "noaa" parameter to SubTitle and Info. Setting it true will disable antialiasing.
+  Useful when someone would use "VCR OSD Mono" as-is, without beautifying the outlines,
+  as it as mentioned in https://forum.doom9.org/showthread.php?t=184627
+- Address #358, plus "noaa"
+  - add "bold", "italic" and "noaa" boolean parameters to "SubTitle" and "Info"
+  - add "italic" and "noaa" boolean parameter to "Text" ("bold" already existed)
+    "italic" and "noaa" is provided only to match the parameter list with SubTitle.
 
-  SubTitle: to mimic former working method, defaults are "bold"=true and "italic"=false.
+  SubTitle: to mimic former working method, defaults are "bold"=true, "italic"=false, "noaa"=false
   Text: "bold"=false (as before); "italic" is not handled at all, either true or false, it does not affect output. 
-        "italic" Parameter exists only because on non-Windows systems "Subtitle" is aliased to "Text"
-        (Each Subtitle parameters must exist in "Text" as well)
+        "italic" and "noaa" parameters exist only because on non-Windows systems "Subtitle" is aliased to "Text"
+        (Each Subtitle parameter must exist in "Text" as well)
 - Fix #360: plane fill wrongly assumed that pitch is rowsize, which is not the case after a Crop
   It would result in crash e.g. in HistogramRGBParade
 - Enhancement: much quicker YV24 to RGB32/RGB24 conversion when AVX2 instruction set is supported. (+50% fps at i7-11700)
