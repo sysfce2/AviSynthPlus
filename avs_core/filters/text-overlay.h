@@ -61,7 +61,7 @@ class Antialiaser
 {
 public:
   Antialiaser(int width, int height, const char fontname[], int size,
-	  int textcolor, int halocolor, bool _bold, bool _italic, int font_width=0, int font_angle=0, bool _interlaced=false);
+	  int textcolor, int halocolor, bool _bold, bool _italic, bool _noaa, int font_width=0, int font_angle=0, bool _interlaced=false);
   virtual ~Antialiaser();
   HDC GetDC();
   void FreeDC();
@@ -74,8 +74,9 @@ private:
   void ApplyPlanar_core(BYTE* buf, int pitch, int UVpitch,BYTE* bufV,BYTE* bufU,bool isRGB);
   void ApplyPlanar(BYTE* buf, int pitch, int UVpitch,BYTE* bufV,BYTE* bufU, int shiftX, int shiftY, int pixelsize, bool isRGB);
   void ApplyYUY2(BYTE* buf, int pitch);
-  void ApplyRGB24_48(BYTE* buf, int pitch, int pixelsize);
-  void ApplyRGB32_64(BYTE* buf, int pitch, int pixelsize);
+
+  template<typename pixel_t, bool has_alpha>
+  void ApplyRGB_packed(BYTE* buf, int pitch);
 
   void* lpAntialiasBits;
   unsigned short* alpha_calcs;
@@ -88,6 +89,7 @@ private:
   int xl, yt, xr, yb; // sub-rectangle containing live text
   bool dirty, interlaced;
   bool bold, italic;
+  bool noaa;
 
   void GetAlphaRect();
 };
@@ -207,7 +209,7 @@ public:
   Subtitle( PClip _child, const char _text[], int _x, int _y, int _firstframe, int _lastframe,
             const char _fontname[], int _size, int _textcolor, int _halocolor, int _align,
             int _spc, bool _multiline, int _lsp, int _font_width, int _font_angle, bool _interlaced, const char _font_filename[], const bool _utf8,
-            const bool _bold, const bool _italic, IScriptEnvironment* env);
+            const bool _bold, const bool _italic, const bool _noaa, IScriptEnvironment* env);
   virtual ~Subtitle(void);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
@@ -231,6 +233,7 @@ private:
   const bool utf8;
   const bool bold;
   const bool italic;
+  const bool noaa;
   Antialiaser* antialiaser;
 };
 #endif
@@ -281,7 +284,7 @@ class FilterInfo : public GenericVideoFilter
  **/
 {
 public:
-  FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, IScriptEnvironment* env);
+  FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env);
   virtual ~FilterInfo(void);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
   bool __stdcall GetParity(int n) override;
@@ -310,6 +313,7 @@ private:
 #endif
   const bool bold;
   const bool italic;
+  const bool noaa;
 };
 
 

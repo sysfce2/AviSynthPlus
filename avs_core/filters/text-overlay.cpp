@@ -89,11 +89,11 @@ extern const AVSFunction Text_filters[] = {
   "c[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f",
   ShowSMPTE::CreateTime },
 
-  { "Info", BUILTIN_FUNC_PREFIX, "c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b", FilterInfo::Create },  // clip
+  { "Info", BUILTIN_FUNC_PREFIX, "c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b[noaa]b", FilterInfo::Create },  // clip
 
   { "Subtitle",BUILTIN_FUNC_PREFIX,
   "cs[x]f[y]f[first_frame]i[last_frame]i[font]s[size]f[text_color]i[halo_color]i"
-  "[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s[utf8]b[bold]b[italic]b",
+  "[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s[utf8]b[bold]b[italic]b[noaa]b",
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
     Subtitle::Create
 #else
@@ -107,7 +107,7 @@ extern const AVSFunction Text_filters[] = {
 
   { "Text",BUILTIN_FUNC_PREFIX,
   "cs[x]f[y]f[first_frame]i[last_frame]i[font]s[size]f[text_color]i[halo_color]i"
-  "[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s[utf8]b[bold]b[italic]b[placement]s",
+  "[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s[utf8]b[bold]b[italic]b[noaa]b[placement]s",
     SimpleText::Create },
 
   { 0 }
@@ -122,10 +122,10 @@ extern const AVSFunction Text_filters[] = {
  *******   Anti-alias    ******
  *****************************/
 
-Antialiaser::Antialiaser(int width, int height, const char fontname[], int size, int _textcolor, int _halocolor, bool _bold, bool _italic, int font_width, int font_angle, bool _interlaced) :
+Antialiaser::Antialiaser(int width, int height, const char fontname[], int size, int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa, int font_width, int font_angle, bool _interlaced) :
   alpha_calcs(0), w(width), h(height), textcolor(_textcolor), halocolor(_halocolor),
   dirty(true), interlaced(_interlaced),
-  bold(_bold), italic(_italic)
+  bold(_bold), italic(_italic), noaa(_noaa)
 {
   struct {
     BITMAPINFOHEADER bih;
@@ -202,10 +202,14 @@ void Antialiaser::Apply( const VideoInfo& vi, PVideoFrame* frame, int pitch)
 {
   if (!alpha_calcs) return;
 
-  if (vi.IsRGB32() || vi.IsRGB64())
-    ApplyRGB32_64((*frame)->GetWritePtr(), pitch, vi.ComponentSize());
-  else if (vi.IsRGB24() || vi.IsRGB48())
-    ApplyRGB24_48((*frame)->GetWritePtr(), pitch, vi.ComponentSize());
+  if (vi.IsRGB32())
+    ApplyRGB_packed<uint8_t, true>((*frame)->GetWritePtr(), pitch);
+  else if (vi.IsRGB64())
+    ApplyRGB_packed<uint16_t, true>((*frame)->GetWritePtr(), pitch);
+  else if (vi.IsRGB24())
+    ApplyRGB_packed<uint8_t, false>((*frame)->GetWritePtr(), pitch);
+  else if (vi.IsRGB48())
+    ApplyRGB_packed<uint16_t, false>((*frame)->GetWritePtr(), pitch);
   else if (vi.IsYUY2())
     ApplyYUY2((*frame)->GetWritePtr(), pitch);
   else if (vi.IsYV12()) // YUV420 16/32 bit goes to generic path
@@ -710,79 +714,27 @@ void Antialiaser::ApplyYUY2(BYTE* buf, int pitch) {
 }
 
 
-void Antialiaser::ApplyRGB24_48(BYTE* buf, int pitch, int pixelsize) {
+template<typename pixel_t, bool has_alpha>
+void Antialiaser::ApplyRGB_packed(BYTE* buf, int pitch)
+{
   if (dirty) GetAlphaRect();
-  unsigned short* alpha = alpha_calcs + yb*w*4;
-  buf  += pitch*(h-yb-1);
+  unsigned short* alpha = alpha_calcs + yb * w * 4;
+  buf += pitch * (h - yb - 1);
 
-  if(pixelsize==1)
-  {
-      for (int y=yb; y<=yt; ++y) {
-        for (int x=xl; x<=xr; ++x) {
-          const int basealpha = alpha[x*4+0];
-          if (basealpha != 256) {
-            buf[x*3+0] = BYTE((buf[x*3+0] * basealpha + alpha[x*4+1]) >> 8);
-            buf[x*3+1] = BYTE((buf[x*3+1] * basealpha + alpha[x*4+2]) >> 8);
-            buf[x*3+2] = BYTE((buf[x*3+2] * basealpha + alpha[x*4+3]) >> 8);
-          }
-        }
-        buf -= pitch;
-        alpha += w*4;
+  constexpr int pixel_step = has_alpha ? 4 : 3; // RGB32/64, RGB24/48
+  constexpr int alpha_shift = sizeof(pixel_t) == 1 ? 0 : 8; // RGB32/64, RGB24/48
+  for (int y = yb; y <= yt; ++y) {
+    for (int x = xl; x <= xr; ++x) {
+      pixel_t* buf2 = reinterpret_cast<pixel_t*>(buf) + (x * pixel_step);
+      const int basealpha = alpha[x * 4 + 0];
+      if (basealpha != 256) {
+        buf2[0] = (pixel_t)((buf2[0] * basealpha + (alpha[x*4+1] << alpha_shift)) >> 8);
+        buf2[1] = (pixel_t)((buf2[1] * basealpha + (alpha[x*4+2] << alpha_shift)) >> 8);
+        buf2[2] = (pixel_t)((buf2[2] * basealpha + (alpha[x*4+3] << alpha_shift)) >> 8);
       }
-  }
-  else {
-      // pixelsize == 2
-      for (int y=yb; y<=yt; ++y) {
-          for (int x=xl; x<=xr; ++x) {
-              const int basealpha = alpha[x*4+0];
-              if (basealpha != 256) {
-                  reinterpret_cast<uint16_t *>(buf)[x*3+0] = (uint16_t)((reinterpret_cast<uint16_t *>(buf)[x*3+0] * basealpha + ((int)alpha[x*4+1] << 8)) >> 8);
-                  reinterpret_cast<uint16_t *>(buf)[x*3+1] = (uint16_t)((reinterpret_cast<uint16_t *>(buf)[x*3+1] * basealpha + ((int)alpha[x*4+2] << 8)) >> 8);
-                  reinterpret_cast<uint16_t *>(buf)[x*3+2] = (uint16_t)((reinterpret_cast<uint16_t *>(buf)[x*3+2] * basealpha + ((int)alpha[x*4+3] << 8)) >> 8);
-              }
-          }
-          buf -= pitch;
-          alpha += w*4;
-      }
-  }
-}
-
-
-void Antialiaser::ApplyRGB32_64(BYTE* buf, int pitch, int pixelsize) {
-  if (dirty) GetAlphaRect();
-  unsigned short* alpha = alpha_calcs + yb*w*4;
-  buf  += pitch*(h-yb-1);
-
-  if(pixelsize==1)
-  {
-      for (int y=yb; y<=yt; ++y) {
-        for (int x=xl; x<=xr; ++x) {
-          const int basealpha = alpha[x*4+0];
-          if (basealpha != 256) {
-            buf[x*4+0] = BYTE((buf[x*4+0] * basealpha + alpha[x*4+1]) >> 8);
-            buf[x*4+1] = BYTE((buf[x*4+1] * basealpha + alpha[x*4+2]) >> 8);
-            buf[x*4+2] = BYTE((buf[x*4+2] * basealpha + alpha[x*4+3]) >> 8);
-          }
-        }
-        buf -= pitch;
-        alpha += w*4;
-      }
-  }
-  else {
-      // pixelsize == 2
-      for (int y=yb; y<=yt; ++y) {
-          for (int x=xl; x<=xr; ++x) {
-              const int basealpha = alpha[x*4+0];
-              if (basealpha != 256) {
-                  reinterpret_cast<uint16_t *>(buf)[x*4+0] = (uint16_t)((reinterpret_cast<uint16_t *>(buf)[x*4+0] * basealpha + ((int)alpha[x*4+1] << 8)) >> 8);
-                  reinterpret_cast<uint16_t *>(buf)[x*4+1] = (uint16_t)((reinterpret_cast<uint16_t *>(buf)[x*4+1] * basealpha + ((int)alpha[x*4+2] << 8)) >> 8);
-                  reinterpret_cast<uint16_t *>(buf)[x*4+2] = (uint16_t)((reinterpret_cast<uint16_t *>(buf)[x*4+2] * basealpha + ((int)alpha[x*4+3] << 8)) >> 8);
-              }
-          }
-          buf -= pitch;
-          alpha += w*4;
-      }
-
+    }
+    buf -= pitch;
+    alpha += w*4;
   }
 }
 
@@ -1037,13 +989,36 @@ void Antialiaser::GetAlphaRect()
             }
           }
         }
-        alpha2  = gamma[alpha2];
-        alpha1  = gamma[alpha1];
 
-        alpha2 -= alpha1;
-        alpha2 *= Ahalo;
-        alpha1 *= Atext;
-        // Pre calulate table for quick use  --  Pc = (Pc * dest[0] + dest[c]) >> 8;
+        if (noaa)
+        {
+          // now many pixels are occupied from the 128
+          constexpr int lit_if_eq_or_morethan = 1; // if at least 1 pixel is lit: draw pixel
+          if (alpha1 >= lit_if_eq_or_morethan) {
+            alpha1 = 64 * 516 * Atext;
+            alpha2 = 0;
+          }
+          else {
+            if (alpha2 > alpha1 && alpha2 >= lit_if_eq_or_morethan) {
+              alpha1 = 0;
+              alpha2 = 64 * 516 * Ahalo;
+            }
+            else {
+              alpha1 = 0;
+              alpha2 = 0;
+            }
+          }
+        }
+        else
+        {
+          alpha2 = gamma[alpha2];
+          alpha1 = gamma[alpha1];
+          alpha2 -= alpha1;
+          alpha2 *= Ahalo;
+          alpha1 *= Atext;
+        }
+
+        // Pre calculate table for quick use  --  Pc = (Pc * dest[0] + dest[c]) >> 8;
 
     dest[0] = (unsigned short)((64*516*255 - alpha1 -          alpha2)>>15);
     dest[1] = (unsigned short)((    BVtext * alpha1 + BVhalo * alpha2)>>15);
@@ -1081,6 +1056,7 @@ ShowFrameNumber::ShowFrameNumber(PClip _child, bool _scroll, int _offset, int _x
   antialiaser(vi.width, vi.height, _fontname, _size,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
+    true, false, false, // bold, italic, noaa; no params atm
     font_width, font_angle),
 #endif
   scroll(_scroll), offset(_offset), size(_size), x(_x), y(_y),
@@ -1221,6 +1197,7 @@ ShowCRC32::ShowCRC32(PClip _child, bool _scroll, int _offset, int _x, int _y, co
   antialiaser(vi.width, vi.height, _fontname, _size,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
+    true, false, false, // bold, italic, noaa; no params atm
     font_width, font_angle),
 #endif
   scroll(_scroll), offset(_offset), size(_size), x(_x), y(_y),
@@ -1397,6 +1374,7 @@ ShowSMPTE::ShowSMPTE(PClip _child, double _rate, const char* offset, int _offset
   antialiaser(vi.width, vi.height, _fontname, _size,
       vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
       vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
+      true, false, false, // bold, italic, noaa; no params atm
       font_width, font_angle),
 #endif
   x(_x), y(_y),
@@ -1629,7 +1607,7 @@ Subtitle::Subtitle( PClip _child, const char _text[], int _x, int _y, int _first
                     int _lastframe, const char _fontname[], int _size, int _textcolor,
                     int _halocolor, int _align, int _spc, bool _multiline, int _lsp,
                     int _font_width, int _font_angle, bool _interlaced, const char _font_filename[], const bool _utf8, 
-                    const bool _bold, const bool _italic, IScriptEnvironment* env)
+                    const bool _bold, const bool _italic, const bool _noaa, IScriptEnvironment* env)
  : GenericVideoFilter(_child),
   x(_x), y(_y),
   firstframe(_firstframe), lastframe(_lastframe), size(_size),
@@ -1638,7 +1616,7 @@ Subtitle::Subtitle( PClip _child, const char _text[], int _x, int _y, int _first
   halocolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor),
   align(_align), spc(_spc),
   fontname(_fontname), text(_text), font_filename(_font_filename), utf8(_utf8),
-  bold(_bold), italic(_italic),
+  bold(_bold), italic(_italic), noaa(_noaa),
   antialiaser(nullptr)
 {
   if (*font_filename) {
@@ -1719,6 +1697,7 @@ AVSValue __cdecl Subtitle::Create(AVSValue args, void*, IScriptEnvironment* env)
     const bool utf8 = args[17].AsBool(false);
     const bool bold = args[18].AsBool(true);
     const bool italic = args[19].AsBool(false);
+    const bool noaa = args[20].AsBool(false);
 
     if ((align < 1) || (align > 9))
      env->ThrowError("Subtitle: Align values are 1 - 9 mapped to your numeric pad");
@@ -1761,12 +1740,12 @@ AVSValue __cdecl Subtitle::Create(AVSValue args, void*, IScriptEnvironment* env)
 
     return new Subtitle(clip, text, x, y, first_frame, last_frame, font, size, text_color,
                       halo_color, align, spc, multiline, lsp, font_width, font_angle, interlaced, font_filename, utf8, 
-                      bold, italic, env);
+                      bold, italic, noaa, env);
 }
 
 void Subtitle::InitAntialiaser(IScriptEnvironment* env)
 {
-  antialiaser = new Antialiaser(vi.width, vi.height, fontname, size, textcolor, halocolor, bold, italic,
+  antialiaser = new Antialiaser(vi.width, vi.height, fontname, size, textcolor, halocolor, bold, italic, noaa,
                                 font_width, font_angle, interlaced);
 
   int real_x = x;
@@ -2074,8 +2053,9 @@ AVSValue __cdecl SimpleText::Create(AVSValue args, void*, IScriptEnvironment* en
   const bool utf8 = args[17].AsBool(false); // linux: n/a
   const bool bold = args[18].AsBool(false); // valid SubTitle parameter since v3.7.3
   const bool italic = args[19].AsBool(false); // valid SubTitle parameter since v3.7.3, but n/a
+  const bool noaa = args[20].AsBool(false); // valid SubTitle parameter since v3.7.3, but n/a
   // "placement" as chroma location, only "Text"
-  const char* placement_name = args.ArraySize() >= 22 ? args[21].AsString(nullptr) : nullptr; // different from SubTitle, guard array access of extra parameter
+  const char* placement_name = args.ArraySize() >= 23 ? args[22].AsString(nullptr) : nullptr; // different from SubTitle, guard array access of extra parameter
 
   // parameters marked with n/a are ignored; parameter list is currently the same as SubTitle
 
@@ -2148,7 +2128,7 @@ AVSValue __cdecl SimpleText::Create(AVSValue args, void*, IScriptEnvironment* en
  *******   FilterInfo Filter    ******
  **********************************/
 
-FilterInfo::FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, IScriptEnvironment* env)
+FilterInfo::FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env)
   : GenericVideoFilter(_child), vii(AdjustVi()), size(_size),
   text_color(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor),
   halo_color(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor)
@@ -2156,9 +2136,9 @@ FilterInfo::FilterInfo( PClip _child, const char _fontname[], int _size, int _te
   ,antialiaser(vi.width, vi.height, _fontname, size,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
-    _bold, _italic)
+    _bold, _italic, _noaa)
 #endif
-  , bold(_bold), italic(_italic)
+  , bold(_bold), italic(_italic), noaa(_noaa)
 {
   AVS_UNUSED(env);
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
@@ -2522,8 +2502,9 @@ AVSValue __cdecl FilterInfo::Create(AVSValue args, void*, IScriptEnvironment* en
     const int halo_color = args[4].AsInt(0);
     const bool bold = args[5].AsBool(true); // bold has better visibility on NO_WIN_GDI terminus was well
     const bool italic = args[6].AsBool(false);
+    const bool noaa = args[7].AsBool(false);
 
-    return new FilterInfo(clip, font, size, text_color, halo_color, bold, italic, env);
+    return new FilterInfo(clip, font, size, text_color, halo_color, bold, italic, noaa, env);
 }
 
 
@@ -2538,7 +2519,7 @@ Compare::Compare(PClip _child1, PClip _child2, const char* channels, const char 
   antialiaser(vi.width, vi.height, "Courier New", 16 * 8,
     (vi.IsYUV() || vi.IsYUVA()) ? 0xD21092 : 0xFFFF00,
     (vi.IsYUV() || vi.IsYUVA()) ? 0x108080 : 0,
-    true, false // bold, italic defaults
+    true, false, false // bold, italic, noaa
   ),
 #endif
   child2(_child2),
@@ -3267,8 +3248,9 @@ void ApplyMessage( PVideoFrame* frame, const VideoInfo& vi, const char* message,
 
   const bool bold = true;
   const bool italic = false;
+  const bool noaa = false;
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  Antialiaser antialiaser(vi.width, vi.height, "Arial", size, textcolor, halocolor, bold, italic);
+  Antialiaser antialiaser(vi.width, vi.height, "Arial", size, textcolor, halocolor, bold, italic, noaa);
   HDC hdcAntialias = antialiaser.GetDC();
   if  (hdcAntialias)
   {
