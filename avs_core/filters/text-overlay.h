@@ -60,8 +60,8 @@ class Antialiaser
  **/
 {
 public:
-  Antialiaser(int width, int height, const char fontname[], int size,
-	  int textcolor, int halocolor, bool _bold, bool _italic, bool _noaa, int font_width=0, int font_angle=0, bool _interlaced=false);
+  Antialiaser(int width, int height, const char fontname[], int size, 
+    int textcolor, int halocolor, bool _bold, bool _italic, bool _noaa, int font_width=0, int font_angle=0, bool _interlaced=false);
   virtual ~Antialiaser();
   HDC GetDC();
   void FreeDC();
@@ -103,7 +103,7 @@ class ShowFrameNumber : public GenericVideoFilter
 {
 public:
   ShowFrameNumber(PClip _child, bool _scroll, int _offset, int _x, int _y, const char _fontname[], int _size,
-			int _textcolor, int _halocolor, int font_width, int font_angle, IScriptEnvironment* env);
+      int _textcolor, int _halocolor, int font_width, int font_angle, bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
   static AVSValue __cdecl Create(AVSValue args, void*, IScriptEnvironment* env);
@@ -125,6 +125,9 @@ private:
   const int offset;
   const int size, x, y;
   const int textcolor, halocolor;
+  const bool bold;
+  const bool italic; // n/a in NO_WIN_GDI
+  const bool noaa; // n/a in NO_WIN_GDI
 };
 
 class ShowCRC32 : public GenericVideoFilter
@@ -138,7 +141,7 @@ class ShowCRC32 : public GenericVideoFilter
 
 public:
   ShowCRC32(PClip _child, bool _scroll, int _offset, int _x, int _y, const char _fontname[], int _size,
-    int _textcolor, int _halocolor, int font_width, int font_angle, IScriptEnvironment* env);
+            int _textcolor, int _halocolor, int font_width, int font_angle, bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
   static AVSValue __cdecl Create(AVSValue args, void*, IScriptEnvironment* env);
@@ -160,6 +163,9 @@ private:
   const int offset;
   const int size, x, y;
   const int textcolor, halocolor;
+  const bool bold;
+  const bool italic; // n/a in NO_WIN_GDI
+  const bool noaa; // n/a in NO_WIN_GDI
 };
 
 
@@ -171,7 +177,7 @@ class ShowSMPTE : public GenericVideoFilter
 {
 public:
   ShowSMPTE(PClip _child, double _rate, const char* _offset, int _offset_f, int _x, int _y, const char _fontname[], int _size,
-			int _textcolor, int _halocolor, int font_width, int font_angle, IScriptEnvironment* env);
+            int _textcolor, int _halocolor, int font_width, int font_angle, bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
   static AVSValue __cdecl CreateSMTPE(AVSValue args, void*, IScriptEnvironment* env);
@@ -195,6 +201,9 @@ private:
   const int x, y;
   bool dropframe;
   const int textcolor, halocolor;
+  const bool bold;
+  const bool italic; // n/a in NO_WIN_GDI
+  const bool noaa; // n/a in NO_WIN_GDI
 };
 
 

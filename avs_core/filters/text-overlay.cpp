@@ -74,19 +74,19 @@ static HFONT LoadFont(const char name[], int size, bool bold, bool italic, int w
 
 extern const AVSFunction Text_filters[] = {
   { "ShowFrameNumber",BUILTIN_FUNC_PREFIX,
-  "c[scroll]b[offset]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f",
+  "c[scroll]b[offset]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b",
   ShowFrameNumber::Create },
 
   { "ShowCRC32",BUILTIN_FUNC_PREFIX,
-        "c[scroll]b[offset]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f",
+        "c[scroll]b[offset]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b",
         ShowCRC32::Create },
 
   { "ShowSMPTE",BUILTIN_FUNC_PREFIX,
-  "c[fps]f[offset]s[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f",
+  "c[fps]f[offset]s[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b",
   ShowSMPTE::CreateSMTPE },
 
   { "ShowTime",BUILTIN_FUNC_PREFIX,
-  "c[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f",
+  "c[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b",
   ShowSMPTE::CreateTime },
 
   { "Info", BUILTIN_FUNC_PREFIX, "c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b[noaa]b", FilterInfo::Create },  // clip
@@ -1050,25 +1050,26 @@ void Antialiaser::GetAlphaRect()
  ************************************/
 
 ShowFrameNumber::ShowFrameNumber(PClip _child, bool _scroll, int _offset, int _x, int _y, const char _fontname[],
-                                 int _size, int _textcolor, int _halocolor, int font_width, int font_angle, IScriptEnvironment* env)
+                                 int _size, int _textcolor, int _halocolor, int font_width, int font_angle, 
+                                 bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env)
  : GenericVideoFilter(_child),
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   antialiaser(vi.width, vi.height, _fontname, _size,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
-    true, false, false, // bold, italic, noaa; no params atm
+    _bold, _italic, _noaa,
     font_width, font_angle),
 #endif
   scroll(_scroll), offset(_offset), size(_size), x(_x), y(_y),
   textcolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor),
-  halocolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor)
+  halocolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor),
+  bold(_bold), italic(_italic), noaa(_noaa)
 {
   AVS_UNUSED(env);
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
 #else
   // internal font
-  const bool bold = false;
   current_font = GetBitmapFont(size, "Terminus", bold, false);
   chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
   if (current_font == nullptr)
@@ -1175,11 +1176,18 @@ AVSValue __cdecl ShowFrameNumber::Create(AVSValue args, void*, IScriptEnvironmen
   const int text_color = args[7].AsInt(0xFFFF00);
   const int halo_color = args[8].AsInt(0);
   const int font_angle = int(args[10].AsFloat(0) * 10 + 0.5);
+#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
+  const bool bold = args[11].AsBool(true);
+#else
+  const bool bold = args[11].AsBool(false); // intentionally different
+#endif
+  const bool italic = args[12].AsBool(false);
+  const bool noaa = args[13].AsBool(false);
 
   if ((x==DefXY) ^ (y==DefXY))
   env->ThrowError("ShowFrameNumber: both x and y position must be specified");
 
-  return new ShowFrameNumber(clip, scroll, offset, x, y, font, size, text_color, halo_color, font_width, font_angle, env);
+  return new ShowFrameNumber(clip, scroll, offset, x, y, font, size, text_color, halo_color, font_width, font_angle, bold, italic, noaa, env);
 }
 
 
@@ -1191,18 +1199,20 @@ AVSValue __cdecl ShowFrameNumber::Create(AVSValue args, void*, IScriptEnvironmen
  ************************************/
 
 ShowCRC32::ShowCRC32(PClip _child, bool _scroll, int _offset, int _x, int _y, const char _fontname[],
-  int _size, int _textcolor, int _halocolor, int font_width, int font_angle, IScriptEnvironment* env)
+  int _size, int _textcolor, int _halocolor, int font_width, int font_angle, 
+  bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env)
   : GenericVideoFilter(_child),
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   antialiaser(vi.width, vi.height, _fontname, _size,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
-    true, false, false, // bold, italic, noaa; no params atm
+    _bold, _italic, _noaa,
     font_width, font_angle),
 #endif
   scroll(_scroll), offset(_offset), size(_size), x(_x), y(_y),
   textcolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor),
-  halocolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor)
+  halocolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor),
+  bold(_bold), italic(_italic), noaa(_noaa)
 {
   AVS_UNUSED(env);
   
@@ -1211,7 +1221,6 @@ ShowCRC32::ShowCRC32(PClip _child, bool _scroll, int _offset, int _x, int _y, co
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
 #else
   // internal font
-  const bool bold = false;
   current_font = GetBitmapFont(size, "Terminus", bold, false);
   chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
   if (current_font == nullptr)
@@ -1351,10 +1360,18 @@ AVSValue __cdecl ShowCRC32::Create(AVSValue args, void*, IScriptEnvironment* env
   const int halo_color = args[8].AsInt(0);
   const int font_angle = int(args[10].AsFloat(0) * 10 + 0.5);
 
+#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
+  const bool bold = args[11].AsBool(true);
+#else
+  const bool bold = args[11].AsBool(false); // intentionally different
+#endif
+  const bool italic = args[12].AsBool(false);
+  const bool noaa = args[13].AsBool(false);
+
   if ((x == DefXY) ^ (y == DefXY))
     env->ThrowError("ShowCRC32: both x and y position must be specified");
 
-  return new ShowCRC32(clip, scroll, offset, x, y, font, size, text_color, halo_color, font_width, font_angle, env);
+  return new ShowCRC32(clip, scroll, offset, x, y, font, size, text_color, halo_color, font_width, font_angle, bold, italic, noaa, env);
 }
 
 
@@ -1368,22 +1385,22 @@ AVSValue __cdecl ShowCRC32::Create(AVSValue args, void*, IScriptEnvironment* env
  **********************************/
 
 ShowSMPTE::ShowSMPTE(PClip _child, double _rate, const char* offset, int _offset_f, int _x, int _y, const char _fontname[],
-                     int _size, int _textcolor, int _halocolor, int font_width, int font_angle, IScriptEnvironment* env)
+                     int _size, int _textcolor, int _halocolor, int font_width, int font_angle, bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env)
   : GenericVideoFilter(_child),
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   antialiaser(vi.width, vi.height, _fontname, _size,
       vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
       vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
-      true, false, false, // bold, italic, noaa; no params atm
+      _bold, _italic, _noaa, // bold, italic, noaa; no params atm
       font_width, font_angle),
 #endif
   x(_x), y(_y),
   textcolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor),
-  halocolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor)
+  halocolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor),
+  bold(_bold), italic(_italic), noaa(_noaa)
 {
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
 #else
-  const bool bold = false;
   current_font = GetBitmapFont(_size, "Terminus", bold, false);
   if (current_font == nullptr)
   {
@@ -1565,7 +1582,16 @@ AVSValue __cdecl ShowSMPTE::CreateSMTPE(AVSValue args, void*, IScriptEnvironment
   const int text_color = args[8].AsInt(0xFFFF00);
   const int halo_color = args[9].AsInt(0);
   const int font_angle = int(args[11].AsFloat(0)*10+0.5);
-  return new ShowSMPTE(clip, dfrate, offset, offset_f, x, y, font, size, text_color, halo_color, font_width, font_angle, env);
+
+#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
+  const bool bold = args[12].AsBool(true);
+#else
+  const bool bold = args[12].AsBool(false); // intentionally different
+#endif
+  const bool italic = args[13].AsBool(false);
+  const bool noaa = args[14].AsBool(false);
+
+  return new ShowSMPTE(clip, dfrate, offset, offset_f, x, y, font, size, text_color, halo_color, font_width, font_angle, bold, italic, noaa, env);
 }
 
 AVSValue __cdecl ShowSMPTE::CreateTime(AVSValue args, void*, IScriptEnvironment* env)
@@ -1590,7 +1616,16 @@ AVSValue __cdecl ShowSMPTE::CreateTime(AVSValue args, void*, IScriptEnvironment*
   const int text_color = args[6].AsInt(0xFFFF00);
   const int halo_color = args[7].AsInt(0);
   const int font_angle = int(args[9].AsFloat(0)*10+0.5);
-  return new ShowSMPTE(clip, 0.0, NULL, offset_f, x, y, font, size, text_color, halo_color, font_width, font_angle, env);
+
+#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
+  const bool bold = args[10].AsBool(true);
+#else
+  const bool bold = args[10].AsBool(false); // intentionally different
+#endif
+  const bool italic = args[11].AsBool(false);
+  const bool noaa = args[12].AsBool(false);
+
+  return new ShowSMPTE(clip, 0.0, NULL, offset_f, x, y, font, size, text_color, halo_color, font_width, font_angle, bold, italic, noaa, env);
 }
 
 
