@@ -25,6 +25,7 @@ Avisynth+ source code integration by pinterf
 
 #include "fixedfonts.h"
 #include <cstring>
+#include <cstdint>
 #include <sstream>
 #include <unordered_map>
 #include <array>
