@@ -38,9 +38,7 @@
 #include <avisynth.h>
 #include <mutex>
 #include <vector>
-#ifdef _DEBUG
 #include <string>
-#endif
 
 struct CachePimpl;
 class InternalEnvironment;
