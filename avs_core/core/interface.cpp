@@ -411,8 +411,8 @@ void VideoInfo::SetChannelMask(bool isChannelMaskKnown, unsigned int dwChannelMa
   if (dwChannelMask & AvsChannelMask::MASK_SPEAKER_ALL) // special mapping due to lack of bits in image_type
     dwChannelMask = AvsImageTypeFlags::IT_SPEAKER_ALL;
   else {
-    dwChannelMask <<= 4;
     dwChannelMask &= AvsChannelMask::MASK_SPEAKER_DEFINED;
+    dwChannelMask <<= 4;
   }
   image_type &= ~AvsImageTypeFlags::IT_SPEAKER_BITS_MASK;
   image_type |= dwChannelMask;
