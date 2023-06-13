@@ -76,7 +76,7 @@ ELSE()
   LIST(APPEND AvsCore_Sources "core/parser/os/win32_string_compat.h")
 ENDIF()
 
-IF( MSVC OR MINGW )
+IF( MSVC )
     # Export definitions in general are not needed on x64 and only cause warnings,
     # unfortunately we still must need a .def file for some COM functions.
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)
