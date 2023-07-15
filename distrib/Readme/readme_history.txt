@@ -5,8 +5,8 @@ Source: https://github.com/AviSynth/AviSynthPlus
 This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 
-20230607 3.7.3 WIP
-------------------
+20230715 3.7.3
+--------------
 - Add "bold"=true (linux/NO_WIN_GDI: false), "italic"=false, "noaa"=false parameters to 
   "ShowFrameNumber", "ShowCRC32", "ShowSMPTE", "ShowTime" filters.
   As noted below, "italic" and "noaa" parameters are ineffective in NO_WIN_GDI builds (e.g. Linux)
