@@ -1,4 +1,5 @@
-if (EXISTS ${REPO}/.git)
+FIND_PACKAGE(Git)
+if (EXISTS "${REPO}/.git" AND GIT_FOUND)
 EXECUTE_PROCESS(
     COMMAND "${GIT}" --git-dir=${REPO}/.git  rev-list --count HEAD
     OUTPUT_VARIABLE AVS_SEQREV
