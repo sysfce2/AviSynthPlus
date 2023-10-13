@@ -53,6 +53,8 @@ Additions, changes
   - AudioDub will inherit channel layout setting from the audio clip.
   - KillAudio calls SetChannelMask(false, 0)
   - "Info": displays channel mask info in the audio section when exists
+  - #358: add "bold" parameter to "SubTitle" and "Info"
+  - Add "bold", "italic", "noaa" parameters for SubTitle, Info, ShopSMTPE, ShowTime, ShowFrameNumbers, ShowCRC32
 
 Build environment, Interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -112,6 +114,8 @@ Bugfixes
 - Fix: (#347): possible crash of LLVM builds (clang-cl, Intel NextGen) on pre-AVX (SSE4-only) CPUs.
 - Fix: (#348): bitrol/bitror script functions return incorrect results when argument is negative (regression since ported from Avisynth 2.6 to plus)
 - Fix: (#350): ConvertXXX to accept YV411 clip's frame property _ChromaLocation set to 'left','topleft' and 'bottomleft' instead of giving an error message.
+- Fix: (#360): plane filler wrongly assumed that pitch is rowsize, would crash when aligned Crop was immediately followed by a GreyScale.
+
 
 Optimizations
 ~~~~~~~~~~~~~
@@ -127,7 +131,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2023/03/21 10:10:00 $
+$Date: 2023/06/08 11:02:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
