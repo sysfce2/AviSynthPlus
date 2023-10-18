@@ -2,9 +2,9 @@
 AviSynth Syntax - Control structures
 ====================================
 
-In the strict sense, :doc:`AviSynth Syntax <syntax>` provides only one control structure
-(actually two, the other being the conditional :doc:`operator <syntax_operators>`, ``?:``, presented
-elsewhere), the ``try..catch`` statement.
+In the strict sense, :doc:`AviSynth Syntax <syntax>` provides four control structures
+(actually five, the fifth being the conditional :doc:`operator <syntax_operators>`, ``?:``, presented
+elsewhere), the ``try..catch`` statement, the ``if..else`` statement, and the ``while`` and ``for`` loop.
 
 .. toctree::
     :maxdepth: 2
@@ -44,6 +44,116 @@ You can query the text (it is a normal string :doc:`variable <syntax_script_vari
 substrings inside that indicate the error that has been encountered. This is
 a technique that can produce many useful results (for an example, see
 `here`_).
+
+The ``if..else`` statement
+--------------------------
+Adapted from Gavino's `GScript`_ plugin.
+
+The full syntax of the ``if`` or ``if..else`` statement is:
+
+::
+
+    if ( condition ) {
+        ...
+        statements
+        ...
+    }
+    else {
+        ...
+        statements
+        ...
+    }
+
+where ``condition`` is any boolean expression.
+The statements can be any Avisynth statements, including the control structures themselves, and 
+so the new constructs can be nested.
+The else part may be omitted (equivalent to else {}).
+
+::
+
+    if ( condition ) {
+        ...
+        statements
+        ...
+    }
+
+
+The 'else if' construct is also provided (optionally repeated to create a chain of conditionals).
+
+::
+
+    if ( condition ) {
+        statements
+    }
+    else if ( condition ) {
+        statements
+    }
+    else if (...) { ... }
+    ...
+    else {
+        ...
+        statements
+        ...
+    }
+
+
+The ``while`` loop
+------------------
+Adapted from Gavino's `GScript`_ plugin.
+
+The full syntax of the ``while`` loop is:
+
+::
+
+    while ( condition ) {
+        ...
+        statements
+        ...
+    }
+
+where ``condition`` is any boolean expression.
+
+The statements are repeated while the condition is true.
+
+Example:
+
+::
+
+    while (Height() < h) {
+      StackVertical(last, c) 
+    }
+
+
+The ``for`` loop
+----------------
+Adapted from Gavino's `GScript`_ plugin.
+
+The full syntax of the ``for`` loop is:
+
+::
+
+    for ( variable = init , limit , step ) {
+        ...
+        statements
+        ...
+    }
+
+``init``, ``limit`` and ``step`` are integer expressions, with ``step`` non-zero. ``step`` is optional and defaults to 1.
+
+First the ``variable`` is set to the value of ``init``.
+The statements are repeated until the exit condition is met,
+ie ``variable`` exceeds ``limit`` (if ``step`` > 0), or is less then ``limit`` (if ``step`` < 0).
+After each iteration, ``variable`` is incremented by ``step``.
+If the initial value satisfies the exit condition, the number of iterations will be zero.
+
+Example:
+
+::
+
+    for (i=1, nBlurs) {
+      Blur(0.5)
+    }
+
 
 
 Other control structures (in the broad sense)
@@ -190,7 +300,8 @@ The following example will clarify the design:
     169, 196
     FSelectEvery(last, "CalcFrame", 0, 20)
 
-$Date: 2008/04/21 20:31:23 $
+$Date: 2023/10/18 14:08:00 $
 
 .. _here: http://forum.doom9.org/showthread.php?t=66627
 .. _AVSLib: http://avslib.sourceforge.net/
+.. _GScript: https://forum.doom9.org/showthread.php?t=147846

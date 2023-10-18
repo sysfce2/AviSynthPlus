@@ -8,8 +8,10 @@ All basic AviSynth scripting statements have one of these forms:
 2.  *expression*
 3.  **return** *expression*
 
-(Two higher-level constructs also exist - the :doc:`function declaration <syntax_userdefined_scriptfunctions>` and the
-:doc:`try..catch statement <syntax_control_structures>`.)
+(Higher-level constructs also exist - the :doc:`function declaration <syntax_userdefined_scriptfunctions>`, the 
+:doc:`try..catch statement <syntax_control_structures>`, :doc:`if..else statement <syntax_control_structures>`, 
+:doc:`while loop <syntax_control_structures>` and :doc:`for loop <syntax_control_structures>`. 
+The latter three - introduced by Gavino - was an extension to classic Avisynth and now integral part of Avisynth+)
 
 In the first case, *expression* is evaluated and the result is assigned to
 *variable_name*. In the second case, *expression* is evaluated and the
@@ -177,4 +179,4 @@ The above example does not return frames [0..9,20..29] as intended because
 the "\" is masked by the "#" character before it; thus the line continuation
 never happens.
 
-$Date: 2008/12/21 09:23:02 $
+$Date: 2023/10/18 13:47:00 $

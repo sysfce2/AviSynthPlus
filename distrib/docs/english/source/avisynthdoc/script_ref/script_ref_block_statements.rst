@@ -13,6 +13,11 @@ Block statements
 Background
 ----------
 
+Note:
+Avisynth+ has integrated the ``if..else``, ``for`` loop and ``while`` loop
+control constructs from `GScript`_. This the following parts may be obsolate workarounds,
+nevertheless the methods can still be used.
+
 A first glance at Avisynth documentation leaves the impression that aside
 from function definitions, block statements are not possible in Avisynth
 script. However, there are specific features of the language allowing the
@@ -72,7 +77,7 @@ show you how to implement them using standard Avisynth constructs.
 (An alternative, and possibly more user-friendly, approach would be to use
 the external `GScript`_ plugin, which extends the Avisynth scripting language
 to provide multi-line conditionals (if-then-else blocks), 'while' loops and
-'for' loops.)
+'for' loops. Note: Avisynth+ has built-in support for these.)
 
 
 Features enabling construction of block statements
@@ -191,6 +196,7 @@ by block statement type.
 The if..else block statement
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+(Note: Avisynth+ has built-in support for if..else)
 
 Using Eval() and three-double-quotes quoted strings
 :::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -499,6 +505,8 @@ On the other hand:
 The if..elif..else block statement
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+(Note: Avisynth+ has built-in support for if..else if..else)
+
 By nesting If..Else block expressions inside the conditional operator, you
 can create entire if..elseif...else conditional constructs of any level
 desired to accomodate more complex needs.
@@ -591,6 +599,8 @@ The solution would be (again items in square brackets are optional):
 
 The for..next block statement
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+(Note: Avisynth+ has built-in support for ``for`` loops)
 
 The problem here is to implement the ``for..next`` loop in a way that allows
 accessing variables in the local scope, so that changes made in local scope
@@ -737,6 +747,8 @@ TO BE CONTINUED...
 The do..while and do..until block statements
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+(Note: Avisynth+ has built-in support for ``while`` loops)
+
 TODO...
 
 
@@ -797,7 +809,7 @@ References
 
 Back to :doc:`scripting reference <script_ref>`.
 
-$Date: 2011/04/29 20:11:14 $
+$Date: 2023/10/18 14:44:00 $
 
 .. _GScript: http://forum.doom9.org/showthread.php?t=147846
 .. _StrReplace():
