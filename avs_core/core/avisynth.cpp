@@ -3254,7 +3254,14 @@ VideoFrame* ScriptEnvironment::GetFrameFromRegistry(size_t vfb_size, Device* dev
           assert(0 == frame->refcount);
 
           // refcount == 0 implies that 'properties' was deleted and nullified
-          assert(nullptr == frame->properties);
+          // Cannot assume this: assert(nullptr == frame->properties);
+          // An Avisynth 2.5 filter ("baked code" in ancient avisynth.h)
+          // can set VideoFrame's reference count to zero
+          // but it won't delete extra frame data such as .properties
+          if (frame->properties != nullptr) {
+            delete frame->properties;
+            frame->properties = nullptr;
+          }
 
           if (!found)
           {
