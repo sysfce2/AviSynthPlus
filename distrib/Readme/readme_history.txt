@@ -4,9 +4,35 @@ Source: https://github.com/AviSynth/AviSynthPlus
 
 This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
+For online documentation check https://avisynthplus.readthedocs.io/en/latest/
+
+20231019 3.7.3 post 4
+---------------------
+- Fix #365 (https://github.com/AviSynth/AviSynthPlus/issues/365)
+  Avisynth 2.5 plugins when NICE_FILTER would crash with "invalid response to CACHE_GETCHILD_AUDIO_MODE".
+  Bug appeared since reintroducing audio cache in 3.7.3.
+- Fix #370: array size assert error in ConvertToYUY2 when internally ConvertTo422 is called.
+  Reason: ConvertToYUV422 has one more parameter (ChromaOutPlacement) than ConvertToYUY2 has
+- Issues mentioned in #354 https://github.com/AviSynth/AviSynthPlus/issues/354 
+  - Leave _ColorRange frame property as-is, when using matrix names "PC.709" or "PC.601", 
+    for example in ConvertToRGB32.
+    Formerly _ColorRange property would always set to 0 (full range), even if a limited range 
+    clip (e.g. ColorBarsHD) was inputted. Now we act as the specification 
+    ( http://avisynth.nl/index.php/Convert ) says: 
+    "PC.601 and PC.709 keep the range unchanged, instead of converting between 0-255 RGB 
+    and 16-235 YUV, as is the normal practice."
+    Now ColorBarsHD().ConvertToRGB32(matrix="PC.601").propShow()
+    would display "_ColorRange=1 (limited)", since ColorbarsHD's output is limited as well.
+  - Studio RGB (limited) range will now be recognized (through _ColorRange=1) and utilized in 
+    conversions from RGB, such as in GreyScale, ConvertToY, ConvertToYUVxxx.
+    When input or output would require it, rgb offset of 16 (or scaled equivalents) is used 
+    for supporting limited range rgb (similar to Y offset=16 used at limited range YUV conversions)
+  
 
 20230715 3.7.3
 --------------
+- Fix speaker mask storage which accidentally cut off 4 bits  
+**test11**
 - Add "bold"=true (linux/NO_WIN_GDI: false), "italic"=false, "noaa"=false parameters to 
   "ShowFrameNumber", "ShowCRC32", "ShowSMPTE", "ShowTime" filters.
   As noted below, "italic" and "noaa" parameters are ineffective in NO_WIN_GDI builds (e.g. Linux)
@@ -23,7 +49,7 @@ The "rst" version of the documentation just lists changes in brief.
         "italic" and "noaa" parameters exist only because on non-Windows systems "Subtitle" is aliased to "Text"
         (Each Subtitle parameter must exist in "Text" as well)
 - Fix #360: plane fill wrongly assumed that pitch is rowsize, which is not the case after a Crop
-  It would result in crash e.g. in HistogramRGBParade
+  It would result in crash e.g. in HistogramRGBParade, when an aligned Crop was immediately followed by a GreyScale().
 - Enhancement: much quicker YV24 to RGB32/RGB24 conversion when AVX2 instruction set is supported. (+50% fps at i7-11700)
 - UserDefined2Resize got an 's' parameter (to the existing b and c): support, default value = 2.3
   (following DTL2020's addition in jpsdr's MT resizer repo, UserDefined2ResizeMT filter)
