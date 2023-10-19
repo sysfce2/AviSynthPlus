@@ -128,7 +128,8 @@ Cache::Cache(const PClip& _child, Device* device, std::mutex& CacheGuardMutex, I
 
   const int dummy = 0;
   // child is usually MTGuard, which forwards this request to its child filter - the real one
-  CachePolicyHint childAudioPolicy = (CachePolicyHint)_child->SetCacheHints(CACHE_GETCHILD_AUDIO_MODE, dummy);
+  const bool overAvs25 = (_child->GetVersion() >= 5);
+  CachePolicyHint childAudioPolicy = (CachePolicyHint)(overAvs25 ? _child->SetCacheHints(CACHE_GETCHILD_AUDIO_MODE, dummy) : 0);
   // if not set by the plugin, get default (set in CachePimpl ctor)
   if (childAudioPolicy == 0)
     childAudioPolicy = (CachePolicyHint)this->SetCacheHints(CACHE_GET_AUDIO_POLICY, dummy);
@@ -141,7 +142,7 @@ Cache::Cache(const PClip& _child, Device* device, std::mutex& CacheGuardMutex, I
     // ask child for desired audio cache size
     // e.g. EnsureVBRMP3Sync explicitely requests CACHE_AUDIO and 1024*1024
     // This will create cache only if clip has audio
-    this->SetCacheHints(childAudioPolicy, _child->SetCacheHints(CACHE_GETCHILD_AUDIO_SIZE, dummy)); // if size=0 remains the default
+    this->SetCacheHints(childAudioPolicy, overAvs25 ? _child->SetCacheHints(CACHE_GETCHILD_AUDIO_SIZE, dummy) : 0); // if size=0 remains the default
     break;
   default:
     env->ThrowError("Cache: Filter returned invalid response to CACHE_GETCHILD_AUDIO_MODE. %d", childAudioPolicy);
@@ -810,7 +811,7 @@ int __stdcall CacheGuard::SetCacheHints(int cachehints, int frame_range)
     *********************************************/
   case CACHE_GETCHILD_AUDIO_MODE:
   case CACHE_GETCHILD_AUDIO_SIZE:
-    return child->SetCacheHints(cachehints, 0);
+    return (child->GetVersion() >= 5) ? child->SetCacheHints(cachehints, 0) : 0;
 
   case CACHE_AUDIO:
   case CACHE_AUDIO_AUTO_START_ON: // auto mode, initially cache
@@ -825,7 +826,7 @@ int __stdcall CacheGuard::SetCacheHints(int cachehints, int frame_range)
     return hints.AudioPolicy;
 
   case CACHE_GET_AUDIO_SIZE: // Get the current audio cache size.
-    return GetOrDefault(cachehints, frame_range, 0);
+    return (child->GetVersion() >= 5) ? GetOrDefault(cachehints, frame_range, 0) : 0;
 
   case CACHE_PREFETCH_AUDIO_BEGIN:    // Begin queue request to prefetch audio (take critical section).
   case CACHE_PREFETCH_AUDIO_STARTLO:  // Set low 32 bits of start.
