@@ -35,6 +35,7 @@
 
 
 #include "greyscale_sse.h"
+#include "../convert/convert_matrix.h"
 #include <emmintrin.h>
 #include <smmintrin.h>
 #include <avs/config.h>
@@ -63,11 +64,19 @@ void greyscale_yuy2_sse2(BYTE *srcp, size_t /*width*/, size_t height, size_t pit
   }
 }
 
-void greyscale_rgb32_sse2(BYTE *srcp, size_t /*width*/, size_t height, size_t pitch, int cyb, int cyg, int cyr) {
-  __m128i matrix = _mm_set_epi16(0, cyr, cyg, cyb, 0, cyr, cyg, cyb);
+void greyscale_rgb32_sse2(BYTE *srcp, size_t /*width*/, size_t height, size_t pitch, ConversionMatrix &m) {
+  const bool has_offset_rgb = 0 != m.offset_rgb;
+  // greyscale RGB is putting pack the calculated pixels to rgb
+  // Limited range input remains limited range output (-offset_rgb is the same as offset_y)
+
+  __m128i matrix = _mm_set_epi16(0, m.y_r, m.y_g, m.y_b, 0, m.y_r, m.y_g, m.y_b);
   __m128i zero = _mm_setzero_si128();
-  __m128i round_mask = _mm_set1_epi32(16384);
+  // .15 frac bit integer arithmetic
+  int round_mask_and_luma_offset_i = (1 << 14) + (m.offset_y << 15);
+  __m128i round_mask_and_luma_offset = _mm_set1_epi32(round_mask_and_luma_offset_i); // four pixels at a time
   __m128i alpha_mask = _mm_set1_epi32(0xFF000000);
+
+  __m128i offset_rgb = _mm_set_epi16(0, m.offset_rgb, m.offset_rgb, m.offset_rgb, 0, m.offset_rgb, m.offset_rgb, m.offset_rgb);
 
   BYTE* end_point = srcp + pitch * height;
 
@@ -77,6 +86,11 @@ void greyscale_rgb32_sse2(BYTE *srcp, size_t /*width*/, size_t height, size_t pi
     __m128i pixel01 = _mm_unpacklo_epi8(src, zero);
     __m128i pixel23 = _mm_unpackhi_epi8(src, zero);
 
+    if (has_offset_rgb) {
+      pixel01 = _mm_add_epi16(pixel01, offset_rgb);
+      pixel23 = _mm_add_epi16(pixel23, offset_rgb);
+    }
+
     pixel01 = _mm_madd_epi16(pixel01, matrix);
     pixel23 = _mm_madd_epi16(pixel23, matrix);
 
@@ -84,12 +98,13 @@ void greyscale_rgb32_sse2(BYTE *srcp, size_t /*width*/, size_t height, size_t pi
     __m128i tmp2 = _mm_castps_si128(_mm_shuffle_ps(_mm_castsi128_ps(pixel01), _mm_castsi128_ps(pixel23), _MM_SHUFFLE(2, 0, 2, 0)));
 
     tmp = _mm_add_epi32(tmp, tmp2);
-    tmp = _mm_add_epi32(tmp, round_mask);
-    tmp = _mm_srli_epi32(tmp, 15); // 0 0 0 p3 | 0 0 0 p2 | 0 0 0 p1 | 0 0 0 p0
+    tmp = _mm_add_epi32(tmp, round_mask_and_luma_offset);
+    tmp = _mm_srli_epi32(tmp, 15); // 0 0 0 p3 | 0 0 0 p2 | 0 0 0 p1 | 0 0 0 p0  the grey scale byte itself
 
-    //todo: pshufb?
-    __m128i result = _mm_or_si128(tmp, _mm_slli_si128(tmp, 1));
-    result = _mm_or_si128(result, _mm_slli_si128(tmp, 2));
+    // make r=g=b
+
+    __m128i result = _mm_or_si128(tmp, _mm_slli_si128(tmp, 1)); // 0 0 p3 p3 | 0 0 p2 p2 | 0 0 p1 p1 | 0 0 p0 p0
+    result = _mm_or_si128(result, _mm_slli_si128(tmp, 2)); // 0 p3 p3 p3 | 0 p2 p2 p2 | 0 p1 p1 p1 | 0 p0 p0 p0
     result = _mm_or_si128(alpha, result);
 
     _mm_store_si128(reinterpret_cast<__m128i*>(srcp), result);
@@ -101,13 +116,21 @@ void greyscale_rgb32_sse2(BYTE *srcp, size_t /*width*/, size_t height, size_t pi
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("sse4.1")))
 #endif
-void greyscale_rgb64_sse41(BYTE *srcp, size_t /*width*/, size_t height, size_t pitch, int cyb, int cyg, int cyr)
+void greyscale_rgb64_sse41(BYTE *srcp, size_t /*width*/, size_t height, size_t pitch, ConversionMatrix &m)
 {
-  __m128i matrix = _mm_set_epi32(0, cyr, cyg, cyb);
+  const bool has_offset_rgb = 0 != m.offset_rgb;
+  // greyscale RGB is putting pack the calculated pixels to rgb
+  // Limited range input remains limited range output (-offset_rgb is the same as offset_y)
+
+  __m128i matrix = _mm_set_epi32(0, m.y_r, m.y_g, m.y_b);
   __m128i zero = _mm_setzero_si128();
-  __m128i round_mask = _mm_set1_epi32(16384);
+  // .15 frac bit integer arithmetic
+  int round_mask_and_luma_offset_i = (1 << 14) + (m.offset_y << 15);
+  __m128i round_mask_and_luma_offset = _mm_set_epi32(0, round_mask_and_luma_offset_i, round_mask_and_luma_offset_i, round_mask_and_luma_offset_i);
   uint64_t mask64 = 0xFFFF000000000000ull;
   __m128i alpha_mask  = _mm_set_epi32((uint32_t)(mask64 >> 32),(uint32_t)mask64,(uint32_t)(mask64 >> 32),(uint32_t)mask64);
+
+  __m128i offset_rgb = _mm_set_epi32(0, m.offset_rgb, m.offset_rgb, m.offset_rgb); // signed (e.g. -16) if exists, for addition
 
   BYTE* end_point = srcp + pitch * height;
 
@@ -115,9 +138,13 @@ void greyscale_rgb64_sse41(BYTE *srcp, size_t /*width*/, size_t height, size_t p
     __m128i src = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp)); // 2x64bit pixels
 
     __m128i srclo = _mm_unpacklo_epi16(src, zero); // pixel1
+    if(has_offset_rgb)
+      srclo = _mm_add_epi32(srclo, offset_rgb);
     __m128i mullo = _mm_mullo_epi32(srclo, matrix); // 0, mul_r1, mul_g1, mul_b1 // sse41
 
     __m128i srchi = _mm_unpackhi_epi16(src, zero); // pixel2
+    if(has_offset_rgb)
+      srchi = _mm_add_epi32(srchi, offset_rgb);
     __m128i mulhi = _mm_mullo_epi32(srchi, matrix); // 0, mul_r2, mul_g2, mul_b2 // sse41
 
     __m128i alpha = _mm_and_si128(src, alpha_mask); // put back later
@@ -126,7 +153,7 @@ void greyscale_rgb64_sse41(BYTE *srcp, size_t /*width*/, size_t height, size_t p
     __m128i result = _mm_hadd_epi32(mullo, mulhi);  // 0+mul_r1 | mul_g1+mul_b1 | 0+mul_r2 | mul_g2+mul_b2
     result = _mm_hadd_epi32(result, zero);  // 0+mul_r1+mul_g1+mul_b1 | 0+mul_r2+mul_g2+mul_b2 | 0 | 0
 
-    result = _mm_add_epi32(result, round_mask);
+    result = _mm_add_epi32(result, round_mask_and_luma_offset);
     result = _mm_srli_epi32(result, 15);
     // we have the greyscale value of two pixels as int32  0 0 | 0 0 | 0 p1 | 0 p0
     // we need 0 p1 p1 p1 0 p0 p0 p0
@@ -179,10 +206,15 @@ void greyscale_yuy2_mmx(BYTE *srcp, size_t width, size_t height, size_t pitch) {
  _mm_empty();
 }
 
-static AVS_FORCEINLINE __m64 greyscale_rgb32_core_mmx(__m64 &src, __m64 &alpha_mask, __m64 &zero, __m64 &matrix, __m64 &round_mask) {
+static AVS_FORCEINLINE __m64 greyscale_rgb32_core_mmx(__m64& src, __m64& alpha_mask, __m64& zero, __m64& matrix, __m64& rgb_offset, __m64& round_mask_and_luma_offset, bool has_offset_rgb) {
   __m64 alpha = _mm_and_si64(src, alpha_mask);
   __m64 pixel0 = _mm_unpacklo_pi8(src, zero);
   __m64 pixel1 = _mm_unpackhi_pi8(src, zero);
+
+  if (has_offset_rgb) {
+    pixel0 = _mm_add_pi16(pixel0, rgb_offset); // single pixel 4x16 bit 
+    pixel1 = _mm_add_pi16(pixel1, rgb_offset); // single pixel 4x16 bit 
+  }
 
   pixel0 = _mm_madd_pi16(pixel0, matrix); //a0*0 + r0*cyr | g0*cyg + b0*cyb
   pixel1 = _mm_madd_pi16(pixel1, matrix); //a1*0 + r1*cyr | g1*cyg + b1*cyb
@@ -191,7 +223,7 @@ static AVS_FORCEINLINE __m64 greyscale_rgb32_core_mmx(__m64 &src, __m64 &alpha_m
   __m64 tmp2 = _mm_unpacklo_pi32(pixel0, pixel1); // g1*cyg + b1*cyb | g0*cyg + b0*cyb
 
   tmp = _mm_add_pi32(tmp, tmp2); // r1*cyr + g1*cyg + b1*cyb | r0*cyr + g0*cyg + b0*cyb
-  tmp = _mm_add_pi32(tmp, round_mask); // r1*cyr + g1*cyg + b1*cyb + 32768 | r0*cyr + g0*cyg + b0*cyb + 32768
+  tmp = _mm_add_pi32(tmp, round_mask_and_luma_offset); // r1*cyr + g1*cyg + b1*cyb + 32768 | r0*cyr + g0*cyg + b0*cyb + 32768
   tmp = _mm_srli_pi32(tmp, 15); // 0 0 0 p2 | 0 0 0 p1
 
   __m64 shifted = _mm_slli_si64(tmp, 8);
@@ -200,25 +232,30 @@ static AVS_FORCEINLINE __m64 greyscale_rgb32_core_mmx(__m64 &src, __m64 &alpha_m
   return _mm_or_si64(tmp, alpha);
 }
 
-void greyscale_rgb32_mmx(BYTE *srcp, size_t width, size_t height, size_t pitch, int cyb, int cyg, int cyr) {
-  __m64 matrix = _mm_set_pi16(0, cyr, cyg, cyb);
+void greyscale_rgb32_mmx(BYTE *srcp, size_t width, size_t height, size_t pitch, ConversionMatrix &m) {
+  const bool has_offset_rgb = 0 != m.offset_rgb;
+
+  __m64 matrix = _mm_set_pi16(0, m.y_r, m.y_g, m.y_b);
   __m64 zero = _mm_setzero_si64();
-  __m64 round_mask = _mm_set1_pi32(16384);
+  // .15 frac bit integer arithmetic
+  __m64 round_mask_and_luma_offset = _mm_set1_pi32((1 << 14) + (m.offset_y << 15)); // two pixels at a time
   __m64 alpha_mask = _mm_set1_pi32(0xFF000000);
+
+  __m64 offset_rgb = _mm_set_pi16(0, m.offset_rgb, m.offset_rgb, m.offset_rgb); // omit alpha. signed (e.g. -16) if exists, for addition
 
   size_t loop_limit = min((pitch / 8) * 8, ((width*4 + 7) / 8) * 8);
 
   for (size_t y = 0; y < height; ++y) {
     for (size_t x = 0; x < loop_limit; x+=8) {
       __m64 src = *reinterpret_cast<const __m64*>(srcp+x); //pixels 0 and 1
-      __m64 result = greyscale_rgb32_core_mmx(src, alpha_mask, zero, matrix, round_mask);
+      __m64 result = greyscale_rgb32_core_mmx(src, alpha_mask, zero, matrix, offset_rgb, round_mask_and_luma_offset, has_offset_rgb);
 
       *reinterpret_cast<__m64*>(srcp+x) = result;
     }
 
     if (loop_limit < width) {
       __m64 src = *reinterpret_cast<const __m64*>(srcp+width-8); //pixels 0 and 1
-      __m64 result = greyscale_rgb32_core_mmx(src, alpha_mask, zero, matrix, round_mask);
+      __m64 result = greyscale_rgb32_core_mmx(src, alpha_mask, zero, matrix, offset_rgb, round_mask_and_luma_offset, has_offset_rgb);
 
       *reinterpret_cast<__m64*>(srcp+width-8) = result;
     }

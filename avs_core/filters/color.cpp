@@ -907,7 +907,8 @@ ColorYUV::ColorYUV(PClip child,
 
   auto frame0 = child->GetFrame(0, env);
   const AVSMap* props = env->getFramePropsRO(frame0);
-  matrix_parse_merge_with_props_def(vi, nullptr, props, theMatrix, theColorRange,
+  matrix_parse_merge_with_props_def(vi.IsRGB(), vi.IsRGB(), nullptr, props, theMatrix, theColorRange,
+    theOutColorRange, // n/a
     Matrix_e::AVS_MATRIX_UNSPECIFIED, // default matrix n/a
     configY.force_tv_range ? 
     ColorRange_e::AVS_RANGE_LIMITED :  
@@ -927,6 +928,8 @@ ColorYUV::ColorYUV(PClip child,
       theColorRange = ColorRange_e::AVS_RANGE_LIMITED;
     else if (configY.clip_tv) // coring is also sets this frame property
       theColorRange = ColorRange_e::AVS_RANGE_LIMITED;
+    else
+      theColorRange = theOutColorRange;
     break;
     // leave color range as is
   }

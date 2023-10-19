@@ -40,9 +40,13 @@ template<int rgb_bytes>
 static void convert_rgb_line_to_yuy2_sse2(const BYTE *srcp, BYTE *dstp, int width, const ConversionMatrix& matrix) {
   const bool TV_range = 0 != matrix.offset_y; // Rec601, Rec709, Rec2020
   const __m128i luma_round_mask = _mm_set1_epi32(TV_range ? 0x84000 : 0x4000); //  16.5 * 32768 : 0.5 * 32768
+  // 1-2-1 kernel: 4 pixel's worth: offset<<2
   const __m128i tv_scale = _mm_set1_epi32(matrix.offset_y << 2); // 64/0
 
+  const bool has_offset_rgb = 0 != matrix.offset_rgb;
+
   __m128i luma_coefs = _mm_set_epi16(0, matrix.y_r, matrix.y_g, matrix.y_b, 0, matrix.y_r, matrix.y_g, matrix.y_b);
+  __m128i offset_rgb = _mm_set_epi16(0, matrix.offset_rgb, matrix.offset_rgb, matrix.offset_rgb, 0, matrix.offset_rgb, matrix.offset_rgb, matrix.offset_rgb);
   __m128i chroma_coefs = _mm_set_epi16(matrix.kv, matrix.kv_luma, matrix.ku, matrix.ku_luma, matrix.kv, matrix.kv_luma, matrix.ku, matrix.ku_luma);
   __m128i chroma_round_mask = _mm_set1_epi32(0x808000);
 
@@ -52,6 +56,9 @@ static void convert_rgb_line_to_yuy2_sse2(const BYTE *srcp, BYTE *dstp, int widt
   //main processing
   __m128i src = _mm_cvtsi32_si128(*reinterpret_cast<const int*>(srcp));
   src = _mm_unpacklo_epi8(src, zero); //xx | 00xx 00r0 00g0 00b0
+  if (has_offset_rgb)
+    src = _mm_add_epi16(src, offset_rgb); // signed
+
   __m128i t1 = _mm_madd_epi16(src, luma_coefs); //xx | xx | xx*0 + r0*cyr | g0*cyg + b0*cyb
 
   __m128i t1_r = _mm_shuffle_epi32(t1, _MM_SHUFFLE(3, 3, 1, 1)); //xx | xx | xx | r0*cyr
@@ -80,6 +87,11 @@ static void convert_rgb_line_to_yuy2_sse2(const BYTE *srcp, BYTE *dstp, int widt
       //0 0 0 0 0 0 0 0 | x x r1 g1 b1 r0 g0 b0  -> 0 x 0 x 0 r1 0 g1 | 0 b1 0 r0 0 g0 0 b0 -> 0 r1 0 g1 0 b1 0 r0 | 0 b1 0 r0 0 g0 0 b0 -> 0 r1 0 r1 0 g1 0 b1 | 0 b1 0 r0 0 g0 0 b0
       rgb_p1 = _mm_shufflehi_epi16(_mm_shuffle_epi32(_mm_unpacklo_epi8(pixel01, zero), _MM_SHUFFLE(2, 1, 1, 0)), _MM_SHUFFLE(0, 3, 2, 1));
       rgb_p2 = _mm_shufflehi_epi16(_mm_shuffle_epi32(_mm_unpacklo_epi8(pixel23, zero), _MM_SHUFFLE(2, 1, 1, 0)), _MM_SHUFFLE(0, 3, 2, 1));
+    }
+
+    if (has_offset_rgb) {
+      rgb_p1 = _mm_add_epi16(rgb_p1, offset_rgb); // signed
+      rgb_p2 = _mm_add_epi16(rgb_p2, offset_rgb); // signed
     }
 
     __m128i rb13 = _mm_unpacklo_epi64(rgb_p1, rgb_p2); //00xx 00r3 00g3 00b3 | 00xx 00r1 00g1 00b1
@@ -159,8 +171,11 @@ static void convert_rgb_line_to_yuy2_mmx(const BYTE *srcp, BYTE *dstp, int width
   const __m64 luma_round_mask = _mm_set1_pi32(TV_range ? 0x84000 : 0x4000); //  16.5 * 32768 : 0.5 * 32768
   const __m64 tv_scale = _mm_set1_pi32(matrix.offset_y << 2); // 64/0
 
+  const bool has_offset_rgb = 0 != matrix.offset_rgb;
+
   __m64 luma_coefs = _mm_set_pi16(0, matrix.y_r, matrix.y_g, matrix.y_b);
   __m64 chroma_coefs = _mm_set_pi16(matrix.kv, matrix.kv_luma, matrix.ku, matrix.ku_luma);
+  __m64 offset_rgb = _mm_set_pi16(0, matrix.offset_rgb, matrix.offset_rgb, matrix.offset_rgb);
   __m64 chroma_round_mask = _mm_set1_pi32(0x808000);
 
   __m64 upper_dword_mask = _mm_set1_pi32(0xFFFF0000);
@@ -169,6 +184,9 @@ static void convert_rgb_line_to_yuy2_mmx(const BYTE *srcp, BYTE *dstp, int width
 
   __m64 src = *reinterpret_cast<const __m64*>(srcp);
   src = _mm_unpacklo_pi8(src, zero); //00xx 00r0 00g0 00b0
+  if (has_offset_rgb)
+    src = _mm_add_pi16(src, offset_rgb); // signed
+
   __m64 t1 = _mm_madd_pi16(src, luma_coefs); //xx*0 + r0*cyr | g0*cyg + b0*cyb
   __m64 t1_r = _mm_unpackhi_pi32(t1, dont_care); //xx | r0*cyr
 
@@ -186,6 +204,11 @@ static void convert_rgb_line_to_yuy2_mmx(const BYTE *srcp, BYTE *dstp, int width
       src = _mm_slli_si64(src, 8);
     }
     __m64 rgb_p2 = _mm_unpackhi_pi8(src, zero); //00xx 00r1 00g1 00b1
+
+    if (has_offset_rgb) {
+      rgb_p1 = _mm_add_pi16(rgb_p1, offset_rgb); // signed
+      rgb_p2 = _mm_add_pi16(rgb_p2, offset_rgb); // signed
+    }
 
     __m64 rb  = _mm_add_pi16(rgb_p1, rgb_p1);
     __m64 rb_part2 = _mm_add_pi16(rgb_p2, rb_prev);

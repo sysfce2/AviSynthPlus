@@ -36,15 +36,16 @@
 #define __Greyscale_sse_H__
 
 #include <avisynth.h>
+#include "../convert/convert_matrix.h"
 
 void greyscale_yuy2_sse2(BYTE *srcp, size_t /*width*/, size_t height, size_t pitch);
-void greyscale_rgb32_sse2(BYTE *srcp, size_t /*width*/, size_t height, size_t pitch, int cyb, int cyg, int cyr);
+void greyscale_rgb32_sse2(BYTE *srcp, size_t /*width*/, size_t height, size_t pitch, ConversionMatrix& m);
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("sse4.1")))
 #endif
-void greyscale_rgb64_sse41(BYTE *srcp, size_t /*width*/, size_t height, size_t pitch, int cyb, int cyg, int cyr);
+void greyscale_rgb64_sse41(BYTE *srcp, size_t /*width*/, size_t height, size_t pitch, ConversionMatrix& m);
 #ifdef X86_32
-void greyscale_rgb32_mmx(BYTE* srcp, size_t width, size_t height, size_t pitch, int cyb, int cyg, int cyr);
+void greyscale_rgb32_mmx(BYTE* srcp, size_t width, size_t height, size_t pitch, ConversionMatrix& m);
 void greyscale_yuy2_mmx(BYTE *srcp, size_t width, size_t height, size_t pitch);
 #endif
 

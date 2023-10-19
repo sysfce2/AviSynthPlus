@@ -54,8 +54,8 @@
 #endif
 
 // packed rgb helper
-static AVS_FORCEINLINE __m256i convert_yuv_to_rgb_avx2_core(const __m256i& px0189, const __m256i& px23AB, const __m256i& px45CD, const __m256i& px67EF, const __m256i& zero, const __m256i& matrix, const __m256i& round_mask) {
-  //int b = (((int)m[0] * Y + (int)m[1] * U + (int)m[ 2] * V + 4096)>>13);
+static AVS_FORCEINLINE __m256i convert_yuv_to_rgb_avx2_core(const __m256i& px0189, const __m256i& px23AB, const __m256i& px45CD, const __m256i& px67EF, const __m256i& zero, const __m256i& matrix, const __m256i& round_mask_plus_rgb_offset) {
+  //int b = (((int)m[0] * Y + (int)m[1] * U + (int)m[ 2] * V + 4096 + rgb_offset)>>13);
 
   //px01 - xx xx 00 V1 00 U1 00 Y1 xx xx 00 V0 00 U0 00 Y0
 
@@ -73,14 +73,15 @@ static AVS_FORCEINLINE __m256i convert_yuv_to_rgb_avx2_core(const __m256i& px018
   auto t_lo = _mm256_add_epi32(low_v, low_yu); // v3*m2 + u3*m1 + y3*m0...
   auto t_hi = _mm256_add_epi32(high_v, high_yu);
 
-  t_lo = _mm256_add_epi32(t_lo, round_mask); // v3*m2 + u3*m1 + y3*m0 + 4096...
-  t_hi = _mm256_add_epi32(t_hi, round_mask);
+  // v3*m2 + u3*m1 + y3*m0 + 4096 + rgb_offset
+  t_lo = _mm256_add_epi32(t_lo, round_mask_plus_rgb_offset);
+  t_hi = _mm256_add_epi32(t_hi, round_mask_plus_rgb_offset);
 
   t_lo = _mm256_srai_epi32(t_lo, 13); // (v3*m2 + u3*m1 + y3*m0 + 4096) >> 13...
   t_hi = _mm256_srai_epi32(t_hi, 13);
 
   auto result = _mm256_packs_epi32(t_lo, t_hi);
-  result = _mm256_packus_epi16(result, zero); //00 00 00 00 00 00 00 00 b7 b6 b5 b4 b3 b2 b1 b0
+  result = _mm256_packus_epi16(result, zero); //00 00 00 00 00 00 00 00 b15 b14 b14 b12 b11 b10 b9 b8 00 00 00 00 00 00 00 00 b7 b6 b5 b4 b3 b2 b1 b0
   return result;
 }
 
@@ -88,7 +89,8 @@ template<int rgb_pixel_step, bool hasAlpha>
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("avx2")))
 #endif
-void convert_yv24_to_rgb_avx2(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, const BYTE* srcV, const BYTE* srcA, size_t dst_pitch, size_t src_pitch_y, size_t src_pitch_uv, size_t src_pitch_a, size_t width, size_t height, const ConversionMatrix& matrix) {
+void convert_yv24_to_rgb_avx2(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, const BYTE* srcV, const BYTE* srcA, size_t dst_pitch, size_t src_pitch_y, size_t src_pitch_uv, size_t src_pitch_a, size_t width, size_t height, const ConversionMatrix& matrix)
+{
   dstp += dst_pitch * (height - 1);  // We start at last line
 
   size_t mod16_width = rgb_pixel_step == 3 ? width / 16 * 16 : width;
@@ -101,7 +103,10 @@ void convert_yv24_to_rgb_avx2(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, co
 
   auto zero128 = _mm_setzero_si128();
   auto zero = _mm256_setzero_si256();
-  auto round_mask = _mm256_set1_epi32(4096);
+
+  // .13 bit frac integer arithmetic
+  int round_mask_plus_rgb_offset_i = (1 << 12) + (matrix.offset_rgb << 13);
+  auto round_mask_plus_rgb_offset = _mm256_set1_epi32(round_mask_plus_rgb_offset_i);
   auto offset = _mm256_set_epi16(0, -128, -128, matrix.offset_y, 0, -128, -128, matrix.offset_y, 0, -128, -128, matrix.offset_y, 0, -128, -128, matrix.offset_y);
 
   // 16 YUV(A) pixels --> 4x16 RGB quads = 64 bytes. Avisynth's alignment is 64 fortunately.
@@ -138,11 +143,11 @@ void convert_yv24_to_rgb_avx2(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, co
       px45CD = _mm256_add_epi16(px45CD, offset);
       px67EF = _mm256_add_epi16(px67EF, offset);
 
-      __m256i result_b = convert_yuv_to_rgb_avx2_core(px0189, px23AB, px45CD, px67EF, zero, matrix_b, round_mask); //00 00 00 00 00 00 00 00 b7 b6 b5 b4 b3 b2 b1 b0
-      __m256i result_g = convert_yuv_to_rgb_avx2_core(px0189, px23AB, px45CD, px67EF, zero, matrix_g, round_mask); //00 00 00 00 00 00 00 00 g7 g6 g5 g4 g3 g2 g1 g0
-      __m256i result_r = convert_yuv_to_rgb_avx2_core(px0189, px23AB, px45CD, px67EF, zero, matrix_r, round_mask); //00 00 00 00 00 00 00 00 r7 r6 r5 r4 r3 r2 r1 r0
+      __m256i result_b = convert_yuv_to_rgb_avx2_core(px0189, px23AB, px45CD, px67EF, zero, matrix_b, round_mask_plus_rgb_offset); // b15..0
+      __m256i result_g = convert_yuv_to_rgb_avx2_core(px0189, px23AB, px45CD, px67EF, zero, matrix_g, round_mask_plus_rgb_offset); // g15..0
+      __m256i result_r = convert_yuv_to_rgb_avx2_core(px0189, px23AB, px45CD, px67EF, zero, matrix_r, round_mask_plus_rgb_offset); // r15..0
 
-      __m256i result_bg = _mm256_unpacklo_epi8(result_b, result_g); //g7 b7 g6 b6 g5 b5 g4 b4 g3 b3 g2 b2 g1 b1 g0 b0
+      __m256i result_bg = _mm256_unpacklo_epi8(result_b, result_g); //g15 b15 g14 b14 g13 b13 g12 b12 g11 b11 g10 b10 g9 b9 g8 b8 | g7 b7 g6 b6 g5 b5 g4 b4 g3 b3 g2 b2 g1 b1 g0 b0
       __m256i alpha;
       if (hasAlpha) {
         __m128i a_lo = _mm_unpacklo_epi8(src_a, zero128);  //00 A7 00 A6 00 A5 00 A4 00 A3 00 A2 00 A1 00 A0
@@ -155,8 +160,10 @@ void convert_yv24_to_rgb_avx2(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, co
 
       __m256i result_ra = _mm256_unpacklo_epi8(result_r, alpha);       //a7 r7 a6 r6 a5 r5 a4 r4 a3 r3 a2 r2 a1 r1 a0 r0
 
-      __m256i result_lo = _mm256_unpacklo_epi16(result_bg, result_ra);
+      __m256i result_lo = _mm256_unpacklo_epi16(result_bg, result_ra); // a11 r11 g11 b11 | a10 r10 g10 b10 | a9 r9 g9 b9 | a8 r8 g8 b8  |   a3 r3 g3 b3 | a2 r2 g2 b2 | a1 r1 g1 b1 | a0 r0 g0 b0
       __m256i result_hi = _mm256_unpackhi_epi16(result_bg, result_ra);
+      // note: actual pixel indexes are different from the numbers in comments, they are kept to be follow more easily
+      // Initial _mm256_permute4x64_epi64 ensures that the order here is properly argb7..argb0 and argb15..argb8
 
       if constexpr (rgb_pixel_step == 4) {
         //rgb32
@@ -223,9 +230,9 @@ void convert_yv24_to_rgb_avx2(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, co
         int Y = srcY[x] + matrix.offset_y;
         int U = srcU[x] - 128;
         int V = srcV[x] - 128;
-        int b = (((int)matrix.y_b * Y + (int)matrix.u_b * U + (int)matrix.v_b * V + 4096) >> 13);
-        int g = (((int)matrix.y_g * Y + (int)matrix.u_g * U + (int)matrix.v_g * V + 4096) >> 13);
-        int r = (((int)matrix.y_r * Y + (int)matrix.u_r * U + (int)matrix.v_r * V + 4096) >> 13);
+        int b = (((int)matrix.y_b * Y + (int)matrix.u_b * U + (int)matrix.v_b * V + round_mask_plus_rgb_offset_i) >> 13);
+        int g = (((int)matrix.y_g * Y + (int)matrix.u_g * U + (int)matrix.v_g * V + round_mask_plus_rgb_offset_i) >> 13);
+        int r = (((int)matrix.y_r * Y + (int)matrix.u_r * U + (int)matrix.v_r * V + round_mask_plus_rgb_offset_i) >> 13);
         dstp[x * rgb_pixel_step + 0] = PixelClip(b);
         dstp[x * rgb_pixel_step + 1] = PixelClip(g);
         dstp[x * rgb_pixel_step + 2] = PixelClip(r);
@@ -257,11 +264,15 @@ __attribute__((__target__("avx2")))
 #endif
 void convert_planarrgb_to_yuv_uint16_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m)
 {
-  // generic for 10-16 bit uint16 but only used for 16 bits where unsigned 16 arithmetic makes things difficult
-  // 16 bit uint16_t (unsigned range)
+  // generic for 10-16 bit uint16 
+  // originally made only for 16 bits where unsigned 16 arithmetic makes things difficult
+
   __m256  half_f = _mm256_set1_ps((float)(1u << (bits_per_pixel - 1)));
   __m128i limit = _mm_set1_epi16((short)((1 << bits_per_pixel) - 1)); // 255
   __m256 offset_f = _mm256_set1_ps(m.offset_y_f);
+  __m256i offset_rgb = _mm256_set1_epi32(m.offset_rgb);
+
+  const bool has_offset_rgb = 0 != m.offset_rgb_f;
 
   //__m128i zero = _mm_setzero_si128();
 
@@ -274,9 +285,18 @@ void convert_planarrgb_to_yuv_uint16_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], c
       __m128i gi = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp[0] + x));
       __m128i bi = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp[1] + x));
       __m128i ri = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp[2] + x));
-      g = _mm256_cvtepi32_ps(_mm256_cvtepu16_epi32(gi));
-      b = _mm256_cvtepi32_ps(_mm256_cvtepu16_epi32(bi));
-      r = _mm256_cvtepi32_ps(_mm256_cvtepu16_epi32(ri));
+      
+      __m256i gi32 = _mm256_cvtepu16_epi32(gi);
+      __m256i bi32 = _mm256_cvtepu16_epi32(bi);
+      __m256i ri32 = _mm256_cvtepu16_epi32(ri);
+      if (has_offset_rgb) {
+        bi32 = _mm256_add_epi32(bi32, offset_rgb);
+        gi32 = _mm256_add_epi32(gi32, offset_rgb);
+        ri32 = _mm256_add_epi32(ri32, offset_rgb);
+      }
+      g = _mm256_cvtepi32_ps(gi32);
+      b = _mm256_cvtepi32_ps(bi32);
+      r = _mm256_cvtepi32_ps(ri32);
       /*
       int Y = m.offset_y + (int)(((sum_t)m.y_b * b + (sum_t)m.y_g * g + (sum_t)m.y_r * r + 16384)>>15);
       int U = half + (int)(((sum_t)m.u_b * b + (sum_t)m.u_g * g + (sum_t)m.u_r * r + 16384) >> 15);
@@ -288,7 +308,7 @@ void convert_planarrgb_to_yuv_uint16_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], c
         auto mat_g = _mm256_set1_ps(m.y_g_f);
         auto mat_b = _mm256_set1_ps(m.y_b_f);
         __m256 y = _mm256_fmadd_ps(r, mat_r, _mm256_fmadd_ps(g, mat_g, _mm256_fmadd_ps(b, mat_b, offset_f)));
-        __m256i yi = _mm256_cvtps_epi32(y);
+        __m256i yi = _mm256_cvtps_epi32(y); // no extra rounding, cvtps rounds to nearest
         yi = _mm256_packus_epi32(yi, _mm256_setzero_si256()); // 16x uint16_t
         __m128i res = _mm256_castsi256_si128(_mm256_permute4x64_epi64(yi, 0xD8));
         if constexpr (bits_per_pixel < 16) // albeit 10-14 bit have another function, make this general
@@ -301,7 +321,7 @@ void convert_planarrgb_to_yuv_uint16_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], c
         auto mat_g = _mm256_set1_ps(m.u_g_f);
         auto mat_b = _mm256_set1_ps(m.u_b_f);
         __m256 y = _mm256_fmadd_ps(r, mat_r, _mm256_fmadd_ps(g, mat_g, _mm256_fmadd_ps(b, mat_b, half_f)));
-        __m256i yi = _mm256_cvtps_epi32(y);
+        __m256i yi = _mm256_cvtps_epi32(y); // no extra rounding, cvtps rounds to nearest
         yi = _mm256_packus_epi32(yi, _mm256_setzero_si256()); // 16x uint16_t
         __m128i res = _mm256_castsi256_si128(_mm256_permute4x64_epi64(yi, 0xD8));
         if constexpr (bits_per_pixel < 16) // albeit 10-14 bit have another function, make this general
@@ -314,7 +334,7 @@ void convert_planarrgb_to_yuv_uint16_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], c
         auto mat_g = _mm256_set1_ps(m.v_g_f);
         auto mat_b = _mm256_set1_ps(m.v_b_f);
         __m256 y = _mm256_fmadd_ps(r, mat_r, _mm256_fmadd_ps(g, mat_g, _mm256_fmadd_ps(b, mat_b, half_f)));
-        __m256i yi = _mm256_cvtps_epi32(y);
+        __m256i yi = _mm256_cvtps_epi32(y); // no extra rounding, cvtps rounds to nearest
         yi = _mm256_packus_epi32(yi, _mm256_setzero_si256()); // 16x uint16_t
         __m128i res = _mm256_castsi256_si128(_mm256_permute4x64_epi64(yi, 0xD8));
         if constexpr (bits_per_pixel < 16) // albeit 10-14 bit have another function, make this general

@@ -138,8 +138,8 @@ typedef enum Primaries_e {
   AVS_PRIMARIES_EBU3213_E = 22
 } Primaries_e;
 
-void matrix_parse_merge_with_props(VideoInfo &vi, const char* matrix_name, const AVSMap* props, int& _Matrix, int& _ColorRange, IScriptEnvironment* env);
-void matrix_parse_merge_with_props_def(VideoInfo& vi, const char* matrix_name, const AVSMap* props, int& _Matrix, int& _ColorRange, int _Matrix_Default, int _ColorRange_Default, IScriptEnvironment* env);
+void matrix_parse_merge_with_props(bool rgb_in, bool rgb_out, const char* matrix_name, const AVSMap* props, int& _Matrix, int& _ColorRange, int& ColorRange_Out, IScriptEnvironment* env);
+void matrix_parse_merge_with_props_def(bool rgb_in, bool rgb_out, const char* matrix_name, const AVSMap* props, int& _Matrix, int& _ColorRange, int& ColorRange_Out, int _Matrix_Default, int _ColorRange_Default, IScriptEnvironment* env);
 void chromaloc_parse_merge_with_props(VideoInfo& vi, const char* chromaloc_name, const AVSMap* props, int& _ChromaLocation, int _ChromaLocation_Default, IScriptEnvironment* env);
 
 void update_Matrix_and_ColorRange(AVSMap* props, int theMatrix, int theColorRange, IScriptEnvironment* env);

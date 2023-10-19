@@ -39,11 +39,11 @@
 #include <cstdint>
 
 template<int rgb_size>
-void convert_yuy2_to_rgb_sse2(const uint8_t *srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale);
+void convert_yuy2_to_rgb_sse2(const uint8_t *srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale, int offset_rgb);
 
 #ifdef X86_32
 template<int rgb_size>
-void convert_yuy2_to_rgb_isse(const uint8_t*srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale);
+void convert_yuy2_to_rgb_isse(const uint8_t*srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale, int offset_rgb);
 #endif
 
 #endif  // __Convert_sse_H__

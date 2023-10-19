@@ -59,6 +59,7 @@ private:
   ConversionMatrix greyMatrix;
   int theMatrix;
   int theColorRange;
+  int theOutColorRange;
   int pixelsize;
   int bits_per_pixel;
 

@@ -70,6 +70,7 @@ private:
   int pixelsize;
   int theMatrix;
   int theColorRange;
+  int theOutColorRange;
   ConversionMatrix matrix;
 };
 
@@ -88,6 +89,7 @@ public:
 private:
   int theMatrix;
   int theColorRange;
+  int theOutColorRange;
   ConversionMatrix matrix;
   int pixel_step;
   bool hasAlpha;

@@ -100,6 +100,7 @@ private:
     BYTE *luts[3];
 
     int theColorRange;
+    int theOutColorRange;
     int theMatrix;
     int theChromaLocation;
 

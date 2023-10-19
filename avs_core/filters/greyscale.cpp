@@ -73,15 +73,21 @@ Greyscale::Greyscale(PClip _child, const char* matrix_name, IScriptEnvironment* 
   pixelsize = vi.ComponentSize();
   bits_per_pixel = vi.BitsPerComponent();
 
+  // In all cases, Luma range is not changed(0-255 in -> 0-255 out; 16-235 in -> 16-235 out)
+
   if (vi.IsRGB()) {
-    matrix_parse_merge_with_props(vi, matrix_name, nullptr, theMatrix, theColorRange, env);
-    if(theColorRange == ColorRange_e::AVS_RANGE_FULL && theMatrix != Matrix_e::AVS_MATRIX_AVERAGE)
+    auto frame0 = _child->GetFrame(0, env);
+    const AVSMap* props = env->getFramePropsRO(frame0);
+    // input _ColorRange frame property can appear for RGB source (studio range limited rgb)
+    matrix_parse_merge_with_props(true /*in rgb*/, true /*out rgb, same range*/, matrix_name, props, theMatrix, theColorRange, theOutColorRange, env);
+    /*if (theColorRange == ColorRange_e::AVS_RANGE_FULL && theMatrix != Matrix_e::AVS_MATRIX_AVERAGE)
       env->ThrowError("GreyScale: only limited range matrix definition or \"Average\" is allowed.");
-    // and then we make it full range because the result will get back into RGB planes, so no range conversion occurs.
-    theColorRange = ColorRange_e::AVS_RANGE_FULL;
+    */
+
     const int shift = 15; // internally 15 bits precision, still no overflow in calculations
 
-    if (!do_BuildMatrix_Rgb2Yuv(theMatrix, theColorRange, shift, bits_per_pixel, /*ref*/greyMatrix))
+    // input _ColorRange frame property can appear for RGB source (studio range limited rgb)
+    if (!do_BuildMatrix_Rgb2Yuv(theMatrix, theColorRange, theOutColorRange, shift, bits_per_pixel, /*ref*/greyMatrix))
       env->ThrowError("GreyScale: Unknown matrix.");
   }
   // greyscale does not change color space, rgb remains rgb
@@ -89,30 +95,61 @@ Greyscale::Greyscale(PClip _child, const char* matrix_name, IScriptEnvironment* 
 }
 
 template<typename pixel_t, int pixel_step>
-static void greyscale_packed_rgb_c(BYTE *srcp8, int src_pitch, int width, int height, int cyb, int cyg, int cyr) {
+static void greyscale_packed_rgb_c(BYTE *srcp8, int src_pitch, int width, int height, ConversionMatrix& m) {
+  const bool has_offset_rgb = 0 != m.offset_rgb;
+
   pixel_t *srcp = reinterpret_cast<pixel_t *>(srcp8);
   src_pitch /= sizeof(pixel_t);
 
+  // .15 bit frac integer arithmetic
+  const int rounder_and_luma_offset = (1 << 14) + (m.offset_y << 15);
+  // greyscale RGB is putting pack the calculated pixels to rgb
+  // Limited range input remains limited range output (-offset_rgb is the same as offset_y)
+
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
-      srcp[x*pixel_step+0] = srcp[x*pixel_step+1] = srcp[x*pixel_step+2] =
-        (cyb*srcp[x*pixel_step+0] + cyg*srcp[x*pixel_step+1] + cyr*srcp[x*pixel_step+2] + 16384) >> 15;
+      int b = srcp[x * pixel_step + 0];
+      int g = srcp[x * pixel_step + 1];
+      int r = srcp[x * pixel_step + 2];
+      if (has_offset_rgb) {
+        b = b + m.offset_rgb;
+        g = g + m.offset_rgb;
+        r = r + m.offset_rgb;
+      }
+      srcp[x * pixel_step + 0] = srcp[x * pixel_step + 1] = srcp[x * pixel_step + 2] =
+        (m.y_b * b + m.y_g * g + m.y_r * r + rounder_and_luma_offset) >> 15;
     }
     srcp += src_pitch;
   }
 }
 
 template<typename pixel_t>
-static void greyscale_planar_rgb_c(BYTE *srcp_r8, BYTE *srcp_g8, BYTE *srcp_b8, int src_pitch, int width, int height, int cyb, int cyg, int cyr) {
+static void greyscale_planar_rgb_c(BYTE *srcp_r8, BYTE *srcp_g8, BYTE *srcp_b8, int src_pitch, int width, int height, ConversionMatrix& m) {
+  const bool has_offset_rgb = 0 != m.offset_rgb;
+
   pixel_t *srcp_r = reinterpret_cast<pixel_t *>(srcp_r8);
   pixel_t *srcp_g = reinterpret_cast<pixel_t *>(srcp_g8);
   pixel_t *srcp_b = reinterpret_cast<pixel_t *>(srcp_b8);
   src_pitch /= sizeof(pixel_t);
 
+  // .15 bit frac integer arithmetic
+  const int rounder_and_luma_offset = (1 << 14) + (m.offset_y << 15);
+  // greyscale RGB is putting pack the calculated pixels to rgb
+  // Limited range input remains limited range output (-offset_rgb is the same as offset_y)
+
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
+      int b = srcp_b[x];
+      int g = srcp_g[x];
+      int r = srcp_r[x];
+      if (has_offset_rgb) {
+        b = b + m.offset_rgb;
+        g = g + m.offset_rgb;
+        r = r + m.offset_rgb;
+      }
+
       srcp_b[x] = srcp_g[x] = srcp_r[x] =
-        ((cyb*srcp_b[x] + cyg*srcp_g[x] + cyr*srcp_r[x] + 16384) >> 15);
+        (m.y_b * b + m.y_g * g + m.y_r * r + rounder_and_luma_offset) >> 15;
     }
     srcp_r += src_pitch;
     srcp_g += src_pitch;
@@ -120,15 +157,31 @@ static void greyscale_planar_rgb_c(BYTE *srcp_r8, BYTE *srcp_g8, BYTE *srcp_b8, 
   }
 }
 
-static void greyscale_planar_rgb_float_c(BYTE *srcp_r8, BYTE *srcp_g8, BYTE *srcp_b8, int src_pitch, int width, int height, float cyb, float cyg, float cyr) {
+static void greyscale_planar_rgb_float_c(BYTE *srcp_r8, BYTE *srcp_g8, BYTE *srcp_b8, int src_pitch, int width, int height, ConversionMatrix& m) {
+  const bool has_offset_rgb = 0 != m.offset_rgb_f;
+
   float *srcp_r = reinterpret_cast<float *>(srcp_r8);
   float *srcp_g = reinterpret_cast<float *>(srcp_g8);
   float *srcp_b = reinterpret_cast<float *>(srcp_b8);
   src_pitch /= sizeof(float);
 
+  const float luma_offset = m.offset_y_f;
+  // greyscale RGB is putting pack the calculated pixels to rgb
+  // Limited range input remains limited range output (-offset_rgb is the same as offset_y)
+
+
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
-      srcp_b[x] = srcp_g[x] = srcp_r[x] = cyb*srcp_b[x] + cyg*srcp_g[x] + cyr*srcp_r[x];
+      float b = srcp_b[x];
+      float g = srcp_g[x];
+      float r = srcp_r[x];
+      if (has_offset_rgb) {
+        b = b + m.offset_rgb_f;
+        g = g + m.offset_rgb_f;
+        r = r + m.offset_rgb_f;
+      }
+      srcp_b[x] = srcp_g[x] = srcp_r[x] =
+        m.y_b_f * b + m.y_g_f * g + m.y_r_f * r + luma_offset;
     }
     srcp_r += src_pitch;
     srcp_g += src_pitch;
@@ -162,17 +215,13 @@ PVideoFrame Greyscale::GetFrame(int n, IScriptEnvironment* env)
     switch (vi.ComponentSize())
     {
     case 1:
-      fill_chroma<BYTE>(dstp_u, dstp_v, height, rowsizeUV, dst_pitch, 0x80); // in convert_planar
+      fill_chroma<BYTE>(dstp_u, dstp_v, height, rowsizeUV, dst_pitch, 0x80);
       break;
     case 2:
       fill_chroma<uint16_t>(dstp_u, dstp_v, height, rowsizeUV, dst_pitch, 1 << (vi.BitsPerComponent() - 1));
       break;
     case 4:
-#ifdef FLOAT_CHROMA_IS_HALF_CENTERED
-      const float shift = 0.5f;
-#else
       const float shift = 0.0f;
-#endif
       fill_chroma<float>(dstp_u, dstp_v, height, rowsizeUV, dst_pitch, shift);
       break;
     }
@@ -181,7 +230,7 @@ PVideoFrame Greyscale::GetFrame(int n, IScriptEnvironment* env)
 
   if (vi.IsYUY2()) {
 #ifdef INTEL_INTRINSICS
-    if ((env->GetCPUFlags() & CPUF_SSE2) && width > 4 && IsPtrAligned(srcp, 16)) {
+    if ((env->GetCPUFlags() & CPUF_SSE2) && width > 4) {
       greyscale_yuy2_sse2(srcp, width, height, pitch);
     } else
 #ifdef X86_32
@@ -203,20 +252,20 @@ PVideoFrame Greyscale::GetFrame(int n, IScriptEnvironment* env)
   }
 #ifdef INTEL_INTRINSICS
   if(vi.IsRGB64()) {
-    if ((env->GetCPUFlags() & CPUF_SSE4_1) && IsPtrAligned(srcp, 16)) {
-      greyscale_rgb64_sse41(srcp, width, height, pitch, greyMatrix.y_b, greyMatrix.y_g, greyMatrix.y_r);
+    if (env->GetCPUFlags() & CPUF_SSE4_1) {
+      greyscale_rgb64_sse41(srcp, width, height, pitch, greyMatrix);
       return frame;
     }
   }
 
   if (vi.IsRGB32()) {
-    if ((env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(srcp, 16)) {
-      greyscale_rgb32_sse2(srcp, width, height, pitch, greyMatrix.y_b, greyMatrix.y_g, greyMatrix.y_r);
+    if (env->GetCPUFlags() & CPUF_SSE2) {
+      greyscale_rgb32_sse2(srcp, width, height, pitch, greyMatrix);
       return frame;
     }
 #ifdef X86_32
     else if (env->GetCPUFlags() & CPUF_MMX) {
-      greyscale_rgb32_mmx(srcp, width, height, pitch, greyMatrix.y_b, greyMatrix.y_g, greyMatrix.y_r);
+      greyscale_rgb32_mmx(srcp, width, height, pitch, greyMatrix);
       return frame;
     }
 #endif
@@ -234,11 +283,11 @@ PVideoFrame Greyscale::GetFrame(int n, IScriptEnvironment* env)
       const int src_pitch = frame->GetPitch(); // same for all planes
 
       if (pixelsize == 1)
-        greyscale_planar_rgb_c<uint8_t>(srcp_r, srcp_g, srcp_b, src_pitch, vi.width, vi.height, greyMatrix.y_b, greyMatrix.y_g, greyMatrix.y_r);
+        greyscale_planar_rgb_c<uint8_t>(srcp_r, srcp_g, srcp_b, src_pitch, vi.width, vi.height, greyMatrix);
       else if (pixelsize == 2)
-        greyscale_planar_rgb_c<uint16_t>(srcp_r, srcp_g, srcp_b, src_pitch, vi.width, vi.height, greyMatrix.y_b, greyMatrix.y_g, greyMatrix.y_r);
+        greyscale_planar_rgb_c<uint16_t>(srcp_r, srcp_g, srcp_b, src_pitch, vi.width, vi.height, greyMatrix);
       else
-        greyscale_planar_rgb_float_c(srcp_r, srcp_g, srcp_b, src_pitch, vi.width, vi.height, greyMatrix.y_b_f, greyMatrix.y_g_f, greyMatrix.y_r_f);
+        greyscale_planar_rgb_float_c(srcp_r, srcp_g, srcp_b, src_pitch, vi.width, vi.height, greyMatrix);
 
       return frame;
     }
@@ -248,15 +297,15 @@ PVideoFrame Greyscale::GetFrame(int n, IScriptEnvironment* env)
 
     if (pixelsize == 1) { // rgb24/32
       if (rgb_inc == 3)
-        greyscale_packed_rgb_c<uint8_t, 3>(srcp, pitch, vi.width, vi.height, greyMatrix.y_b, greyMatrix.y_g, greyMatrix.y_r);
+        greyscale_packed_rgb_c<uint8_t, 3>(srcp, pitch, vi.width, vi.height, greyMatrix);
       else
-        greyscale_packed_rgb_c<uint8_t, 4>(srcp, pitch, vi.width, vi.height, greyMatrix.y_b, greyMatrix.y_g, greyMatrix.y_r);
+        greyscale_packed_rgb_c<uint8_t, 4>(srcp, pitch, vi.width, vi.height, greyMatrix);
     }
     else { // rgb48/64
       if (rgb_inc == 3)
-        greyscale_packed_rgb_c<uint16_t, 3>(srcp, pitch, vi.width, vi.height, greyMatrix.y_b, greyMatrix.y_g, greyMatrix.y_r);
+        greyscale_packed_rgb_c<uint16_t, 3>(srcp, pitch, vi.width, vi.height, greyMatrix);
       else
-        greyscale_packed_rgb_c<uint16_t, 4>(srcp, pitch, vi.width, vi.height, greyMatrix.y_b, greyMatrix.y_g, greyMatrix.y_r);
+        greyscale_packed_rgb_c<uint16_t, 4>(srcp, pitch, vi.width, vi.height, greyMatrix);
     }
 
   }

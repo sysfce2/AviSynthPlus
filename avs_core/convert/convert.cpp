@@ -100,22 +100,21 @@ extern const AVSFunction Convert_filters[] = {       // matrix can be "rec601", 
 *******   Convert to RGB / RGBA   ******
 ***************************************/
 
-// YUY2 only
+// YUY2 to packed RGB only
 ConvertToRGB::ConvertToRGB( PClip _child, bool rgb24, const char* matrix_name,
                            IScriptEnvironment* env )
                            : GenericVideoFilter(_child)
 {
   auto frame0 = _child->GetFrame(0, env);
   const AVSMap* props = env->getFramePropsRO(frame0);
-  matrix_parse_merge_with_props(vi, matrix_name, props, theMatrix, theColorRange, env);
+  matrix_parse_merge_with_props(vi.IsRGB(), true, matrix_name, props, theMatrix, theColorRange, theOutColorRange, env);
 
   const int shift = 16; // for integer arithmetic; YUY2 is using 16 bits, later is divided back by 4 or 8
   const int bits_per_pixel = 8; // YUY2
-  if (!do_BuildMatrix_Yuv2Rgb(theMatrix, theColorRange, shift, bits_per_pixel, /*ref*/matrix))
+  if (!do_BuildMatrix_Yuv2Rgb(theMatrix, theColorRange, theOutColorRange, shift, bits_per_pixel, /*ref*/matrix))
     env->ThrowError("ConvertToRGB: invalid \"matrix\" parameter");
 
   theOutMatrix = Matrix_e::AVS_MATRIX_RGB;
-  theOutColorRange = ColorRange_e::AVS_RANGE_FULL;
 
   // these constants are used with intentional minus operator in core calculations
   matrix.v_g = -matrix.v_g;
@@ -126,16 +125,17 @@ ConvertToRGB::ConvertToRGB( PClip _child, bool rgb24, const char* matrix_name,
 }
 
 template<int rgb_size>
-static void convert_yuy2_to_rgb_c(const BYTE *srcp, BYTE* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale) {
+static void convert_yuy2_to_rgb_c(const BYTE *srcp, BYTE* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale, int rgb_offset) {
   srcp += height * src_pitch;
+  rgb_offset <<= 16; // integer arithmetic range
   for (int y = height; y > 0; --y) {
     srcp -= src_pitch;
     int x;
     for (x = 0; x < width-2; x+=2) {
-      int scaled_y0 = (srcp[x*2+0] - tv_scale) * cy;
+      int scaled_y0 = (srcp[x*2+0] - tv_scale) * cy + rgb_offset;
       int u0 = srcp[x*2+1]-128;
       int v0 = srcp[x*2+3]-128;
-      int scaled_y1 = (srcp[x*2+2] - tv_scale) * cy;
+      int scaled_y1 = (srcp[x*2+2] - tv_scale) * cy + rgb_offset;
       int u1 = srcp[x*2+5]-128;
       int v1 = srcp[x*2+7]-128;
 
@@ -153,8 +153,8 @@ static void convert_yuy2_to_rgb_c(const BYTE *srcp, BYTE* dstp, int src_pitch, i
       }
     }
 
-    int scaled_y0 = (srcp[x*2+0] - tv_scale) * cy;
-    int scaled_y1 = (srcp[x*2+2] - tv_scale) * cy;
+    int scaled_y0 = (srcp[x*2+0] - tv_scale) * cy + rgb_offset;
+    int scaled_y1 = (srcp[x*2+2] - tv_scale) * cy + rgb_offset;
     int u = srcp[x*2+1]-128;
     int v = srcp[x*2+3]-128;
 
@@ -196,10 +196,10 @@ PVideoFrame __stdcall ConvertToRGB::GetFrame(int n, IScriptEnvironment* env)
   if (env->GetCPUFlags() & CPUF_SSE2) {
     if (vi.IsRGB32()) {
       convert_yuy2_to_rgb_sse2<4>(srcp, dstp, src_pitch, dst_pitch, vi.height, vi.width,
-      matrix.v_r, matrix.v_g, matrix.u_g, matrix.u_b, matrix.y_r, tv_scale);
+      matrix.v_r, matrix.v_g, matrix.u_g, matrix.u_b, matrix.y_r, tv_scale, matrix.offset_rgb);
     } else {
       convert_yuy2_to_rgb_sse2<3>(srcp, dstp, src_pitch, dst_pitch, vi.height, vi.width,
-        matrix.v_r, matrix.v_g, matrix.u_g, matrix.u_b, matrix.y_r, tv_scale);
+        matrix.v_r, matrix.v_g, matrix.u_g, matrix.u_b, matrix.y_r, tv_scale, matrix.offset_rgb);
     }
   }
   else
@@ -207,10 +207,10 @@ PVideoFrame __stdcall ConvertToRGB::GetFrame(int n, IScriptEnvironment* env)
   if (env->GetCPUFlags() & CPUF_INTEGER_SSE) {
     if (vi.IsRGB32()) {
       convert_yuy2_to_rgb_isse<4>(srcp, dstp, src_pitch, dst_pitch, vi.height, vi.width,
-        matrix.v_r, matrix.v_g, matrix.u_g, matrix.u_b, matrix.y_r, tv_scale);
+        matrix.v_r, matrix.v_g, matrix.u_g, matrix.u_b, matrix.y_r, tv_scale, matrix.offset_rgb);
     } else {
       convert_yuy2_to_rgb_isse<3>(srcp, dstp, src_pitch, dst_pitch, vi.height, vi.width,
-        matrix.v_r, matrix.v_g, matrix.u_g, matrix.u_b, matrix.y_r, tv_scale);
+        matrix.v_r, matrix.v_g, matrix.u_g, matrix.u_b, matrix.y_r, tv_scale, matrix.offset_rgb);
     }
   }
   else
@@ -219,10 +219,10 @@ PVideoFrame __stdcall ConvertToRGB::GetFrame(int n, IScriptEnvironment* env)
   {
     if (vi.IsRGB32()) {
       convert_yuy2_to_rgb_c<4>(srcp, dstp, src_pitch, dst_pitch, vi.height, vi.width,
-        matrix.v_r, matrix.v_g, matrix.u_g, matrix.u_b, matrix.y_r, tv_scale);
+        matrix.v_r, matrix.v_g, matrix.u_g, matrix.u_b, matrix.y_r, tv_scale, matrix.offset_rgb);
     } else {
       convert_yuy2_to_rgb_c<3>(srcp, dstp, src_pitch, dst_pitch, vi.height, vi.width,
-        matrix.v_r, matrix.v_g, matrix.u_g, matrix.u_b, matrix.y_r, tv_scale);
+        matrix.v_r, matrix.v_g, matrix.u_g, matrix.u_b, matrix.y_r, tv_scale, matrix.offset_rgb);
     }
   }
   return dst;

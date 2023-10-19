@@ -212,6 +212,8 @@ bool getColorRange(const char* color_range_name, IScriptEnvironment* env, int& _
 
 // Converts old-style Avisynth matrix to separated _Matrix and _ColorRange values
 // if not found or empty, returns false, does not throw exception.
+// _ColorRange for matrix generation
+// _ColorRange_Out for desired output range, can be set even to nothing for PC.xxx matrices 
 static bool getOldMatrix(const char* matrix_name, int &_Matrix, int &_ColorRange) {
   auto old_matrix_enum = lookup_table<Old_Avs_Matrix_e>(g_old_avs_matrix_table, matrix_name);
   if (old_matrix_enum < 0)
@@ -224,7 +226,7 @@ static bool getOldMatrix(const char* matrix_name, int &_Matrix, int &_ColorRange
     break;
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_PC_601:
     _Matrix = Matrix_e::AVS_MATRIX_ST170_M;
-    _ColorRange = ColorRange_e::AVS_RANGE_FULL;
+    _ColorRange = -1; // better no change the range ColorRange_e::AVS_RANGE_FULL;
     break;
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_Rec709:
     _Matrix = Matrix_e::AVS_MATRIX_BT709;
@@ -232,7 +234,7 @@ static bool getOldMatrix(const char* matrix_name, int &_Matrix, int &_ColorRange
     break;
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_PC_709:
     _Matrix = Matrix_e::AVS_MATRIX_BT709;
-    _ColorRange = ColorRange_e::AVS_RANGE_FULL;
+    _ColorRange = -1; // better no change the range ColorRange_e::AVS_RANGE_FULL;
     break;
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_Rec2020:
     _Matrix = Matrix_e::AVS_MATRIX_BT2020_NCL;
@@ -240,11 +242,11 @@ static bool getOldMatrix(const char* matrix_name, int &_Matrix, int &_ColorRange
     break;
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_PC_2020:
     _Matrix = Matrix_e::AVS_MATRIX_BT2020_NCL;
-    _ColorRange = ColorRange_e::AVS_RANGE_FULL;
+    _ColorRange = -1; // better no change the range ColorRange_e::AVS_RANGE_FULL;
     break;
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_AVERAGE:
     _Matrix = Matrix_e::AVS_MATRIX_AVERAGE; // non-standard!
-    _ColorRange = ColorRange_e::AVS_RANGE_FULL;
+    _ColorRange = -1;
     break;
   }
   return true;
@@ -253,6 +255,10 @@ static bool getOldMatrix(const char* matrix_name, int &_Matrix, int &_ColorRange
 
 static bool is_paramstring_auto(const std::string &param) {
   return !lstrcmpi(param.c_str(), "auto"); // true is match
+}
+
+static bool is_paramstring_same(const std::string& param) {
+  return !lstrcmpi(param.c_str(), "same"); // true is match
 }
 
 static bool is_paramstring_empty_or_auto(const std::string& param) {
@@ -266,19 +272,22 @@ static bool is_paramstring_empty_or_auto(const char* param) {
 }
 
 // called from yuv <-> rgb and to_greyscale converters
-void matrix_parse_merge_with_props_def(VideoInfo& vi, const char* matrix_name, const AVSMap* props, int& _Matrix, int& _ColorRange, int _Matrix_Default, int _ColorRange_Default, IScriptEnvironment* env) {
-
+void matrix_parse_merge_with_props_def(bool rgb_in, bool rgb_out, const char* matrix_name, const AVSMap* props, int& _Matrix, int& _ColorRange, int& _ColorRange_Out, int _Matrix_Default, int _ColorRange_Default, IScriptEnvironment* env) {
+  bool has_colorrange_property = false;
   // if once we'd like to use input colorrange when input is rgb (e.g. studio rgb of ColorBars is limited)
-  int _ColorRange_In = vi.IsRGB() ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED;
+  int _ColorRange_In = rgb_in ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED;
+  int _Default_ColorRange_Out = rgb_out ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED; // RGB -> YUV or YUV -> RGB
 
   if (props) {
-    // theoretically props==nullptr when input is RGB
+    // _ColorRange exists for RGB as well
     if (env->propNumElements(props, "_ColorRange") > 0) {
+      has_colorrange_property = true;
       _ColorRange_In = (int)env->propGetInt(props, "_ColorRange", 0, nullptr); // fixme: range check
-      if (!vi.IsRGB())
-        _ColorRange_Default = _ColorRange_In;
+      _ColorRange_Default = _ColorRange_In;
+      if (rgb_in && rgb_out) // rgb in and out: keep input
+        _Default_ColorRange_Out = _ColorRange_In;
     }
-    if (!vi.IsRGB()) {
+    if (!rgb_in) {
       if (env->propNumElements(props, "_Matrix") > 0) {
         int tmp_matrix = (int)env->propGetInt(props, "_Matrix", 0, nullptr); // fixme: range check
         if (tmp_matrix != Matrix_e::AVS_MATRIX_UNSPECIFIED)
@@ -305,7 +314,28 @@ void matrix_parse_merge_with_props_def(VideoInfo& vi, const char* matrix_name, c
   std::string s_matrix_name = splits.size() > 0 ? splits[0] : "";
   std::string s_color_range_name = splits.size() > 1 ? splits[1] : "";
 
+  // PC.xxx is like xxx:same (same is not supported though)
+  // recxxx is like xxx:l (limited)
   if (getOldMatrix(s_matrix_name.c_str(), _Matrix, _ColorRange)) {
+    // old avs syntax: single matrix names
+    if (_ColorRange < 0) {
+      // PC.xx does not suggest neither limited, not full
+      // keep input range
+      _ColorRange = _ColorRange_In; // a default range is set for getting the matrix
+      _ColorRange_Out = _ColorRange_In;
+    } else {
+      // _ColorRange was explicitely set by matrix
+      if (rgb_in) {
+        // RGB -> YUV
+        _ColorRange_Out = _ColorRange;
+        _ColorRange = _ColorRange_In; // a frame prop may override default RGB full input range
+      }
+      else {
+        // YUV -> RGB
+        // _ColorRange; // input range is defined by the matrix
+        _ColorRange_Out = _Default_ColorRange_Out;
+      }
+    }
     if (!s_color_range_name.empty() && !is_paramstring_auto(s_color_range_name))
       env->ThrowError("Error: this 'old-style' matrix string can only be followed by 'auto' color range");
     return;
@@ -317,15 +347,37 @@ void matrix_parse_merge_with_props_def(VideoInfo& vi, const char* matrix_name, c
   if (_Matrix == Matrix_e::AVS_MATRIX_UNSPECIFIED) {
     _Matrix = _Matrix_Default;
   }
-  if (is_paramstring_empty_or_auto(s_color_range_name) || !getColorRange(s_color_range_name.c_str(), env, _ColorRange)) {
-    _ColorRange = _ColorRange_Default;
+
+  // new in 3.7.3: same range as input's, e.g. "709:same" is like "PC.709"
+  if (is_paramstring_same(s_color_range_name)) {
+    _ColorRange = _ColorRange_In;
+    _ColorRange_Out = _ColorRange;
+  }
+  else if (is_paramstring_empty_or_auto(s_color_range_name) || !getColorRange(s_color_range_name.c_str(), env, _ColorRange)) {
+    // not specified or auto
+    // RGB -> YUV
+    // YUV -> RGB
+    _ColorRange = _ColorRange_In;
+    _ColorRange_Out = _Default_ColorRange_Out;
+  }
+  else {
+    if (rgb_in) {
+      // RGB -> YUV
+      _ColorRange_Out = _ColorRange;
+      _ColorRange = _ColorRange_In; // a frame prop may override default RGB full input range
+    }
+    else {
+      // YUV -> RGB
+      // _ColorRange; // input range is defined by the matrix
+      _ColorRange_Out = _Default_ColorRange_Out; // unlike RGB->YUV, we have no way to tell output rgb's range, it's always full
+    }
   }
 }
 
-void matrix_parse_merge_with_props(VideoInfo& vi, const char* matrix_name, const AVSMap* props, int& _Matrix, int& _ColorRange, /* int& ColorRange_In, */ IScriptEnvironment * env) {
+void matrix_parse_merge_with_props(bool rgb_in, bool rgb_out, const char* matrix_name, const AVSMap* props, int& _Matrix, int& _ColorRange, int& ColorRange_Out, IScriptEnvironment * env) {
   int _Matrix_Default = Matrix_e::AVS_MATRIX_ST170_M; // Rec601 AVS_MATRIX_ST170_M (6-NTSC) and not AVS_MATRIX_BT470_BG (5-PAL)
   int _ColorRange_Default = ColorRange_e::AVS_RANGE_LIMITED;
-  matrix_parse_merge_with_props_def(vi, matrix_name, props, _Matrix, _ColorRange, _Matrix_Default, _ColorRange_Default, env);
+  matrix_parse_merge_with_props_def(rgb_in, rgb_out, matrix_name, props, _Matrix, _ColorRange, ColorRange_Out, _Matrix_Default, _ColorRange_Default, env);
 }
 
 void chromaloc_parse_merge_with_props(VideoInfo& vi, const char* chromaloc_name, const AVSMap* props, int& _ChromaLocation, int _ChromaLocation_Default, IScriptEnvironment* env) {

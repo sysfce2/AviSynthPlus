@@ -53,10 +53,12 @@ struct ConversionMatrix {
 
   int offset_y;
   float offset_y_f;
+  int offset_rgb;
+  float offset_rgb_f;
 };
 
-bool do_BuildMatrix_Rgb2Yuv(int _Matrix, int _ColorRange, int int_arith_shift, int bits_per_pixel, ConversionMatrix& matrix);
-bool do_BuildMatrix_Yuv2Rgb(int _Matrix, int _ColorRange, int int_arith_shift, int bits_per_pixel, ConversionMatrix& matrix);
+bool do_BuildMatrix_Rgb2Yuv(int _Matrix, int _ColorRange, int _ColorRange_Out, int int_arith_shift, int bits_per_pixel, ConversionMatrix& matrix);
+bool do_BuildMatrix_Yuv2Rgb(int _Matrix, int _ColorRange, int _ColorRange_Out, int int_arith_shift, int bits_per_pixel, ConversionMatrix& matrix);
 
 /*****************************************************
  *******   Colorspace Single-Byte Conversions   ******

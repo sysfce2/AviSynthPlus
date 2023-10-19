@@ -37,12 +37,15 @@
 
 template<int rgb_size>
 static AVS_FORCEINLINE __m128i convert_yuy2_to_rgb_sse2_core(const __m128i& src_luma_scaled, const __m128i& src_chroma, const __m128i &alpha,
-                                                           const __m128i& v128, const __m128i& zero, const __m128i& rounder, const __m128i &ff,
+                                                           const __m128i& v128, const __m128i& zero, const __m128i& rounder_and_rgb_offset, const __m128i &ff,
                                                            const __m128i& ymul, const __m128i& bmul, const __m128i& gmul, const __m128i& rmul) {
+
+  // .14 bit frac integer arithmetic
+
   __m128i chroma_scaled = _mm_sub_epi16(src_chroma, v128);  //V2-128 | U2-128 | V1-128 | U1-128 | V1-128 | U1-128 | V0-128 | U0-128
 
   __m128i luma_scaled = _mm_madd_epi16(src_luma_scaled, ymul); // (y1-16)*cy | (y0-16)*cy
-  luma_scaled = _mm_add_epi32(luma_scaled, rounder); // (y1-16)*cy + 8192 | (y0-16)*cy + 8192
+  luma_scaled = _mm_add_epi32(luma_scaled, rounder_and_rgb_offset); // (y1-16)*cy + 8192 | (y0-16)*cy + 8192
 
   __m128i chroma_scaled2 = _mm_shuffle_epi32(chroma_scaled, _MM_SHUFFLE(2, 2, 0, 0)); //V1-128 | U1-128 | V1-128 | U1-128 | V0-128 | U0-128 | V0-128 | U0-128
 
@@ -96,7 +99,7 @@ static AVS_FORCEINLINE __m128i convert_yuy2_to_rgb_sse2_core(const __m128i& src_
 }
 
 template<int rgb_size>
-void convert_yuy2_to_rgb_sse2(const uint8_t *srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale) {
+void convert_yuy2_to_rgb_sse2(const uint8_t *srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale, int offset_rgb) {
   srcp += height * src_pitch;
   int mod4_width = width / 4 * 4;
 
@@ -110,7 +113,8 @@ void convert_yuy2_to_rgb_sse2(const uint8_t *srcp, uint8_t* dstp, int src_pitch,
   __m128i alpha = _mm_set1_epi32(0xFF000000);
   __m128i ff = _mm_set1_epi16(0x00FF);
   __m128i v128 =  _mm_set1_epi16(128);
-  __m128i rounder = _mm_set1_epi32(1 << 13);
+  // .14 bit frac integer arithmetic
+  __m128i rounder_and_rgb_offset = _mm_set1_epi32((1 << 13) + (offset_rgb << 14));
 
   for (int y = 0; y < height; ++y) {
     srcp -= src_pitch;
@@ -125,7 +129,7 @@ void convert_yuy2_to_rgb_sse2(const uint8_t *srcp, uint8_t* dstp, int src_pitch,
       __m128i luma_scaled   = _mm_sub_epi16(src_luma, tv_scale_vector); //Y3-16 | Y2-16 | Y1-16 | Y0-16
       luma_scaled = _mm_unpacklo_epi16(luma_scaled, zero); // 0000 | Y3-16 | 0000 | Y2-16 | 0000 | Y1-16 | 0000 | Y0-16
 
-      __m128i rgb = convert_yuy2_to_rgb_sse2_core<rgb_size>(luma_scaled, src_chroma, alpha, v128, zero, rounder, ff, ymul, bmul, gmul, rmul);
+      __m128i rgb = convert_yuy2_to_rgb_sse2_core<rgb_size>(luma_scaled, src_chroma, alpha, v128, zero, rounder_and_rgb_offset, ff, ymul, bmul, gmul, rmul);
 
       if constexpr(rgb_size == 4) {
         _mm_store_si128(reinterpret_cast<__m128i*>(dstp+x*4), rgb);
@@ -149,7 +153,7 @@ void convert_yuy2_to_rgb_sse2(const uint8_t *srcp, uint8_t* dstp, int src_pitch,
 
       __m128i luma_scaled   = _mm_sub_epi16(src_luma, tv_scale_vector); //0 | 0 | Y1-16 | Y0-16
       luma_scaled = _mm_unpacklo_epi16(luma_scaled, zero); // 0000 | Y1-16 | 0000 | Y0-16
-      __m128i rgb = convert_yuy2_to_rgb_sse2_core<rgb_size>(luma_scaled, src_chroma, alpha, v128, zero, rounder, ff, ymul, bmul, gmul, rmul);
+      __m128i rgb = convert_yuy2_to_rgb_sse2_core<rgb_size>(luma_scaled, src_chroma, alpha, v128, zero, rounder_and_rgb_offset, ff, ymul, bmul, gmul, rmul);
 
       if constexpr(rgb_size == 4){
         _mm_storel_epi64(reinterpret_cast<__m128i*>(dstp+width*4-8), rgb);
@@ -173,7 +177,7 @@ void convert_yuy2_to_rgb_sse2(const uint8_t *srcp, uint8_t* dstp, int src_pitch,
       __m128i luma_scaled  = _mm_sub_epi16(src_luma, tv_scale_vector); //Y3-16 | Y2-16 | Y1-16 | Y0-16
       luma_scaled = _mm_unpacklo_epi16(luma_scaled, zero); // 0000 | Y3-16 | 0000 | Y2-16 | 0000 | Y1-16 | 0000 | Y0-16
 
-      __m128i rgb = convert_yuy2_to_rgb_sse2_core<rgb_size>(luma_scaled, src_chroma, alpha, v128, zero, rounder, ff, ymul, bmul, gmul, rmul);
+      __m128i rgb = convert_yuy2_to_rgb_sse2_core<rgb_size>(luma_scaled, src_chroma, alpha, v128, zero, rounder_and_rgb_offset, ff, ymul, bmul, gmul, rmul);
 
       if constexpr(rgb_size == 4) {
         _mm_storeu_si128(reinterpret_cast<__m128i*>(dstp+width*4-16), rgb);
@@ -194,19 +198,19 @@ void convert_yuy2_to_rgb_sse2(const uint8_t *srcp, uint8_t* dstp, int src_pitch,
 
 // instantiate
 //template<int rgb_size>
-template void convert_yuy2_to_rgb_sse2<3>(const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale);
-template void convert_yuy2_to_rgb_sse2<4>(const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale);
+template void convert_yuy2_to_rgb_sse2<3>(const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale, int offset_rgb);
+template void convert_yuy2_to_rgb_sse2<4>(const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale, int offset_rgb);
 
 #ifdef X86_32
 
 template<int rgb_size>
 static AVS_FORCEINLINE __m64 convert_yuy2_to_rgb_isse_core(const __m64& src_luma_scaled, const __m64& src_chroma, const __m64 &alpha,
-                                                         const __m64& v128, const __m64& zero, const __m64& rounder, const __m64 &ff,
+                                                         const __m64& v128, const __m64& zero, const __m64& rounder_and_rgb_offset, const __m64 &ff,
                                                          const __m64& ymul, const __m64& bmul, const __m64& gmul, const __m64& rmul) {
   __m64 chroma_scaled = _mm_sub_pi16(src_chroma, v128); //V1-128 | U1-128 | V0-128 | U0-128
 
   __m64 luma_scaled = _mm_madd_pi16(src_luma_scaled, ymul); // (y1-16)*cy | (y0-16)*cy
-  luma_scaled = _mm_add_pi32(luma_scaled, rounder); // (y1-16)*cy + 8192 | (y0-16)*cy + 8192
+  luma_scaled = _mm_add_pi32(luma_scaled, rounder_and_rgb_offset); // (y1-16)*cy + 8192 | (y0-16)*cy + 8192
 
   __m64 chroma_scaled2 = _mm_shuffle_pi16(chroma_scaled, _MM_SHUFFLE(1, 0, 1, 0)); // V0-128 | U0-128 | V0-128 | U0-128
 
@@ -259,7 +263,7 @@ static AVS_FORCEINLINE __m64 convert_yuy2_to_rgb_isse_core(const __m64& src_luma
 
 //todo: omg this thing is overcomplicated
 template<int rgb_size>
-void convert_yuy2_to_rgb_isse(const uint8_t*srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale) {
+void convert_yuy2_to_rgb_isse(const uint8_t*srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale, int offset_rgb) {
   srcp += height * src_pitch;
   int mod4_width = width / 4 * 4;
 
@@ -273,7 +277,8 @@ void convert_yuy2_to_rgb_isse(const uint8_t*srcp, uint8_t* dstp, int src_pitch, 
   __m64 alpha = _mm_set1_pi32(0xFF000000);
   __m64 ff = _mm_set1_pi16(0x00FF);
   __m64 v128 =  _mm_set1_pi16(128);
-  __m64 rounder = _mm_set1_pi32(1 << 13);
+  // .14 bit frac integer arithmetic
+  __m64 rounder_and_rgb_offset = _mm_set1_pi32((1 << 13) + (offset_rgb << 14));
 
   for (int y = 0; y < height; ++y) {
     srcp -= src_pitch;
@@ -291,8 +296,8 @@ void convert_yuy2_to_rgb_isse(const uint8_t*srcp, uint8_t* dstp, int src_pitch, 
       __m64 luma_scaled_lo = _mm_unpacklo_pi16(luma_scaled, zero); // 0000 | Y1-16 | 0000 | Y0-16
       __m64 luma_scaled_hi = _mm_unpackhi_pi16(luma_scaled, zero);
 
-      __m64 rgb_lo = convert_yuy2_to_rgb_isse_core<rgb_size>(luma_scaled_lo, src_chroma, alpha, v128, zero, rounder, ff, ymul, bmul, gmul, rmul);
-      __m64 rgb_hi = convert_yuy2_to_rgb_isse_core<rgb_size>(luma_scaled_hi, src_chroma2, alpha, v128, zero, rounder, ff, ymul, bmul, gmul, rmul);
+      __m64 rgb_lo = convert_yuy2_to_rgb_isse_core<rgb_size>(luma_scaled_lo, src_chroma, alpha, v128, zero, rounder_and_rgb_offset, ff, ymul, bmul, gmul, rmul);
+      __m64 rgb_hi = convert_yuy2_to_rgb_isse_core<rgb_size>(luma_scaled_hi, src_chroma2, alpha, v128, zero, rounder_and_rgb_offset, ff, ymul, bmul, gmul, rmul);
 
       if (rgb_size == 4) {
         *reinterpret_cast<__m64*>(dstp+x*4) = rgb_lo;
@@ -317,7 +322,7 @@ void convert_yuy2_to_rgb_isse(const uint8_t*srcp, uint8_t* dstp, int src_pitch, 
 
       __m64 luma_scaled   = _mm_sub_pi16(src_luma, tv_scale_vector); //Y3-16 | Y2-16 | Y1-16 | Y0-16
       luma_scaled = _mm_unpacklo_pi16(luma_scaled, zero); // 0000 | Y1-16 | 0000 | Y0-16
-      __m64 rgb = convert_yuy2_to_rgb_isse_core<rgb_size>(luma_scaled, src_chroma, alpha, v128, zero, rounder, ff, ymul, bmul, gmul, rmul);
+      __m64 rgb = convert_yuy2_to_rgb_isse_core<rgb_size>(luma_scaled, src_chroma, alpha, v128, zero, rounder_and_rgb_offset, ff, ymul, bmul, gmul, rmul);
 
       if (rgb_size == 4){
         *reinterpret_cast<__m64*>(dstp+width*4-8) = rgb;
@@ -339,8 +344,8 @@ void convert_yuy2_to_rgb_isse(const uint8_t*srcp, uint8_t* dstp, int src_pitch, 
       __m64 luma_scaled_lo = _mm_unpacklo_pi16(luma_scaled, zero); // 0000 | Y1-16 | 0000 | Y0-16
       __m64 luma_scaled_hi = _mm_unpackhi_pi16(luma_scaled, zero);
 
-      __m64 rgb_lo = convert_yuy2_to_rgb_isse_core<rgb_size>(luma_scaled_lo, src_chroma, alpha, v128, zero, rounder, ff, ymul, bmul, gmul, rmul);
-      __m64 rgb_hi = convert_yuy2_to_rgb_isse_core<rgb_size>(luma_scaled_hi, src_chroma2, alpha, v128, zero, rounder, ff, ymul, bmul, gmul, rmul);
+      __m64 rgb_lo = convert_yuy2_to_rgb_isse_core<rgb_size>(luma_scaled_lo, src_chroma, alpha, v128, zero, rounder_and_rgb_offset, ff, ymul, bmul, gmul, rmul);
+      __m64 rgb_hi = convert_yuy2_to_rgb_isse_core<rgb_size>(luma_scaled_hi, src_chroma2, alpha, v128, zero, rounder_and_rgb_offset, ff, ymul, bmul, gmul, rmul);
 
       if (rgb_size == 4) {
         *reinterpret_cast<__m64*>(dstp+width*4-16) = rgb_lo;
@@ -363,8 +368,8 @@ void convert_yuy2_to_rgb_isse(const uint8_t*srcp, uint8_t* dstp, int src_pitch, 
 
 // instantiate
 //template<int rgb_size>
-template void convert_yuy2_to_rgb_isse<3>(const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale);
-template void convert_yuy2_to_rgb_isse<4>(const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale);
+template void convert_yuy2_to_rgb_isse<3>(const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale, int offset_rgb);
+template void convert_yuy2_to_rgb_isse<4>(const uint8_t* srcp, uint8_t* dstp, int src_pitch, int dst_pitch, int height, int width, int crv, int cgv, int cgu, int cbu, int cy, int tv_scale, int offset_rgb);
 
 #endif // X86_32
 

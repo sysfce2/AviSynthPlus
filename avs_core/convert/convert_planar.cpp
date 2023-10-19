@@ -143,11 +143,15 @@ ConvertToY::ConvertToY(PClip src, const char *matrix_name, IScriptEnvironment* e
 
     const int shift = 15; // internally 15 bits precision, still no overflow in calculations
 
-    // no input frame properties for RGB source. FIXME: handle studio range limited rgb?
-    matrix_parse_merge_with_props(vi, matrix_name, nullptr, theMatrix, theColorRange, env);
+    // input _ColorRange frame property can appear for RGB source (studio range limited rgb)
+    auto frame0 = src->GetFrame(0, env);
+    const AVSMap* props = env->getFramePropsRO(frame0);
+    matrix_parse_merge_with_props(vi.IsRGB(), vi.IsRGB(), matrix_name, props, theMatrix, theColorRange, theOutColorRange, env);
 
-    if (!do_BuildMatrix_Rgb2Yuv(theMatrix, theColorRange, shift, bits_per_pixel, /*ref*/matrix))
+    if (!do_BuildMatrix_Rgb2Yuv(theMatrix, theColorRange, theOutColorRange, shift, bits_per_pixel, /*ref*/matrix))
       env->ThrowError("ConvertToY: Unknown matrix.");
+
+    theColorRange = theOutColorRange; // final frame property
 
     vi.pixel_type = target_pixel_type;
 
@@ -341,14 +345,16 @@ ConvertRGBToYUV444::ConvertRGBToYUV444(PClip src, const char *matrix_name, bool 
   if (!vi.IsRGB())
     env->ThrowError("ConvertRGBToYV24/YUV444: Only RGB data input accepted");
 
-  // no input frame properties for RGB source. FIXME: handle studio range limited rgb?
-  matrix_parse_merge_with_props(vi, matrix_name, nullptr, theMatrix, theColorRange, env);
+  // input _ColorRange frame property can appear for RGB source (studio range limited rgb)
+  matrix_parse_merge_with_props(true /*in rgb*/, false /*out yuv*/, matrix_name, nullptr, theMatrix, theColorRange, theOutColorRange, env);
 
   const int shift = 15; // internally 15 bits precision, still no overflow in calculations
   int bits_per_pixel = vi.BitsPerComponent();
 
-  if (!do_BuildMatrix_Rgb2Yuv(theMatrix, theColorRange, shift, bits_per_pixel, /*ref*/matrix))
+  if (!do_BuildMatrix_Rgb2Yuv(theMatrix, theColorRange, theOutColorRange, shift, bits_per_pixel, /*ref*/matrix))
     env->ThrowError("ConvertRGBToYV24/YUV444: Unknown matrix.");
+
+  theColorRange = theOutColorRange; // final frame property
 
   isPlanarRGBfamily = vi.IsPlanarRGB() || vi.IsPlanarRGBA();
   hasAlpha = vi.IsPlanarRGBA() || (keep_packedrgb_alpha && (vi.IsRGB32() || vi.IsRGB64()));
@@ -384,14 +390,21 @@ ConvertRGBToYUV444::ConvertRGBToYUV444(PClip src, const char *matrix_name, bool 
 template<typename pixel_t, int bits_per_pixel>
 static void convert_planarrgb_to_yuv_int_c(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m)
 {
+  const bool has_offset_rgb = 0 != m.offset_rgb;
+
   const pixel_t half = 1 << (bits_per_pixel - 1 );
   typedef typename std::conditional < bits_per_pixel < 16, int, int64_t>::type sum_t;
   const int limit = (1 << bits_per_pixel) - 1;
   for (int y = 0; y < height; y++) {
     for (int x = 0; x < width; x++) {
-      pixel_t g = reinterpret_cast<const pixel_t *>(srcp[0])[x];
-      pixel_t b = reinterpret_cast<const pixel_t *>(srcp[1])[x];
-      pixel_t r = reinterpret_cast<const pixel_t *>(srcp[2])[x];
+      int g = reinterpret_cast<const pixel_t *>(srcp[0])[x];
+      int b = reinterpret_cast<const pixel_t *>(srcp[1])[x];
+      int r = reinterpret_cast<const pixel_t *>(srcp[2])[x];
+      if (has_offset_rgb) {
+        b = b + m.offset_rgb;
+        g = g + m.offset_rgb;
+        r = r + m.offset_rgb;
+      }
       int Y = m.offset_y + (int)(((sum_t)m.y_b * b + (sum_t)m.y_g * g + (sum_t)m.y_r * r + 16384)>>15);
       int U = half + (int)(((sum_t)m.u_b * b + (sum_t)m.u_g * g + (sum_t)m.u_r * r + 16384) >> 15);
       int V = half + (int)(((sum_t)m.v_b * b + (sum_t)m.v_g * g + (sum_t)m.v_r * r + 16384) >> 15);
@@ -410,6 +423,8 @@ static void convert_planarrgb_to_yuv_int_c(BYTE *(&dstp)[3], int (&dstPitch)[3],
 
 static void convert_planarrgb_to_yuv_float_c(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m)
 {
+  const bool has_offset_rgb = 0 != m.offset_rgb_f;
+
   constexpr float limit = 1.0f; // we clamp on RGB conversions for float
   constexpr float limit_lo_chroma = -0.5f; // checked before shift
   constexpr float limit_hi_chroma = 0.5f;
@@ -419,6 +434,11 @@ static void convert_planarrgb_to_yuv_float_c(BYTE *(&dstp)[3], int (&dstPitch)[3
       float g = reinterpret_cast<const float *>(srcp[0])[x];
       float b = reinterpret_cast<const float *>(srcp[1])[x];
       float r = reinterpret_cast<const float *>(srcp[2])[x];
+      if (has_offset_rgb) {
+        b = b + m.offset_rgb_f;
+        g = g + m.offset_rgb_f;
+        r = r + m.offset_rgb_f;
+      }
       float Y = m.offset_y_f + (m.y_b_f * b + m.y_g_f * g + m.y_r_f * r);
       float U = half_chroma + (m.u_b_f * b + m.u_g_f * g + m.u_r_f * r);
       float V = half_chroma + (m.v_b_f * b + m.v_g_f * g + m.v_r_f * r);
@@ -440,6 +460,8 @@ static void convert_planarrgb_to_yuv_float_c(BYTE *(&dstp)[3], int (&dstPitch)[3
 template<int pixel_step, bool copyalpha>
 static void convert_rgb24or32_to_yuv444_c(BYTE* dstY, BYTE* dstU, BYTE* dstV, BYTE* dstA, const BYTE* srcp, size_t Ypitch, size_t UVpitch, size_t Apitch, size_t Spitch, size_t width, size_t height, const ConversionMatrix& m)
 {
+  const bool has_offset_rgb = 0 != m.offset_rgb;
+
   // RGB24 (pixel_step=3)
   // RGB32 (pixel_step=4) optional copyalpha
   srcp += Spitch * (height - 1);  // We start at last line
@@ -449,6 +471,11 @@ static void convert_rgb24or32_to_yuv444_c(BYTE* dstY, BYTE* dstU, BYTE* dstV, BY
       int b = srcp[0];
       int g = srcp[1];
       int r = srcp[2];
+      if (has_offset_rgb) {
+        b = b + m.offset_rgb;
+        g = g + m.offset_rgb;
+        r = r + m.offset_rgb;
+      }
       int Y = m.offset_y + (((int)m.y_b * b + (int)m.y_g * g + (int)m.y_r * r + 16384) >> 15);
       int U = 128 + (((int)m.u_b * b + (int)m.u_g * g + (int)m.u_r * r + 16384) >> 15);
       int V = 128 + (((int)m.v_b * b + (int)m.v_g * g + (int)m.v_r * r + 16384) >> 15);
@@ -473,6 +500,8 @@ static void convert_rgb24or32_to_yuv444_c(BYTE* dstY, BYTE* dstU, BYTE* dstV, BY
 template<int pixel_step, bool copyalpha>
 static void convert_rgb48or64_to_yuv444_c(BYTE* dstY, BYTE* dstU, BYTE* dstV, BYTE* dstA, const BYTE* srcp, size_t Ypitch, size_t UVpitch, size_t Apitch, size_t Spitch, size_t width, size_t height, const ConversionMatrix& m)
 {
+  const bool has_offset_rgb = 0 != m.offset_rgb;
+
   // RGB48 (pixel_step=6)
   // RGB64 (pixel_step=8) optional copyalpha
   srcp += Spitch * (height - 1);  // We start at last line
@@ -489,6 +518,11 @@ static void convert_rgb48or64_to_yuv444_c(BYTE* dstY, BYTE* dstU, BYTE* dstV, BY
       int b = reinterpret_cast<const uint16_t*>(srcp)[0];
       int g = reinterpret_cast<const uint16_t*>(srcp)[1];
       int r = reinterpret_cast<const uint16_t*>(srcp)[2];
+      if (has_offset_rgb) {
+        b = b + m.offset_rgb;
+        g = g + m.offset_rgb;
+        r = r + m.offset_rgb;
+      }
       int Y = m.offset_y + (((int64_t)m.y_b * b + (int64_t)m.y_g * g + (int64_t)m.y_r * r + 16384) >> 15);
       int U = 32768 + (((int64_t)m.u_b * b + (int64_t)m.u_g * g + (int64_t)m.u_r * r + 16384) >> 15);
       int V = 32768 + (((int64_t)m.v_b * b + (int64_t)m.v_g * g + (int64_t)m.v_r * r + 16384) >> 15);
@@ -604,7 +638,9 @@ PVideoFrame __stdcall ConvertRGBToYUV444::GetFrame(int n, IScriptEnvironment* en
   // integer arithmetic restricted to 8 bits
   if (bits_per_pixel == 8 && (env->GetCPUFlags() & CPUF_SSE2))
   {
-    // integer arithmetic - quicker for the similar lane width that the float version
+    convert_planarrgb_to_yuv_uint8_14_sse2<uint8_t, 8>(dstp, dstPitch, srcps, srcPitch, vi.width, vi.height, matrix);
+#if 0
+      // integer arithmetic - quicker for the similar lane width that the float version
     // available from 8 to 14 bits, for precision reasons used only for 8 bits.
     switch (bits_per_pixel) {
     case 8: convert_planarrgb_to_yuv_uint8_14_sse2<uint8_t, 8>(dstp, dstPitch, srcps, srcPitch, vi.width, vi.height, matrix); break;
@@ -612,6 +648,7 @@ PVideoFrame __stdcall ConvertRGBToYUV444::GetFrame(int n, IScriptEnvironment* en
     case 12: convert_planarrgb_to_yuv_uint8_14_sse2<uint16_t, 12>(dstp, dstPitch, srcps, srcPitch, vi.width, vi.height, matrix); break;
     case 14: convert_planarrgb_to_yuv_uint8_14_sse2<uint16_t, 14>(dstp, dstPitch, srcps, srcPitch, vi.width, vi.height, matrix); break;
     }
+#endif
     return dst;
   }
 
@@ -678,16 +715,16 @@ ConvertYUV444ToRGB::ConvertYUV444ToRGB(PClip src, const char *matrix_name, int _
 
   auto frame0 = child->GetFrame(0, env);
   const AVSMap* props = env->getFramePropsRO(frame0);
-  matrix_parse_merge_with_props(vi, matrix_name, props, theMatrix, theColorRange, env);
+  matrix_parse_merge_with_props(false /*in yuv*/, true /*out rgb*/, matrix_name, props, theMatrix, theColorRange, theOutColorRange, env);
 
   const int shift = 13; // for integer arithmetic, over 13 bits would overflow the internal calculation
   const int bits_per_pixel = vi.BitsPerComponent();
 
-  if (!do_BuildMatrix_Yuv2Rgb(theMatrix, theColorRange, shift, bits_per_pixel, /*ref*/matrix))
+  if (!do_BuildMatrix_Yuv2Rgb(theMatrix, theColorRange, theOutColorRange, shift, bits_per_pixel, /*ref*/matrix))
     env->ThrowError("ConvertYV24ToRGB: Unknown matrix.");
 
   theOutMatrix = Matrix_e::AVS_MATRIX_RGB;
-  theOutColorRange = ColorRange_e::AVS_RANGE_FULL;
+  //theOutColorRange = ColorRange_e::AVS_RANGE_FULL; // PC709 must keep the input one!
 
   switch (pixel_step)
   {
@@ -786,6 +823,7 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
 #endif
 
   //Slow C-code.
+  auto round_mask_plus_rgb_offset_i = 4096 + (matrix.offset_rgb << 13);
 
   dstp += dst_pitch * (vi.height-1);  // We start at last line. Not for Planar RGB
   bool srcHasAlpha = (src_pitch_a != 0);
@@ -796,9 +834,9 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
         int U = srcU[x] - 128;
         int V = srcV[x] - 128;
         uint8_t a = srcHasAlpha ? srcA[x] : 255; // YUVA aware
-        int b = (((int)matrix.y_b * Y + (int)matrix.u_b * U + (int)matrix.v_b * V + 4096)>>13);
-        int g = (((int)matrix.y_g * Y + (int)matrix.u_g * U + (int)matrix.v_g * V + 4096)>>13);
-        int r = (((int)matrix.y_r * Y + (int)matrix.u_r * U + (int)matrix.v_r * V + 4096)>>13);
+        int b = (((int)matrix.y_b * Y + (int)matrix.u_b * U + (int)matrix.v_b * V + round_mask_plus_rgb_offset_i)>>13);
+        int g = (((int)matrix.y_g * Y + (int)matrix.u_g * U + (int)matrix.v_g * V + round_mask_plus_rgb_offset_i)>>13);
+        int r = (((int)matrix.y_r * Y + (int)matrix.u_r * U + (int)matrix.v_r * V + round_mask_plus_rgb_offset_i)>>13);
         dstp[x*4+0] = PixelClip(b);  // All the safety we can wish for.
         dstp[x*4+1] = PixelClip(g);  // Probably needed here.
         dstp[x*4+2] = PixelClip(r);
@@ -817,9 +855,9 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
         int Y = srcY[x] + matrix.offset_y;
         int U = srcU[x] - 128;
         int V = srcV[x] - 128;
-        int b = (((int)matrix.y_b * Y + (int)matrix.u_b * U + (int)matrix.v_b * V + 4096)>>13);
-        int g = (((int)matrix.y_g * Y + (int)matrix.u_g * U + (int)matrix.v_g * V + 4096)>>13);
-        int r = (((int)matrix.y_r * Y + (int)matrix.u_r * U + (int)matrix.v_r * V + 4096)>>13);
+        int b = (((int)matrix.y_b * Y + (int)matrix.u_b * U + (int)matrix.v_b * V + round_mask_plus_rgb_offset_i)>>13);
+        int g = (((int)matrix.y_g * Y + (int)matrix.u_g * U + (int)matrix.v_g * V + round_mask_plus_rgb_offset_i)>>13);
+        int r = (((int)matrix.y_r * Y + (int)matrix.u_r * U + (int)matrix.v_r * V + round_mask_plus_rgb_offset_i)>>13);
         dstp[0] = PixelClip(b);  // All the safety we can wish for.
         dstp[1] = PixelClip(g);  // Probably needed here.
         dstp[2] = PixelClip(r);
@@ -837,9 +875,9 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
             int U = reinterpret_cast<const uint16_t *>(srcU)[x] - 32768;
             int V = reinterpret_cast<const uint16_t *>(srcV)[x] - 32768;
             uint16_t a = srcHasAlpha ? reinterpret_cast<const uint16_t *>(srcA)[x] : 65535; // YUVA aware
-            int b = (((int64_t)matrix.y_b * Y + (int64_t)matrix.u_b * U + (int64_t)matrix.v_b * V + 4096)>>13);
-            int g = (((int64_t)matrix.y_g * Y + (int64_t)matrix.u_g * U + (int64_t)matrix.v_g * V + 4096)>>13);
-            int r = (((int64_t)matrix.y_r * Y + (int64_t)matrix.u_r * U + (int64_t)matrix.v_r * V + 4096)>>13);
+            int b = (((int64_t)matrix.y_b * Y + (int64_t)matrix.u_b * U + (int64_t)matrix.v_b * V + round_mask_plus_rgb_offset_i)>>13);
+            int g = (((int64_t)matrix.y_g * Y + (int64_t)matrix.u_g * U + (int64_t)matrix.v_g * V + round_mask_plus_rgb_offset_i)>>13);
+            int r = (((int64_t)matrix.y_r * Y + (int64_t)matrix.u_r * U + (int64_t)matrix.v_r * V + round_mask_plus_rgb_offset_i)>>13);
             reinterpret_cast<uint16_t *>(dstp)[x*4+0] = clamp(b,0,65535);  // All the safety we can wish for.
             reinterpret_cast<uint16_t *>(dstp)[x*4+1] = clamp(g,0,65535);  // Probably needed here.
             reinterpret_cast<uint16_t *>(dstp)[x*4+2] = clamp(r,0,65535);
@@ -858,9 +896,9 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
             int Y = reinterpret_cast<const uint16_t *>(srcY)[x] + matrix.offset_y;
             int U = reinterpret_cast<const uint16_t *>(srcU)[x] - 32768;
             int V = reinterpret_cast<const uint16_t *>(srcV)[x] - 32768;
-            int b = (((int64_t)matrix.y_b * Y + (int64_t)matrix.u_b * U + (int64_t)matrix.v_b * V + 4096)>>13);
-            int g = (((int64_t)matrix.y_g * Y + (int64_t)matrix.u_g * U + (int64_t)matrix.v_g * V + 4096)>>13);
-            int r = (((int64_t)matrix.y_r * Y + (int64_t)matrix.u_r * U + (int64_t)matrix.v_r * V + 4096)>>13);
+            int b = (((int64_t)matrix.y_b * Y + (int64_t)matrix.u_b * U + (int64_t)matrix.v_b * V + round_mask_plus_rgb_offset_i)>>13);
+            int g = (((int64_t)matrix.y_g * Y + (int64_t)matrix.u_g * U + (int64_t)matrix.v_g * V + round_mask_plus_rgb_offset_i)>>13);
+            int r = (((int64_t)matrix.y_r * Y + (int64_t)matrix.u_r * U + (int64_t)matrix.v_r * V + round_mask_plus_rgb_offset_i)>>13);
             reinterpret_cast<uint16_t *>(dstp)[0] = clamp(b,0,65535);  // All the safety we can wish for.
             reinterpret_cast<uint16_t *>(dstp)[1] = clamp(g,0,65535);  // Probably needed here.
             reinterpret_cast<uint16_t *>(dstp)[2] = clamp(r,0,65535);
@@ -949,15 +987,16 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
     {
       for (int y = 0; y < vi.height; y++) {
         for (int x = 0; x < vi.width; x++) {
+          //matrix.offset_y = -16;
           int Y = reinterpret_cast<const uint8_t *>(srcY)[x] + matrix.offset_y;
           int U = reinterpret_cast<const uint8_t *>(srcU)[x] - 128;
           int V = reinterpret_cast<const uint8_t *>(srcV)[x] - 128;
           int A = 0;
           if(targetHasAlpha)
             A = srcHasAlpha ? reinterpret_cast<const uint8_t *>(srcA)[x] : 255;
-          int b = (((int)matrix.y_b * Y + (int)matrix.u_b * U + (int)matrix.v_b * V + 4096)>>13);
-          int g = (((int)matrix.y_g * Y + (int)matrix.u_g * U + (int)matrix.v_g * V + 4096)>>13);
-          int r = (((int)matrix.y_r * Y + (int)matrix.u_r * U + (int)matrix.v_r * V + 4096)>>13);
+          int b = (int) ((((int)matrix.y_b * Y + (int)matrix.u_b * U + (int)matrix.v_b * V + round_mask_plus_rgb_offset_i)>>13));
+          int g = (int) ((((int)matrix.y_g * Y + (int)matrix.u_g * U + (int)matrix.v_g * V + round_mask_plus_rgb_offset_i)>>13));
+          int r = (int) ((((int)matrix.y_r * Y + (int)matrix.u_r * U + (int)matrix.v_r * V + round_mask_plus_rgb_offset_i)>>13));
           reinterpret_cast<uint8_t *>(dstpB)[x] = clamp(b,0,255);  // All the safety we can wish for.
           reinterpret_cast<uint8_t *>(dstpG)[x] = clamp(g,0,255);  // Probably needed here.
           reinterpret_cast<uint8_t *>(dstpR)[x] = clamp(r,0,255);
@@ -985,9 +1024,9 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
           if(targetHasAlpha)
             A = srcHasAlpha ? reinterpret_cast<const uint16_t *>(srcA)[x] : max_pixel_value;
           // int64_t needed for 16 bit pixels
-          int b = (((int64_t)matrix.y_b * Y + (int64_t)matrix.u_b * U + (int64_t)matrix.v_b * V + 4096)>>13);
-          int g = (((int64_t)matrix.y_g * Y + (int64_t)matrix.u_g * U + (int64_t)matrix.v_g * V + 4096)>>13);
-          int r = (((int64_t)matrix.y_r * Y + (int64_t)matrix.u_r * U + (int64_t)matrix.v_r * V + 4096)>>13);
+          int b = (((int64_t)matrix.y_b * Y + (int64_t)matrix.u_b * U + (int64_t)matrix.v_b * V + round_mask_plus_rgb_offset_i)>>13);
+          int g = (((int64_t)matrix.y_g * Y + (int64_t)matrix.u_g * U + (int64_t)matrix.v_g * V + round_mask_plus_rgb_offset_i)>>13);
+          int r = (((int64_t)matrix.y_r * Y + (int64_t)matrix.u_r * U + (int64_t)matrix.v_r * V + round_mask_plus_rgb_offset_i)>>13);
           reinterpret_cast<uint16_t *>(dstpB)[x] = clamp(b,0,max_pixel_value);  // All the safety we can wish for.
           reinterpret_cast<uint16_t *>(dstpG)[x] = clamp(g,0,max_pixel_value);  // Probably needed here.
           reinterpret_cast<uint16_t *>(dstpR)[x] = clamp(r,0,max_pixel_value);
@@ -1013,9 +1052,9 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
           float A;
           if(targetHasAlpha)
             A = srcHasAlpha ? reinterpret_cast<const float *>(srcA)[x] : 1.0f;
-          float b = matrix.y_b_f * Y + matrix.u_b_f * U + matrix.v_b_f * V;
-          float g = matrix.y_g_f * Y + matrix.u_g_f * U + matrix.v_g_f * V;
-          float r = matrix.y_r_f * Y + matrix.u_r_f * U + matrix.v_r_f * V;
+          float b = matrix.y_b_f * Y + matrix.u_b_f * U + matrix.v_b_f * V + matrix.offset_rgb_f;
+          float g = matrix.y_g_f * Y + matrix.u_g_f * U + matrix.v_g_f * V + matrix.offset_rgb_f;
+          float r = matrix.y_r_f * Y + matrix.u_r_f * U + matrix.v_r_f * V + matrix.offset_rgb_f;
           reinterpret_cast<float *>(dstpB)[x] = clamp(b, 0.0f, 1.0f);  // All the safety we can wish for.
           reinterpret_cast<float *>(dstpG)[x] = clamp(g, 0.0f, 1.0f);  // Probably needed here.
           reinterpret_cast<float *>(dstpR)[x] = clamp(r, 0.0f, 1.0f);

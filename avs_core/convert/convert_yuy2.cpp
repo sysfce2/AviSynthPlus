@@ -71,12 +71,14 @@ ConvertToYUY2::ConvertToYUY2(PClip _child, bool _dupl, bool _interlaced, const c
 
   auto frame0 = _child->GetFrame(0, env);
   const AVSMap* props = env->getFramePropsRO(frame0);
-  matrix_parse_merge_with_props(vi, matrix_name, props, theMatrix, theColorRange, env);
+  matrix_parse_merge_with_props(vi.IsRGB(), false /*out yuv*/, matrix_name, props, theMatrix, theColorRange, theOutColorRange, env);
 
   const int shift = 15;
   const int bits_per_pixel = 8;
-  if (!do_BuildMatrix_Rgb2Yuv(theMatrix, theColorRange, shift, bits_per_pixel, /*ref*/matrix))
+  if (!do_BuildMatrix_Rgb2Yuv(theMatrix, theColorRange, theOutColorRange, shift, bits_per_pixel, /*ref*/matrix))
     env->ThrowError("ConvertToYUY2: invalid \"matrix\" parameter");
+
+  theColorRange = theOutColorRange; // final frame property
 
   vi.pixel_type = VideoInfo::CS_YUY2;
 }
@@ -103,31 +105,40 @@ static void convert_rgb_to_yuy2_c(
   constexpr int PRECRANGE = 1 << PRECBITS; // 32768
   constexpr int bias = TV_range ? 0x84000 : 0x4000; //  16.5 * 32768 : 0.5 * 32768
 
+  const int range_offset_rgb = matrix.offset_rgb;
+
   for (int y = height; y > 0; --y)
   {
     // Use left most pixel for edge condition
-    int y0 = (matrix.y_b * rgb[0] + matrix.y_g * rgb[1] + matrix.y_r * rgb[2] + bias) >> PRECBITS;
+    int y0 = (matrix.y_b * (rgb[0] + range_offset_rgb) 
+      + matrix.y_g * (rgb[1] + range_offset_rgb) 
+      + matrix.y_r * (rgb[2] + range_offset_rgb) + bias) >> PRECBITS;
     const BYTE* rgb_prev   = rgb;
     for (int x = 0; x < width; x += 2)
     {
       const BYTE* const rgb_next = rgb + rgb_inc;
       // y1 and y2 can't overflow
-      const int y1 = (matrix.y_b * rgb[0] + matrix.y_g * rgb[1] + matrix.y_r * rgb[2] + bias) >> PRECBITS;
-      yuv[0]               = y1;
-      const int y2 = (matrix.y_b * rgb_next[0] + matrix.y_g * rgb_next[1] + matrix.y_r * rgb_next[2] + bias) >> PRECBITS;
-      yuv[2]               = y2;
+      const int y1 = (matrix.y_b * (rgb[0] + range_offset_rgb) 
+        + matrix.y_g * (rgb[1] + range_offset_rgb) 
+        + matrix.y_r * (rgb[2] + range_offset_rgb) + bias) >> PRECBITS;
+      yuv[0]               = PixelClip(y1);
+      const int y2 = (matrix.y_b * (rgb_next[0] + range_offset_rgb)
+        + matrix.y_g * (rgb_next[1] + range_offset_rgb) 
+        + matrix.y_r * (rgb_next[2] + range_offset_rgb) 
+        + bias) >> PRECBITS;
+      yuv[2]               = PixelClip(y2);
       if constexpr (!TV_range) {
         const int scaled_y = y0 + y1 * 2 + y2; // 1-2-1 kernel
-        const int b_y = (rgb_prev[0] + rgb[0] * 2 + rgb_next[0]) - scaled_y;
+        const int b_y = (rgb_prev[0] + rgb[0] * 2 + rgb_next[0] + 4 * range_offset_rgb) - scaled_y;
         yuv[1] = PixelClip((b_y * matrix.ku + (128 << (PRECBITS + 2)) + (1 << (PRECBITS + 1))) >> (PRECBITS + 2));  // u
-        const int r_y = (rgb_prev[2] + rgb[2] * 2 + rgb_next[2]) - scaled_y;
+        const int r_y = (rgb_prev[2] + rgb[2] * 2 + rgb_next[2] + 4 * range_offset_rgb) - scaled_y;
         yuv[3] = PixelClip((r_y * matrix.kv + (128 << (PRECBITS + 2)) + (1 << (PRECBITS + 1))) >> (PRECBITS + 2));  // v
       }
       else {
         const int scaled_y = (y0 + y1 * 2 + y2 - (16 * 4)) * int(255.0 / 219.0 * PRECRANGE + 0.5);
-        const int b_y = ((rgb_prev[0] + rgb[0] * 2 + rgb_next[0]) << PRECBITS) - scaled_y;
+        const int b_y = ((rgb_prev[0] + rgb[0] * 2 + rgb_next[0] + 4 * range_offset_rgb) << PRECBITS) - scaled_y;
         yuv[1] = PixelClip(((b_y >> (PRECBITS + 2 - 6)) * matrix.ku + (128 << (PRECBITS + 6)) + (1 << (PRECBITS + 5))) >> (PRECBITS + 6));  // u
-        const int r_y = ((rgb_prev[2] + rgb[2] * 2 + rgb_next[2]) << PRECBITS) - scaled_y;
+        const int r_y = ((rgb_prev[2] + rgb[2] * 2 + rgb_next[2] + 4 * range_offset_rgb) << PRECBITS) - scaled_y;
         yuv[3] = PixelClip(((r_y >> (PRECBITS + 2 - 6)) * matrix.kv + (128 << (PRECBITS + 6)) + (1 << (PRECBITS + 5))) >> (PRECBITS + 6));  // v
       }
       y0       = y2;
@@ -445,29 +456,34 @@ PVideoFrame __stdcall ConvertToYUY2::GetFrame(int n, IScriptEnvironment* env)
   auto props = env->getFramePropsRW(dst);
   update_Matrix_and_ColorRange(props, theMatrix, theColorRange, env);
 
+  if (matrix.offset_rgb == 0) {
+    // only conversions from full range rgb to yuy2 are handled accelerated.
 #ifdef INTEL_INTRINSICS
-  if (env->GetCPUFlags() & CPUF_SSE2)
-  {
-    if ((src_cs & VideoInfo::CS_BGR32) == VideoInfo::CS_BGR32) {
-      convert_rgb_to_yuy2_sse2<4>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
-    } else {
-      convert_rgb_to_yuy2_sse2<3>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
+    if (env->GetCPUFlags() & CPUF_SSE2)
+    {
+      if ((src_cs & VideoInfo::CS_BGR32) == VideoInfo::CS_BGR32) {
+        convert_rgb_to_yuy2_sse2<4>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
+      }
+      else {
+        convert_rgb_to_yuy2_sse2<3>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
+      }
+      return dst;
     }
-    return dst;
-  }
 
 #ifdef X86_32
-  if (env->GetCPUFlags() & CPUF_MMX)
-  {
-    if ((src_cs & VideoInfo::CS_BGR32) == VideoInfo::CS_BGR32) {
-      convert_rgb_to_yuy2_mmx<4>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
-    } else {
-      convert_rgb_to_yuy2_mmx<3>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
+    if (env->GetCPUFlags() & CPUF_MMX)
+    {
+      if ((src_cs & VideoInfo::CS_BGR32) == VideoInfo::CS_BGR32) {
+        convert_rgb_to_yuy2_mmx<4>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
+      }
+      else {
+        convert_rgb_to_yuy2_mmx<3>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
+      }
+      return dst;
     }
-    return dst;
+#endif
+#endif
   }
-#endif
-#endif
   const BYTE* rgb = src->GetReadPtr() + (vi.height-1) * src->GetPitch();
 
   const int yuv_offset = dst->GetPitch() - dst->GetRowSize();
@@ -563,14 +579,22 @@ static void convert_rgb_back_to_yuy2_c(BYTE* yuv, const BYTE* rgb, int rgb_offse
   constexpr int PRECRANGE = 1 << PRECBITS; // 32768
   constexpr int bias = TV_range ? 0x84000 : 0x4000; //  16.5 * 32768 : 0.5 * 32768
 
+  const int range_offset_rgb = matrix.offset_rgb;
+
   for (int y = height; y > 0; --y)
   {
     for (int x = 0; x < width; x += 2)
     {
       const BYTE* const rgb_next = rgb + rgb_inc;
-      // y1 and y2 can't overflow
-      yuv[0] = (matrix.y_b * rgb[0] + matrix.y_g * rgb[1] + matrix.y_r * rgb[2] + bias) >> PRECBITS;
-      yuv[2] = (matrix.y_b * rgb_next[0] + matrix.y_g * rgb_next[1] + matrix.y_r * rgb_next[2] + bias) >> PRECBITS;
+      // y1 and y2 can't overflow, (only for limited range rgb?)
+      yuv[0] = PixelClip(
+        (matrix.y_b * (rgb[0] + range_offset_rgb)
+        + matrix.y_g * (rgb[1] + range_offset_rgb) 
+        + matrix.y_r * (rgb[2] + range_offset_rgb) + bias) >> PRECBITS);
+      yuv[2] = PixelClip(
+        (matrix.y_b * (rgb_next[0] + range_offset_rgb)
+        + matrix.y_g * (rgb_next[1] + range_offset_rgb)
+        + matrix.y_r * (rgb_next[2] + range_offset_rgb) + bias) >> PRECBITS);
       if constexpr (!TV_range) {
         int scaled_y = yuv[0];
         int b_y = rgb[0] - scaled_y;
@@ -634,29 +658,34 @@ PVideoFrame __stdcall ConvertBackToYUY2::GetFrame(int n, IScriptEnvironment* env
   PVideoFrame dst = env->NewVideoFrameP(vi, &src);
   BYTE* yuv = dst->GetWritePtr();
 
+  if (matrix.offset_rgb == 0) {
+    // only conversions from full range rgb to yuy2 are handled accelerated.
 #ifdef INTEL_INTRINSICS
-  if (env->GetCPUFlags() & CPUF_SSE2)
-  {
-    if ((src_cs & VideoInfo::CS_BGR32) == VideoInfo::CS_BGR32) {
-      convert_rgb_back_to_yuy2_sse2<4>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
-    } else {
-      convert_rgb_back_to_yuy2_sse2<3>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
+    if (env->GetCPUFlags() & CPUF_SSE2)
+    {
+      if ((src_cs & VideoInfo::CS_BGR32) == VideoInfo::CS_BGR32) {
+        convert_rgb_back_to_yuy2_sse2<4>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
+      }
+      else {
+        convert_rgb_back_to_yuy2_sse2<3>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
+      }
+      return dst;
     }
-    return dst;
-  }
 
 #ifdef X86_32
-  if (env->GetCPUFlags() & CPUF_MMX)
-  {
-    if ((src_cs & VideoInfo::CS_BGR32) == VideoInfo::CS_BGR32) {
-      convert_rgb_back_to_yuy2_mmx<4>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
-    } else {
-      convert_rgb_back_to_yuy2_mmx<3>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
+    if (env->GetCPUFlags() & CPUF_MMX)
+    {
+      if ((src_cs & VideoInfo::CS_BGR32) == VideoInfo::CS_BGR32) {
+        convert_rgb_back_to_yuy2_mmx<4>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
+      }
+      else {
+        convert_rgb_back_to_yuy2_mmx<3>(src->GetReadPtr(), dst->GetWritePtr(), src->GetPitch(), dst->GetPitch(), vi.width, vi.height, matrix);
+      }
+      return dst;
     }
-    return dst;
+#endif
+#endif
   }
-#endif
-#endif
 
   const BYTE* rgb = src->GetReadPtr() + (vi.height-1) * src->GetPitch(); // Last line
 
