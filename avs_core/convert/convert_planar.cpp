@@ -345,8 +345,12 @@ ConvertRGBToYUV444::ConvertRGBToYUV444(PClip src, const char *matrix_name, bool 
   if (!vi.IsRGB())
     env->ThrowError("ConvertRGBToYV24/YUV444: Only RGB data input accepted");
 
+  // ChromaInPlacement parameter exists, (default none/-1) + input frame properties; 'left'-ish _ChromaLocation is allowed, checked later
+  auto frame0 = src->GetFrame(0, env);
+  const AVSMap* props = env->getFramePropsRO(frame0);
+
   // input _ColorRange frame property can appear for RGB source (studio range limited rgb)
-  matrix_parse_merge_with_props(true /*in rgb*/, false /*out yuv*/, matrix_name, nullptr, theMatrix, theColorRange, theOutColorRange, env);
+  matrix_parse_merge_with_props(true /*in rgb*/, false /*out yuv*/, matrix_name, props, theMatrix, theColorRange, theOutColorRange, env);
 
   const int shift = 15; // internally 15 bits precision, still no overflow in calculations
   int bits_per_pixel = vi.BitsPerComponent();
