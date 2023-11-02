@@ -1807,6 +1807,33 @@ void Subtitle::InitAntialiaser(IScriptEnvironment* env)
   if (SetTextCharacterExtra(hdcAntialias, spc) == 0x80000000) goto GDIError;
   if (SetTextAlign(hdcAntialias, al) == GDI_ERROR) goto GDIError;
 
+  if (multiline) { // filter parameter, true when lsp is given
+    std::string s = text;
+    // multiline separator: string contains '\' and 'n' characters explicitely
+    // SubTitle compatibility: literal "\n" means line break, but "\\n" means that literal "\n" will be printed
+    size_t index = 0;
+    int lines = 1;
+    while (true) {
+      index = s.find("\\n", index);
+      if (index == std::string::npos) break;
+      if (index > 0 && s.at(index - 1) == '\\') // \\n case: \n is preceded by \ 
+        index += 3;
+      else {
+        index += 2;
+        if (index < s.length()) // except when the new line marker LF appears at the very end
+          lines++;
+      }
+    }
+    // note: we do not really have a vertical center alignment for multiline strings since it means not centering.
+    // TA_BASELINE is aligning (x,y) to the character's baseline: letters like g, y and q would reach below that baseline)
+
+    // when multiline, bottom and vertically centered cases affect starting y
+    if (align == 1 || align == 2 || align == 3) // bottom
+      real_y -= (size + lsp) * (lines - 1);
+    else if (align == 4 || align == 5 || align == 6)
+      real_y -= ((size + lsp) * (lines - 1) + 1) / 2;
+  }
+
   if (utf8) {
     // Test:
     // Title="Cherry blossom "+CHR($E6)+CHR($A1)+CHR($9C)+CHR($E3)+CHR($81)+CHR($AE)+CHR($E8)+CHR($8A)+CHR($B1)

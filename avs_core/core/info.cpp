@@ -2057,7 +2057,16 @@ void SimpleTextOutW_multi(BitmapFont *current_font, const VideoInfo& vi, PVideoF
   wstringstream wss(text);
   while (std::getline(wss, temp, L'\n'))
     parts.push_back(temp);
-
+  // It doesn't result in a new line if the last character is \n and is followed by nothing.
+  // "Line1\nLine2" is the same as "Line1\nLine2\n"
+  // Like in SubTitle
+  /*
+  if(!text.empty())
+  {
+    if( *text.rbegin() == L'\n')
+      parts.push_back(L"");
+  }
+  */
   const int fontSize = current_font->height;
 
   // when multiline, bottom and vertically centered cases affect starting y
