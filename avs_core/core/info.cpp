@@ -2072,13 +2072,16 @@ void SimpleTextOutW_multi(BitmapFont *current_font, const VideoInfo& vi, PVideoF
   // when multiline, bottom and vertically centered cases affect starting y
   int al = alignToBitmask(align);
   if (al & ATA_BOTTOM)
-    real_y -= (fontSize + lsp) * ((int)parts.size() - 1);
+    real_y -= (int)((fontSize + lsp / 8.0) * ((int)parts.size() - 1) + 0.5);
   else if (al & ATA_BASELINE)
-    real_y -= ((fontSize + lsp) * (int)(parts.size() - 1) + 1) / 2;
+    real_y -= (int)((fontSize + lsp / 8.0) * (int)(parts.size() - 1) / 2.0 + 0.5);
 
+  const int orig_real_y = real_y;
+  int linecount = 0;
   for (auto ws : parts) {
+    real_y = orig_real_y + fontSize * linecount + (int)(lsp / 8.0 * linecount + 0.5);
     SimpleTextOutW(current_font, vi, frame, real_x, real_y, ws, fadeBackground, textcolor, halocolor, useHaloColor, align, chromalocation);
-    real_y += fontSize + lsp;
+    linecount++;
   }
 }
 
