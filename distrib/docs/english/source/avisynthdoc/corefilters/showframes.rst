@@ -35,7 +35,8 @@ See the :ref:`ShowFrameNumber examples <ShowFrameNumber-examples>` section.
 ::
 
     ShowFrameNumber (clip, bool "scroll", int "offset", float "x", float "y", string "font", float "size",
-                     int "text_color", int "halo_color", float "font_width", float "font_angle")
+                     int "text_color", int "halo_color", float "font_width", float "font_angle",
+                     bool "bold", bool "italic", bool "noaa")
 
 .. describe:: clip
 
@@ -99,6 +100,25 @@ See the :ref:`ShowFrameNumber examples <ShowFrameNumber-examples>` section.
 
     Default: 0.0 (no rotation)
 
+.. describe:: bold
+
+    | Using bold letters or not
+
+    Default: true on Windows GDI, false otherwise (e.g. in Linux)
+
+.. describe:: italic
+
+    | Using italic letters or not
+
+    Default: false
+
+.. describe:: noaa
+
+    | Disables antialiasing when drawing the text
+
+    Default: false
+
+
 .. _ShowSMPTE:
 
 ShowSMPTE
@@ -138,7 +158,8 @@ See the :ref:`ShowSMPTE examples <ShowSMPTE-examples>` section.
 ::
 
     ShowSMPTE (clip, float "fps", string "offset", int "offset_f", float "x", float "y", string "font",
-               float "size", int "text_color", int "halo_color", float "font_width", float "font_angle")
+               float "size", int "text_color", int "halo_color", float "font_width", float "font_angle",
+               bool "bold", bool "italic", bool "noaa")
 
 .. describe:: clip
 
@@ -204,6 +225,23 @@ See the :ref:`ShowSMPTE examples <ShowSMPTE-examples>` section.
 
     Default: 0.0 (no rotation)
 
+.. describe:: bold
+
+    | Using bold letters or not
+
+    Default: true on Windows GDI, false otherwise (e.g. in Linux)
+
+.. describe:: italic
+
+    | Using italic letters or not
+
+    Default: false
+
+.. describe:: noaa
+
+    | Disables antialiasing when drawing the text
+
+    Default: false
 
 Drop-Frame versus Non-Drop-Frame Time Code
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -281,7 +319,8 @@ See the :ref:`ShowTime examples <ShowTime-examples>` section.
 ::
 
     ShowTime (clip, int "offset_f", float "x", float "y", string "font", float "size",
-              int "text_color", int "halo_color", float "font_width", float "font_angle")
+              int "text_color", int "halo_color", float "font_width", float "font_angle",
+              bool "bold", bool "italic", bool "noaa")
 
 .. describe:: clip
 
@@ -335,6 +374,23 @@ See the :ref:`ShowTime examples <ShowTime-examples>` section.
 
     Default: 0.0 (no rotation)
 
+.. describe:: bold
+
+    | Using bold letters or not
+
+    Default: true on Windows GDI, false otherwise (e.g. in Linux)
+
+.. describe:: italic
+
+    | Using italic letters or not
+
+    Default: false
+
+.. describe:: noaa
+
+    | Disables antialiasing when drawing the text
+
+    Default: false
 
 Examples
 --------
@@ -431,20 +487,22 @@ Examples
 Changelog
 ---------
 
-+----------------+-----------------------------------------------------------------------------+
-| Version        | Changes                                                                     |
-+================+=============================================================================+
-| AviSynth 2.6.0 || All functions: position (x,y) can be float (previously int) (with 0.125    |
-|                |  pixel granularity).                                                        |
-|                || ShowSMPTE: added drop-frame for other framerates (other than 30).          |
-+----------------+-----------------------------------------------------------------------------+
-| AviSynth 2.5.8 || Added ShowTime function.                                                   |
-|                || Added ``font_width``, ``font_angle`` args.                                 |
-+----------------+-----------------------------------------------------------------------------+
-| AviSynth 2.5.6 | Added ``offset`` and other options.                                         |
-+----------------+-----------------------------------------------------------------------------+
++-----------------+-----------------------------------------------------------------------------+
+| Version         | Changes                                                                     |
++=================+=============================================================================+
+| AviSynth+ 3.7.3 | Add ``bold``, ``italic`` and ``noaa``                                       |
++-----------------+-----------------------------------------------------------------------------+
+| AviSynth 2.6.0  || All functions: position (x,y) can be float (previously int) (with 0.125    |
+|                 |  pixel granularity).                                                        |
+|                 || ShowSMPTE: added drop-frame for other framerates (other than 30).          |
++-----------------+-----------------------------------------------------------------------------+
+| AviSynth 2.5.8  || Added ShowTime function.                                                   |
+|                 || Added ``font_width``, ``font_angle`` args.                                 |
++-----------------+-----------------------------------------------------------------------------+
+| AviSynth 2.5.6  | Added ``offset`` and other options.                                         |
++-----------------+-----------------------------------------------------------------------------+
 
-$Date: 2022/02/09 20:53:18 $
+$Date: 2023/11/03 11:15:00 $
 
 .. _Interlaced Fieldbased:
     http://avisynth.nl/index.php/Interlaced_fieldbased

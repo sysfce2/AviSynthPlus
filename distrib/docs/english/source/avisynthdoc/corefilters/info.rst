@@ -19,7 +19,9 @@ The displayed information consists of:
 * the number of audio channels,
 * audio sample type,
 * audio sample rate,
-* total audio samples and total audio duration (hh:mm:ss:ddd).
+* total audio samples and total audio duration (hh:mm:ss:ddd),
+* channel layout
+* CPU capabilities
 
 
 Syntax and Parameters
@@ -27,7 +29,10 @@ Syntax and Parameters
 
 ::
 
-    Info (clip clip, string "font", float "size", int "text_color", "halo_color")
+    Info (clip clip, string "font", float "size", int "text_color", int "halo_color", 
+          bool "bold", bool "italic", bool "noaa",
+          bool "cpu",
+          float "x", float "y", int "align")
 
 .. describe:: clip
 
@@ -53,6 +58,8 @@ Syntax and Parameters
 
     Default: auto
 
+    On non-Windows-GDI systems the available font sizes are limited.
+
 .. describe:: text_color, halo_color
 
     | Colors for font fill and outline respectively.  See the
@@ -62,6 +69,51 @@ Syntax and Parameters
 
     Default: $FFFF00, $000000
 
+.. describe:: bold
+
+    | Using bold letters or not
+    | Default is true, since bold has better visibility.
+
+    Default: true
+
+.. describe:: italic
+
+    | Using italic letters or not
+
+    Default: false
+
+.. describe:: noaa
+
+    | Disables antialiasing when drawing the text
+
+    Default: false
+
+.. describe:: cpu
+
+    | Enables or disables showing CPU capabilities flags
+
+    Default: true
+
+.. describe:: x, y
+
+    | Reference point of the Info text box area, alignments are
+      calculated relative to that.
+
+    Default: 4, 0 (top left), screen centers or right/bottom when alignment is specified
+
+.. describe:: align
+
+    | an integer number describing at what screen area (or given x,y coordinates)
+      will be the info text box aligned.
+      Values 1-9 are allowed. See your numeric keypad layout, e.g. 7 is top-left,
+      9 is top right, 3: bottom-right, etc..
+
+    Default: 7 (top-left)
+    
+    Note: on Windows-GDI systems the whole text box is aligned. Within the box the text lines
+    are left aligned. On non-Windows-GDI (e.g. Linux) the individual lines are aligned 
+    horizontally as well.
+
 
 Examples
 --------
@@ -69,6 +121,7 @@ Examples
 ::
 
     Blankclip(pixel_type="YUV444P16")
+    SetChannelMask("mono")
     Info()
 
 Results in a video with the following information overlay:
@@ -88,7 +141,17 @@ Results in a video with the following information overlay:
      Sample Type: Integer 16 bit
      Samples Per Second: 44100
      Audio length: 441000 samples. 00:00:10:000
+     Channel mask: mono
      CPU: SSE2 SSE3 SSSE3 SSE4.1 SSE4.2 AVX F16C
+
+The following script aligns Info box to the top right, it won't interfere with propShow
+in top left.
+    
+::
+
+    ColorBars()
+    propShow()
+    Info(cpu=false, align=9)
 
 
 Changelog
@@ -97,6 +160,12 @@ Changelog
 +-----------------+-----------------------------------------------------------------------+
 | Version         | Changes                                                               |
 +=================+=======================================================================+
+| AviSynth+ 3.7.4 || Add ``cpu`` parameter                                                |
+|                 || Add ``x, y, align`` parameters                                       |
+|                 || Draw partially visible lines as well                                 |
++-----------------+-----------------------------------------------------------------------+
+| AviSynth+ 3.7.3 | Add ``bold``, ``italic`` and ``noaa``                                 |
++-----------------+-----------------------------------------------------------------------+
 | AviSynth+ 3.5.1 | When parameter ``size`` < 0, font is automatically enlarged when the  |
 |                 | dimensions of the clip are greater than 640x480.                      | 
 +-----------------+-----------------------------------------------------------------------+
@@ -113,4 +182,4 @@ Changelog
 | AviSynth 2.5.0  | Initial Release                                                       |
 +-----------------+-----------------------------------------------------------------------+
 
-$Date: 2022/02/08 15:10:22 $
+$Date: 2023/11/03 10:42:00 $
