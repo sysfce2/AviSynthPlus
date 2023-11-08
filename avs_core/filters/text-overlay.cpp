@@ -1737,22 +1737,24 @@ AVSValue __cdecl Subtitle::Create(AVSValue args, void*, IScriptEnvironment* env)
     if ((align < 1) || (align > 9))
      env->ThrowError("Subtitle: Align values are 1 - 9 mapped to your numeric pad");
 
+    const int subtitle_default_x = 8;
+
     int defx, defy;
     bool x_center = false;
     bool y_center = false;
 
     switch (align) {
-    case 1: case 4: case 7: defx = 8; break;
+    case 1: case 4: case 7: defx = subtitle_default_x; break;
     case 2: case 5: case 8:
       defx = 0; // n/a if not set later
       x_center = true;
       break;
-    case 3: case 6: case 9: defx = clip->GetVideoInfo().width - 8; break;
-    default: defx = 8; break;
+    case 3: case 6: case 9: defx = clip->GetVideoInfo().width - subtitle_default_x; break;
+    default: defx = subtitle_default_x; break;
     }
 
     switch (align) {
-    case 1: case 2: case 3: defy = clip->GetVideoInfo().height - 2; break;
+    case 1: case 2: case 3: defy = clip->GetVideoInfo().height - 2; break; // bottom alignment 2 pixel above
     case 4: case 5: case 6:
       defy = 0; // n/a if not set later
       y_center = true;
@@ -1776,6 +1778,35 @@ AVSValue __cdecl Subtitle::Create(AVSValue args, void*, IScriptEnvironment* env)
     return new Subtitle(clip, text, x, y, first_frame, last_frame, font, size, text_color,
                       halo_color, align, spc, multiline, lsp, font_width, font_angle, interlaced, font_filename, utf8, 
                       bold, italic, noaa, env);
+}
+
+static int CorrectYbyTextAndAlignment(int real_y, int align, int fontsize, int lsp, const char* text, bool real_LF)
+{
+  std::string s = text;
+  // multiline separator: string contains '\' and 'n' characters explicitely
+  // SubTitle compatibility: literal "\n" means line break, but "\\n" means that literal "\n" will be printed
+  size_t index = 0;
+  int lines = 1;
+  while (true) {
+    index = real_LF ? s.find("\n", index) : s.find("\\n", index);
+    if (index == std::string::npos) break;
+    if (!real_LF && index > 0 && s.at(index - 1) == '\\') // \\n case: \n is preceded by \ 
+      index += 3;
+    else {
+      index += 2;
+      if (index < s.length()) // except when the new line marker LF appears at the very end
+        lines++;
+    }
+  }
+  // note: we do not really have a vertical center alignment for multiline strings since it means not centering.
+  // TA_BASELINE is aligning (x,y) to the character's baseline: letters like g, y and q would reach below that baseline)
+
+  // when multiline, bottom and vertically centered cases affect starting y
+  if (align == 1 || align == 2 || align == 3) // bottom
+    real_y -= (fontsize + lsp) * (lines - 1);
+  else if (align == 4 || align == 5 || align == 6)
+    real_y -= ((fontsize + lsp) * (lines - 1) + 1) / 2;
+  return real_y;
 }
 
 void Subtitle::InitAntialiaser(IScriptEnvironment* env)
@@ -1808,31 +1839,8 @@ void Subtitle::InitAntialiaser(IScriptEnvironment* env)
   if (SetTextAlign(hdcAntialias, al) == GDI_ERROR) goto GDIError;
 
   if (multiline) { // filter parameter, true when lsp is given
-    std::string s = text;
-    // multiline separator: string contains '\' and 'n' characters explicitely
-    // SubTitle compatibility: literal "\n" means line break, but "\\n" means that literal "\n" will be printed
-    size_t index = 0;
-    int lines = 1;
-    while (true) {
-      index = s.find("\\n", index);
-      if (index == std::string::npos) break;
-      if (index > 0 && s.at(index - 1) == '\\') // \\n case: \n is preceded by \ 
-        index += 3;
-      else {
-        index += 2;
-        if (index < s.length()) // except when the new line marker LF appears at the very end
-          lines++;
+    real_y = CorrectYbyTextAndAlignment(real_y, align, size, lsp, text, false); // find literal \ n for LF, not real LF 0x0A
       }
-    }
-    // note: we do not really have a vertical center alignment for multiline strings since it means not centering.
-    // TA_BASELINE is aligning (x,y) to the character's baseline: letters like g, y and q would reach below that baseline)
-
-    // when multiline, bottom and vertically centered cases affect starting y
-    if (align == 1 || align == 2 || align == 3) // bottom
-      real_y -= (size + lsp) * (lines - 1);
-    else if (align == 4 || align == 5 || align == 6)
-      real_y -= ((size + lsp) * (lines - 1) + 1) / 2;
-  }
 
   if (utf8) {
     // Test:
