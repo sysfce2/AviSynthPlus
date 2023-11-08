@@ -89,7 +89,7 @@ extern const AVSFunction Text_filters[] = {
   "c[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b",
   ShowSMPTE::CreateTime },
 
-  { "Info", BUILTIN_FUNC_PREFIX, "c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b[noaa]b", FilterInfo::Create },  // clip
+  { "Info", BUILTIN_FUNC_PREFIX, "c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b[noaa]b[cpu]b[x]f[y]f[align]i", FilterInfo::Create },  // clip
 
   { "Subtitle",BUILTIN_FUNC_PREFIX,
   "cs[x]f[y]f[first_frame]i[last_frame]i[font]s[size]f[text_color]i[halo_color]i"
@@ -1840,7 +1840,7 @@ void Subtitle::InitAntialiaser(IScriptEnvironment* env)
 
   if (multiline) { // filter parameter, true when lsp is given
     real_y = CorrectYbyTextAndAlignment(real_y, align, size, lsp, text, false); // find literal \ n for LF, not real LF 0x0A
-      }
+  }
 
   if (utf8) {
     // Test:
@@ -2198,7 +2198,8 @@ AVSValue __cdecl SimpleText::Create(AVSValue args, void*, IScriptEnvironment* en
  *******   FilterInfo Filter    ******
  **********************************/
 
-FilterInfo::FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env)
+FilterInfo::FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa, 
+  bool _cpu, int _x, int _y, int _align, IScriptEnvironment* env)
   : GenericVideoFilter(_child), vii(AdjustVi()), size(_size),
   text_color(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor),
   halo_color(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor)
@@ -2208,7 +2209,8 @@ FilterInfo::FilterInfo( PClip _child, const char _fontname[], int _size, int _te
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
     _bold, _italic, _noaa)
 #endif
-  , bold(_bold), italic(_italic), noaa(_noaa)
+  , bold(_bold), italic(_italic), noaa(_noaa),
+  cpu(_cpu), x(_x), y(_y), align(_align)
 {
   AVS_UNUSED(env);
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
@@ -2453,77 +2455,90 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
       }
     }
     else {
-      strcpy(text + tlen, "\n");
-      tlen += 1;
+      if (cpu) {
+        strcpy(text + tlen, "\n");
+        tlen += 1;
+      }
     }
-    // CPU capabilities
-    tlen += snprintf(text + tlen, sizeof(text) - tlen,
-      "CPU: %s\n"
-#ifdef INTEL_INTRINSICS
-      , GetCpuMsg(env, false).c_str()
-#else
-      , GetCpuMsg(env).c_str()
-#endif
-    );
-#ifdef INTEL_INTRINSICS
-    // AVX512 flags in new line (too long)
-    std::string avx512 = GetCpuMsg(env, true);
-    if (avx512.length() > 0) {
+    if (cpu) {
+      // CPU capabilities
       tlen += snprintf(text + tlen, sizeof(text) - tlen,
-        "     %s\n"
-        , avx512.c_str()
-      );
-    }
+        "CPU: %s\n"
+#ifdef INTEL_INTRINSICS
+        , GetCpuMsg(env, false).c_str()
+#else
+        , GetCpuMsg(env).c_str()
 #endif
+      );
+#ifdef INTEL_INTRINSICS
+      // AVX512 flags in new line (too long)
+      std::string avx512 = GetCpuMsg(env, true);
+      if (avx512.length() > 0) {
+        tlen += snprintf(text + tlen, sizeof(text) - tlen,
+          "     %s\n"
+          , avx512.c_str()
+        );
+      }
+#endif
+    } // show cpu capabilities
 
+    // Windows GDI: aligns the whole box, its content is kept top left aligned
+    // "Text" fixed font mode: individual lines are aligned as well
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
     // So far RECT dimensions were hardcoded: RECT r = { 32, 16, min(3440,vi.width * 8), 900*2 };
     // More flexible way: get text extent
     RECT r;
 
-#if 0
-    if(false && !font_override)
-    {
-        // To prevent slowish full MxN rendering, we calculate a dummy
-        // 1xN sized vertical and a Mx1 sized horizontal line extent
-        // Assuming that we are using fixed font (e.g. default Courier New)
-        std::string s = text;
-        size_t n = std::count(s.begin(), s.end(), '\n');
-        // create dummy vertical string
-        std::string s_vert;
-        for (size_t i=0; i<n; i++) s_vert += " \n";
-        RECT r0_v = { 0, 0, 100, 100 };
-        DrawText(hdcAntialias, s_vert.c_str(), -1, &r0_v, DT_CALCRECT);
-        // create dummy horizontal
-        int counter = 0; int max_line = -1;
-        int len = s.length();
-        for (int i = 0; i < len; i++) // get length of longest line
-        {
-            if(s[i] != '\n') counter++;
-            if(s[i] == '\n' || i == len - 1) {
-                if(counter > max_line) max_line = counter;
-                counter = 0;
-            }
-        }
-        std::string s_horiz = std::string(max_line > 0 ? max_line : 1, ' '); // M*spaces
-        RECT r0_h = { 0, 0, 100, 100 }; // for output
-        DrawText(hdcAntialias, s_horiz.c_str(), -1, &r0_h, DT_CALCRECT);
-        // and use the width and height dimensions from the two results
-        r = { 32, 16, min(32+(int)r0_h.right,vi.width * 8-1), min(16+int(r0_v.bottom), vi.height*8-1) }; // do not crop if larger font is used
-    } else
-#endif
-    {
-        // font was overridden, may not be fixed type
-        RECT r0 = { 0, 0, 100, 100 }; // do not crop if larger font is used
-        DrawText(hdcAntialias, text, -1, &r0, DT_CALCRECT);
-        r = { 32, 16, min(32+(int)r0.right,vi.width * 8 -1), min(16+int(r0.bottom), vi.height*8-1) };
+    // DrawText calculates the extent as plus one line if text ends with an empty \n
+    // thus calculation of vertical center and bottom aligned text would be wrong.
+    // Cut ending LFs
+    while (tlen > 1 && text[tlen - 1] == '\n') {
+      text[tlen - 1] = 0;
+      tlen--;
     }
 
-    // RECT r = { 32, 16, min(3440,vi.width * 8), 900*2 };
-    // original code. Values possibly experimented Courier New size 18 + knowing max. text length/line count
+    RECT r0 = { 0, 0, 100, 100 };
 
-    DrawText(hdcAntialias, text, -1, &r, 0);
+    // always draw box at top left aligned, we calculate coordinates instead
+    // depending on the given alignment
+    SetTextAlign(hdcAntialias, TA_TOP | TA_LEFT);
+    // calculate box extent without drawing
+    DrawText(hdcAntialias, text, -1, &r0, DT_CALCRECT | DT_NOCLIP);
+
+    // correct top left and right bottom of the whole info box
+    int real_x = x;
+    int real_y = y;
+    // align vertical center
+    if (align == 4 || align == 5 || align == 6) {
+      real_y -= (int)((r0.bottom- r0.top) / 2.0 + 0.5);
+    }
+    // align vertical bottom
+    if (align == 1 || align == 2 || align == 3) {
+      real_y -= (r0.bottom - r0.top);
+    }
+    // align horizontal center
+    if (align == 8 || align == 5 || align == 2) {
+      real_x -= (int)((r0.right - r0.left) / 2.0 + 0.5);
+    }
+    // align horizontal right
+    if (align == 9 || align == 6 || align == 3) {
+      real_x -= (r0.right - r0.left);
+    }
+
+    int right = real_x + (int)r0.right;
+    int bottom = real_y + (int)r0.bottom;
+    // not left aligned: crop to visible right
+    if (!(align == 9 || align == 6 || align == 3))
+      right = min(right, vi.width * 8 - 1);
+    // not bottom aligned: crop to visible bottom
+    if (!(align == 1 || align == 2 || align == 3))
+      bottom = min(bottom, vi.height * 8 - 1);
+
+    r = { real_x, real_y, right, bottom };
+
+    // NOCLIP: draw lines if they are partially visible
+    DrawText(hdcAntialias, text, -1, &r, DT_NOCLIP);
     GdiFlush();
 
     env->MakeWritable(&frame);
@@ -2534,15 +2549,12 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
     env->MakeWritable(&frame);
     frame->GetWritePtr(); // Bump sequence_number
 
-    // AVS_POSIX: utf8 is always true
+    // AVS_POSIX: utf8 is always true, here n/a
     bool utf8 = false;
     // converting to wchar_t either from utf8 (win/linux) or ansi (win)
     std::wstring ws = charToWstring(text, utf8);
 
-    int align = 7;
-    int lsp = 0;
-    int x = 4;
-    int y = 2;
+    int lsp = 0; // line spacing n/a
 
     const int chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
     SimpleTextOutW_multi(current_font.get(), vi, frame, x, y, ws, false, text_color, halo_color, true, align, lsp, chromaplacement);
@@ -2552,8 +2564,8 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
 
 AVSValue __cdecl FilterInfo::Create(AVSValue args, void*, IScriptEnvironment* env)
 {
-    // 0   1      2       3             4         5       6
-    // c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b
+    // 0   1      2       3             4         5       6      7       8    9  10    11
+    // c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b[noaa]b[cpu]b[x]f[y]f[align]
     PClip clip = args[0].AsClip();
     // new parameters 20160823
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
@@ -2573,8 +2585,58 @@ AVSValue __cdecl FilterInfo::Create(AVSValue args, void*, IScriptEnvironment* en
     const bool bold = args[5].AsBool(true); // bold has better visibility on NO_WIN_GDI terminus was well
     const bool italic = args[6].AsBool(false);
     const bool noaa = args[7].AsBool(false);
+    const bool cpu = args[8].AsBool(true);
 
-    return new FilterInfo(clip, font, size, text_color, halo_color, bold, italic, noaa, env);
+    const int align = args[11].AsInt(7); // default top left
+
+    const int info_default_x = 4; // subtitle: 8
+#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
+    const int PIXEL_MUL_FACTOR = 8;
+#else
+    const int PIXEL_MUL_FACTOR = 1;
+#endif
+    // similar to SubTitle
+    int defx, defy;
+    bool x_center = false;
+    bool y_center = false;
+
+    switch (align) {
+    case 1: case 4: case 7: defx = 8; break;
+    case 2: case 5: case 8:
+      defx = 0; // n/a if not set later
+      x_center = true;
+      break;
+    case 3: case 6: case 9: defx = clip->GetVideoInfo().width - info_default_x; break; // subtitle: 8
+    default: defx = info_default_x; break;
+    }
+
+    switch (align) {
+    case 1: case 2: case 3: defy = clip->GetVideoInfo().height - 2; break; // bottom alignment 2 pixel above
+    case 4: case 5: case 6:
+      defy = 0; // n/a if not set later
+      y_center = true;
+      break;
+    case 7: case 8: case 9: defy = 0; break;
+    default: defy = (size + 4) / 8; break;
+    }
+
+    const bool isXdefined = args[9].Defined();
+    const bool isYdefined = args[10].Defined();
+
+    int x = int(args[9].AsDblDef(defx) * PIXEL_MUL_FACTOR + 0.5);
+    int y = int(args[10].AsDblDef(defy) * PIXEL_MUL_FACTOR + 0.5);
+
+    if (!isXdefined && x_center)
+      x = (clip->GetVideoInfo().width >> 1) * PIXEL_MUL_FACTOR;
+
+    if (!isYdefined && y_center)
+      y = (clip->GetVideoInfo().height >> 1) * PIXEL_MUL_FACTOR;
+
+
+    if ((align < 1) || (align > 9))
+      env->ThrowError("Info: Align values are 1 - 9 mapped to your numeric pad");
+
+    return new FilterInfo(clip, font, size, text_color, halo_color, bold, italic, noaa, cpu, x, y, align, env);
 }
 
 

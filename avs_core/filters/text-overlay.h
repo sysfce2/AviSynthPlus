@@ -293,7 +293,7 @@ class FilterInfo : public GenericVideoFilter
  **/
 {
 public:
-  FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env);
+  FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa, bool _cpu, int _x, int _y, int _align, IScriptEnvironment* env);
   virtual ~FilterInfo(void);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
   bool __stdcall GetParity(int n) override;
@@ -323,6 +323,9 @@ private:
   const bool bold;
   const bool italic;
   const bool noaa;
+  const bool cpu;
+  const int x, y;
+  const int align;
 };
 
 
