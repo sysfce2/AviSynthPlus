@@ -199,9 +199,14 @@ class ShowProperties : public GenericVideoFilter
 private:
   int size;
   bool showtype;
+  const char* const fontname; // Terminus or info_h
+  const int textcolor, halocolor;
+  const bool bold;
+  int x, y;
+  int align;
 
 public:
-  ShowProperties(PClip _child, int size, bool showtype, IScriptEnvironment* env);
+  ShowProperties(PClip _child, int size, bool showtype, const char* _font, int _text_color, int _halo_color, bool _bold, int _x, int _y, int _align, IScriptEnvironment* env);
   ~ShowProperties();
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
   int __stdcall SetCacheHints(int cachehints, int frame_range);

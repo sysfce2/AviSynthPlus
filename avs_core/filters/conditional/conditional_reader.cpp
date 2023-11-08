@@ -1420,8 +1420,12 @@ PVideoFrame __stdcall CopyProperties::GetFrame(int n, IScriptEnvironment* env)
 //**************************************************
 // propShow
 
-ShowProperties::ShowProperties(PClip _child, int size, bool showtype, IScriptEnvironment* env)
-  : GenericVideoFilter(_child), size(size), showtype(showtype)
+ShowProperties::ShowProperties(PClip _child, int size, bool showtype, 
+  const char *_font, int _text_color, int _halo_color, bool _bold,
+  int _x, int _y, int _align, IScriptEnvironment* env)
+  : GenericVideoFilter(_child), size(size), showtype(showtype),
+  fontname(_font), textcolor(_text_color), halocolor(_halo_color), bold(_bold),
+  x(_x), y(_y), align(_align)
 { }
 
 ShowProperties::~ShowProperties() { }
@@ -1541,9 +1545,9 @@ PVideoFrame __stdcall ShowProperties::GetFrame(int n, IScriptEnvironment* env)
 
   std::string t = ss.str();
   const char* text = t.c_str();
-  AVSValue args[3] = { child, text, size };
-  const char * argnames[3] = { 0, 0, "size" };
-  PClip child2 = env->Invoke("Text", AVSValue(args, 3), argnames).AsClip();
+  AVSValue args[10] = { child, text, size, fontname, textcolor, halocolor, bold, x, y, align };
+  const char* argnames[10] = { 0, 0, "size", "font", "text_color", "halo_color", "bold", "x", "y", "align" };
+  PClip child2 = env->Invoke("Text", AVSValue(args, 10), argnames).AsClip();
   frame = child2->GetFrame(n, env);
 
   return frame;
@@ -1562,7 +1566,62 @@ int __stdcall ShowProperties::SetCacheHints(int cachehints, int frame_range)
 
 AVSValue __cdecl ShowProperties::Create(AVSValue args, void*, IScriptEnvironment* env)
 {
+  // 0   1        2       3         4             5        6     7   8     9
+  // c[size]i[showtype]b[font]s[text_color]i[halo_color]i[bold]b[x]f[y]f[align]i
+
+  PClip clip = args[0].AsClip();
+
   const int size = args[1].AsInt(16);
   const bool showtype = args[2].AsBool(false);
-  return new ShowProperties(args[0].AsClip(), size, showtype, env);
+  const char* font = args[3].AsString("Terminus");
+  const int text_color = args[4].AsInt(0xFFFF00);
+  const int halo_color = args[5].AsInt(0);
+  const bool bold = args[6].AsBool(false);
+
+  const int align = args[9].AsInt(7); // default top left
+
+  const int info_default_x = 0; // subtitle: 8, Info: 4
+  const int PIXEL_MUL_FACTOR = 1; // like "Text"
+  // similar to SubTitle/FilterInfo.Create
+  int defx, defy;
+  bool x_center = false;
+  bool y_center = false;
+
+  switch (align) {
+  case 1: case 4: case 7: defx = 8; break;
+  case 2: case 5: case 8:
+    defx = 0; // n/a if not set later
+    x_center = true;
+    break;
+  case 3: case 6: case 9: defx = clip->GetVideoInfo().width - info_default_x; break; // subtitle: 8, Info: 4
+  default: defx = info_default_x; break;
+  }
+
+  switch (align) {
+  case 1: case 2: case 3: defy = clip->GetVideoInfo().height - 2; break; // bottom alignment 2 pixel above
+  case 4: case 5: case 6:
+    defy = 0; // n/a if not set later
+    y_center = true;
+    break;
+  case 7: case 8: case 9: defy = 0; break;
+  default: defy = (size + 4) / 8; break;
+  }
+
+  const bool isXdefined = args[7].Defined();
+  const bool isYdefined = args[8].Defined();
+
+  int x = int(args[7].AsDblDef(defx) * PIXEL_MUL_FACTOR + 0.5);
+  int y = int(args[8].AsDblDef(defy) * PIXEL_MUL_FACTOR + 0.5);
+
+  if (!isXdefined && x_center)
+    x = (clip->GetVideoInfo().width >> 1) * PIXEL_MUL_FACTOR;
+
+  if (!isYdefined && y_center)
+    y = (clip->GetVideoInfo().height >> 1) * PIXEL_MUL_FACTOR;
+
+
+  if ((align < 1) || (align > 9))
+    env->ThrowError("propShow: Align values are 1 - 9 mapped to your numeric pad");
+
+  return new ShowProperties(clip, size, showtype, font, text_color, halo_color, bold, x, y, align, env);
 }
