@@ -83,10 +83,10 @@ struct CachePimpl
   // Audio cache
   CachePolicyHint AudioPolicy;
   char* AudioCache;
-  size_t SampleSize;
-  size_t MaxSampleCount;
+  int SampleSize;
+  int64_t MaxSampleCount;
   int64_t AudioCacheStart;
-  size_t CacheCount;
+  int64_t CacheCount;
   int64_t ac_expected_next;
   int ac_too_small_count;
   long ac_currentscore;
@@ -134,7 +134,7 @@ Cache::Cache(const PClip& _child, Device* device, std::mutex& CacheGuardMutex, I
   if (childAudioPolicy == 0)
     childAudioPolicy = (CachePolicyHint)this->SetCacheHints(CACHE_GET_AUDIO_POLICY, dummy);
   switch (childAudioPolicy) {
-  case 0: break; // n/a
+  case CachePolicyHint(0): break; // n/a
   case CACHE_AUDIO:          // Explicitly do cache audio, X byte cache.
   case CACHE_AUDIO_NOTHING:  // Explicitly do not cache audio.
   case CACHE_AUDIO_AUTO_START_OFF: // Audio cache off (auto mode), X byte initial cache.
@@ -376,7 +376,7 @@ void __stdcall Cache::GetAudio(void* buf, int64_t start, int64_t count, IScriptE
 
     if (_pimpl->ac_too_small_count > 2 && _pimpl->MaxSampleCount < _pimpl->vi.AudioSamplesFromBytes(8192 * 1024)) {  // Max size = 8MB!
       //automatically upsize cache!
-      int new_size = (int)(_pimpl->vi.BytesFromAudioSamples(std::max(count, _pimpl->AudioCacheStart + (int64_t)_pimpl->CacheCount - start)) + 8192) & -8192; // Yes +1 to +8192 bytes
+      int new_size = (int)(_pimpl->vi.BytesFromAudioSamples(std::max(count, _pimpl->AudioCacheStart + _pimpl->CacheCount - start)) + 8192) & -8192; // Yes +1 to +8192 bytes
       new_size = std::min(8192 * 1024, new_size);
       _RPT2(0, "CA:%x: Autoupsizing buffer to %d bytes!\n", this, new_size);
       SetCacheHints(_pimpl->AudioPolicy, new_size); // updates maxsamplecount!!
@@ -387,7 +387,7 @@ void __stdcall Cache::GetAudio(void* buf, int64_t start, int64_t count, IScriptE
       _pimpl->child->GetAudio(buf, start, count, env);
       global_lock.lock();
 
-      _pimpl->CacheCount = std::min((size_t)count, _pimpl->MaxSampleCount); // Remember maxsamplecount gets updated
+      _pimpl->CacheCount = std::min(count, _pimpl->MaxSampleCount); // Remember maxsamplecount gets updated
       _pimpl->AudioCacheStart = start + count - _pimpl->CacheCount;
       BYTE* buff = (BYTE*)buf;
       buff += _pimpl->vi.BytesFromAudioSamples(_pimpl->AudioCacheStart - start);
@@ -402,7 +402,7 @@ void __stdcall Cache::GetAudio(void* buf, int64_t start, int64_t count, IScriptE
   if ((start < _pimpl->AudioCacheStart) || (start > _pimpl->AudioCacheStart + _pimpl->MaxSampleCount)) { //first sample is before cache or beyond linear reach -> restart cache
     _RPT1(0, "CA:%x: Restart\n", this);
 
-    _pimpl->CacheCount = std::min((size_t)count, _pimpl->MaxSampleCount);
+    _pimpl->CacheCount = std::min(count, _pimpl->MaxSampleCount);
     _pimpl->AudioCacheStart = start;
     _pimpl->child->GetAudio(_pimpl->AudioCache, _pimpl->AudioCacheStart, _pimpl->CacheCount, env);
   }

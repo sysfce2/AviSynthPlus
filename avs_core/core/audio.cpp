@@ -258,7 +258,7 @@ static int channelcount_from_mask(unsigned int mask)
   y = y & 0x1111111111111111ULL;
   y = y * 0x1111111111111111ULL;
   y = y >> 60;
-  return y;
+  return (int)y;
 }
 
 // gets the 'idx'th bit=1 from layout_mask and returns its bit index 
@@ -268,7 +268,7 @@ enum AVSChannel av_channel_layout_channel_from_index(const unsigned int channel_
     unsigned int idx)
 {
   const int nb_channels = channelcount_from_mask(channel_layout_mask);
-  if (idx >= nb_channels)
+  if ((int)idx >= nb_channels)
     return AVSChannel::AVS_CHAN_IDX_NONE;
 
   for (int i = 0; i < 32; i++) { // unsigned int 32 bits

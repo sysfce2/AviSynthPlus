@@ -1512,7 +1512,7 @@ void convert_yv24_to_rgb_ssse3(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, c
 
       __m128i result_bg = _mm_unpacklo_epi8(result_b, result_g); //g7 b7 g6 b6 g5 b5 g4 b4 g3 b3 g2 b2 g1 b1 g0 b0
       __m128i alpha;
-      if(hasAlpha)
+      if constexpr(hasAlpha)
         alpha = src_a; // a7 .. a0
       else
         alpha = _mm_cmpeq_epi32(result_r, result_r); // FF FF FF FF ... default alpha transparent

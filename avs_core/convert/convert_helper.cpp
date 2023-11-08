@@ -273,7 +273,6 @@ static bool is_paramstring_empty_or_auto(const char* param) {
 
 // called from yuv <-> rgb and to_greyscale converters
 void matrix_parse_merge_with_props_def(bool rgb_in, bool rgb_out, const char* matrix_name, const AVSMap* props, int& _Matrix, int& _ColorRange, int& _ColorRange_Out, int _Matrix_Default, int _ColorRange_Default, IScriptEnvironment* env) {
-  bool has_colorrange_property = false;
   // if once we'd like to use input colorrange when input is rgb (e.g. studio rgb of ColorBars is limited)
   int _ColorRange_In = rgb_in ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED;
   int _Default_ColorRange_Out = rgb_out ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED; // RGB -> YUV or YUV -> RGB
@@ -281,7 +280,6 @@ void matrix_parse_merge_with_props_def(bool rgb_in, bool rgb_out, const char* ma
   if (props) {
     // _ColorRange exists for RGB as well
     if (env->propNumElements(props, "_ColorRange") > 0) {
-      has_colorrange_property = true;
       _ColorRange_In = (int)env->propGetInt(props, "_ColorRange", 0, nullptr); // fixme: range check
       _ColorRange_Default = _ColorRange_In;
       if (rgb_in && rgb_out) // rgb in and out: keep input

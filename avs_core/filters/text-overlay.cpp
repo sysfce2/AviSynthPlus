@@ -1790,7 +1790,7 @@ static int CorrectYbyTextAndAlignment(int real_y, int align, int fontsize, int l
   while (true) {
     index = real_LF ? s.find("\n", index) : s.find("\\n", index);
     if (index == std::string::npos) break;
-    if (!real_LF && index > 0 && s.at(index - 1) == '\\') // \\n case: \n is preceded by \ 
+    if (!real_LF && index > 0 && s.at(index - 1) == '\\') // \\n case: \n is preceded by '\'
       index += 3;
     else {
       index += 2;

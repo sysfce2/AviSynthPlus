@@ -1112,7 +1112,7 @@ AVSValue __cdecl FilteredResize::Create_SincLin2Resize(AVSValue args, void*, ISc
 // like bicubic, plus 's'upport: optional B and C and S
 AVSValue __cdecl FilteredResize::Create_UserDefined2Resize(AVSValue args, void*, IScriptEnvironment* env)
 {
-  auto f = UserDefined2Filter(args[3].AsFloat(121.0), args[4].AsFloat(19.0), args[5].AsFloat(2.3));
+  auto f = UserDefined2Filter(args[3].AsFloat(121.0f), args[4].AsFloat(19.0f), args[5].AsFloat(2.3f));
   return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[6], &f, env);
 }
 

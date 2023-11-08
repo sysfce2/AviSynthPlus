@@ -149,7 +149,7 @@ void convert_yv24_to_rgb_avx2(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, co
 
       __m256i result_bg = _mm256_unpacklo_epi8(result_b, result_g); //g15 b15 g14 b14 g13 b13 g12 b12 g11 b11 g10 b10 g9 b9 g8 b8 | g7 b7 g6 b6 g5 b5 g4 b4 g3 b3 g2 b2 g1 b1 g0 b0
       __m256i alpha;
-      if (hasAlpha) {
+      if constexpr(hasAlpha) {
         __m128i a_lo = _mm_unpacklo_epi8(src_a, zero128);  //00 A7 00 A6 00 A5 00 A4 00 A3 00 A2 00 A1 00 A0
         __m128i a_hi = _mm_unpackhi_epi8(src_a, zero128);  //00 A15 00 A14 00 A13 00 A12 00 A11 00 A10 00 A9 00 A8
         alpha = _mm256_set_m128i(a_hi, a_lo); // a15 .. a0  at low of each m128i part
