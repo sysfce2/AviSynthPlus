@@ -6,8 +6,46 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
-20231019 3.7.3 post 4
+20231105 3.7.3 post 9
 ---------------------
+- (#366):
+  "propShow" add further parameters, like in "Text".
+   string "font", int "text_color", int "halo_color", bool "bold", float "x", float "y", int "align"
+
+  full signature: c[size]i[showtype]b[font]s[text_color]i[halo_color]i[bold]b[x]f[y]f[align]i
+
+  font default: "Terminus" (can also be: "info_h")
+  bold default: false
+  x, y default: depending on the "align"
+  align default: 7 (top left)  valid values 1-9 (see your numeric keyboard)
+  halo color MSB = FF (e.g. FF000000) -> no outline + semi transparent background
+                   FE (e.g. FE000000) -> outline + semi transparent background
+                   01 (e.g. 01000000) -> no outline + normal display
+                   00 (e.g. 00000000) -> outline + normal display
+
+  propShow(align=1, halo_color=$FF000000)
+  propShow(size=6,bold=true, align=3, halo_color=$FE000000)  
+  propShow(size=16,bold=true, align=5, halo_color=$00000000)
+  propShow(font="info_h", align=9, halo_color=$01000000)
+  See https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/propShow.html
+- New: "Info" new parameter
+    bool "cpu" (true)
+  If set to false, displaying CPU capabilities is disabled
+- Enhancement: "Info" displays partially visible lines as well.
+- (#366)
+  "Info" new parameters, similar to SubTitle/Text: 
+  int "align"  (default 7: top left)
+  float "x"    (default 4 for top left, screen center or right otherwise)
+  float "y"    (default 0 for top left, screen center or bottom otherwise)
+  See https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/info.html
+- Fix #368 (https://github.com/AviSynth/AviSynthPlus/issues/368)
+  Make proper vertical alignment for multiline text (containing "\n" and parameter "lsp" is defined) 
+  in Subtitle and Text when vertical alignment is set to bottom (align=1,2,3) or center (4,5,6).
+  See also https://forum.doom9.org/showthread.php?t=185145
+  Note 1: The "\n" after the last line does not result in an empty bottom line, so both "Line1" and "Line1\n" are one-line texts.
+- Fix: "Text" use "lsp" parameter the same way as in SubTitle: in 1/8 pixel units, not in 1 pixels.
+  Historically "lsp" in SubTitle is measured in 1/8 pixels, so "lsp"=8 means 1 pixels.
+- Fix: "Text" vertical alignment position would be wrong for multiline strings containing even number of lines.
 - Fix #365 (https://github.com/AviSynth/AviSynthPlus/issues/365)
   Avisynth 2.5 plugins when NICE_FILTER would crash with "invalid response to CACHE_GETCHILD_AUDIO_MODE".
   Bug appeared since reintroducing audio cache in 3.7.3.
@@ -24,7 +62,7 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
     Now ColorBarsHD().ConvertToRGB32(matrix="PC.601").propShow()
     would display "_ColorRange=1 (limited)", since ColorbarsHD's output is limited as well.
   - Studio RGB (limited) range will now be recognized (through _ColorRange=1) and utilized in 
-    conversions from RGB, such as in GreyScale, ConvertToY, ConvertToYUVxxx.
+    conversions from RGB, such as in GreyScale, ConvertToY, ConvertToYUVxxx (latter fixed in test5).
     When input or output would require it, rgb offset of 16 (or scaled equivalents) is used 
     for supporting limited range rgb (similar to Y offset=16 used at limited range YUV conversions)
   
