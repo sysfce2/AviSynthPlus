@@ -2033,7 +2033,7 @@ DirectShowSource::DirectShowSource(const char* filename, int _avg_time_per_frame
       if (!get_sample.IsConnected()) {
         if (_enable_video)
           env->ThrowError("DirectShowSource: GRF file does not have a compatible open video pin.\n"
-                          "Graph must have 1 output pin that will bid RGB24, RGB32, ARGB, YUY2,\n"
+                          "Graph must have 1 output pin that will bid RGB24, RGB32, RGB48, RGB64, ARGB, YUY2,\n"
                           "YV12, I420, NV12, YV16, YV24, Y41P, Y411 or AYUV");
         else
           env->ThrowError("DirectShowSource: GRF file does not have a compatible open audio pin.\n"
