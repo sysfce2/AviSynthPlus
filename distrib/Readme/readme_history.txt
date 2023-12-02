@@ -6,8 +6,9 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
-20231105 3.7.3 post 9
----------------------
+20231203 3.7.3 post 10
+----------------------
+- DirectShowSource "utf8" bool (default false) parameter to accept filename in utf8 encoding
 - (#366):
   "propShow" add further parameters, like in "Text".
    string "font", int "text_color", int "halo_color", bool "bold", float "x", float "y", int "align"
