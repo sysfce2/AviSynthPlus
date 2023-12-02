@@ -15,7 +15,7 @@ Set of filters to manipulate the alpha channel:
 .. _AddAlphaPlane:
 
 AddAlphaPlane
---------------
+-------------
 
 **AddAlphaPlane** adds an alpha plane to the source clip. It can also be used to
 replace the existing alpha plane of the source clip. Note that the color format
@@ -174,7 +174,7 @@ section for more information.
 
 ::
 
-    ColorKeyMask (clip, int color, int tolB, int tolG, int tolR)
+    ColorKeyMask (clip, int color[, int tolB, int tolG, int tolR])
 
 .. describe:: clip
 
@@ -196,6 +196,10 @@ section for more information.
     have a default. When ``tolR`` or ``tolG`` are not set, they use the value
     from ``tolB``. When ``tolB`` is not defined, it defaults to 10.
 
+Note 1: ``color``, ``tolB``, ``tolG`` and ``tolR`` parameters are unnamed.
+
+Note 2: ``color`` and tolerance parameters are the same as for 8 bit RGB32. 
+Internally they are automatically scaled to the current bit-depth.
 
 Examples
 --------
@@ -208,7 +212,7 @@ Let's create some colorful text using :doc:`ColorBars <colorbars>`,
 .. code-block:: c++
 
     src = ColorBars(width=256, height=192, pixel_type="RGB32").Crop(0,0,0,-143)
-    msk = Blankclip(src).Subtitle("AviSynth+", size=55, align=2, text_color=$FFFFFF).ExtractR()
+    msk = BlankClip(src).Subtitle("AviSynth+", size=55, align=2, text_color=$FFFFFF).ExtractR()
 
     AddAlphaPlane(src, msk)
     ImageWriter("colorful text", type="png")
