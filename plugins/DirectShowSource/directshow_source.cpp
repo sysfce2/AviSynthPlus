@@ -35,6 +35,7 @@
 
 #include "directshow_source.h"
 #include <avs/minmax.h>
+#include <memory>
 
 #define DSS_VERSION "2.6.1"
 
@@ -1980,6 +1981,23 @@ void DirectShowSource::SetWMAudioDecoderDMOtoHiResOutput(IFilterGraph *pGraph)
   pEnum->Release();
 }
 
+static std::unique_ptr<wchar_t[]> AnsiToWideCharACP(const char* s_ansi)
+{
+  const size_t bufsize = strlen(s_ansi) + 1;
+  auto w_string = std::make_unique<wchar_t[]>(bufsize);
+  MultiByteToWideChar(CP_ACP, 0, s_ansi, -1, w_string.get(), (int)bufsize);
+  //mbstowcs(script_name_w, script_name, len); // ansi to wchar_t, does not convert properly out-of-the box
+  return w_string;
+}
+
+static std::unique_ptr<wchar_t[]> Utf8ToWideChar(const char* s_ansi)
+{
+  const size_t wchars_count = MultiByteToWideChar(CP_UTF8, 0, s_ansi, -1, NULL, 0);
+  const size_t bufsize = wchars_count + 1;
+  auto w_string = std::make_unique<wchar_t[]>(bufsize);
+  MultiByteToWideChar(CP_UTF8, 0, s_ansi, -1, w_string.get(), (int)bufsize);
+  return w_string;
+}
 
 /************************************************
  *               DirectShowSource               *
@@ -1988,7 +2006,7 @@ void DirectShowSource::SetWMAudioDecoderDMOtoHiResOutput(IFilterGraph *pGraph)
 
 DirectShowSource::DirectShowSource(const char* filename, int _avg_time_per_frame, int _seekmode,
                                    bool _enable_audio, bool _enable_video, bool _convert_fps, unsigned _media,
-                                   int _timeout, int _frames, LOG* _log, IScriptEnvironment* env)
+                                   int _timeout, int _frames, LOG* _log, bool _utf8, IScriptEnvironment* env)
   : get_sample(_enable_audio, _enable_video, _media, _log), seekmode(_seekmode), convert_fps(_convert_fps),
     gb(NULL), currentFrame(0), TrapTimeouts(_timeout < 0), WaitTimeout(abs(_timeout)), log(_log) {
 
@@ -2001,8 +2019,7 @@ DirectShowSource::DirectShowSource(const char* filename, int _avg_time_per_frame
     CheckHresult(env, CoCreateInstance(CLSID_FilterGraphNoThread, 0, CLSCTX_INPROC_SERVER, IID_IGraphBuilder, (void**)&gb),
                  "couldn't create filter graph");
 
-    WCHAR filenameW[MAX_PATH];
-    MultiByteToWideChar(CP_ACP, 0, filename, -1, filenameW, MAX_PATH);
+    auto filenameW = !_utf8 ? AnsiToWideCharACP(filename) : Utf8ToWideChar(filename);
 
     CheckHresult(env, gb->AddFilter(static_cast<IBaseFilter*>(&get_sample), L"GetSample"), "couldn't add GetSample filter");
 
@@ -2010,7 +2027,7 @@ DirectShowSource::DirectShowSource(const char* filename, int _avg_time_per_frame
     bool load_grf = (fnlen >= 4) ? !lstrcmpi(filename+fnlen-4,".grf") : false;  // Detect ".GRF" extension and load as graph if so.
 
     if (load_grf) {
-      CheckHresult(env, LoadGraphFile(gb, filenameW), "Couldn't open GRF file.", filename);
+      CheckHresult(env, LoadGraphFile(gb, filenameW.get()), "Couldn't open GRF file.", filename);
       // Try connecting to any open pins.
       AttemptConnectFilters(gb, &get_sample);
       if (!get_sample.IsConnected()) {
@@ -2023,7 +2040,7 @@ DirectShowSource::DirectShowSource(const char* filename, int _avg_time_per_frame
                           "Graph must have 1 output pin that will bid 8, 16, 24 or 32 bit PCM or IEEE Float.");
       }
     } else {
-      HRESULT RFHresult = gb->RenderFile(filenameW, NULL);
+      HRESULT RFHresult = gb->RenderFile(filenameW.get(), NULL);
       if (!get_sample.IsConnected()) { // Ignore arbitary errors, run with what we got
         CheckHresult(env, RFHresult, "couldn't open file ", filename);
         env->ThrowError("DirectShowSource: RenderFile, the filter graph manager won't talk to me");
@@ -2657,13 +2674,15 @@ AVSValue __cdecl Create_DirectShowSource(AVSValue args, void*, IScriptEnvironmen
     if (!log) env->ThrowError("DirectShowSource: No memory for Log.");
   }
 
+  const bool utf8 = args[12].AsBool(false);
+
   if (!(audio && video)) { // Hey - simple!!
     if (audio) {
       return new DirectShowSource(filename, _avg_time_per_frame, seekmode, true , false,
-                                  args[5].AsBool(false), _media, _timeout, _frames, log, env);
+                                  args[5].AsBool(false), _media, _timeout, _frames, log, utf8, env);
     } else {
       return new DirectShowSource(filename, _avg_time_per_frame, seekmode, false , true,
-                                  args[5].AsBool(false), _media, _timeout, _frames, log, env);
+                                  args[5].AsBool(false), _media, _timeout, _frames, log, utf8, env);
     }
   }
 
@@ -2685,7 +2704,7 @@ AVSValue __cdecl Create_DirectShowSource(AVSValue args, void*, IScriptEnvironmen
 
     try {
       DS_audio = new DirectShowSource(filename, _avg_time_per_frame, seekmode, true , false,
-                                      args[5].AsBool(false), _media, _timeout, _frames, log, env);
+                                      args[5].AsBool(false), _media, _timeout, _frames, log, utf8, env);
     } catch (const AvisynthError &e) {
       a_e_msg = e.msg;
       audio_success = false;
@@ -2693,7 +2712,7 @@ AVSValue __cdecl Create_DirectShowSource(AVSValue args, void*, IScriptEnvironmen
 
     try {
       DS_video = new DirectShowSource(filename, _avg_time_per_frame, seekmode, false, true,
-                                      args[5].AsBool(false), _media, _timeout, _frames, log, env);
+                                      args[5].AsBool(false), _media, _timeout, _frames, log, utf8, env);
     } catch (const AvisynthError &e) {
       if (!lstrcmpi(e.msg, "DirectShowSource: I can't determine the frame rate\n"
                            "of the video, you must use the \"fps\" parameter.") ) { // Note must match message above
@@ -2735,10 +2754,10 @@ extern "C" __declspec(dllexport) const char* __stdcall AvisynthPluginInit3(IScri
   AVS_linkage = vectors;
 
   env->AddFunction("DirectShowSource",
-// args   0      1      2       3       4            5          6
+// args 0  1     2       3       4         5           6
        "s[fps]f[seek]b[audio]b[video]b[convertfps]b[seekzero]b"
-//                 7            8            9        10        11
-       "[timeout]i[pixel_type]s[framecount]i[logfile]s[logmask]i",
+//          7            8            9        10        11       12
+       "[timeout]i[pixel_type]s[framecount]i[logfile]s[logmask]i[utf8]b",
        Create_DirectShowSource, 0);
 
   return "DirectShowSource";

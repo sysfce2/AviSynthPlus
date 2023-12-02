@@ -443,7 +443,7 @@ class DirectShowSource : public IClip {
 public:
 
   DirectShowSource(const char* filename, int _avg_time_per_frame, int _seekmode, bool _enable_audio, bool _enable_video,
-                   bool _convert_fps, unsigned _media, int _timeout, int _frames, LOG* _log, IScriptEnvironment* env);
+                   bool _convert_fps, unsigned _media, int _timeout, int _frames, LOG* _log, bool _utf8, IScriptEnvironment* env);
   ~DirectShowSource();
   const VideoInfo& __stdcall GetVideoInfo() { return vi; }
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
