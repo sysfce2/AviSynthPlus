@@ -121,7 +121,7 @@ Install only the Samples, uncheck everything else.
 | Open Visual Studio, and open the .sln file in the 7.1 SDK, at
 | ``C:\Program Files\Microsoft SDKs\Windows\v7.1\Samples\multimedia\directshow\baseclasses``
 
-Allow Visual Studio to convert the project, switch the configuration to ``Release``,
+Allow Visual Studio to convert the project, switch the configuration to ``Release_MBCS``,
 and enter the project Properties by right-clicking on the solution name and selecting
 ``Properties``.
 
@@ -132,7 +132,7 @@ support libraries like strmbase.lib), and finally, exit back to the main screen.
 
 Now select ``Build``. That's it.
 
-For 64-bit, change to ``Release x64`` and ``Build``. The SSE2 note isn't relevant here, since
+For 64-bit, change to ``Release_MBCS x64`` and ``Build``. The SSE2 note isn't relevant here, since
 64-bit CPUs are required to have SSE2 support.
 
 
