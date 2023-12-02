@@ -34,13 +34,13 @@ Syntax and Parameters
 
     DirectShowSource (string filename, float "fps", bool "seek", bool "audio", bool "video",
                       bool "convertfps", bool "seekzero", int "timeout", string "pixel_type",
-                      int "framecount", string "logfile", int "logmask")
+                      int "framecount", string "logfile", int "logmask", bool "utf8")
 
 
 .. describe:: filename
 
     The path of the source file; path can be omitted if the source file is in
-    the same directory as the AviSynth script (\*.avs).
+    the same directory as the AviSynth script (\*.avs). See also parameter ``utf8``.
 
 .. describe:: fps
 
@@ -202,6 +202,12 @@ Syntax and Parameters
 
     Default: 35
 
+.. describe:: utf8
+
+    Use this option if the filename is in utf8 encoding. Note that since Windows 10 v1803
+    utf8 is supported natively, when set in the System Locale setting.
+
+    default: false
 
 Examples
 --------
@@ -333,8 +339,9 @@ and directly loaded by DirectShowSource. For AviSynth to be able to connect
 to it, you must leave a pin open in GraphEdit of a media types that AviSynth
 is able to connect to. AviSynth will not attempt to disconnect any filters,
 so it is important that the output type is correct. DirectShowSource only
-accepts YV24, YV16, YV12, YUY2, AYUV, Y41P, Y411, ARGB, RGB32 and RGB24 video
-formats and 32, 24, 16 and 8 bit PCM and IEEE FLOAT audio formats.
+accepts YV24, YV16, YV12, YUY2, AYUV, Y41P, Y411, ARGB, RGB32, RGB24, RGB64
+and RGB48 video formats and 32, 24, 16 and 8 bit PCM and IEEE FLOAT audio 
+formats.
 
 A given GRF-file should only target one of an audio or video stream to avoid
 confusion when directshowsource attempts the connection to your open pin(s).
@@ -409,21 +416,25 @@ See also
 Changelog
 ---------
 
-+-----------------+------------------------------------------------------------+
-| Version         | Changes                                                    |
-+=================+============================================================+
-| AviSynth 2.6.0  | Added pixel_types "YV24", "YV16", "AYUV", "Y41P", "Y411".  |
-+-----------------+------------------------------------------------------------+
-| AviSynth 2.5.7  || framecount overrides the length of the streams.           |
-|                 || logfile and logmask specify debug logging.                |
-+-----------------+------------------------------------------------------------+
-| AviSynth 2.5.6  || convertfps turns vfr into constant cfr by adding frames.  |
-|                 || seekzero restricts seeking to begining only.              |
-|                 || timeout controls response to recalcitrant graphs.         |
-|                 || pixel_type specifies/restricts output video pixel format. |
-+-----------------+------------------------------------------------------------+
++-------------------+------------------------------------------------------------+
+| Version           | Changes                                                    |
++===================+============================================================+
+| AviSynth 3.7.4    | Add utf8 support.                                          |
++-------------------+------------------------------------------------------------+
+| AviSynth+ r2294MT | 16-bit RGB input support (BGR[48], BRA[64])                |
++-------------------+------------------------------------------------------------+
+| AviSynth 2.6.0    | Added pixel_types "YV24", "YV16", "AYUV", "Y41P", "Y411".  |
++-------------------+------------------------------------------------------------+
+| AviSynth 2.5.7    || framecount overrides the length of the streams.           |
+|                   || logfile and logmask specify debug logging.                |
++-------------------+------------------------------------------------------------+
+| AviSynth 2.5.6    || convertfps turns vfr into constant cfr by adding frames.  |
+|                   || seekzero restricts seeking to begining only.              |
+|                   || timeout controls response to recalcitrant graphs.         |
+|                   || pixel_type specifies/restricts output video pixel format. |
++-------------------+------------------------------------------------------------+
 
-$Date: 2022/03/14 02:45:53 $
+$Date: 2023/12/02 19:24:00 $
 
 .. _DirectShow:
     https://en.wikipedia.org/wiki/DirectShow
