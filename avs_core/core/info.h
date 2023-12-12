@@ -45,6 +45,7 @@
 #include <iomanip>
 #include <vector>
 #include <cstring>
+#include "strings.h"
 
 enum ChromaLocationMode {
   CENTER_411,
@@ -103,7 +104,7 @@ public:
   std::vector<uint8_t> font_bitmaps;
   const int fontline_bytes;
 
-  std::unordered_map<uint16_t, int> charReMap; // unicode code point vs. font image index
+  std::unordered_map<std::string, int> charReMapUtf8; // utf8 vs. font image index
 
   void SaveAsC(const uint16_t* _codepoints);
 
@@ -140,23 +141,23 @@ public:
     }
 
     for (int i = 0; i < _number_of_chars; i++) {
-      charReMap[_codepoints[i]] = i;
+      std::string s_utf8 = U16_to_utf8(_codepoints[i]);
+      charReMapUtf8[s_utf8] = i;
     }
 
     if (debugSave)
       SaveAsC(_codepoints);
   }
 
-  // helper function for remapping a wchar_t string to font index entry list
-  std::vector<int> remap(const std::wstring& s16);
-
+  // helper function for remapping an utf8 string to font index entry list
+  std::vector<int> remap(const std::string& s_utf8);
 };
 
 std::unique_ptr<BitmapFont> GetBitmapFont(int size, const char* name, bool bold, bool debugSave);
 
-void SimpleTextOutW(BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::wstring& text,
+void SimpleTextOutW(BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,
   bool fadeBackground, int textcolor, int halocolor, bool useHaloColor, int align, int chromaplacement);
-void SimpleTextOutW_multi(BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::wstring& text,
+void SimpleTextOutW_multi(BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,
   bool fadeBackground, int textcolor, int halocolor, bool useHaloColor, int align, int lsp, int chromaplacement);
 
 // legacy function w/o outline, originally with ASCII input, background fading

@@ -60,18 +60,44 @@
 #include "strings.h"
 #include "../convert/convert_helper.h"
 
-// helper function for remapping a wchar_t string to font index entry list
-std::vector<int> BitmapFont::remap(const std::wstring& ws)
+// helper function for remapping an utf8 string to font index entry list
+std::vector<int> BitmapFont::remap(const std::string& s_utf8)
 {
-  // new vector with characters remapped to table indexes
+  // new vector with characters remapped to font table indexes
   std::vector<int> s_remapped;
-  s_remapped.resize(ws.size());
-  for (size_t i = 0; i < ws.size(); i++) {
-    auto it = charReMap.find(ws[i]);
-    if (it != charReMap.end())
-      s_remapped[i] = it->second;
+  const size_t real_len = str_utf8_size(s_utf8);
+  s_remapped.resize(real_len);
+
+  size_t index = 0;
+  const char* p = s_utf8.data();
+  const char* end = p + s_utf8.size();
+  while (p < end) {
+    // Get the lead byte of the current UTF-8 character
+    unsigned char lb = static_cast<unsigned char>(*p);
+    // Determine the number of bytes in the current UTF-8 character
+    int n = 0;
+    if ((lb & 0x80) == 0) n = 1; // 0xxxxxxx
+    else if ((lb & 0xE0) == 0xC0) n = 2; // 110xxxxx
+    else if ((lb & 0xF0) == 0xE0) n = 3; // 1110xxxx
+    else if ((lb & 0xF8) == 0xF0) n = 4; // 11110xxx
+    else {
+      // Invalid lead byte, skip
+      ++p;
+      continue;
+    }
+    // Create a buffer to store the UTF-8 character code
+    char utf8_char_buf[5] = { 0 };
+    // Copy the bytes from the string to the buffer
+    std::memcpy(utf8_char_buf, p, n);
+    // finds by utf8 character sequence in font index table
+    auto it = charReMapUtf8.find(utf8_char_buf);
+    if (it != charReMapUtf8.end())
+      s_remapped[index] = it->second;
     else
-      s_remapped[i] = 0; // empty neutral character (space)
+      s_remapped[index] = 0; // empty neutral character (space)
+    index++;
+    // Advance the pointer by the number of bytes
+    p += n;
   }
   return s_remapped;
 }
@@ -1880,13 +1906,13 @@ std::unique_ptr<BitmapFont> GetBitmapFont(int size, const char *name, bool bold,
   return std::unique_ptr<BitmapFont>(current_font);
 }
 
-static void DrawString_internal(BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& dst, int x, int y, std::wstring& s16,
+static void DrawString_internal(BitmapFont* current_font, const VideoInfo& vi, PVideoFrame& dst, int x, int y, std::string& s_utf8,
   int color, int halocolor, bool useHalocolor, int align, bool fadeBackground, int chromalocation)
 {
   //static BitmapFont_10_20 infoFont1020; // constructor runs once, single instance
 
-  // map unicode to character map index
-  auto s_remapped = current_font->remap(s16); // array of font table indexes
+  // map an utf8 string to a sequence of character map indexes
+  auto s_remapped = current_font->remap(s_utf8); // array of font table indexes
 
   //SaveBitmapSource(); // debug to generate source from original table
 
@@ -2038,38 +2064,38 @@ static void DrawString_internal(BitmapFont* current_font, const VideoInfo& vi, P
   }
 }
 
-void SimpleTextOutW(BitmapFont *current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::wstring& text,
+void SimpleTextOutW(BitmapFont *current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,
   bool fadeBackground, int textcolor, int halocolor, bool useHaloColor, int align, int chromalocation)
 {
-  DrawString_internal(current_font, vi, frame, real_x, real_y, text, textcolor, halocolor, useHaloColor, align, fadeBackground, chromalocation); // fully transparent background
+  DrawString_internal(current_font, vi, frame, real_x, real_y, text_utf8, textcolor, halocolor, useHaloColor, align, fadeBackground, chromalocation); // fully transparent background
 }
 
 // additional parameter: lsp line spacing
-void SimpleTextOutW_multi(BitmapFont *current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::wstring& text,
+void SimpleTextOutW_multi(BitmapFont *current_font, const VideoInfo& vi, PVideoFrame& frame, int real_x, int real_y, std::string& text_utf8,
   bool fadeBackground, int textcolor, int halocolor, bool useHaloColor,
   int align, int lsp, int chromalocation)
 {
 
   // make list governed by LF separator
-  using wstringstream = std::basic_stringstream<wchar_t>;
-  std::wstring temp;
-  std::vector<std::wstring> parts;
-  wstringstream wss(text);
-  while (std::getline(wss, temp, L'\n'))
-    parts.push_back(temp);
+  std::string temp;
+  std::vector<std::string> parts;
+  std::stringstream ss(text_utf8);
+  while (std::getline(ss, temp, '\n'))
+    parts.push_back(temp); // still in utf8
   // It doesn't result in a new line if the last character is \n and is followed by nothing.
   // "Line1\nLine2" is the same as "Line1\nLine2\n"
   // Like in SubTitle
   /*
   if(!text.empty())
   {
-    if( *text.rbegin() == L'\n')
-      parts.push_back(L"");
+    if( *text.rbegin() == '\n')
+      parts.push_back("");
   }
   */
   const int fontSize = current_font->height;
 
   // when multiline, bottom and vertically centered cases affect starting y
+  // lsp units are in 1/8 pixels by definition
   int al = alignToBitmask(align);
   if (al & ATA_BOTTOM)
     real_y -= (int)((fontSize + lsp / 8.0) * ((int)parts.size() - 1) + 0.5);
@@ -2078,16 +2104,16 @@ void SimpleTextOutW_multi(BitmapFont *current_font, const VideoInfo& vi, PVideoF
 
   const int orig_real_y = real_y;
   int linecount = 0;
-  for (auto ws : parts) {
+  for (auto s_utf8 : parts) {
     real_y = orig_real_y + fontSize * linecount + (int)(lsp / 8.0 * linecount + 0.5);
-    SimpleTextOutW(current_font, vi, frame, real_x, real_y, ws, fadeBackground, textcolor, halocolor, useHaloColor, align, chromalocation);
+    SimpleTextOutW(current_font, vi, frame, real_x, real_y, s_utf8, fadeBackground, textcolor, halocolor, useHaloColor, align, chromalocation);
     linecount++;
   }
 }
 
 // Old legacy info.h functions, but with utf8 mode
 // w/o outline, originally with ASCII input, background fading
-// unline name Planar, it works for all format
+// Despite name Planar, it works for all formats
 void DrawStringPlanar(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char* s)
 {
   int color;
@@ -2098,7 +2124,7 @@ void DrawStringPlanar(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char*
 
   // fadeBackground = true: background letter area is faded instead not being untouched.
 
-  std::wstring ws = charToWstring(s, false);
+  std::string s_utf8 = charToUtf8(s, false);
 
   int halocolor = 0;
 
@@ -2107,7 +2133,7 @@ void DrawStringPlanar(VideoInfo& vi, PVideoFrame& dst, int x, int y, const char*
   if (current_font == nullptr)
     return;
 
-  DrawString_internal(current_font.get(), vi, dst, x, y, ws,
+  DrawString_internal(current_font.get(), vi, dst, x, y, s_utf8,
     color,
     halocolor,
     false, // don't use halocolor

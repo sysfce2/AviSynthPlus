@@ -1110,8 +1110,8 @@ PVideoFrame ShowFrameNumber::GetFrame(int n, IScriptEnvironment* env) {
     SetTextAlign(hdc, TA_BASELINE|TA_LEFT);
     TextOut(hdc, x+16, y+16, text, (int)strlen(text));
 #else
-    std::wstring ws = charToWstring(text, true);
-    SimpleTextOutW(current_font.get(), vi, frame, x, y, ws, false, textcolor, halocolor, true, 1, chromaplacement);
+    std::string s_utf8 = charToUtf8(text, true);
+    SimpleTextOutW(current_font.get(), vi, frame, x, y, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement);
 #endif
   } else if (scroll) {
     int n1 = vi.IsFieldBased() ? (n/2) : n;
@@ -1121,11 +1121,11 @@ PVideoFrame ShowFrameNumber::GetFrame(int n, IScriptEnvironment* env) {
     TextOut(hdc, child->GetParity(n) ? 32 : vi.width*8+8, y2, text, (int)strlen(text));
 #else
     int y2 = size + size * (n1 % (vi.height / size));
-    std::wstring ws = charToWstring(text, true);
+    std::string s_utf8 = charToUtf8(text, true);
     if(child->GetParity(n))
-      SimpleTextOutW(current_font.get(), vi, frame, 4, y2, ws, false, textcolor, halocolor, true, 1, chromaplacement); // left
+      SimpleTextOutW(current_font.get(), vi, frame, 4, y2, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement); // left
     else
-      SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, ws, false, textcolor, halocolor, true, 3, chromaplacement); // right
+      SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, s_utf8, false, textcolor, halocolor, true, 3, chromaplacement); // right
 #endif
 
   }
@@ -1136,13 +1136,13 @@ PVideoFrame ShowFrameNumber::GetFrame(int n, IScriptEnvironment* env) {
     for (int y2 = size; y2 < vi.height * 8; y2 += size)
       TextOut(hdc, child->GetParity(n) ? 32 : vi.width * 8 + 8, y2, text, text_len);
 #else
-    std::wstring ws = charToWstring(text, true);
+    std::string s_utf8 = charToUtf8(text, true);
     // size-1 because of bottom alignment
     for (int y2 = size - 1; y2 < vi.height; y2 += size) {
       if (child->GetParity(n))
-        SimpleTextOutW(current_font.get(), vi, frame, 4, y2, ws, false, textcolor, halocolor, true, 1, chromaplacement); // bottom-left
+        SimpleTextOutW(current_font.get(), vi, frame, 4, y2, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement); // bottom-left
       else
-        SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, ws, false, textcolor, halocolor, true, 3,chromaplacement); // bottom-right
+        SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, s_utf8, false, textcolor, halocolor, true, 3,chromaplacement); // bottom-right
     }
 #endif
   }
@@ -1293,8 +1293,8 @@ PVideoFrame ShowCRC32::GetFrame(int n, IScriptEnvironment* env) {
     SetTextAlign(hdc, TA_BASELINE | TA_LEFT);
     TextOut(hdc, x + 16, y + 16, text, (int)strlen(text));
 #else
-    std::wstring ws = charToWstring(text, true);
-    SimpleTextOutW(current_font.get(), vi, frame, x, y, ws, false, textcolor, halocolor, true, 1, chromaplacement);
+    std::string s_utf8 = charToUtf8(text, true);
+    SimpleTextOutW(current_font.get(), vi, frame, x, y, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement);
 #endif
   }
   else if (scroll) {
@@ -1305,11 +1305,11 @@ PVideoFrame ShowCRC32::GetFrame(int n, IScriptEnvironment* env) {
     TextOut(hdc, child->GetParity(n) ? 32 : vi.width * 8 + 8, y2, text, (int)strlen(text));
 #else
     int y2 = size + size * (n1 % (vi.height / size));
-    std::wstring ws = charToWstring(text, true);
+    std::string s_utf8 = charToUtf8(text, true);
     if (child->GetParity(n))
-      SimpleTextOutW(current_font.get(), vi, frame, 4, y2, ws, false, textcolor, halocolor, true, 1, chromaplacement); // left
+      SimpleTextOutW(current_font.get(), vi, frame, 4, y2, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement); // left
     else
-      SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, ws, false, textcolor, halocolor, true, 3, chromaplacement); // right
+      SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, s_utf8, false, textcolor, halocolor, true, 3, chromaplacement); // right
 #endif
 
   }
@@ -1320,12 +1320,12 @@ PVideoFrame ShowCRC32::GetFrame(int n, IScriptEnvironment* env) {
     for (int y2 = size; y2 < vi.height * 8; y2 += size)
       TextOut(hdc, child->GetParity(n) ? 32 : vi.width * 8 + 8, y2, text, text_len);
 #else
-    std::wstring ws = charToWstring(text, true);
+    std::string s_utf8 = charToUtf8(text, true);
     for (int y2 = size; y2 < vi.height; y2 += size) {
       if (child->GetParity(n))
-        SimpleTextOutW(current_font.get(), vi, frame, 4, y2, ws, false, textcolor, halocolor, true, 1, chromaplacement); // left
+        SimpleTextOutW(current_font.get(), vi, frame, 4, y2, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement); // left
       else
-        SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, ws, false, textcolor, halocolor, true, 3, chromaplacement); // right
+        SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, s_utf8, false, textcolor, halocolor, true, 3, chromaplacement); // right
     }
 #endif
   }
@@ -1549,8 +1549,8 @@ PVideoFrame __stdcall ShowSMPTE::GetFrame(int n, IScriptEnvironment* env)
   antialiaser.Apply(vi, &frame, frame->GetPitch());
 #else
   const bool utf8 = true;
-  auto ws = charToWstring(text, utf8);
-  SimpleTextOutW(current_font.get(), vi, frame, x + 2, y + 2, ws, true, textcolor, halocolor, false, 5, chromaplacement);
+  auto s_utf8 = charToUtf8(text, utf8);
+  SimpleTextOutW(current_font.get(), vi, frame, x + 2, y + 2, s_utf8, true, textcolor, halocolor, false, 5, chromaplacement);
 #endif
 
   return frame;
@@ -2078,7 +2078,7 @@ PVideoFrame SimpleText::GetFrame(int n, IScriptEnvironment* env)
       }
     }
 
-    std::wstring ws = charToWstring(s.c_str(), utf8); // to wchar_t either from utf8 (win/linux) or ansi (win)
+    std::string s_utf8 = charToUtf8(s.c_str(), utf8); // to wchar_t either from utf8 (win/linux) or ansi (win)
 
     // halocolor MSB
     // FF: fadeIt, no halo
@@ -2086,7 +2086,7 @@ PVideoFrame SimpleText::GetFrame(int n, IScriptEnvironment* env)
     // 01-FD: no halo
     // 00: use halocolor
     int halocolor_msb = (halocolor_orig & 0xFF000000) >> 24;
-    SimpleTextOutW_multi(current_font.get(), vi, frame, real_x, real_y, ws,
+    SimpleTextOutW_multi(current_font.get(), vi, frame, real_x, real_y, s_utf8,
       halocolor_msb == 0xFF || halocolor_msb == 0xFE, // fadeIt, special halocolor, when MSB byte is FF or FE
       textcolor, halocolor,
       halocolor_msb == 0x00 || halocolor_msb == 0xFE, // use halocolor when MSB byte is 00 or FE
@@ -2551,13 +2551,12 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
 
     // AVS_POSIX: utf8 is always true, here n/a
     bool utf8 = false;
-    // converting to wchar_t either from utf8 (win/linux) or ansi (win)
-    std::wstring ws = charToWstring(text, utf8);
+    std::string s_utf8 = charToUtf8(text, utf8);
 
     int lsp = 0; // line spacing n/a
 
     const int chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
-    SimpleTextOutW_multi(current_font.get(), vi, frame, x, y, ws, false, text_color, halo_color, true, align, lsp, chromaplacement);
+    SimpleTextOutW_multi(current_font.get(), vi, frame, x, y, s_utf8, false, text_color, halo_color, true, align, lsp, chromaplacement);
 #endif
   return frame;
 }
@@ -3128,9 +3127,9 @@ PVideoFrame __stdcall Compare::GetFrame(int n, IScriptEnvironment* env)
         antialiaser.Apply(vi, &f1, dst_pitch);
 #else
         bool utf8 = true;
-        auto ws = charToWstring(text, utf8);
+        auto s_utf8 = charToUtf8(text, utf8);
         const int chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
-        SimpleTextOutW_multi(current_font.get(), vi, f1, 2, 1, ws, true, text_color, halo_color, false, 0 /* no align */, 0 /*lsp*/, chromaplacement);
+        SimpleTextOutW_multi(current_font.get(), vi, f1, 2, 1, s_utf8, true, text_color, halo_color, false, 0 /* no align */, 0 /*lsp*/, chromaplacement);
 #endif
     }
 
@@ -3349,16 +3348,17 @@ bool GetTextBoundingBoxFixed(const char* text, const char* fontname, int size, b
     }
   }
 
-  auto s16 = charToWstring(text, utf8);
   size_t max_width = 1;
   height = 1;
 
   // make list governed by LF separator
-  using wstringstream = std::basic_stringstream<wchar_t>;
-  std::wstring temp;
-  wstringstream wss(s16);
-  while (std::getline(wss, temp, L'\n')) {
-    max_width = std::max(max_width, temp.size() * current_font->width);
+  std::string temp;
+  std::stringstream ss(text);
+  while (std::getline(ss, temp, '\n')) {
+    // does not recognize combined unicode sequences, 
+    // e.g. U: is len=2 and not len=1 like Ü
+    const size_t real_len = utf8 ? str_utf8_size(temp) : temp.size();
+    max_width = std::max(max_width, real_len * current_font->width);
     height += current_font->height;
   }
 
@@ -3413,8 +3413,7 @@ void ApplyMessage( PVideoFrame* frame, const VideoInfo& vi, const char* message,
 
   // AVS_POSIX: utf8 is always true
   bool utf8 = false; // fixme: true for new utf8-avs+
-  // converting to wchar_t either from utf8 (win/linux) or ansi (win)
-  std::wstring ws = charToWstring(message, utf8);
+  std::string s_utf8 = charToUtf8(message, utf8);
 
   int align = 7;
   int lsp = 0;
@@ -3422,7 +3421,7 @@ void ApplyMessage( PVideoFrame* frame, const VideoInfo& vi, const char* message,
   int y = 4;
 
   const int chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
-  SimpleTextOutW_multi(current_font.get(), vi, *frame, x, y, ws, false, textcolor, halocolor, true, align, lsp, chromaplacement);
+  SimpleTextOutW_multi(current_font.get(), vi, *frame, x, y, s_utf8, false, textcolor, halocolor, true, align, lsp, chromaplacement);
 
 #endif
 }

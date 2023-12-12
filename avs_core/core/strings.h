@@ -43,6 +43,7 @@ bool replace(std::string &haystack, char needle, char newChar);
 std::string trim(const std::string& s);
 
 #ifdef AVS_WINDOWS
+std::unique_ptr<char[]> AnsiToUtf8(const char* input);
 std::unique_ptr<char[]> WideCharToUtf8(const wchar_t* w_string);
 std::unique_ptr<char[]> WideCharToAnsi(const wchar_t* w_string);
 std::unique_ptr<char[]> WideCharToAnsiACP(const wchar_t* w_string);
@@ -53,6 +54,11 @@ std::unique_ptr<wchar_t[]> AnsiToWideCharACP(const char* s_ansi);
 std::unique_ptr<wchar_t[]> Utf8ToWideChar(const char* s_ansi);
 #endif
 
+size_t str_utf8_size(const std::string& s);
+std::string U16_to_utf8(uint16_t u16);
+std::string charToUtf8(const char* text, bool utf8);
+#if 0
 std::wstring charToWstring(const char* text, bool utf8);
+#endif
 
 #endif // AVSCORE_STRINGS_H

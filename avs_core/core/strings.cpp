@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <codecvt>
 #include <locale>
+#include <vector>
 
 
 static inline char tolower(char c)
@@ -132,6 +133,21 @@ std::string trim(const std::string& s)
  **********************************/
 
 #ifdef AVS_WINDOWS
+std::unique_ptr<char[]> AnsiToUtf8(const char* input)
+{
+  int wlen = MultiByteToWideChar(AreFileApisANSI() ? CP_ACP : CP_OEMCP, 0, input, -1, NULL, 0);
+  wchar_t* wstr = new wchar_t[wlen];
+  MultiByteToWideChar(AreFileApisANSI() ? CP_ACP : CP_OEMCP, 0, input, -1, wstr, wlen);
+  const auto utf8len = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, NULL, 0, NULL, NULL);
+  // The length comes with the \0 terminator
+  // Allocate a buffer for the UTF-8 string
+  auto s_utf8 = std::make_unique<char[]>(utf8len);
+  // Convert the UTF-16 string from UTF-8
+  WideCharToMultiByte(CP_UTF8, 0, wstr, -1, s_utf8.get(), (int)utf8len, NULL, NULL);
+  delete[] wstr;
+  return s_utf8;
+}
+
 std::unique_ptr<char[]> WideCharToUtf8(const wchar_t* w_string)
 {
   const auto utf8len = WideCharToMultiByte(CP_UTF8, 0, w_string, -1, NULL, 0, 0, 0) - 1; // w/o the \0 terminator
@@ -205,6 +221,73 @@ std::unique_ptr<wchar_t[]> Utf8ToWideChar(const char* s_ansi)
 }
 #endif
 
+size_t str_utf8_size(const std::string& s) {
+  // Does not handle combined codepoints, e.g. diacritic mark modifications
+  // Leading UTF8 byte:
+  // 1 byte  0xxxxxxx
+  // 2 bytes 110xxxxx
+  // 3 bytes 1110xxxx
+  // 4 bytes 11110xxx
+  size_t len = 0;
+  for (char c : s) {
+    if ((c & 0xc0) != 0x80) // Not a trailing byte 10xxxxxx
+      len++;
+  }
+  return len;
+}
+
+// converts a 16 bit unicode codepoint to its utf8 string representation
+std::string U16_to_utf8(uint16_t u16)
+{
+  uint8_t bytes[3];
+  int size = 0;
+  // check the range of the UTF-16 code point
+  if (u16 <= 0x007F) {
+    // one byte, 0xxxxxxx
+    bytes[0] = static_cast<uint8_t>(u16);
+    size = 1;
+  }
+  else if (u16 <= 0x07FF) {
+    // two bytes, 110xxxxx 10xxxxxx
+    bytes[0] = static_cast<uint8_t>(0xC0 | ((u16 >> 6) & 0x1F));
+    bytes[1] = static_cast<uint8_t>(0x80 | (u16 & 0x3F));
+    size = 2;
+  }
+  else {
+    // three bytes, 1110xxxx 10xxxxxx 10xxxxxx
+    bytes[0] = static_cast<uint8_t>(0xE0 | ((u16 >> 12) & 0x0F));
+    bytes[1] = static_cast<uint8_t>(0x80 | ((u16 >> 6) & 0x3F));
+    bytes[2] = static_cast<uint8_t>(0x80 | (u16 & 0x3F));
+    size = 3;
+  }
+  // convert the array of bytes to a string
+  std::string u8str(bytes, bytes + size);
+  return u8str;
+}
+
+// for posix: always assume utf8
+std::string charToUtf8(const char* text, bool utf8)
+{
+  std::string s;
+  // AVS_POSIX: utf8 is always true, no ANSI here
+#ifdef AVS_POSIX
+  utf8 = true;
+#endif
+  if (utf8) {
+    s = text; // no change
+  }
+#ifdef AVS_WINDOWS
+  else {
+    // ANSI (or system local Active CP, since Win10 it can be UTF8), Windows
+    auto source = AnsiToUtf8(text);
+    s = source.get();
+  }
+#endif
+  return s;
+}
+
+#if 0
+// This must be eliminated, codecvt_utf8_utf16 is deprecated, and C++26 does not support at all
 std::wstring charToWstring(const char* text, bool utf8)
 {
   std::wstring ws;
@@ -257,3 +340,4 @@ std::wstring charToWstring(const char* text, bool utf8)
 #endif
   return ws;
 }
+#endif
