@@ -53,7 +53,7 @@ extern const AVSFunction Conditional_filters[] = {
   // with "function" input local default is true
   {  "ConditionalSelect", BUILTIN_FUNC_PREFIX, "csc+[show]b[local]b", ConditionalSelect::Create },
   {  "ConditionalSelect", BUILTIN_FUNC_PREFIX, "cnc+[show]b[local]b", ConditionalSelect::Create }, // function input
-  {  "ConditionalFilter", BUILTIN_FUNC_PREFIX, "cccsss[show]b[localb", ConditionalFilter::Create, (void *)0 },
+  {  "ConditionalFilter", BUILTIN_FUNC_PREFIX, "cccsss[show]b[local]b", ConditionalFilter::Create, (void *)0 },
   // easy syntax from GConditionalFilter, args3 and 4 to "=" and "true":
   {  "ConditionalFilter", BUILTIN_FUNC_PREFIX, "cccs[show]b[local]b", ConditionalFilter::Create, (void *)1 },
   {  "ConditionalFilter", BUILTIN_FUNC_PREFIX, "cccn[show]b[local]b", ConditionalFilter::Create, (void *)2 }, // function input
