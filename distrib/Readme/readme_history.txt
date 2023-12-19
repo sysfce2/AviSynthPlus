@@ -6,8 +6,12 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
-20231203 3.7.3 post 10
+20231219 3.7.3 post ??
 ----------------------
+- rst docs: Conditional filters, Runtime functions
+  https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/conditionalfilter.html
+  https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/conditionalreader.html
+- Fix: allow use of "local" in ConditionalSelect string version (fixed wrong function signature)
 - DirectShowSource "utf8" bool (default false) parameter to accept filename in utf8 encoding
 - (#366):
   "propShow" add further parameters, like in "Text".
