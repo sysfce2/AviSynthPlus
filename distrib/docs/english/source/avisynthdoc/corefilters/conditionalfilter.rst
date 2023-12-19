@@ -8,20 +8,71 @@ ConditionalFilter
 .. contents:: Table of contents
 
 
+Common things
+-------------
+
+Runtime filter contain some similar parameters (when applicable)
+
+.. describe:: local
+
+    The bool *local* parameter is like in Gavino's gRunT: affects the scope of 
+    variables visible inside the runtime environment. Default is ``local=false``
+    for string expressions, to be compatible with legacy Avisynth.
+
+    For function-like expressions the default is ``local=true``.
+
+    If ``local=true`` the filter will evaluate its run-time script in a new variable scope,
+    avoiding unintended sharing of variables between run-time scripts.
+
+.. describe:: show
+
+    Adding ``show=true`` will display the actual values on the screen.
+
+    default: false
+
+
 
 ConditionalFilter
 -----------------
 
-``ConditionalFilter`` (clip testclip, clip source1, clip source2, string
-expression1, string operator, string expression2, bool "show")
+::
 
-``ConditionalFilter`` returns source1 when the condition formed by
-"expression1+operator+expression2" is met for current frame, otherwise it
-returns source2. If any function in expression1 or expression2 is not
-explicitly applied to a clip, it will be applied on testclip. The audio is
-taken from source1.
+    ConditionalFilter (clip testclip, clip source1, clip source2, string expression1,
+                       string operator, string expression2, bool "show", bool "local" )
 
-An example. This will choose frames from vid_blur when the average luma value
+    ConditionalFilter (clip testclip, clip source1, clip source2, string expression1,
+                       bool "show", bool "local" )
+
+    ConditionalFilter (clip testclip, clip source1, clip source2, function func,
+                       bool "show", bool "local" )
+
+
+``ConditionalFilter`` returns *source1* when the condition formed by
+``expression1+operator+expression2`` is met for current frame, otherwise it
+returns *source2*. If any function in *expression1* or *expression2* is not
+explicitly applied to a clip, it will be applied on *testclip*. The audio is
+taken from *source1*.
+
+The second and third form in Avisynth+ is an abbreviated version which takes 
+only four compulsory parameters, works like *operator* is ``=`` and *expression2*
+is ``"true"`` (similar to Gavino's GConditionalFilter)
+
+The strings *expression1* and *expression2* can be any numeric or boolean
+expressions, and may include internal or user functions, as well as some
+additional functions which are predefined (:ref:`the Runtime Functions <conditional-runtime-functions>`) and the
+special runtime variable *current_frame* (the framenumber of the requested
+frame).
+
+The string operator can be
+
+  * "equals" or "=", "=="
+  * "greaterthan" or ">"
+  * "lessthan" or "<".
+
+Examples
+~~~~~~~~
+
+This will choose frames from vid_blur when the average luma value
 of a frame is less than 20. Otherwise frames from vid will be returned.
 ::
 
@@ -29,27 +80,33 @@ of a frame is less than 20. Otherwise frames from vid will be returned.
     vid_blur = vid.Blur(1.5)
     ConditionalFilter(vid, vid_blur, vid, "AverageLuma()", "lessthan", "20")
 
-Adding show="true" will display the actual values on the screen.
-
-The strings expression1 and expression2 can be any numeric or boolean
-expressions, and may include internal or user functions, as well as some
-additional functions which are predefined (:ref:`the Runtime Functions <conditional-runtime-functions>`) and the
-special runtime variable current_frame (the framenumber of the requested
-frame).
-
-The string operator can be "equals", "greaterthan" or "lessthan". Or "=", ">"
-or "<" respectively.
-
 
 ConditionalSelect
 -----------------
 
-``ConditionalSelect`` (clip testclip, string expression, clip source0, clip
-source1, clip source2, ... , bool "show")
+::
+
+    ConditionalSelect (clip testclip, string expression, clip source0, clip source1, clip source2, ... ,
+                       bool "show", bool "local")
+
+    ConditionalSelect (clip testclip, function func, clip source0, clip source1, clip source2, ... ,
+                       bool "show", bool "local")
+
 
 ``ConditionalSelect`` returns each one frame from several source clips based
 on an integer evaluator. If the expression evaluates to the integer j
 (starting at zero), the frame from the j-th source clip is returned.
+
+The expression can be either a string or a function object.
+
+If a frame is requested from a non-existing source clip (say the expression
+evaluates to -1 or 3 in the example above, where 3 source clips are
+supplied), the frame of the testclip will be returned.
+
+Audio from *testclip* is passed through untouched.
+
+Examples
+~~~~~~~~
 
 This will return a frame from vid_blur2 when the average luma value of a
 frame (of vid) is less than 15, will return a frame from vid_blur when the
@@ -64,42 +121,47 @@ Otherwise a frame from vid will be returned.
     ConditionalSelect(vid, "luma_av = AverageLuma()"+chr(13)+"luma_av <
     25 ? (luma_av < 15 ? 2 : 1) : 0", vid, vid_blur, vid_blur2)
 
-    # Adding show="true" will display the actual values on the screen.
-
-If a frame is requested from a non-existing source clip (say the expression
-evaluates to -1 or 3 in the example above, where 3 source clips are
-supplied), the frame of the testclip will be returned.
-
-Audio from "testclip" is passed through untouched.
-
 
 .. _ScriptClip:
 
 ScriptClip
 ----------
 
-``ScriptClip`` (clip, string filter, bool "show", bool "after_frame")
+::
 
-``ScriptClip`` returns the clip returned by the filter evaluated on every
-frame. The string filter can be any expression returning a clip, including
+    ScriptClip (clip, string filter, bool "show", bool "after_frame", bool "local")
+
+    ScriptClip (clip, function func, bool "show", bool "after_frame", bool "local")
+
+``ScriptClip`` returns the clip returned by the filter or the function evaluated on every
+frame. The string *filter* can be any expression returning a clip, including
 internal or user clip functions, and may include line breaks (allowing a
 sequence of statements to be evaluated). Also, also some functions which are
 predefined (:ref:`the Runtime Functions <conditional-runtime-functions>`) and the special runtime variable
-current_frame (the framenumber of the requested frame) can be used in the
-filter expression. Adding show="true" will display the actual values on the
-screen.
+*current_frame* (the framenumber of the requested frame) can be used in the
+filter expression. In the function-like version the function object must return a clip.
 
-Some examples:
+Parameter ``after_frame=true/false`` option determines if the script should be evaluated 
+before (default operation) or after the frame has been fetched from the filters above.
+
+
+Examples
+~~~~~~~~
+
 ::
 
     # This will print the difference from the previous frame onto the current one:
     clip = AviSource("c:\file.avi")
     ScriptClip(clip, "Subtitle(String(YDifferenceFromPrevious))")
 
+::
+
     # This will apply blur on each frame based on the difference from the previous.
     # This will also show how errors are reported on some frames :)
     clip = AviSource("c:\file.avi")
     ScriptClip(clip, "Blur(YDifferenceFromPrevious/20.0)")
+
+::
 
     # This will apply temporalsoften to very static scenes, and apply a _variable_ blur on moving scenes.
     # Blur is now capped properly. We also assign a variable - and this is why a line break is inserted:
@@ -111,35 +173,196 @@ Some examples:
     ScriptClip(clip, "diff = YDifferenceToNext()"+chr(13)+"diff>2.5 ?
     Blur(fmin(diff/20, 1.5)) : T")
 
+::
+
     # Shows the frame-number in a clip:
     ScriptClip("subtitle(string(current_frame))")
+
+::
 
     # Shows 'frame = the frame-number' in a clip:
     ScriptClip("""subtitle("frame = " + string(current_frame))""")
 
-In v2.55 an *after_frame=true/false* option to is added. This determines if
-the script should be evaluated before (default operation) or after the frame
-has been fetched from the filters above.
 
-"Restrictions": the output of the script MUST be exactly like the clip
+Restrictions
+~~~~~~~~~~~~
+
+The output of the script MUST be exactly like the clip
 delivered to ``ScriptClip`` (same colorspace, width and height). Your
 returned clip is allowed to have different length - but the length from
-"clip" is always used. Audio from "clip" is passed through untouched. For two
+*clip* is always used. Audio from *clip* is passed through untouched. For two
 very different sources (MPEG2DEC3 and AviSource) - you might run into
 colorspace mismatches. This is known quirk.
+
+Multithreading notes for ScriptClip
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+There were always problems with ScriptClip, namely variable stability in multithreading.
+
+A short history.
+
+Avisynth Neo (an Avisynth+ fork which introduced a lot of new things in Avisynth+)
+knew no mercy and made the behavior correct but incompatible with old scripts.
+
+Its correct variable scope (default ``local=true``) resulted in incompatibility with some old scripts.
+So scripts written on the assumption of ``local=false`` (legacy Avisynth) did not work.
+
+Neo's (valid) point: they would not allow the following script to show the behavior to print "3".
+
+::
+
+     # prints 3 - Avisynth default but seems incorrect
+     global foo=2
+     function PrintFoo(clip c)
+     { c.ScriptClip("Subtitle(string(foo))", local = false) }
+     Version()
+     PrintFoo()
+     foo = 3
+     last
+
+::
+
+     # prints 2 - correct behavior
+     global foo=2
+     function PrintFoo(clip c)
+     { c.ScriptClip("Subtitle(string(foo))", local = true) }
+     Version()
+     PrintFoo()
+     foo = 3
+     last
+
+So all runtime filters (ConditionalSelect, ConditionalFilter, ScriptClip, ConditionalReader,
+FrameEvaluate, WriteFile, WriteFileIf, WriteFileStart, WriteFileEnd ) accept a bool "local" 
+parameter which acts same as in GRunT.
+
+If ``local=true`` (function-syntax default) the filter will evaluate its run-time script in 
+a new variable scope (opens a new global variable frame), avoiding unintended sharing of variables 
+between run-time scripts.
+
+In our present Avisynth+ all legacy (string expression) runtime filters are compatible with the 
+legacy behaviour (``), but one can set the other mode by ``local=true`` parameter. Functions have 
+a stricter variable scope. See the examples below.
+
+Examples on 'after_frame' and global variable visibility
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Example 1**
+
+::
+
+    ColorbarsHD()
+    Expr("frameno","","") # luma is 0..255 for the first 256 frames.
+    # A global variable which ShowChannels is overwriting in each frame
+    global SC_LMn_0 = 2 
+    # ShowChannels (an external filter) sets some global variables 
+    # (frame min/max/etc. statistics) e.g. "SC_LMn_0" in each frame
+    ShowChannels(SetVar=True,show=false)  
+    
+    # Choose test method
+    #method=0 # String-syntax
+    method=1 # Function-Syntax
+    
+    if(method==0) {
+      # "string"-syntax ScriptClip
+      # 'local'=false is the default working mode for
+      # 'after_frame'=true: script should be evaluated AFTER frame has been fetched, because
+      #                     we'd like to display the values set by ShowChannels
+      ScriptClip( """subtitle(string(SC_LMn_0) + " current frame=" + String(current_frame)) """, after_frame = true)
+       
+      # Example of delayed display:
+      # Statistics are from previously displayed frame which can be totally off 
+      # when moving a slider in VirtualDub.
+      # The reason of this asynchronous mode is because child (upper) script 
+      # - ShowChannels in this case - runs _after_ the string evaluation. 'after_frame' is 
+      # false by default, it is not necessary to specify, it's here for the sake of the example.
+      # ScriptClip( """subtitle(string(SC_LMn_0) + " current frame=" + String(current_frame) ) """, after_frame = false)
+    } else {
+      # function-syntax ScriptClip
+      # Here 'local'=false must be set because local=true is the default for this mode.
+      # A 'function' inside a ScriptClip should have one clip argument or no argument.
+      # 'c' is a parameter which must be passed to the function. Name is not important,
+      # it moves the actual clip into function's scope. This is why we can SubTitle on it.
+      # 'after_frame'=true: script should be evaluated AFTER frame has been fetched, because
+      # we'd like to display the values set by ShowChannels
+      # A function can see only global variables, so it will see the value of 'SC_LMn_0' which ShowChannels set previously.
+      ScriptClip( function [] (c) {c.subtitle(string(SC_LMn_0) ) } , local = false, after_frame = true)
+    }
+
+Note: messaging through global variables is dangerous.
+
+The example above will not work in multithreaded environment.
+
+It won't even work consistently in single threaded environment unless the filter which is writing 
+the global variables is a non-cached filter. Only non-cached type filters are ensured to be reached 
+at each call from ScriptClip or else its 'GetFrame' method won't even be called.
+It's because that when a frame is found in Avisynth's cache, it's not evaluated.
+
+**Example 2**
+
+Function-like syntax: example on ``local=true``.
+
+Safe method: function call from ScriptClip; function which calls a _real_ runtime function.
+
+::
+
+    ColorbarsHD()
+    Trim(0,255)
+    Expr("frameno","","") # luma is 0..255 for the first 256 frames.
+    # function-syntax ScriptClip + runtime function call + dedicated global var demo
+    # Here 'local'=true (for the sake of the demo; this is the default for this mode).
+    # 'local'=true makes a dedicated global variable area, in which 'last' and 'current frame'
+    # 'c' is a parameter which must be passed to the function. Name is not important,
+    # it moves the actual clip into function's scope.
+    # This is why we can SubTitle on it.
+    # A function can see only global variables. 'last' and 'current_frame' are available 
+    # here - they are global variables which were set by ScriptClip after creating a 
+    # safe global variable stack.
+    # PlaneMinMaxStats writes six global variables "PlaneStats_min", "PlaneStats_max",
+    # "PlaneStats_thmin", "PlaneStats_thmax", "PlaneStats_median", "PlaneStats_average"
+    ScriptClip( function [] () {
+      x=PlaneMinMaxStats(threshold=30, offset=0, plane=1, setvar=true)
+      subtitle("min=" + string(PlaneStats_min) + " thmax" + String(PlaneStats_thmax) + \
+      " median = " + String(PlaneStats_Median) + " median_too=" + String(x[4]))
+      } , local = true) 
+
+**Example 3**
+
+function-like syntax with local=true 
+
+::
+
+    # local=true -> new GlobalVar sandbox is created, 'current_frame' and 'last' global
+    #               variables are set in it, they are visible for a function
+    ScriptClip( function [] (c) {c.subtitle(string(current_frame) ) } , local = true) 
+
+**Example 4**
+
+function-like syntax with local=false 
+
+::
+
+    # Error: "I don't know what 'current_frame' means.
+    # local=false -> 'current_frame' and 'last' are set as a simple variables,
+    # but regular variables are not visible inside the function, only globals
+    ScriptClip( function [] (c) { c.subtitle(string(current_frame) ) } , local = false) 
+
+When the script parameter is not a string but a function (see Function Objects
+http://avisynth.nl/index.php/Function_objects) then Avisynth+ works in a 
+correct way even when multithreading, since the default value of "local" is true. 
+
 
 FrameEvaluate
 -------------
 
-``FrameEvaluate`` (clip clip, script filter, bool "after_frame")
+``FrameEvaluate`` (clip clip, script filter, bool "after_frame", bool "local")
 
 Similar to ``ScriptClip``, except the output of the filter is ignored. This
 can be used for assigning variables, etc. Frames are passed directly through
 from the supplied clip.
 
-In v2.53 an ``after_frame=true/false`` option to is added. This determines if
-the script should be evaluated before (default operation) or after the frame
-has been fetched from the filters above.
+Parameter ``after_frame=true/false`` option determines if the script should be evaluated 
+before (default operation) or after the frame has been fetched from the filters above.
+
 
 ConditionalReader
 -----------------
@@ -157,17 +380,24 @@ Runtime Functions
 
 These are the internal functions which are evaluated every frame.
 
-| These will return the average pixel value of a plane (require YV12, ISSE):
+| These will return the average pixel value of a plane:
 | ``AverageLuma`` (clip)
 | ``AverageChromaU`` (clip)
 | ``AverageChromaV`` (clip)
+| ``AverageR`` (clip)
+| ``AverageG`` (clip)
+| ``AverageB`` (clip)
+| ``AverageA`` (clip)
 
 | These return a float value between 0 and 255 of the absolute difference
-  between two planes (require YV12, ISSE):
+  between two planes:
 | ``RGBDifference`` (clip1, clip2)
 | ``LumaDifference`` (clip1, clip2)
 | ``ChromaUDifference`` (clip1, clip2)
 | ``ChromaVDifference`` (clip1, clip2)
+| ``RDifference`` (clip1, clip2)
+| ``GDifference`` (clip1, clip2)
+| ``BDifference`` (clip1, clip2)
 
 When using these functions there is an "implicit last" clip (first parameter
 doesn't have to be specified), so the first parameter is replaced by the
@@ -178,10 +408,16 @@ testclip.
 | ``YDifferenceFromPrevious`` (clip)
 | ``UDifferenceFromPrevious`` (clip)
 | ``VDifferenceFromPrevious`` (clip)
-| ``RGBDifferenceToNext`` (clip)
-| ``YDifferenceToNext`` (clip)
-| ``UDifferenceToNext`` (clip)
-| ``VDifferenceToNext`` (clip)
+| ``RDifferenceFromPrevious`` (clip)
+| ``GDifferenceFromPrevious`` (clip)
+| ``BDifferenceFromPrevious`` (clip)
+| ``RGBDifferenceToNext`` (clip, int "offset")
+| ``YDifferenceToNext`` (clip, int "offset")
+| ``UDifferenceToNext`` (clip, int "offset")
+| ``VDifferenceToNext`` (clip, int "offset")
+| ``RDifferenceToNext`` (clip, int "offset")
+| ``GDifferenceToNext`` (clip, int "offset")
+| ``BDifferenceToNext`` (clip, int "offset")
 
 ::
 
@@ -191,25 +427,85 @@ testclip.
 
 Other internal functions
 ~~~~~~~~~~~~~~~~~~~~~~~~
+| ``PlaneMinMaxStats`` (clip, float threshold, int offset, int plane, bool setvar)
 
-| ``YPlaneMax`` (clip, float threshold)
-| ``UPlaneMax`` (clip, float threshold)
-| ``VPlaneMax`` (clip, float threshold)
-| ``YPlaneMin`` (clip, float threshold)
-| ``UPlaneMin`` (clip, float threshold)
-| ``VPlaneMin`` (clip, float threshold)
-| ``YPlaneMedian`` (clip)
-| ``UPlaneMedian`` (clip)
-| ``VPlaneMedian`` (clip)
-| ``YPlaneMinMaxDifference`` (clip, float threshold)
-| ``UPlaneMinMaxDifference`` (clip, float threshold)
-| ``VPlaneMinMaxDifference`` (clip, float threshold)
+| ``YPlaneMax`` (clip, float threshold, int offset)
+| ``UPlaneMax`` (clip, float threshold, int offset)
+| ``VPlaneMax`` (clip, float threshold, int offset)
+| ``RPlaneMax`` (clip, float threshold, int offset)
+| ``GPlaneMax`` (clip, float threshold, int offset)
+| ``BPlaneMax`` (clip, float threshold, int offset)
+
+| ``YPlaneMin`` (clip, float threshold, int offset)
+| ``UPlaneMin`` (clip, float threshold, int offset)
+| ``VPlaneMin`` (clip, float threshold, int offset)
+| ``RPlaneMin`` (clip, float threshold, int offset)
+| ``GPlaneMin`` (clip, float threshold, int offset)
+| ``BPlaneMin`` (clip, float threshold, int offset)
+
+| ``YPlaneMedian`` (clip, int offset)
+| ``UPlaneMedian`` (clip, int offset)
+| ``VPlaneMedian`` (clip, int offset)
+| ``RPlaneMedian`` (clip, int offset)
+| ``GPlaneMedian`` (clip, int offset)
+| ``BPlaneMedian`` (clip, int offset)
+
+| ``YPlaneMinMaxDifference`` (clip, float threshold, int offset)
+| ``UPlaneMinMaxDifference`` (clip, float threshold, int offset)
+| ``VPlaneMinMaxDifference`` (clip, float threshold, int offset)
+| ``RPlaneMinMaxDifference`` (clip, float threshold, int offset)
+| ``GPlaneMinMaxDifference`` (clip, float threshold, int offset)
+| ``BPlaneMinMaxDifference`` (clip, float threshold, int offset)
 
 Threshold is a percentage, on how many percent of the pixels are allowed
 above or below minimum. The threshold is optional and defaults to 0.
 
 If you understand the stuff above, you can proceed with "advanced conditional
 filtering", which tells you a little bit more about conditional filtering.
+
+PlaneMinMaxStats
+~~~~~~~~~~~~~~~~
+
+::
+
+    PlaneMinMaxStats(clip, float "threshold", int "offset", int "plane", bool "setvar")
+
+  Returns an 6-element array with [min,max,thresholded minimum,thresholded maximum,median,average]
+
+.. describe:: clip
+
+    input clip
+
+.. describe:: threshold
+
+    a percent number between 0.0 and 100.0%. Threshold is a percentage, on how many percent
+    of the pixels are allowed above or below minimum. The threshold is optional and defaults to 0.
+
+    default: 0.0
+
+.. describe:: offset
+
+    if not 0, they can be used for pulling statistics from a frame number relative to the actual one
+
+    defaults: 0
+
+.. describe:: plane
+
+    0, 1, 2 or 3
+
+    * for YUV inputs they mean Y=0,U=1,V=2,A=3 plane
+    * for RGB inputs R=0,G=1,B=2 and A=3 planes
+
+    default: 0
+
+.. describe:: setvar
+
+    when true then it writes a global variables named 
+    ``PlaneStats_min`` ``PlaneStats_max`` ``PlaneStats_thmin`` ``PlaneStats_thmax``
+    ``PlaneStats_median`` ``PlaneStats_median`` ``PlaneStats_average``
+
+    default: false
+
 
 Advanced conditional filtering: part I
 --------------------------------------
@@ -591,4 +887,24 @@ This filter chain works like this:
 
 A few details were omitted, but this is how the script basically works.
 
-$Date: 2012/04/09 08:19:32 $
+Changelog
+---------
++----------------+------------------------------------------------------------+
+| Version        | Changes                                                    |
++================+============================================================+
+| Avisynth 3.7.4 | Fix: Allow "local" in the first long ConditionalFilter     |
+|                | version                                                    |
++----------------+------------------------------------------------------------+
+| Avisynth 3.7.2 | Added a 6th element to PlaneMinMaxStats result             |
++----------------+------------------------------------------------------------+
+| Avisynth 3.7.1 | Added PlaneMinMaxStats                                     |
++----------------+------------------------------------------------------------+
+| Avisynth 3.6.0 | Added "local", added function objects                      |
++----------------+------------------------------------------------------------+
+| Avisynth+      | Added R, G, B, A versions of AverageXX, Min, Max,          |
+| pre2294        | Difference and Median family.                              |
++----------------+------------------------------------------------------------+
+| AviSynth 2.6.0 | Number of expressions changed from 16 to nearly unlimited. |
++----------------+------------------------------------------------------------+
+
+$Date: 2023/12/19 15:11:00 $

@@ -11,7 +11,8 @@ Syntax and Parameters
 
 ::
 
-    ConditionalReader (clip, string filename, string variablename, bool "show")
+    ConditionalReader (clip, string filename, string variablename, bool "show",
+                       string "condvarsuffix", bool "local")
 
 .. describe:: clip
 
@@ -24,7 +25,7 @@ Syntax and Parameters
 
 .. describe:: variablename
 
-    Name of the variable you want the ``filename`` values assigned to.
+    Name of the variable you want the ``filename`` values assigned to. See also ``condvarsuffix``
 
 .. describe:: show
 
@@ -32,6 +33,36 @@ Syntax and Parameters
     current frame.
 
     Default: false
+
+.. describe:: condvarsuffix
+
+    Allows multiple filter instances to use differently named conditional parameters.
+    Prevents collision and overwrite of variables which are used by different ConditionalReader 
+    instances.
+
+    See also: conditional variables section of http://avisynth.nl/index.php/ColorYUV.
+
+    How does it work: when reading the global variables, the *condvarsuffix* parameter is 
+    appended to the variable name. E.g. variable name "myvar_a" will be read instead of 
+    "myvar" when *condvarsuffix* = "_a" is provided.
+    
+    Useful for ``ColorYUV``, ``RGBAdjust``, ``Overlay`` when conditional=true is set there.
+
+    In the matching ConditionalReader one have to use the modified name as well:
+
+    ::
+
+        ConditionalReader("coloryuvoffset.txt", "coloryuv_gain_y", false, CondVarSuffix = "_a")
+        # "_a" is added here by parameter
+
+    or specify the suffixed name directly:
+
+    ::
+
+        ConditionalReader("coloryuvoffset.txt", "coloryuv_gain_y_a", false)
+        # "_a" is added here manually
+
+    Default: ""
 
 
 File format
@@ -135,7 +166,6 @@ File format
 Examples
 --------
 
-
 Basic usage
 ~~~~~~~~~~~
 
@@ -191,6 +221,21 @@ File *Strings.txt:*
 Try the above :doc:`Subtitle <subtitle>` script with *Strings.txt*. You will see
 the strings displayed verbatim.
 
+Usage of condvarsuffix
+~~~~~~~~~~~~~~~~~~~~~~
+
+::
+
+    Colorbars(512,256).ConvertToYV12.Trim(0,299)
+    ConditionalReader("coloryuvoffset.txt", "coloryuv_gain_y", false)
+    a=ColorYUV(cont_y=10, conditional=true)
+    
+    Colorbars(512,256).ConvertToYV12.Trim(0,299)
+    ConditionalReader("coloryuvoffset2.txt", "coloryuv_gamma_y", false, condvarsuffix="_a")
+    # this will read coloryuv_gain_y_a, coloryuv_gamma_y_a, etc.
+    b=ColorYUV(cont_y=10, conditional=true, condvarsuffix="_a")
+    
+    Stackvertical(a,b)
 
 Adjusting Overlay
 ~~~~~~~~~~~~~~~~~
@@ -325,10 +370,15 @@ Changelog
 +----------------+----------------------------------+
 | Version        | Changes                          |
 +================+==================================+
+| Avisynth 3.6.0 | Added "local"                    |
++----------------+----------------------------------+
+| Avisynth+r2915 | Added "condvarsuffix"            |
+| 20190829       |                                  |
++----------------+----------------------------------+
 | AviSynth 2.6.0 | Added OFFSET, Added Type=string. |
 +----------------+----------------------------------+
 
-$Date: 2022/02/24 20:09:50 $
+$Date: 2023/12/19 16:27:00 $
 
 .. |Eval| replace:: :doc:`Eval <../syntax/syntax_internal_functions_control>`
 .. |undefined| replace:: :doc:`undefined  <../syntax/syntax_internal_functions_boolean>`
