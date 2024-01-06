@@ -1392,8 +1392,11 @@ New function
 Earlier (pre v2294) modifications and informations on behaviour of existing filter
 ----------------------------------------------------------------------------------
 **[ColorSpaceNameToPixelType]**
+
 New script function: ColorSpaceNameToPixelType()
+
 Parameter: video colorspace string
+
 Returns: Integer
 
 Returns a VideoInfo::pixel_type integer from a valid colorspace string
@@ -1407,10 +1410,12 @@ This function reverses this.
 
 It has the advantage that it returns the same (for example) YV24 constant from "YV24" or "YUV444" or "Yuv444p8", so it recognizes some possible naming variants.
 
-csp_name = "YUV422P8"
-csp_name2 = "YV16"
-SubTitle("PixelType value of " + csp_name + " = " + String(ColorSpaceNameToPixelType(csp_name))\
-+ " and " + csp_name2 + " = " + String(ColorSpaceNameToPixelType(csp_name2)) )
+::
+
+    csp_name = "YUV422P8"
+    csp_name2 = "YV16"
+    SubTitle("PixelType value of " + csp_name + " = " + String(ColorSpaceNameToPixelType(csp_name))\
+    + " and " + csp_name2 + " = " + String(ColorSpaceNameToPixelType(csp_name2)) )
 
 **[New conditional functions]**
 
@@ -1419,6 +1424,7 @@ Conditional runtime functions have 10-16 bit/float support for YUV, PlanarRGB an
 Since RGB is also available as a planar colorspace, the plane statistics functions logically were expanded.
 
 New functions
+
 • AverageR, AverageG AverageB like AverageLuma
 • RDifference, GDifference, BDifference like LumaDifference(clip1, clip2)
 • RDifferenceFromPrevious, GDifferenceFromPrevious, BDifferenceFromPrevious
@@ -1431,36 +1437,51 @@ New functions
 For float colorspaces the Min, Max, MinMaxDifference and Median functions populate pixel counts for the internal statistics at a 16 bit resolution internally.
 
 **[Tweak]**
+
 See original doc: http://avisynth.nl/index.php/Tweak
+
 The original 8 bit tweak worked with internal LUT both for luma and chroma conversion.
+
 Chroma LUT requires 2D LUT table, thus only implemented for 10 bit clips for memory reasons.
 Luma LUT is working at 16 bits (1D table)
 
 Above these limits the calculations are realtime, and done pixel by pixel.
 You can use a new parameter to force ignoring LUT usage (calculate each pixel on-the-fly)
+
 For this purpose use realcalc=true.
 
 **[MaskHS]**
+
 Works for 10-16bit,float.
 
 MaskHS uses LUT for 10/12 bits. Above this (no memory for fast LUTs) the calculation is done realtime for each.
+
 To override LUT for 10-12 bits use new parameter realcalc=true
 
 **[ColorKeyMask]:**
+
 Works for RGB64, Planar RGBA 8-16,float.
+
 ColorKeyMask color and tolerance parameters are the same as for 8 bit RGB32.
+
 Internally they are automatically scaled to the current bit-depth
 
 **[ResetMask]**
+
 New extension.
+
 Accepts parameter (Mask=xxx) which is used for setting the alpha plane for a given value.
+
 Default value for Mask is 255 for RGB32, 65535 for RGB64 and full 16 bit, 1.0 for float.
+
 For 10-12-14 bit it is set to 1023, 4095 and 16383 respectively.
 
 Parameter type is float, it can be applied to the alpha plane of a float-type YUVA or Planar RGBA clip.
 
 **[Layer]**
+
 Layer() now works for RGB64.
+
 Original documentation: http://avisynth.nl/index.php/Layer
 
 By avisynth documentation: for full strength Level=257 (default) should be given.
@@ -1494,7 +1515,9 @@ Sample:
       StackVertical(rgb32, rgb64)
 
 **[Levels]**
+
 Levels: 10-16 bit support for YUV(A), PlanarRGB(A), 16 bits for RGB48/64
+
 No float support yet
 
 Level values are not scaled, they are accepted as-is for 8+ bit depths
@@ -1525,23 +1548,33 @@ Test scripts for Levels
       stackvertical(clip8.ConvertToYUV444().Histogram("levels"), Clip16.ConvertBits(8).ConvertToYUV444().Histogram("levels"))
 
 **[ColorYUV]**
+
 Now it works for 10-16 bit clips
 
 - Slightly modified "demo" mode when using ColorYUV(showyuv=true)
 
-      #old: draws YV12 with 16-239 U/V image (448x448)
-      #new: draws YV12 with 16-240 U/V image (450x450)
+::
+
+    #old: draws YV12 with 16-239 U/V image (448x448)
+    #new: draws YV12 with 16-240 U/V image (450x450)
 
 New options for "demo" mode when using ColorYUV(showyuv=true)
+
 New parameter: bool showyuv_fullrange.
+
 Description: Draws YV12 with 0-255 U/V image (512x512)
+
 Usage: ColorYUV(showyuv=true, showyuv_fullrange=true)
 
 New parameter: bits=10,12,14,16
+
 Result clip is the given bit depth for YUV420Pxx format.
 As image size is limited (for 10 bits the range 64-963 requires big image size), color resolution is 10 bits maximum.
-#This sample draws YUV420P10 with 64-963 U/V image
-ColorYUV(showyuv=true, bits=10).Info()
+
+::
+
+    #This sample draws YUV420P10 with 64-963 U/V image
+    ColorYUV(showyuv=true, bits=10).Info()
 
 Luma steps are 16-235-16../0-255-0.. up to 0-65535-0... when bits=16
 
@@ -1556,13 +1589,21 @@ Additional infos for ColorYUV
 - ColorYUV uses 8-10-12-14-16 bit lut.
 - ColorYUV is not available for 32 bit (float) clips at the moment
 
-[Other things you may have not known]
+**[Other things you may have not known]**
+
 Source filters are automatically detected, specifying MT_SERIALIZED is not necessary for them.
 
-[Known issues/things]
+**[Known issues/things]**
+
 GRunT in MT modes (Avs+ specific)
-[done: v2502] Overlay blend with fully transparent mask is incorrect, overlaying pixel=0 becomes 1, overlaying pixel=255 becomes 254.
-[done: v2676-] Float-type clips: chroma should be zero based: +/-0.5 instead of 0..1
+
+[done: v2502]
+
+Overlay blend with fully transparent mask is incorrect, overlaying pixel=0 becomes 1, overlaying pixel=255 becomes 254.
+
+[done: v2676-]
+
+Float-type clips: chroma should be zero based: +/-0.5 instead of 0..1
 
 
 $Date: 2021/12/07 13:36:0 $

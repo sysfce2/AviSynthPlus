@@ -1,20 +1,61 @@
 
-AviSynth Syntax - Multithreading functions
-==========================================
+AviSynth Syntax - 2.6 Multithreading and memory functions
+=========================================================
 
--   GetMTMode   |   v2.60   |   GetMTMode(threads)
--   SetMTMode   |   v2.60   |   SetMTMode(mode, threads)
+A historical page showing how memory settings and multithreading for classic
+``Avisynth 2.6`` worked.
+
+SetMemoryMax
+~~~~~~~~~~~~
+::
+
+    SetMemoryMax(amount)
+
+Sets the maximum memory (in MB) that AviSynth uses for its internal Video
+Frame cache to the value of *amount*. From v2.5.8, setting to zero just
+returns the current Memory Max value. In the 2.5 series the default Memory
+Max value is 25% of the free physical memory, with a minimum of 16MB. From
+rev 2.5.8 RC4, the default Memory Max is also limited to 512MB.
+
++-----------------------------+-----+-----+-----+-----+------+------+------+
+| Free                        | <64 | 128 | 256 | 512 | 1024 | 2048 | 3072 |
++=============================+=====+=====+=====+=====+======+======+======+
+| Default Max v2.57 and older | 16  | 32  | 64  | 128 | 256  | 512  | 768  |
++-----------------------------+-----+-----+-----+-----+------+------+------+
+| Default Max since v2.58 RC4 | 16  | 32  | 64  | 128 | 256  | 512  | 512  |
++-----------------------------+-----+-----+-----+-----+------+------+------+
+
+In some versions there is a default setting of 5MB, which is quite low. If
+you encounter problems (e.g. low speed) try to set this values to at least
+32MB. Too high values can result in crashes because of 2GB address space
+limit.  Return value: Actual MemoryMax value set.
+
+*Examples:*
+::
+
+    SetMemoryMax(128)
+
+GetMTMode, SetMTMode
+~~~~~~~~~~~~~~~~~~~~
+::
+
+    GetMTMode(threads)
+    SetMTMode(mode, threads)
 
 These functions enable AviSynth to use more than one thread when processing
 filters. This is useful if you have more than one cpu/core or hyperthreading.
 This feature is still experimental.
 
-GetMTMode(bool threads):
+::
+
+    GetMTMode(bool threads):
 
 If *threads* is set to true GetMTMode returns the number of threads used else
 the current mode is returned (see below). Default value false.
 
-SetMTMode(int mode, int threads):
+::
+
+    SetMTMode(int mode, int threads):
 
 Place this at the first line in the avs file to enable temporal (that is more
 than one frame is processed at the same time) multithreading. Use it later in
@@ -59,4 +100,4 @@ other than in the first SetMTMode. Default value 0.
 
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
-$Date: 2011/04/29 20:11:14 $
+$Date: 2024/01/06 20:02:00 $

@@ -43,4 +43,26 @@ They provide common operations on string variables.
 
 They provide AviSynth version information.
 
-$Date: 2011/01/16 12:24:09 $
+-   :doc:`Frame property functions <syntax_internal_functions_frame_properties>`
+
+They provide manipulation (read, write, delete) of frame properties.
+
+This section contains an overview on the concept and lists the quasi-standard
+frame properties as well.
+
+-   :doc:`Multithreading <syntax_internal_functions_multithreading_new>` (Avisynth+)
+
+Controlling the threads mechanism.
+
+-   :doc:`Global options and resource control (memory, CPU, cache) <syntax_internal_functions_global_options>`
+
+Methods for fine-tune resources: memory, cache strategy and CPU environment settings.
+
+Global variables which affect specific audio or video (VfW export) features.
+
+-   :doc:`History: Avisynth 2.6 Multithreading and memory limit functions <syntax_internal_functions_multithreading>`
+
+(Historical: Avisynth 2.6) Controlling the threads and the maximum used memory.
+
+
+$Date: 2024/01/06 20:06:00 $

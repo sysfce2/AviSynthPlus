@@ -11,7 +11,7 @@ ConditionalFilter
 Common things
 -------------
 
-Runtime filter contain some similar parameters (when applicable)
+Runtime filters can contain some similar parameters (when applicable)
 
 .. describe:: local
 
@@ -459,6 +459,12 @@ Other internal functions
 
 Threshold is a percentage, on how many percent of the pixels are allowed
 above or below minimum. The threshold is optional and defaults to 0.
+
+The decision is based on creating a histogram on pixel values and counts then
+the given threshold is checked against this pixel level-pixel count table.
+
+This histogram cannot be done for 32 bit float data thus 32 bit float pixels
+are converted to 16 bit integer data before creating the histogram.
 
 If you understand the stuff above, you can proceed with "advanced conditional
 filtering", which tells you a little bit more about conditional filtering.

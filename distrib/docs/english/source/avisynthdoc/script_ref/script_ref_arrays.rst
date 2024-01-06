@@ -13,13 +13,16 @@ Beginning Avisynth+ 3.6 script arrays are supported. Functionality is different 
    (note: this is true when using them through c++ plugins. C interface is different, there is no deep-copy there)
 -  untyped and unconstrained element number
 -  arrays can appear as internal filter parameters (named and unnamed).
--  access with indexes or in a dictionary-like associative way
+-  arrays can appear as user defined function parameters (named and unnamed).
+-  elements are accessible with indexes or in a dictionary-like associative way
 -  Array modifier functions allow multidimensional subarray indexes
 
+  - ArrayIns - insert before position
   - ArrayAdd - append
   - ArrayDel - delete from position
-  - ArrayIns - insert before position
   - ArraySet - replace at position
+
+-  Query the array length with ArraySize(a)
 
 ArrayIns
 ^^^^^^^^
@@ -453,7 +456,7 @@ of the AVSLib documentation.
 
 Back to :doc:`scripting reference <script_ref>`.
 
-$Date: 2008/04/20 19:07:33 $
+$Date: 2024/01/05 15:08:00 $
 
 .. _AVSLib: http://avslib.sourceforge.net/
 .. _Download: http://sourceforge.net/projects/avslib/

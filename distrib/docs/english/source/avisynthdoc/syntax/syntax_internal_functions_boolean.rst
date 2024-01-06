@@ -5,7 +5,11 @@ AviSynth Syntax - Boolean functions
 Boolean functions return true or false, if the condition that they test holds
 or not, respectively.
 
--   IsBool   |     |   IsBool(var)
+IsBool
+------
+
+*   | IsBool
+    | IsBool(var)
 
 Tests if *var* is of the bool type. *var* can be any expression allowed by
 the :doc:`AviSynth Syntax <syntax>`.
@@ -18,7 +22,11 @@ the :doc:`AviSynth Syntax <syntax>`.
     IsBool(1 < 2 && 0 == 1) = true
     IsBool(123) = false
 
--   IsClip   |     |   IsClip(var)
+IsClip
+------
+
+*   | IsClip
+    | IsClip(var)
 
 Tests if *var* is of the clip type. *var* can be any expression allowed by
 the :doc:`AviSynth Syntax <syntax>`.
@@ -30,7 +38,11 @@ the :doc:`AviSynth Syntax <syntax>`.
     IsClip(c) = true
     IsClip("c") = false
 
--   IsFloat   |     |   IsFloat(var)
+IsFloat
+-------
+
+*   | IsFloat
+    | IsFloat(var)
 
 Tests if *var* is of the float type. *var* can be any expression allowed by
 the :doc:`AviSynth Syntax <syntax>`.
@@ -43,7 +55,11 @@ the :doc:`AviSynth Syntax <syntax>`.
     IsFloat(2) = true   # ints are considered to be floats by this function
     IsFloat(true) = false
 
--   IsInt   |     |   IsInt(var)
+IsInt
+-----
+
+*   | IsInt
+    | IsInt(var)
 
 Tests if *var* is of the int type. *var* can be any expression allowed by the
 :doc:`AviSynth Syntax <syntax>`.
@@ -55,7 +71,11 @@ Tests if *var* is of the int type. *var* can be any expression allowed by the
     IsInt(2.1) = false
     IsInt(true) = false
 
--   IsString   |     |   IsString(var)
+IsString
+--------
+
+*   | IsString
+    | IsString(var)
 
 Tests if *var* is of the string type. *var* can be any expression allowed by
 the :doc:`AviSynth Syntax <syntax>`.
@@ -67,18 +87,29 @@ the :doc:`AviSynth Syntax <syntax>`.
     IsString(2.3) = false
     IsString(String(2.3)) = true
 
--   Exist   |   v2.07   |   Exist(filename)
+IsFunction
+----------
 
-Tests if the file specified by *filename* exists.
+*   | IsFunction
+    | IsFunction(var)
+
+Tests if *var* is of the function type. *var* can be any expression allowed by
+the :doc:`AviSynth Syntax <syntax>`.
 
 *Examples:*
 ::
 
-    filename = ...
-    clp = Exist(filename) ? AviSource(filename) : Assert(false,
-    "file: " + filename + " does not exist")
+    function MyFunc(clip c) {
+      return c.Invert()
+    }
+    
+    IsFunction("MyFunc") = true
 
--   Defined   |     |   Defined(var)
+Defined
+-------
+
+*   | Defined
+    | Defined(var)
 
 Tests if *var* is defined. Can be used inside :doc:`Script functions <syntax_userdefined_scriptfunctions>` to test if
 an optional argument has been given an explicit value. More formally, the
@@ -91,8 +122,70 @@ variable) has the void ('undefined') type, otherwise it returns true.
     b_arg_supplied = Defined(arg)
     myvar = b_arg_supplied ? ... : ...
 
---------
+
+Exist
+-----
+
+*Exist(filename)*
+
+Tests if the file specified by *filename* exists.
+
+*Examples:*
+::
+
+    filename = ...
+    clp = Exist(filename) ? AviSource(filename) : Assert(false,
+    \ "file: " + filename + " does not exist")
+
+
+FunctionExists
+--------------
+
+*FunctionExists(name)*
+
+Tests if the function or filter name is defined in the script. 
+
+*Examples:*
+::
+
+    ## using a filter only if it exists (AVS+ only)
+    ColorBars  
+    return FunctionExists("MyFilter") 
+    \ ? Apply("MyFilter", Last, "TEST") 
+    \ : Last 
+
+
+InternalFunctionExists
+----------------------
+
+*InternalFunctionExists(name)*
+
+Tests if the function, filter or property name is defined natively within AviSynth+.
+
+Unlike `FunctionExists`, returns false for external plugins and user-defined functions. 
+
+
+VarExists
+---------
+
+*VarExists(name)*
+
+Tests if the variable exists or not.
+
+Note: if variable exists, it returns true regardless of the "defined" state of the variable.
+
+
+Changelog
+---------
++----------------+----------------------------------+
+| Version        | Changes                          |
++================+==================================+
+| Avisynth+      | | Added "IsFunction"             |
+|                | | Added "FunctionExists"         |
+|                | | Added "InternalFunctionExists" |
+|                | | Added "VarExists"              |
++----------------+----------------------------------+
 
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
-$Date: 2008/12/07 15:46:17 $
+$Date: 2024/01/05 10:54:00 $
