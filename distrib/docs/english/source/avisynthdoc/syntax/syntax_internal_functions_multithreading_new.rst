@@ -8,18 +8,12 @@ This page documents how to enable multi-threading: use more than
 one thread when processing filters. This is useful if you have more than 
 one cpu/core or hyperthreading, so nearly always.
 
-Some specific filters, multithreading can cause problems.
-
-Such filters can specify themselves as single-instance filters, other parts of the
-script can still be multithreaded.
-
-The abbreviation MT is used for multithreading.
+In this document the abbreviation MT is used for multithreading.
 
 On startup default MT mode is "MT_MULTI_INSTANCE". Plugins or SetFilterMTMode can override this.
 
-Source filters are auto detected by Avisynth and are always set to MT_SERIALIZED (no threaded calls)
-
 AviSynth+ does the multithreading differently than classic Avisynth 2.6.
+
 In AviSynth+, you specify the MT-mode for only specific filters, and those filters will then automatically 
 use their own mode, even if there were other MT-modes in between. This means that for old filters you can 
 specify all the MT modes at the beginning without polluting your script. 
@@ -29,10 +23,28 @@ or import() it from their top. This is much cleaner, and it allows you to mainta
 MT-modes centrally at a single place. To make this distinction clear from AviSynth+, Avisynth 2.6's 
 SetMTMode() is called SetFilterMTMode() in AviSynth+. 
 
-Though Avisynth video fram caches will save you a lot of memory in single-threaded scripts, 
-but due to the way they work, they will also use more memory than before with MT enabled. 
+Notes
 
-The memory usage will scale much closer with the number of threads you have. Just something to keep in mind. 
+1.  Source filters are auto detected by Avisynth (such filters have no input clip parameters) and are 
+    always set to MT_SERIALIZED (no threaded calls)
+2.  Mode 3 (MT_SERIALIZED) is evil. It is necessary for some filters, and it is usually no problem 
+    for source filters, but it can literally completely negate all advantages of MT, if such a filter 
+    is placed near the end of your script. In general, avoid such calls if you want performance.
+
+    Programmers can check ``class MtModeEvaluator`` in ``avisynth.cpp``.
+
+    <todo check: what's the effect of using multiple Prefetch sections?>
+3.  Though Avisynth video frame caches will save you a lot of memory in single-threaded scripts, 
+    but due to the way they work, they will also use more memory than before with MT enabled. 
+
+    The memory usage will scale much closer with the number of threads you have. Just something to keep in mind. 
+
+Notes for filter writers:
+
+-   Always specify your filters' required MT mode by answering with an ``MT_xxxx`` constant on 
+    ``CACHE_GET_MTMODE`` in your ``SetCacheHints`` implementation.
+    But don't go too safe with specifying MT_SERIALIZED, do it only when it's really necessary: See Note 2.
+
 
 MT Modes explained
 ==================
@@ -163,7 +175,11 @@ Depending on the filter type, different multithreading rules can be set.
 The filter developer can specify which one is used, this can be done programatically,
 (self-registering) so no user intervention is necessary.
 
+When ``force`` = false then the function has effect only if the filter doesn't 
+set (self-register) own MT mode. Usually the recent versions of the plugins have set MT mode.
+
 For old filters, this method can set the proper behaviour, how Avisynth core will treat it MT-wise.
+Meaningful only if this mode is different that the default MT mode.
 
 .. describe:: string filtername  =
 
@@ -186,9 +202,90 @@ For old filters, this method can set the proper behaviour, how Avisynth core wil
 
     Force MT mode. Default is false.
     Override the setting even if filter was registering its MT mode programatically.
+    When false, MT mode of self-registering filters won't be changed.
+
+As a side effect, a filter with MT_SERIALIZED (either set by ``SetFilterMTMode`` or self-registering it) 
+can downgrade the MT modes of the filters in the chain before the filter, despite of they have their 
+own ``SetFilterMTMode``. It has performance effects as mentioned in Notes 2.
+
+There was a discussion about this topic:
+https://forum.doom9.org/showthread.php?p=1823754#post1823754
+answering on
+https://forum.doom9.org/showthread.php?p=1823726#post1823726
+
+
+*Examples:*
+
+::
+
+    SetFilterMTMode(X, MT_SERIALIZED, force=true)
+    sourceFilter
+    
+    # filterY has own MT mode MT_MULTI_INSTANCE but now is changed to MT_SERIALIZED
+    filterY
+    
+    # filterZ has own MT mode MT_NICE_FILTER but now is changed to MT_SERIALIZED
+    filterZ
+    
+    filterX
+
+::
+
+    SetFilterMTMode(X, MT_MULTI_INSTANCE, force=true)
+    sourceFilter
+    
+    # filterY has own MT mode MT_SERIALIZED, not changed
+    filterY
+    
+    # filterZ has own MT mode MT_NICE_FILTER but now is changed to MT_MULTI_INSTANCE
+    filterZ
+    
+    filterX
+
+::
+
+    SetFilterMTMode(X, MT_NICE_FILTER, force=true)
+    sourceFilter
+    
+    # filterY has own MT mode MT_SERIALIZED, not changed
+    filterY
+    
+    # filterZ has own MT mode MT_MULTI_INSTANCE, not changed
+    filterZ
+    
+    filterX
+
+::
+
+    SetFilterMTMode(X, MT_SERIALIZED, force=true)
+    SetFilterMTMode(Y, MT_NICE_FILTER, force=true)
+    sourceFilter
+    
+    # filterY has own MT mode MT_MULTI_INSTANCE but now is changed to MT_SERIALIZED
+    # SetFilterMTMode(Y, MT_NICE_FILTER, force=true) doesn't have effect
+    filterY
+    
+    # filterZ has own MT mode MT_NICE_FILTER but now is changed to MT_SERIALIZED
+    filterZ
+    
+    filterX
+
+::
+
+    SetFilterMTMode(X, MT_MULTI_INSTANCE, force=true)
+    SetFilterMTMode(Y, MT_SERIALIZED, force=true)
+    sourceFilter
+    
+    # filterY has own MT mode MT_MULTI_INSTANCE but now is changed to MT_SERIALIZED
+    filterY
+    
+    # filterZ has own MT mode MT_NICE_FILTER but now is changed to MT_MULTI_INSTANCE
+    filterZ
+    
+    filterX
 
 --------
 
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
-$Date: 2024/01/06 21:26:14 $
+$Date: 2024/01/07 09:37:00 $
