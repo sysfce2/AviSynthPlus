@@ -4,7 +4,17 @@ AviSynth Syntax - String functions
 
 String functions provide common operations on string variables.
 
--   LCase   |   v2.07   |   LCase(string)
+These function may not work as expected, if you feed them with utf8 strings.
+Some function (e.g. UCase, LCase) may not work as expected, if parameter contains national accented characters.
+
+E.g. Strlen of an utf8-encoded string, which contains non-latin or accented national characters 
+may report more length than is visible by human reader.
+
+LCase
+~~~~~
+::
+
+    LCase(string)
 
 Returns lower case of string.
 
@@ -13,7 +23,11 @@ Returns lower case of string.
 
     LCase("AviSynth") = "avisynth"
 
--   UCase   |   v2.07   |   UCase(string)
+UCase
+~~~~~
+::
+
+    UCase(string)
 
 Returns upper case of string.
 
@@ -22,7 +36,35 @@ Returns upper case of string.
 
     UCase("AviSynth") = "AVISYNTH"
 
--   StrLen   |   v2.07   |   StrLen(string)
+StrToUtf8
+~~~~~~~~~
+::
+
+    StrToUtf8(string)
+
+Converts string from ANSI to UTF8. 
+
+Note, that since Windows 10 the codepage for non-unicode programs can
+be set to UTF8 natively. ANSI is meant to be the active code page of the system.
+
+StrFromUtf8
+~~~~~~~~~~~
+::
+
+    StrFromUtf8(string)
+
+Converts string from UTF8 to ANSI.
+
+Valid on Windows.
+
+Note, that since Windows 10 the codepage for non-unicode programs can
+be set to UTF8 natively.
+
+StrLen
+~~~~~~
+::
+
+    StrLen(string)
 
 Returns length of string.
 
@@ -31,7 +73,11 @@ Returns length of string.
 
     StrLen("AviSynth") = 8
 
--   RevStr   |   v2.07   |   RevStr(string)
+RevStr
+~~~~~~
+::
+
+    RevStr(string)
 
 Returns string backwards.
 
@@ -40,7 +86,11 @@ Returns string backwards.
 
     RevStr("AviSynth") = "htnySivA"
 
--   LeftStr   |   v2.07   |   LeftStr(string, int)
+LeftStr
+~~~~~~~
+::
+
+    LeftStr(string, int)
 
 Returns first int number of characters.
 
@@ -49,7 +99,11 @@ Returns first int number of characters.
 
     LeftStr("AviSynth", 3) = "Avi"
 
--   RightStr   |   v2.07   |   RightStr(string, int)
+RightStr
+~~~~~~~~
+::
+
+    RightStr(string, int)
 
 Returns last int number of characters.
 
@@ -58,9 +112,13 @@ Returns last int number of characters.
 
     RightStr("AviSynth", 5) = "Synth"
 
--   MidStr   |   v2.07   |   MidStr(string, int pos [, int length])
+MidStr
+~~~~~~
+::
 
-Returns substring starting at *pos* for optional *length* or to end. ``pos=1``
+    MidStr(string, int pos [, int length])
+
+Returns substring starting at ``pos`` for optional ``length`` or to end. ``pos=1``
 specifies start.
 
 *Examples:*
@@ -68,19 +126,148 @@ specifies start.
 
     MidStr("AviSynth", 3, 2) = "iS"
 
--   FindStr   |   v2.07   |   FindStr(string, substring)
+FindStr
+~~~~~~~
+::
 
-Returns position of substring within string. Returns 0 if substring is not
-found.
+    FindStr(string, substring)
+
+Returns position of ``substring`` within ``string``.
+
+Returns 0 if substring is not found.
 
 *Examples:*
 ::
 
-    Findstr("AviSynth", "Syn") = 4
+    FindStr("AviSynth", "Syn") ## returns 4
+    FindStr("AviSynth", "SYN") ## returns 0
 
--   FillStr   |   v2.60   |   FillStr(int [, string]) Fills a string.
-    When int>1 it concatenates the string int times. String is space by
-    default.
+ReplaceStr
+~~~~~~~~~~
+::
+
+    ReplaceStr(string, substring, replacement_string [, bool sig])
+
+Replaces occurrences of ``substring`` with ``replacement_string`` and returns the result.
+
+.. describe:: bool sig
+
+    - false (the default): search is case sensitive
+    - true: search is not case insensitive.
+
+*Example:*
+::
+
+    ReplaceStr("FlipHorizontal", "Horizontal", "Vertical")
+    ReplaceStr("$a x *", "$a", String(1.5)) ## (a MaskTools expression with argument)
+    ## this latter is more elegant with using "Format"
+
+Avisynth 2.6.x users have other options, such as the user function below, adapted from StrReplace, 
+found `here <https://avisynth.nl/index.php/HDColorBars>`_ .
+
+::
+
+    # for old systems where ReplaceStr is missing:
+    function ReplaceStr(string base, string sought, string repstr) {
+        pos = FindStr(base, sought)
+        return (sought=="" || pos==0) ? base : ReplaceStr(
+        \       LeftStr(base, pos-1) + repstr +
+        \       MidStr(base, pos+StrLen(sought)),
+        \       sought, repstr)
+    }
+
+Format
+~~~~~~
+::
+
+    Format(formatstring [, value1, value2, ...])
+
+Replaces the in-string placeholders with parameters and returns the result
+
+Parameters can be of any type; each parameter is converted to string beforehand.
+
+.. describe:: string formatstring
+
+    unnamed parameter. A string literal with parameter insertion points marked with ``{}``.
+
+.. describe:: value1, value2, etc.
+
+    zero or more values which are inserted into the format string one after another 
+
+Description:
+
+    The format string consists of 
+
+    - ordinary characters ( except ``{`` and ``}`` ), which are copied unchanged to the output,
+    - escape sequences: double ``"{"`` (``"{{"``) and double ``"}"`` (``"}}"``), which are replaced with 
+      ``"{"`` and ``"}"`` respectively in the output
+    - replacement placeholder fields. 
+
+Each replacement field has the following format:
+
+::
+
+    introductory { character; 
+    (optional) 
+        arg-id, a non-negative number;
+      or: 
+        identifier which is used for lookup named parameters. (when values are given in ["name", value] construction)
+      or: 
+        valid AviSynth variable name 
+    final } character. 
+
+- If arg-id is a number it specifies the index of the argument 
+  in args whose value is to be used for formatting; 
+- Index is zero based. 
+- If arg-id is string then it serves as a lookup key from the 
+  parameters list given as an array ["name",value] pair. 
+- If not found, then arg-id is searched among Avisynth variables. 
+- If arg-id is omitted, the arguments are used in order. 
+- Mixing manual and automatic indexing is not an error. 
+
+Notes
+
+    It is not an error to provide more arguments than the format string requires: 
+
+::
+
+    Format("{} {}!", "Hello", "world", "something") # OK, produces "Hello world!"
+
+*Examples:*
+
+::
+
+    # By Avisynth variable
+    max_pixel_value = 255
+    SubTitle(Format("max={max_pixel_value}!")) # no format value given, inserts directly from variable
+    # result: "max=255!"
+
+::
+
+    # By index:
+    SubTitle(Format("{0} {1} {0}", "Home", "sweet"))
+    # result: "Home sweet Home"
+
+::
+
+    # by order:
+    SubTitle(Format("{} {} {}", "AviSynth", "+", 2020))
+    # result: "AviSynth + 2020"
+
+::
+
+    # by Array name-value pairs:
+    SubTitle(Format("maximum={max} minimum={min} max again {max}!", ["max",255], ["min",0]))
+    # result: ""maximum=255 minimum=0 max again 255!"
+
+
+FillStr
+~~~~~~~
+::
+
+    FillStr(int [, string]) Fills a string.
+
+When ``int > 1`` it concatenates the string ``int`` times. ``String`` is space by default.
 
 *Examples:*
 ::
@@ -88,7 +275,11 @@ found.
     FillStr(1, "AviSynth") = "AviSynth"
     FillStr(2, "AviSynth") = "AviSynthAviSynth"
 
--   StrCmp   |   v2.60   |   StrCmp(string, string)
+StrCmp
+~~~~~~
+::
+
+    StrCmp(string, string)
 
 Compares two character strings. The comparison is case-sensitive. If the
 first string is less than the second string, the return value is negative. If
@@ -102,7 +293,11 @@ so it can't be relied upon.)
     StrCmp("AviSynth", "AviSynth") = 0 # strings are equal.
     StrCmp("AviSynth", "Avisynth") != 0 # strings are not equal.
 
--   StrCmpi   |   v2.60   |   StrCmpi(string, string)
+StrCmpi
+~~~~~~~
+::
+
+    StrCmpi(string, string)
 
 Compares two character strings. The comparison is not case-sensitive. If the
 first string is less than the second string, the return value is negative. If
@@ -118,7 +313,22 @@ so it can't be relied upon.)
     StrCmpi("abcz", "abcdefg") != 0 # returns the difference betweeen "z"
     and "d" (which is positive).
 
--   Chr   |   v2.51   |   Chr(int)
+TrimLeft, TrimRight, TrimAll
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+::
+
+    TrimLeft(string)
+    TrimRight(string)
+    TrimAll(string)
+
+Removes whitespace characters (space, tab, `nonbreaking space <https://en.wikipedia.org/wiki/Non-breaking_space>`_
+) from the left, right, or both ends (respectively) of ``string``.
+
+Chr
+~~~
+::
+
+    Chr(int)
 
 Returns the ASCII character. Note that characters above the ASCII character
 set (ie above 127) are code page dependent and may render different (visual)
@@ -131,8 +341,13 @@ localised text messages.
     Chr(34) returns the quote character
     Chr(9) returns the tab  character
 
--   Ord   |   v2.60   |   Ord(string) Gives the ordinal number of the
-    first character of a string.
+Ord
+~~~
+::
+
+    Ord(string)
+
+Gives the ordinal number of the  first character of a string.
 
 *Examples:*
 ::
@@ -141,7 +356,11 @@ localised text messages.
     Ord("AviSynth") = Ord("A") = 65
     Ord("§") = 167
 
--   Time   |   v2.51   |   Time(string)
+Time
+~~~~
+::
+
+    Time(string)
 
 Returns a string with the current system time formatted as defined by the
 string. The string may contain any of the codes for output formatting
@@ -221,8 +440,23 @@ format code is changed as follows:
 | %#S, %#U, %#w, %#W, %#y, %#Y  |                                                                                 |
 +-------------------------------+---------------------------------------------------------------------------------+
 
+
+Changelog
+~~~~~~~~~
++----------------+--------------------------------------------+
+| Version        | Changes                                    |
++================+============================================+
+| Avisynth+      | | Added "Format"                           |
+|                | | Added "StrToUtf8"                        |
+|                | | Added "StrFromUtf8"                      |
+|                | | Added "ReplaceStr"                       |
+|                | | Added "Format"                           |
+|                | | Added "TrimLeft", "TrimRight", "TrimAll" |
++----------------+--------------------------------------------+
+
+
 --------
 
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
-$Date: 2012/10/10 13:41:51 $
+$Date: 2024/01/08 14:58:00 $
