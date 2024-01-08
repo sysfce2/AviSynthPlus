@@ -17,7 +17,7 @@ respectively.
 They facilitate flow of control (loading of scripts, arguments checks, global
 settings adjustment, etc.).
 
--   :doc:`Conversion functions <syntax_internal_functions_conversion>`
+-   :doc:`Type conversion functions <syntax_internal_functions_conversion>`
 
 They convert between different types.
 
