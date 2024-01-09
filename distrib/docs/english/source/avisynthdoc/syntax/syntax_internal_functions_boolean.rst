@@ -7,9 +7,9 @@ or not, respectively.
 
 IsBool
 ------
+::
 
-*   | IsBool
-    | IsBool(var)
+    IsBool(var)
 
 Tests if *var* is of the bool type. *var* can be any expression allowed by
 the :doc:`AviSynth Syntax <syntax>`.
@@ -24,9 +24,9 @@ the :doc:`AviSynth Syntax <syntax>`.
 
 IsClip
 ------
+::
 
-*   | IsClip
-    | IsClip(var)
+    IsClip(var)
 
 Tests if *var* is of the clip type. *var* can be any expression allowed by
 the :doc:`AviSynth Syntax <syntax>`.
@@ -40,9 +40,9 @@ the :doc:`AviSynth Syntax <syntax>`.
 
 IsFloat
 -------
+::
 
-*   | IsFloat
-    | IsFloat(var)
+    IsFloat(var)
 
 Tests if *var* is of the float type. *var* can be any expression allowed by
 the :doc:`AviSynth Syntax <syntax>`.
@@ -52,14 +52,25 @@ the :doc:`AviSynth Syntax <syntax>`.
 
     f = Sqrt(2)
     IsFloat(f) = true
-    IsFloat(2) = true   # ints are considered to be floats by this function
     IsFloat(true) = false
+    IsFloat("42.") = false
+    IsFloat(2) = true   # ints are considered to be floats by this function
+    IsReallyFloat(2) = false # see below
+
+As a workaround for the issue noted above, you may use the following user function: 
+::
+
+    ## return true for floats only
+    function IsReallyFloat(val v)
+    {
+        return (IsInt(v)==false) && IsFloat(v)
+    }
 
 IsInt
 -----
+::
 
-*   | IsInt
-    | IsInt(var)
+    IsInt(var)
 
 Tests if *var* is of the int type. *var* can be any expression allowed by the
 :doc:`AviSynth Syntax <syntax>`.
@@ -73,9 +84,9 @@ Tests if *var* is of the int type. *var* can be any expression allowed by the
 
 IsString
 --------
+::
 
-*   | IsString
-    | IsString(var)
+    IsString(var)
 
 Tests if *var* is of the string type. *var* can be any expression allowed by
 the :doc:`AviSynth Syntax <syntax>`.
@@ -89,9 +100,9 @@ the :doc:`AviSynth Syntax <syntax>`.
 
 IsFunction
 ----------
+::
 
-*   | IsFunction
-    | IsFunction(var)
+    IsFunction(var)
 
 Tests if *var* is of the function type. *var* can be any expression allowed by
 the :doc:`AviSynth Syntax <syntax>`.
@@ -107,9 +118,9 @@ the :doc:`AviSynth Syntax <syntax>`.
 
 Defined
 -------
+::
 
-*   | Defined
-    | Defined(var)
+    Defined(var)
 
 Tests if *var* is defined. Can be used inside :doc:`Script functions <syntax_userdefined_scriptfunctions>` to test if
 an optional argument has been given an explicit value. More formally, the
@@ -125,8 +136,9 @@ variable) has the void ('undefined') type, otherwise it returns true.
 
 Exist
 -----
+::
 
-*Exist(filename)*
+    Exist(string filename)
 
 Tests if the file specified by *filename* exists.
 
@@ -140,10 +152,11 @@ Tests if the file specified by *filename* exists.
 
 FunctionExists
 --------------
+::
 
-*FunctionExists(name)*
+    FunctionExists(string name)
 
-Tests if the function or filter name is defined in the script. 
+Tests if the function or filter or :doc:`clip property <syntax_clip_properties>` name is defined in the script. 
 
 *Examples:*
 ::
@@ -157,8 +170,9 @@ Tests if the function or filter name is defined in the script.
 
 InternalFunctionExists
 ----------------------
+::
 
-*InternalFunctionExists(name)*
+    InternalFunctionExists(string name)
 
 Tests if the function, filter or property name is defined natively within AviSynth+.
 
@@ -167,10 +181,11 @@ Unlike `FunctionExists`, returns false for external plugins and user-defined fun
 
 VarExists
 ---------
+::
 
-*VarExists(name)*
+    VarExists(string name)
 
-Tests if the variable exists or not.
+Tests if the "name" variable exists or not.
 
 Note: if variable exists, it returns true regardless of the "defined" state of the variable.
 

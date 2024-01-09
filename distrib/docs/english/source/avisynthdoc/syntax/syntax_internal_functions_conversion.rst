@@ -155,6 +155,6 @@ Changelog
 
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
-$Date: 2012/02/08 08:50:12 $
+$Date: 2024/01/09 08:11:22 $
 
 .. _Colors: http://avisynth.org/mediawiki/Colors

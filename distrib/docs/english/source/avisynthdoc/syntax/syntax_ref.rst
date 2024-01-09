@@ -30,12 +30,14 @@ expression's result can be of any type supported by the scripting language
 
 An *expression* can have one of these forms:
 
-1.  *numeric_constant*, *string_constant* or *boolean_constant*
-2.  *variable_name* or *clip_property*
+1.  *numeric_constant*, *string_constant* or *boolean_constant* or *array_constant*
+2.  *variable_name* or *clip_property* or *indexed array_variable_name*
 3.  *Function*(*args*)
 4.  *expression*.*Function*(*args*)
 5.  *expression1* **operator** *expression2*
 6.  *bool_expression* ? *expression1* : *expression2*
+7.  *function object*
+8.  *function object*(*args*)
 
 In the first case, the value of the *expression* is the value of the
 constant. In the second case, the values correspond to :doc:`clip properties <syntax_clip_properties>` or
@@ -44,13 +46,17 @@ third case, the value is the return value of an AVS function (see below). The
 fourth case is an alternate syntax (called "OOP notation") which is
 equivalent to *Function*(*expression*, *args*).
 
-The final two cases show that one can manipulate expressions using all of the
+:doc:`Script arrays <../script_ref/script_ref_arrays>` were natively introduced in Avisynth+.
+
+The 5th and 6th cases show that one can manipulate expressions using all of the
 usual arithmetic and logical :doc:`operators <syntax_operators>` (from C) as you'd expect on ints,
 floats and bools, as well as execute code conditionally with the ternary
 operator. Strings can be compared with relational operators and concatenated
 with '+'. The following operators are also defined on video clips: **a + b**
 is equivalent to :doc:`UnalignedSplice <../corefilters/splice>` (*a*, *b*), and **a ++ b** is equivalent
 to :doc:`AlignedSplice <../corefilters/splice>` (*a*, *b*).
+
+The 7th and 8th is using :doc:`Function objects <syntax_function_objects>`. they were introduced in Avisynth+ 3.6.0.
 
 The functions in AviSynth's scripting language are, by and large, video
 filters. Although a function can return any type it chooses (this is a useful
@@ -63,7 +69,7 @@ application.
 
 Functions can take up to sixty arguments (hope that's enough), and the return
 value can be of any type supported by the scripting language (clip, int,
-float, bool, string). Functions always produce a new value and never modify
+float, bool, string, array, function object). Functions always produce a new value and never modify
 an existing one. What that means is that all arguments to a function are
 passed "by value" and not "by reference"; in order to alter a variable's
 value in AviSynth script language you must assign to it a new value.
@@ -179,4 +185,4 @@ The above example does not return frames [0..9,20..29] as intended because
 the "\" is masked by the "#" character before it; thus the line continuation
 never happens.
 
-$Date: 2023/10/18 13:47:00 $
+$Date: 2024/01/09 10:00:00 $

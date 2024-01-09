@@ -41,6 +41,29 @@ need to put a quotation mark inside a string, you need to use `Python-style`_
 Alternatively, you can use Windows extended-ASCII curly-quotes
 inside the string instead of straight quotes to get around this limitation.
 
+Since Avisynth+ 3.6 string containing escaped characters are available.
+
+In a string literal, an escape character is a special character that starts 
+with a backslash (\) and is followed by another character or a sequence of 
+characters. The escape character modifies the meaning of the following character 
+or sequence, and allows you to represent characters that are not normally 
+printable or that have special functions.
+
+Converted escape sequences:
+
+    - ``\n`` (LF: 0x0A line feed )
+    - ``\r`` (CR: 0x0D carriage return)
+    - ``\t`` (TAB: 0x09 tabulator)
+    - ``\0`` (NUL: 0x00)
+    - ``\a`` (BEL: 0x07)
+    - ``\f`` (FF: 0x0C form feed)
+    - ``\\`` (the backslash character itself)
+    - ``\"`` (quotation mark itself)
+
+::
+
+    n"Hello \n" will store actual LF (0x0A, 10) control character into the string
+
 -   int
 
 An integer (32 bits, signed). An integer literal is entered as a sequence of
@@ -60,6 +83,16 @@ exponent-style notation is **not** supported.
 Boolean values must be either *true* or *false*. In addition they can be
 written as ''yes'' or ''no'', but you should avoid using these in your
 scripts (they remain for compatibility purposes only).
+
+-   array
+
+Array values are supported at script level in Avisynth+.
+See also at :doc:`script array concept and helper functions <../script_ref/script_ref_arrays>` .
+
+-   function
+
+Function objects are supported in Avisynth+.
+See also at :doc:`Function objects <syntax_function_objects>` .
 
 -   val
 
@@ -108,7 +141,21 @@ strictly required) to declare a variable's type is in
     function my_recolor_filter(clip c, int new_color, float amount, val
     "userdata") { ... }
 
-$Date: 2011/12/04 15:27:59 $
+Then since Avisynth+ 3.6.0 exists UseVar. UseVar is special filter, opens a clean variable environment in which only the
+variables in the parameter list can be seen.
+
+Changelog
+~~~~~~~~~
++----------------+------------------------------------------------------------+
+| Version        | Changes                                                    |
++================+============================================================+
+| Avisynth 3.6.0 | Added "Usevar"                                             |
+|                | Added types: function objects and array                    |
+|                | escaped string literal syntax                              |
++----------------+------------------------------------------------------------+
+
+
+$Date: 2024/01/09 11:08:59 $
 
 .. _Python-style: http://forum.doom9.org/showthread.php?s=&threadid=71597
 .. _floating-point: http://en.wikipedia.org/wiki/Floating_point

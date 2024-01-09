@@ -25,6 +25,10 @@ They convert between different types.
 
 They provide common mathematical operations on numeric variables.
 
+-   :doc:`Casting to function object <syntax_internal_functions_function_object>`
+
+Casting an internal function to a function object.
+
 -   :doc:`Runtime functions <syntax_internal_functions_runtime>`
 
 These are internal functions which are evaluated at every frame. They can be
@@ -41,7 +45,7 @@ They provide common operations on string variables.
 
 -   :doc:`Version functions <syntax_internal_functions_version>`
 
-They provide AviSynth version information.
+They provide AviSynth version and Avisynth/Operating System bitness information.
 
 -   :doc:`Frame property functions <syntax_internal_functions_frame_properties>`
 
@@ -59,6 +63,10 @@ Controlling the threads mechanism.
 Methods for fine-tune resources: memory, cache strategy and CPU environment settings.
 
 Global variables which affect specific audio or video (VfW export) features.
+
+-   :doc:`Debugging helper function <syntax_internal_functions_debug>`
+
+Debugging and troubleshooting helper functions. Filter graphs, logging.
 
 -   :doc:`History: Avisynth 2.6 Multithreading and memory limit functions <syntax_internal_functions_multithreading>`
 

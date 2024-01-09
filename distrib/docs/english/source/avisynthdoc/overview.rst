@@ -33,9 +33,9 @@ AviSynth Syntax
 
     -   :doc:`Boolean functions <syntax/syntax_internal_functions_boolean>`
     -   :doc:`Control functions <syntax/syntax_internal_functions_control>`
-    -   :doc:`Conversion functions <syntax/syntax_internal_functions_conversion>`
+    -   :doc:`Type conversion functions <syntax/syntax_internal_functions_conversion>`
+    -   :doc:`Casting to function object <syntax/syntax_internal_functions_function_object>`
     -   :doc:`Multithreading functions <syntax/syntax_internal_functions_multithreading_new>`
-    -   :doc:`History: Avisynth 2.6 Multithreading functions <syntax/syntax_internal_functions_multithreading>` (v2.6)
     -   :doc:`Global options and resource control (memory, CPU, cache) <syntax/syntax_internal_functions_global_options>`
     -   :doc:`Numeric functions <syntax/syntax_internal_functions_numeric>`
     -   :doc:`Runtime functions <syntax/syntax_internal_functions_runtime>`
@@ -43,6 +43,8 @@ AviSynth Syntax
     -   :doc:`String functions <syntax/syntax_internal_functions_string>`
     -   :doc:`Version functions <syntax/syntax_internal_functions_version>`
     -   :doc:`Frame property functions <syntax/syntax_internal_functions_frame_properties>`
+    -   :doc:`Debugging helper function <syntax/syntax_internal_functions_debug>`
+    -   :doc:`History: Avisynth 2.6 Multithreading functions <syntax/syntax_internal_functions_multithreading>` (v2.6)
 
 -   :doc:`Clip properties <syntax/syntax_clip_properties>`
 -   :doc:`User defined script functions <syntax/syntax_userdefined_scriptfunctions>`

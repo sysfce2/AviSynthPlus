@@ -21,6 +21,9 @@ using the following rules:
     is part of the filter graph only if there is a path that connects it with
     the final clip returned by the script.
 
+In Avisynth+ you can use two debug filters, with which the filter graph
+can be visualized. See :ref:`filter graph helpers <syntax_debug_filtergraph>`.
+
 
 An example of a filter graph
 ----------------------------
