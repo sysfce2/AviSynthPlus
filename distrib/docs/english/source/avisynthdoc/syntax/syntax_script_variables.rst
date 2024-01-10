@@ -51,18 +51,21 @@ printable or that have special functions.
 
 Converted escape sequences:
 
-    - ``\n`` (LF: 0x0A line feed )
-    - ``\r`` (CR: 0x0D carriage return)
-    - ``\t`` (TAB: 0x09 tabulator)
-    - ``\0`` (NUL: 0x00)
-    - ``\a`` (BEL: 0x07)
-    - ``\f`` (FF: 0x0C form feed)
-    - ``\\`` (the backslash character itself)
-    - ``\"`` (quotation mark itself)
+-   ``\n`` to LF-Chr(10)
+-   ``\r`` to CR-Chr(13)
+-   ``\t`` to TAB-Chr(9)
+-   ``\0`` to NUL-Chr(0) (NUL is string terminator, use at your own risk)
+-   ``\a`` to Chr(7)-audible beep
+-   ``\f`` to FF-Chr(12) - Form feed
+-   ``\\`` (double \) to Backslash
+-   ``\"`` to " (double-quotation mark)
+-   ``\'`` to ' (single-quotation mark) (since 3.7.1)
+-   ``\b`` to BS-CHR(8) - backspace (since 3.7.1)
+-   ``\v`` to VT-CHR(11) - vertical tab (since 3.7.1)
 
 ::
 
-    n"Hello \n" will store actual LF (0x0A, 10) control character into the string
+    e"Hello \n" will store actual LF (0x0A, 10) control character into the string
 
 -   int
 
