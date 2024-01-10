@@ -2,7 +2,8 @@
 AviSynth Syntax
 ===============
 
--   :doc:`AviSynth Syntax <syntax_ref>` - The official reference documentation.
+-   :doc:`The full Avisynth Syntax <syntax_the_full_grammar>` - The official reference documentation.
+-   :doc:`AviSynth Syntax <syntax_ref>` - The (old) official reference documentation.
 -   :doc:`Plugins <syntax_plugins>` - How to load plugins (AviSynth, VirtualDub, VFAPI and
     C-plugins), autoloading and name-precedence.
 -   :doc:`Script variables <syntax_script_variables>` - How to declare and use them in scripts.
@@ -29,5 +30,7 @@ AviSynth Syntax
 -   :doc:`Scripting at runtime <syntax_runtime_environment>` - How to unravel the power of runtime
     filters and create complex runtime scripts that can perform interesting
     (and memory/speed efficient) editing/processing operations and effects.
+
+Back to :doc:`Overview <../overview>`.
 
 $Date: 2024/01/07 08:39:00 $

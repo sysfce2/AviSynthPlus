@@ -24,6 +24,7 @@ AviSynth Syntax
 
 :doc:`AviSynth Syntax <syntax/syntax_sections>`
 
+-   :doc:`The full Avisynth Syntax <syntax/syntax_the_full_grammar>`
 -   :doc:`Statements <syntax/syntax_ref>`
 -   :doc:`Script variables <syntax/syntax_script_variables>`
 -   :doc:`Colors <syntax/syntax_colors>`

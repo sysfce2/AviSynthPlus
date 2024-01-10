@@ -72,5 +72,8 @@ Debugging and troubleshooting helper functions. Filter graphs, logging.
 
 (Historical: Avisynth 2.6) Controlling the threads and the maximum used memory.
 
+Back to :doc:`Avisynth Syntax <syntax>`.
+Back to :doc:`Avisynth Syntax ref <syntax_ref>`.
+Back to :doc:`The full Avisynth grammar <syntax_the_full_grammar>`.
 
-$Date: 2024/01/06 20:06:00 $
+$Date: 2024/01/10 10:38:00 $
