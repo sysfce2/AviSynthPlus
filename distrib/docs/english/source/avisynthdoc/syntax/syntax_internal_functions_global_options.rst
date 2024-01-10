@@ -13,6 +13,11 @@ SetMemoryMax
 Sets the maximum memory (in MB) that AviSynth uses for its internal Video
 Frame cache to the value of *amount*. Setting to zero just returns the current Memory Max value.
 
+In Avisynth+ default Memory Max is 1024MB for 32 bits and 4096MB on the x64 version.
+This limit is fine-tuned however if physical memory is low:
+
+``DefaultMemoryMax = minimum(physical_memory / 4, secondary_memory_max_limit)``
+
 ``Type`` and ``index`` are additional arguments for devices such as GPUs.
 Used to be used in Avisynth Neo, where Avisynth core was able to govern CUDA aware plugins
 and their resources: memory usage could be managed individually for devices such as GPUs.
