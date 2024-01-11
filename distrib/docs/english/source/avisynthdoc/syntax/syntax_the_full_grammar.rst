@@ -179,7 +179,7 @@ to declare the type of arguments:
 -   *string* : The function argument following the keyword is a character string.
 -   *bool* : The function argument following the keyword is a boolean (true/false) variable.
 -   *func* : The function argument following the keyword is a function object variable. (Avisynth+)
--   *array* : The function argument following the keyword is an array variable. (Avisynth+)
+-   *array* : The function argument following the keyword is an :doc:`array <../script_ref/script_ref_arrays>` variable. (Avisynth+)
 -   *val* : The function argument following the keyword can be of any type (ie any of the above types). 
 
 Identifiers

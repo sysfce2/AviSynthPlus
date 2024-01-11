@@ -16,59 +16,93 @@ Beginning Avisynth+ 3.6 script arrays are supported. Functionality is different 
 -  arrays can appear as user defined function parameters (named and unnamed).
 -  elements are accessible with indexes or in a dictionary-like associative way
 -  Array modifier functions allow multidimensional subarray indexes
+-  array indexes start from zero.
 
   - ArrayIns - insert before position
   - ArrayAdd - append
   - ArrayDel - delete from position
   - ArraySet - replace at position
+  - ArrayGet - a function-like version of the bracket-type [] syntax
 
--  Query the array length with ArraySize(a)
+-  Query the array length with ``ArraySize``
+-  Test is a variable is of explicite array type: ``IsArray``
 
 ArrayIns
 ^^^^^^^^
+::
 
-ArrayIns(array_to_mod, value_to_insert, index1 [, index2, index3...])
+  ArrayIns(array_to_mod, value_to_insert, index1 [, index2, index3...])
 
-    Insert a value into an array or into its subarray.
-    Returns a new array with value_to_insert inserted into array_to_mod (1D array) or array_to_mod[index1 (, index2, index3...)] (multi-dimensional array)
-    The indexes point to the insertion point. Index 0 will insert at the beginning of the array.
-    Index (ArraySize) will insert after the last element (same as ArrayAdd - append)
-    Original array (as with the other functions) remains untouched.
+Insert a value into an array or into its subarray.
+
+Returns a new array with value_to_insert inserted into array_to_mod (1D array) or 
+array_to_mod[index1 (, index2, index3...)] (multi-dimensional array).
+
+The indexes point to the insertion point. Index 0 will insert at the beginning of the array.
+Index (ArraySize) will insert after the last element (same as ArrayAdd - append)
+Original array (as with the other functions) remains untouched.
 
 ArrayAdd
 ^^^^^^^^
+::
 
-ArrayAdd(array_to_mod, value_to_append [, index1, index2, index3...])
+    ArrayAdd(array_to_mod, value_to_append [, index1, index2, index3...])
 
-    Appends value to the end of an array or its subarray
-    Returns a new array with value_to_append appended to array_to_mod (1D array) or array_to_mod[index1 (, index2, index3...)] (multi-dimensional array).
-    Original array (as with the other functions) remains untouched.
+Appends value to the end of an array or its subarray.
+
+Returns a new array with value_to_append appended to array_to_mod (1D array) or array_to_mod[index1 (, index2, index3...)] (multi-dimensional array).
+Original array (as with the other functions) remains untouched.
 
 ArrayDel
 ^^^^^^^^
+::
 
-ArrayDel(array_to_mod, index1 (, index2, index3...])
+    ArrayDel(array_to_mod, index1 (, index2, index3...])
 
-    Returns a new array in which the requested position was deleted.
-    Original array (as with the other functions) remains untouched.
+Returns a new array in which the requested position was deleted.
+Original array (as with the other functions) remains untouched.
 
 ArraySet
 ^^^^^^^^
+::
 
-ArraySet(array_to_mod, replacement_value, index1 [, index2, index3...])
+    ArraySet(array_to_mod, replacement_value, index1 [, index2, index3...])
 
-    Returns a new array with array_to_mod[index1 (, index2, index3...)] = replacement_value
-    Original array (as with the other functions) remains untouched.
+Returns a new array with array_to_mod[index1 (, index2, index3...)] = replacement_value
+
+Original array (as with the other functions) remains untouched.
+
+ArrayGet
+^^^^^^^^
+::
+
+    ArrayGet(array, index1 [, index2, index3...])
+
+A function version of accessing an array element.
+
+During the script parsing the bracketed syntax is silenly converted to ``ArrayGet``.
+
+*Example*
+::
+
+    # these are the same
+    x = a[1]
+    x = ArrayGet(a, 1)
+    x = a.ArrayGet(1)
+    n = b[3, 2]
+    n = ArrayGet(b, 3, 2)
+    n = b.ArrayGet(3, 2)
 
 ArraySize
 ^^^^^^^^^
+::
 
-int ArraySize(array_value)
+    int ArraySize(array_value)
 
-    Returns the size of the parameter.
-    For getting the size of a subarray, pass the inner element.
+Returns the size of the parameter.
+For getting the size of a subarray, pass the inner element.
 
-Example:
+Examples:
 
 ::
 
@@ -94,8 +128,6 @@ Example:
       x=a[4,1] #"another"
       SubTitle("x = " + String(x) + " Size=" + String(a.ArraySize()))
 
-Example:
-
 ::
 
       array_variable = [[1, 2, 3], [4, 5, 8], "hello"]
@@ -109,8 +141,6 @@ Example:
       n2 = ArraySize(empty) #0
       val3 = dictionary["two"]
 
-Example:
-
 ::
 
       a = []
@@ -121,8 +151,6 @@ Example:
       a=ArrayDel(a,2) # [3,[1,2],"s2"]
       
       b = ["hello", "leo"]
-
-Example:
 
 ::
 
@@ -298,32 +326,34 @@ Example:
 
 ::
 
-      a = [1.0, 2.0, 4.2]
-      b = [3, 4, 5]
-      multi = [a,b]
-
-      sum = Summa(multi[0], multi[1], 2)
-      SubTitle(Format({sum}))
-
-      Function Summa(array "x", array "y", int "N")
-      {
-        sum = 0.0
-        FOR(i=0,N-1) {
-          sum = sum + x[i] * y[i]
-        }
-        return sum
+    a = [1.0, 2.0, 4.2]
+    b = [3, 4, 5]
+    multi = [a,b]
+    
+    sum = Summa(multi[0], multi[1], 2)
+    SubTitle(Format({sum}))
+    
+    Function Summa(array "x", array "y", int "N")
+    {
+      sum = 0.0
+      FOR(i=0,N-1) {
+        sum = sum + x[i] * y[i]
       }
+      return sum
+    }
 
-      or
+or
 
-      Function Summa(float_array x, float_array y, int "N")
-      {
-        sum = 0.0
-        FOR(i=0,N-1) {
-          sum = sum + x[i] * y[i]
-        }
-        return sum
+::
+
+    Function Summa(float_array x, float_array y, int "N")
+    {
+      sum = 0.0
+      FOR(i=0,N-1) {
+        sum = sum + x[i] * y[i]
       }
+      return sum
+    }
 
 Arrays (pre AviSynth+: AVSLib)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -456,7 +486,7 @@ of the AVSLib documentation.
 
 Back to :doc:`scripting reference <script_ref>`.
 
-$Date: 2024/01/05 15:08:00 $
+$Date: 2024/01/11 14:40:00 $
 
 .. _AVSLib: http://avslib.sourceforge.net/
 .. _Download: http://sourceforge.net/projects/avslib/
