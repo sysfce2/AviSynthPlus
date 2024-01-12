@@ -1206,7 +1206,15 @@ PVideoFrame ShowChannel::GetFrame(int n, IScriptEnvironment* env)
     const int planesYUV[4] = { PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A };
     const int planesRGB[4] = { PLANAR_G, PLANAR_B, PLANAR_R, PLANAR_A };
     const int* planes = (input_type_is_planar_rgb || input_type_is_planar_rgba) ? planesRGB : planesYUV;
-    const int plane = planes[channel];
+    int final_channel = channel;
+    // RGB channels: B=0 G=1 R=2 (like packed)
+    // Planar order: G=0 B=1 R=2
+    if (input_type_is_planar_rgb || input_type_is_planar_rgba) {
+      // exchange B and G
+      if (channel == 0) final_channel = 1;
+      else if (channel == 1) final_channel = 0;
+    }
+    const int plane = planes[final_channel];
 
     const BYTE* srcp = src->GetReadPtr(plane); // source plane
     const BYTE* srcp_a = source_hasalpha ? src->GetReadPtr(PLANAR_A) : nullptr;
