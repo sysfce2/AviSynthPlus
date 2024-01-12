@@ -476,7 +476,7 @@ PlaneMinMaxStats
 
     PlaneMinMaxStats(clip, float "threshold", int "offset", int "plane", bool "setvar")
 
-  Returns an 6-element array with [min,max,thresholded minimum,thresholded maximum,median,average]
+Returns an 6-element array with [min,max,thresholded minimum,thresholded maximum,median,average]
 
 .. describe:: clip
 
@@ -507,8 +507,8 @@ PlaneMinMaxStats
 .. describe:: setvar
 
     when true then it writes a global variables named 
-    ``PlaneStats_min`` ``PlaneStats_max`` ``PlaneStats_thmin`` ``PlaneStats_thmax``
-    ``PlaneStats_median`` ``PlaneStats_median`` ``PlaneStats_average``
+    ``PlaneStats_min``, ``PlaneStats_max``, ``PlaneStats_thmin``, ``PlaneStats_thmax``,
+    ``PlaneStats_median``, ``PlaneStats_median`` and ``PlaneStats_average``
 
     default: false
 
@@ -907,7 +907,7 @@ Changelog
 +----------------+------------------------------------------------------------+
 | Avisynth 3.6.0 | Added "local", added function objects                      |
 +----------------+------------------------------------------------------------+
-| Avisynth+      | Added R, G, B, A versions of AverageXX, Min, Max,          |
+| Avisynth+      | Added R, G, B versions of AverageXX, Min, Max,             |
 | pre2294        | Difference and Median family.                              |
 +----------------+------------------------------------------------------------+
 | AviSynth 2.6.0 | Number of expressions changed from 16 to nearly unlimited. |
