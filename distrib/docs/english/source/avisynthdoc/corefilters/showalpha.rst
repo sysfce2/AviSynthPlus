@@ -1,26 +1,54 @@
 
-ShowAlpha, ShowRed, ShowGreen, ShowBlue
-=======================================
+ShowAlpha, ShowRed, ShowGreen, ShowBlue, ShowY, ShowU, ShowV
+============================================================
 
-``ShowAlpha`` (clip, string pixel_type)
-``ShowBlue`` (clip, string pixel_type)
-``ShowGreen`` (clip, string pixel_type)
-``ShowRed`` (clip, string pixel_type)
+Returns the selected channel as a greyscale clip.
 
-``ShowAlpha`` shows the alpha channel of a RGB32 clip, available in *v2.53*.
-``ShowBlue`` / ``ShowGreen`` / ``ShowRed`` shows the selected channel of a
-RGB clip, available in *v2.56*.
+::
 
-In *v2.54* ``ShowAlpha`` now returns RGB, YUY2, or YV12 via the pixel_type
-argument. The latter two can be used to layer an RGB clip with alpha
-transparency data onto a YUV clip using the 3-argument form of ``Overlay``,
-because when setting pixel_type to YUY2 or YV12 the luma range is [0,255].
+    ShowAlpha (clip, string pixel_type)
+    ShowBlue (clip, string pixel_type)
+    ShowGreen (clip, string pixel_type)
+    ShowRed (clip, string pixel_type)
+    ShowY (clip, string pixel_type)
+    ShowU (clip, string pixel_type)
+    ShowV (clip, string pixel_type)
 
-In *v2.56* ``ShowAlpha/Red/Green/Blue`` now returns RGB24, RGB32, YUY2, or
-YV12 via the pixel_type argument. For RGB32 output the selected channel is
-copied to all R, G and B channels, but not the Alpha channel which is left
-untouched. For YUV output the selected channel is copied to the Luma channel,
-the chroma channels are set to grey (0x80).
+``ShowAlpha`` Returns the alpha channel of a RGB32/RGB64/RGBAP/YUVA clip in greyscale.
+
+``ShowBlue``, ``ShowGreen``, ``ShowRed`` returns the selected channel of a RGB clip
+
+``ShowY``, ``ShowU``, ``ShowV`` returns the selected channel of a YUV clip
+
+``pixel_type`` Sets the color format of the output.
+
+Default pixel_type is adaptive.
+
+If pixel_type is empty and source is RGB, or pixel_type="rgb", then output type is
+
+- RGB32 or RGB64 when source if packed RGB(A) (match the bit depth)
+- RGBP with the matching bit depth if source is planar RGB(A)
+
+If pixel_type is empty and source is YUV, or pixel_type="yuv", then output type is
+
+- YUV444 (match the bit depth)
+
+If pixel_type is "y" or "rgbp" or "rgbap" then output type is
+
+- Y, RGBP or RGBAP respectively with the matching bit depth.
+
+At all other cases, the pixel_type should be explicitely given.
+
+Conversion rules:
+
+For RGB output the selected channel is copied to all R, G and B channels, 
+but not the Alpha channel which is left untouched (if target format has alpha).
+
+For Y or YUV output the selected channel is copied to the Luma channel.
+For YUV output the chroma (U and Y) channels are set to grey (0x80 when 8 bits).
+
+If output is set to a Y/YUV format, they are are full range (8 bits: 0-255), and so 
+can be used as the mask argument to Overlay. 
 
 **Examples:**
 ::
@@ -33,10 +61,24 @@ the chroma channels are set to grey (0x80).
     AviSource("clip.avi")
     MergeRGB(ShowBlue("YV12"), Last, ShowRed("YV12"))
 
+See also :doc:`plane Extract functions <extract>` (AviSynth+)
+
 +-----------+---------------------------------------+
 | Changelog |                                       |
 +===========+=======================================+
+| v3.7.4    | Fix swapped ShowGreen/ShowBlue for    |
+|           | planar RGB input                      |
++-----------+---------------------------------------+
+| AviSynth+ | | added ShowY, ShowU, ShowV           |
+|           | | allow any planar/packed RGB(A)      |
+|           | | allow YUV input                     |
+|           | | allow any valid pixel_type          |
++-----------+---------------------------------------+
+| v2.6      | pixel_type "Y8"                       |
++-----------+---------------------------------------+
 | v2.56     | added ShowBlue, ShowGreen and ShowRed |
++-----------+---------------------------------------+
+| v2.53     | added ShowAlpha                       |
 +-----------+---------------------------------------+
 
 $Date: 2005/07/08 22:53:16 $
