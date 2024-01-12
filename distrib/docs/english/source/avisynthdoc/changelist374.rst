@@ -8,6 +8,7 @@ Changes from 3.7.3 to 3.7.4
 
 Additions, changes
 ~~~~~~~~~~~~~~~~~~
+- Bump year to 2024
 - DirectShowSource new parameter ``utf8`` for utf8 filename support
 - "propShow" ``font``, ``text_color``, ``halo_color``, ``bold`` new parameters for custom style
 - "propShow" (#366): ``x``, ``y``, ``align`` new parameters for custom positioning
@@ -23,6 +24,8 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix #384: swapped ShowGreen/ShowBlue for planar RGB sources
+- Fix: allow use of "local" in ConditionalSelect string version (fixed wrong function signature)
 - "Info" now can display a line which is only partially visible (instead of not showing it at all)
 - "Text" use "lsp" parameter the same way as in SubTitle: in 1/8 pixel units, not in 1 pixels.
 - "Text" vertical alignment position would be wrong for multiline strings containing even number of lines.
@@ -41,11 +44,17 @@ Documentation
 - Update "Info"
 - Update rst docs with control structs if/else/for/while
 - Update "ShowTime", "ShowSMPTE", "ShowFrameNumber" section with 3.7.3 changes
+- Update most items at Syntax and internal functions sections, add arrays, function objects, 
+  escaped string literals, multithreading, frame properties, debug functions
+- Add if-else, do-while, for-next
+- Update Import (add utf8)
+- update Conditional filters, Runtime functions
+- update ShowAlpha/Red/...
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2023/12/02 18:54:00 $
+$Date: 2024/01/12 09:35:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

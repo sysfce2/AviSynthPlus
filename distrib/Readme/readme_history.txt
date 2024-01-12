@@ -6,8 +6,31 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
-20231219 3.7.3 post ??
+20240112 3.7.3 post ??
 ----------------------
+- Bump year to 2024, yeah :)
+- Fix: Planar RGB source ShowBlue and ShowGreen was swapped.
+- rst docs update
+  - Syntax sections
+    - general list
+      https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/overview.html#avisynth-syntax
+    - The full Avisynth grammar, as appears at Avisynth.nl, updated function objects, arrays
+      https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/syntax/syntax_the_full_grammar.html
+    - script variables - escaped string literals
+      https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/syntax/syntax_script_variables.html
+    - control structures if-else, do-while, for-next
+      https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/syntax/syntax_control_structures.html
+    - internal functions (most of its subsections), frame props, debug functions, multithreading
+      https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/syntax/syntax_internal_functions.html
+  - block statements, added if-else, do-while, for-next
+    https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/script_ref/script_ref_block_statements.html
+  - Arrays
+    https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/script_ref/script_ref_arrays.html
+  - Import, refresh, add utf8
+    https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/import.html
+  - ShowAlpha/ShowGreen/.. etc.
+    https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/showalpha.html
+(20231219 3.7.3 post ??)
 - rst docs: Conditional filters, Runtime functions
   https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/conditionalfilter.html
   https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/conditionalreader.html
