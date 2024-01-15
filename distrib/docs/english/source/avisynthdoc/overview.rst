@@ -39,6 +39,8 @@ AviSynth Syntax
     -   :doc:`Multithreading functions <syntax/syntax_internal_functions_multithreading_new>`
     -   :doc:`Global options and resource control (memory, CPU, cache) <syntax/syntax_internal_functions_global_options>`
     -   :doc:`Numeric functions <syntax/syntax_internal_functions_numeric>`
+    -   :doc:`Trigonometry functions <syntax/syntax_internal_functions_trig>`
+    -   :doc:`Bit functions <syntax/syntax_internal_functions_bit>`
     -   :doc:`Runtime functions <syntax/syntax_internal_functions_runtime>`
     -   :doc:`Script functions <syntax/syntax_internal_functions_script>`
     -   :doc:`String functions <syntax/syntax_internal_functions_string>`

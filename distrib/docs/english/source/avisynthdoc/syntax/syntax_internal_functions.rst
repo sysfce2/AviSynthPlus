@@ -25,6 +25,14 @@ They convert between different types.
 
 They provide common mathematical operations on numeric variables.
 
+-   :doc:`Trigonometry functions <syntax_internal_functions_trig>`
+
+They provide trigonometry functions.
+
+-   :doc:`Bit functions <syntax_internal_functions_bit>`
+
+They provide bitwise functions.
+
 -   :doc:`Casting to function object <syntax_internal_functions_function_object>`
 
 Casting an internal function to a function object.
