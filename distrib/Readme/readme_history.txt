@@ -6,10 +6,10 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
-20240112 3.7.3 post ??
+20240118 3.7.3 post 11
 ----------------------
 - Bump year to 2024, yeah :)
-- Fix: Planar RGB source ShowBlue and ShowGreen was swapped.
+- Fix #384: Planar RGB source ShowBlue and ShowGreen was swapped.
 - rst docs update
   - Syntax sections
     - general list
@@ -93,7 +93,7 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
     conversions from RGB, such as in GreyScale, ConvertToY, ConvertToYUVxxx (latter fixed in test5).
     When input or output would require it, rgb offset of 16 (or scaled equivalents) is used 
     for supporting limited range rgb (similar to Y offset=16 used at limited range YUV conversions)
-  
+    (added in post/test4, but a StudioRGB->YUY2 bug was fixed in 3.7.3post test11 20240118)
 
 20230715 3.7.3
 --------------
