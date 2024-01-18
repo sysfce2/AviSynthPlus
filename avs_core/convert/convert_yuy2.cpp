@@ -87,7 +87,7 @@ ConvertToYUY2::ConvertToYUY2(PClip _child, bool _dupl, bool _interlaced, const c
 // 0-1-0 kernel version: convert_rgb_back_to_yuy2_c
 
 // 1-2-1 Kernel version
-template<bool TV_range>
+template<bool TV_range, bool limited_rgb>
 static void convert_rgb_to_yuy2_c(
   const BYTE* rgb,
                                   BYTE* yuv, const int yuv_offset,
@@ -105,7 +105,11 @@ static void convert_rgb_to_yuy2_c(
   constexpr int PRECRANGE = 1 << PRECBITS; // 32768
   constexpr int bias = TV_range ? 0x84000 : 0x4000; //  16.5 * 32768 : 0.5 * 32768
 
-  const int range_offset_rgb = matrix.offset_rgb;
+  int range_offset_rgb;
+  if constexpr(limited_rgb)
+    range_offset_rgb = matrix.offset_rgb;
+  else
+    range_offset_rgb = 0; // help optimizer
 
   for (int y = height; y > 0; --y)
   {
@@ -135,7 +139,12 @@ static void convert_rgb_to_yuy2_c(
         yuv[3] = PixelClip((r_y * matrix.kv + (128 << (PRECBITS + 2)) + (1 << (PRECBITS + 1))) >> (PRECBITS + 2));  // v
       }
       else {
-        const int scaled_y = (y0 + y1 * 2 + y2 - (16 * 4)) * int(255.0 / 219.0 * PRECRANGE + 0.5);
+        int scaled_y;
+        if constexpr(limited_rgb)
+          scaled_y = (y0 + y1 * 2 + y2 - (16 * 4)) << PRECBITS; // * int(219.0 / 219.0 * PRECRANGE + 0.5);
+        else
+          scaled_y = (y0 + y1 * 2 + y2 - (16 * 4)) * int(255.0 / 219.0 * PRECRANGE + 0.5);
+
         const int b_y = ((rgb_prev[0] + rgb[0] * 2 + rgb_next[0] + 4 * range_offset_rgb) << PRECBITS) - scaled_y;
         yuv[1] = PixelClip(((b_y >> (PRECBITS + 2 - 6)) * matrix.ku + (128 << (PRECBITS + 6)) + (1 << (PRECBITS + 5))) >> (PRECBITS + 6));  // u
         const int r_y = ((rgb_prev[2] + rgb[2] * 2 + rgb_next[2] + 4 * range_offset_rgb) << PRECBITS) - scaled_y;
@@ -492,9 +501,15 @@ PVideoFrame __stdcall ConvertToYUY2::GetFrame(int n, IScriptEnvironment* env)
 
   // this reference C matches best to the actual sse2 implementations
   if (0 != matrix.offset_y)
-    convert_rgb_to_yuy2_c<true>(rgb, yuv, yuv_offset, rgb_offset, rgb_inc, vi.width, vi.height, matrix); // rec
+    if(0 != matrix.offset_rgb)
+      convert_rgb_to_yuy2_c<true, true>(rgb, yuv, yuv_offset, rgb_offset, rgb_inc, vi.width, vi.height, matrix); // limited RGB -> rec
+    else 
+      convert_rgb_to_yuy2_c<true, false>(rgb, yuv, yuv_offset, rgb_offset, rgb_inc, vi.width, vi.height, matrix); // full RGB -> rec
   else
-    convert_rgb_to_yuy2_c<false>(rgb, yuv, yuv_offset, rgb_offset, rgb_inc, vi.width, vi.height, matrix); // PC
+    if (0 != matrix.offset_rgb)
+      convert_rgb_to_yuy2_c<false, true>(rgb, yuv, yuv_offset, rgb_offset, rgb_inc, vi.width, vi.height, matrix); // limited RGB -> PC
+    else
+      convert_rgb_to_yuy2_c<false, false>(rgb, yuv, yuv_offset, rgb_offset, rgb_inc, vi.width, vi.height, matrix); // full RGB -> PC
 
   // or using similar matrix multiplication inside like in other RGB to planar YUV, but it differs from sse implementation
   // convert_rgb_to_yuy2_new_c(false, rgb, yuv, yuv_offset, rgb_offset, rgb_inc, vi.width, vi.height, matrix);
