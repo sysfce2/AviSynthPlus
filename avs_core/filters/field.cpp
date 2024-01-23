@@ -41,6 +41,7 @@
 #endif
 #include <avs/minmax.h>
 #include "../core/internal.h"
+#include <vector>
 
 
 /**** Factory methods ****/
@@ -720,8 +721,8 @@ AVSValue __cdecl SeparateFields::Create(AVSValue args, void*, IScriptEnvironment
  *******   Interleave   *******
  ******************************/
 
-Interleave::Interleave(int _num_children, const PClip* _child_array, IScriptEnvironment* env)
-  : num_children(_num_children), child_array(_child_array)
+Interleave::Interleave(const std::vector<PClip>& _child_array, IScriptEnvironment* env)
+  : num_children((int)_child_array.size()), child_array(_child_array)
 {
   vi = child_array[0]->GetVideoInfo();
   vi.MulDivFPS(num_children, 1);
@@ -768,10 +769,13 @@ AVSValue __cdecl Interleave::Create(AVSValue args, void*, IScriptEnvironment* en
   const int num_args = args.ArraySize();
   if (num_args == 1)
     return args[0];
-  PClip* child_array = new PClip[num_args];
-  for (int i=0; i<num_args; ++i)
-    child_array[i] = args[i].AsClip();
-  return new Interleave(num_args, child_array, env);
+
+  std::vector<PClip> children(num_args);
+
+  for (int i = 0; i < (int)children.size(); ++i)
+    children[i] = args[i].AsClip();
+
+  return new Interleave(children, env);
 }
 
 
@@ -801,10 +805,12 @@ AVSValue __cdecl SelectEvery::Create(AVSValue args, void*, IScriptEnvironment* e
   if (num_vals <= 1)
   return new SelectEvery(args[0].AsClip(), args[1].AsInt(), num_vals>0 ? args[2][0].AsInt() : 0, env);
   else {
-    PClip* child_array = new PClip[num_vals];
-    for (int i=0; i<num_vals; ++i)
-      child_array[i] = new SelectEvery(args[0].AsClip(), args[1].AsInt(), args[2][i].AsInt(), env);
-    return new Interleave(num_vals, child_array, env);
+    std::vector<PClip> children(num_vals);
+
+    for (int i = 0; i < (int)children.size(); ++i)
+      children[i] = new SelectEvery(args[0].AsClip(), args[1].AsInt(), args[2][i].AsInt(), env);
+
+    return new Interleave(children, env);
   }
 }
 
@@ -1005,10 +1011,10 @@ static AVSValue __cdecl Create_Weave(AVSValue args, void*, IScriptEnvironment* e
 static AVSValue __cdecl Create_Pulldown(AVSValue args, void*, IScriptEnvironment* env)
 {
   PClip clip = args[0].AsClip();
-  PClip* child_array = new PClip[2];
-  child_array[0] = new SelectEvery(clip, 5, args[1].AsInt() % 5, env);
-  child_array[1] = new SelectEvery(clip, 5, args[2].AsInt() % 5, env);
-  return new AssumeFrameBased(new Interleave(2, child_array, env));
+  std::vector<PClip> children(2);
+  children[0] = new SelectEvery(clip, 5, args[1].AsInt() % 5, env);
+  children[1] = new SelectEvery(clip, 5, args[2].AsInt() % 5, env);
+  return new AssumeFrameBased(new Interleave(children, env));
 }
 
 

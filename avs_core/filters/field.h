@@ -37,6 +37,7 @@
 
 #include <avisynth.h>
 #include "../core/internal.h"
+#include <vector>
 
 
 /**********************************************************************
@@ -326,7 +327,7 @@ class Interleave : public IClip
     **/
 {
 public:
-  Interleave(int _num_children, const PClip* _child_array, IScriptEnvironment* env);
+  Interleave(const std::vector<PClip>& _child_array, IScriptEnvironment* env);
 
   inline const VideoInfo& __stdcall GetVideoInfo() {
     return vi;
@@ -344,17 +345,13 @@ public:
     return child_array[n % num_children]->GetParity(n / num_children);
   }
 
-  virtual ~Interleave() {
-    delete[] child_array;
-  }
-
   static AVSValue __cdecl Create(AVSValue args, void*, IScriptEnvironment* env);
 
   int __stdcall SetCacheHints(int cachehints, int frame_range);
 
 private:
   const int num_children;
-  const PClip* child_array;
+  std::vector<PClip> child_array;
   VideoInfo vi;
   int child_devs;
 };
