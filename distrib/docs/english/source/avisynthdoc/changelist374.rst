@@ -24,6 +24,7 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix #386: Interleave to call plugin destructor like StackXXXX
 - Fix #384: swapped ShowGreen/ShowBlue for planar RGB sources
 - Fix: allow use of "local" in ConditionalSelect string version (fixed wrong function signature)
 - "Info" now can display a line which is only partially visible (instead of not showing it at all)

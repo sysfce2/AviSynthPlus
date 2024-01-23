@@ -6,8 +6,11 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
-20240118 3.7.3 post 11
+20240124 3.7.3 post 12
 ----------------------
+- (temporary fix for VS2022 17.8.4 compiler bug)
+- Fix #386: Interleave to call plugin destructor like StackXXXX
+(20240118 3.7.3 post 11)
 - Bump year to 2024, yeah :)
 - Fix #384: Planar RGB source ShowBlue and ShowGreen was swapped.
 - rst docs update
