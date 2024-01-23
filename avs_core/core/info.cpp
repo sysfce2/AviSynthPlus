@@ -1011,7 +1011,7 @@ void PreRendered::make_outline() {
   // const uint8_t mask = ~(0xFF >> (8 - (bitcounter % 8)));
 
   // shift a line left and rights and result is or'd
-  auto make_dizzyLR = [](uint8_t* dst, uint8_t* src, size_t w) {
+  auto make_dizzyLR = [](uint8_t* dst, auto src, size_t w) {
     if (w == 1)
     {
       *dst = (src[0] << 1) | (src[0] >> 1);
@@ -1035,10 +1035,18 @@ void PreRendered::make_outline() {
     left = (src[0] << 1) | 0;
     right = (src[-1] << (8 - 1)) | (src[0] >> 1);
     *dst = left | right;
-  };
+    };
 
+#ifdef MSVC_PURE
+  // MSVC's optimizer fail (as of 17.8.4, release, optimize for speed, SSE2) would
+  // Workaround. Bad code generated. Compiler bug. Fixed (said) in 17.9 preview 3
+  // https://developercommunity.visualstudio.com/t/Bad-c-codegen-in-1784-x64-unless-se/10565370
+  volatile uint8_t* src_prev;
+  volatile uint8_t* src;
+#else
   uint8_t* src_prev;
   uint8_t* src;
+#endif
   uint8_t* src_next;
   uint8_t* dst;
 
