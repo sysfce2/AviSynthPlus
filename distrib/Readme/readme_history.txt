@@ -6,10 +6,16 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
-20240124 3.7.3 post 12
+20240131 3.7.3 post 14
 ----------------------
+- Fix corrupt Turn functions when a planar RGB turn would be followed by a YUV Turn.
+  Regression since TurnXXXX supports planar RGB (2016.08.23; probably since r2081 commit dba954e2de0c9c6218d17fc5c4974f4c28b627c3)
+  See VooDooFX's AvsInPaint problem at https://forum.doom9.org/showthread.php?p=1996653#post1996653
+
+(20240124 3.7.3 post 12)
 - (temporary fix for VS2022 17.8.4 compiler bug)
-- Fix #386: Interleave to call plugin destructor like StackXXXX
+- Fix #386: Interleave to call plugin destructor like StackXXXX (memory leak in case if script errors)
+
 (20240118 3.7.3 post 11)
 - Bump year to 2024, yeah :)
 - Fix #384: Planar RGB source ShowBlue and ShowGreen was swapped.

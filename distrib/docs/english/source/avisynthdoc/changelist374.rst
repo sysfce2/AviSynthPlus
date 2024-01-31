@@ -24,7 +24,9 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
-- Fix #386: Interleave to call plugin destructor like StackXXXX
+- Fix corrupt Turn functions when a planar RGB turn would be followed by a YUV Turn.
+  Regression since TurnXXXX supports planar RGB (2016.08.23; probably since r2081 commit dba954e2de0c9c6218d17fc5c4974f4c28b627c3)
+- Fix #386: Interleave to call plugin destructor like StackXXXX (memory leak in case if script errors)
 - Fix #384: swapped ShowGreen/ShowBlue for planar RGB sources
 - Fix: allow use of "local" in ConditionalSelect string version (fixed wrong function signature)
 - "Info" now can display a line which is only partially visible (instead of not showing it at all)
@@ -55,7 +57,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2024/01/12 09:35:00 $
+$Date: 2024/01/31 11:39:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
