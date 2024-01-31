@@ -434,7 +434,7 @@ int __stdcall Turn::SetCacheHints(int cachehints, int frame_range)
 
 PVideoFrame __stdcall Turn::GetFrame(int n, IScriptEnvironment* env)
 {
-    static const int dplanes[] = {
+    const int dplanes[] = {
         0,
         vi.IsRGB() ? PLANAR_B : PLANAR_U,
         vi.IsRGB() ? PLANAR_R : PLANAR_V,
