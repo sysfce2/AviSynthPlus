@@ -173,6 +173,10 @@ AVSValue ExpWhileLoop::Evaluate(IScriptEnvironment* env)
       }
       catch(const BreakStmtException&)
       {
+        AVSValue result2;
+        env->GetVarTry("last", &result2);
+        if (result2.IsClip())
+          result = result2;
         break;
       }
     }
@@ -216,6 +220,10 @@ AVSValue ExpForLoop::Evaluate(IScriptEnvironment* env)
       }
       catch(const BreakStmtException&)
       {
+        AVSValue result2;
+        env->GetVarTry("last", &result2);
+        if (result2.IsClip())
+          result = result2;
         break;
       }
     }
