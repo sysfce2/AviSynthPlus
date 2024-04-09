@@ -1806,36 +1806,8 @@ AVSValue SetFilterMTMode (AVSValue args, void*, IScriptEnvironment* env)
 
 AVSValue SetLogParams(AVSValue args, void*, IScriptEnvironment* env)
 {
-    const char *target = NULL;
-    int level = -1;
-
-    if (1 <= args.ArraySize())
-    {
-        if (args[0].IsString()) {
-            target = args[0].AsString();
-        }
-        else {
-            env->ThrowError("1st argument to SetLogParams() must be a string.");
-            return AVSValue();
-        }
-    }
-
-    if (2 <= args.ArraySize())
-    {
-        if (args[1].IsInt()) {
-            level = args[1].AsInt();
-        }
-        else {
-            env->ThrowError("2nd argument to SetLogParams() must be an integer.");
-            return AVSValue();
-        }
-    }
-
-    if (3 <= args.ArraySize())
-    {
-        env->ThrowError("Too many arguments to SetLogParams().");
-        return AVSValue();
-    }
+    const char* target = args[0].AsString("stderr");
+    const int level = args[1].AsInt(LOGLEVEL_INFO);
 
     InternalEnvironment *envi = static_cast<InternalEnvironment*>(env);
     envi->SetLogParams(target, level);
