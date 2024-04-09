@@ -213,6 +213,13 @@ public:
   virtual AVSValue Evaluate(IScriptEnvironment* env);
 };
 
+class ExpContinue : public Expression
+{
+public:
+  ExpContinue() {}
+  virtual AVSValue Evaluate(IScriptEnvironment* env);
+};
+
 class ExpConditional : public Expression
 {
 public:

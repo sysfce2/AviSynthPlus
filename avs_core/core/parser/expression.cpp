@@ -51,6 +51,10 @@ class BreakStmtException
 {
 };
 
+class ContinueStmtException
+{
+};
+
 AVSValue ExpRootBlock::Evaluate(IScriptEnvironment* env)
 {
   AVSValue retval;
@@ -85,6 +89,9 @@ AVSValue ExpExceptionTranslator::Evaluate(IScriptEnvironment* env)
     throw;
   }
   catch (const BreakStmtException&) {
+    throw;
+  }
+  catch (const ContinueStmtException&) {
     throw;
   }
   catch (const ReturnExprException&) {
@@ -179,6 +186,13 @@ AVSValue ExpWhileLoop::Evaluate(IScriptEnvironment* env)
           result = result2;
         break;
       }
+      catch (const ContinueStmtException&)
+      {
+        AVSValue result2;
+        env->GetVarTry("last", &result2);
+        if (result2.IsClip())
+          result = result2;
+      }
     }
   }
   while (true);
@@ -226,6 +240,13 @@ AVSValue ExpForLoop::Evaluate(IScriptEnvironment* env)
           result = result2;
         break;
       }
+      catch (const ContinueStmtException&)
+      {
+        AVSValue result2;
+        env->GetVarTry("last", &result2);
+        if (result2.IsClip())
+          result = result2;
+      }
     }
 
     AVSValue idVal = env->GetVar(id); // may have been updated in body
@@ -240,6 +261,11 @@ AVSValue ExpForLoop::Evaluate(IScriptEnvironment* env)
 AVSValue ExpBreak::Evaluate(IScriptEnvironment* env)
 {
   throw BreakStmtException();
+}
+
+AVSValue ExpContinue::Evaluate(IScriptEnvironment* env)
+{
+  throw ContinueStmtException();
 }
 
 AVSValue ExpConditional::Evaluate(IScriptEnvironment* env)

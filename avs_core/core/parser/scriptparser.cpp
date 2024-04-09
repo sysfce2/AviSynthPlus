@@ -406,6 +406,13 @@ PExpression ScriptParser::ParseStatement(bool* stop)
     tokenizer.NextToken();
     return new ExpBreak();
   }
+  // continue statement
+  else if (tokenizer.IsIdentifier("continue")) {
+    if (loopDepth <= 0)
+      throw AvisynthError("'Continue' statement outside of loop.");
+    tokenizer.NextToken();
+    return new ExpContinue();
+  }
   else {
     return ParseAssignment();
   }
