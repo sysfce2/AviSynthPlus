@@ -18,12 +18,14 @@ Additions, changes
   when vertical alignment is set to bottom or center.
 - Studio RGB (narrow, limited) range will now be recognized (through _ColorRange=1)
   and utilized in conversions from RGB, such as in GreyScale, ConvertToY, ConvertToYUVxxx
+- #392 "break" and "continue" in for-next and while loops
 
 Build environment, Interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Bugfixes
 ~~~~~~~~
+- Fix "SetLogParams" defaults - mentioned in #391
 - Fix corrupt Turn functions when a planar RGB turn would be followed by a YUV Turn.
   Regression since TurnXXXX supports planar RGB (2016.08.23; probably since r2081 commit dba954e2de0c9c6218d17fc5c4974f4c28b627c3)
 - Fix #386: Interleave to call plugin destructor like StackXXXX (memory leak in case if script errors)
@@ -37,6 +39,7 @@ Bugfixes
 - Fix #370: array size assert error in ConvertToYUY2 when internally ConvertToYUV422 is called
 - Leave _ColorRange frame property as-is, when using matrix names "PC.709" or "PC.601", for example in ConvertToRGB32.
 
+
 Optimizations
 ~~~~~~~~~~~~~
 
@@ -49,7 +52,7 @@ Documentation
 - Update "ShowTime", "ShowSMPTE", "ShowFrameNumber" section with 3.7.3 changes
 - Update most items at Syntax and internal functions sections, add arrays, function objects, 
   escaped string literals, multithreading, frame properties, debug functions
-- Add if-else, do-while, for-next
+- Add if-else, do-while, for-next, break and continue
 - Update Import (add utf8)
 - update Conditional filters, Runtime functions
 - update ShowAlpha/Red/...
@@ -57,7 +60,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2024/01/31 11:39:00 $
+$Date: 2024/04/10 9:34:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

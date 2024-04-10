@@ -123,6 +123,7 @@ Example:
       StackVertical(last, c) 
     }
 
+``break`` and ``continue`` can be used as well (see example later) - available from v3.7.4
 
 The ``for`` loop
 ----------------
@@ -154,6 +155,48 @@ Example:
       Blur(0.5)
     }
 
+``break`` and ``continue`` can be used as well (see example later) - available from v3.7.4
+
+Using ``break`` and ``continue`` in loops
+-----------------------------------------
+
+``break`` and ``continue`` are used to control the flow of loops.
+
+The break statement is used to terminate the loop prematurely when a certain condition is met and 
+control is transferred to the next statement after the loop. 
+
+The continue statement skips the current iteration and control is transferred to the beginning of 
+the loop for the next iteration. 
+
+::
+
+    ColorBars()
+    for (i=1, 6) {
+      SubTitle(Format("statement_1 i={i}"), x=0, y=i*20)
+      SubTitle(Format("statement_2 i={i}"), x=140, y=i*20)
+      if(i == 4) { 
+        SubTitle(Format("Break at i={i}"), x=280, y=i*20)
+        break  # Terminates the loop when i equals 4
+      }
+      SubTitle(Format("statement_3 i={i}"), x=280, y=i*20)
+      if(i == 2) { 
+        SubTitle(Format("Continue at i={i}"), x=420, y=i*20)
+        continue # Skips the current iteration when i equals 2
+      }
+      SubTitle(Format("Final statement in i={i}"), x=420, y=i*20)
+    }
+    SubTitle(Format("Outside"), x=0, y=7*20)
+
+results in the output:
+
+::
+
+    statement_1 i=1    statement_2 i=1    statment_3 i=1   Final statement in i=1
+    statement_1 i=2    statement_2 i=2    statment_3 i=2   continue at i=2
+    statement_1 i=3    statement_2 i=3    statment_3 i=3   Final statement in i=3
+    statement_1 i=4    statement_2 i=4    Break at i=4
+    
+    Outside
 
 
 Other control structures (in the broad sense)
@@ -300,7 +343,16 @@ The following example will clarify the design:
     169, 196
     FSelectEvery(last, "CalcFrame", 0, 20)
 
-$Date: 2023/10/18 14:08:00 $
+Changelog
+---------
++-----------------+----------------------------------+
+| Version         | Changes                          |
++=================+==================================+
+| Avisynth+ 3.7.4 | Added "break" and "continue      |
++-----------------+----------------------------------+
+
+
+$Date: 2024/04/10 9:38:00 $
 
 .. _here: http://forum.doom9.org/showthread.php?t=66627
 .. _AVSLib: http://avslib.sourceforge.net/

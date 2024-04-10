@@ -6,6 +6,13 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
+20240410 3.7.3 post ??
+----------------------
+- Fix SetLogParams defaults. Now if parameters are omitted then stderr and LOG_INFO is used as documentation says.
+  mentioned in #391
+- #392 "break" and "continue" in for-next and while loops
+
+
 20240131 3.7.3 post 14
 ----------------------
 - Fix corrupt Turn functions when a planar RGB turn would be followed by a YUV Turn.
