@@ -43,6 +43,7 @@ Bugfixes
 
 Optimizations
 ~~~~~~~~~~~~~
+- avoid storing duplicated strings in internal string heap (related to issue #389)
 
 Documentation
 ~~~~~~~~~~~~~

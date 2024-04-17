@@ -39,6 +39,8 @@
 #include <avisynth.h>
 #include <unordered_map>
 #include <mutex>
+#include <iostream>
+#include <cstring>
 
 struct iequal_to_ascii
 {
@@ -119,6 +121,32 @@ public:
 };
 #endif
 
+#define USE_STRING_CACHE 1
+
+#if USE_STRING_CACHE
+// Custom hash function for composite keys (const char* pointer + size_t length)
+struct CompositeKeyDjb2Hash {
+  size_t operator()(const std::pair<const char*, size_t>& key) const {
+    const char* str = key.first;
+    size_t len = key.second;
+    size_t hash = 5381;
+
+    while (len--) {
+      hash = ((hash << 5) + hash) + *str;
+      ++str;
+    }
+    return hash;
+  }
+};
+
+// Custom equality function for composite keys
+struct CompositeKeyEqual {
+  bool operator()(const std::pair<const char*, size_t>& lhs, const std::pair<const char*, size_t>& rhs) const {
+    return (lhs.second == rhs.second) && (std::strncmp(lhs.first, rhs.first, lhs.second) == 0);
+  }
+};
+#endif
+
 // This doles out storage space for strings.  No space is ever freed
 // until the class instance is destroyed (which happens when a script
 // file is closed).
@@ -126,6 +154,25 @@ class StringDump {
    enum { BLOCK_SIZE = 32768 };
    char* current_block;
    size_t block_pos, block_size;
+
+#if USE_STRING_CACHE
+   std::unordered_map<std::pair<const char*, size_t>, const char*, CompositeKeyDjb2Hash, CompositeKeyEqual> cache;
+
+   // Get the pointer to the string (if it exists)
+   const char* get_string(const char* keyStr, size_t keyLen) {
+     auto it = cache.find({ keyStr, keyLen });
+     if (it != cache.end()) {
+       return it->second; // Return existing pointer
+     }
+     else {
+       return nullptr;
+     }
+   }
+
+   void add_string(const char* keyStr, size_t keyLen) {
+     cache[{keyStr, keyLen}] = keyStr;
+   }
+#endif
 
    void ensure_length(int len)
    {
@@ -184,16 +231,25 @@ public:
        len = srclen;
      }
 
-      ensure_length(len);
-      char* result = current_block + block_pos;
-      memcpy(result, s, len);
-      result[len] = 0;
-      block_pos += AlignNumber(len + 1, (int)sizeof(char*)); // Keep word-aligned
-      return result;
+#if USE_STRING_CACHE
+    const char* test_ptr = get_string(s, len);
+    if(test_ptr != nullptr) // same string found in cache
+      return const_cast<char *>(test_ptr);
+#endif
+    ensure_length(len);
+    char* result = current_block + block_pos;
+    memcpy(result, s, len);
+    result[len] = 0;
+    block_pos += AlignNumber(len + 1, (int)sizeof(char*)); // Keep word-aligned
+
+#if USE_STRING_CACHE
+    add_string(result, len); // update cache
+#endif
+    return result;
    }
 
    void Clear() {
-      if (current_block) {
+     if (current_block) {
          // deallocate string blocks except the first one
          while (char* p = *(char**)current_block) {
             delete[] current_block;
@@ -204,6 +260,7 @@ public:
       }
    }
 };
+#undef USE_STRING_CACHE
 
 class VarFrame
 {
