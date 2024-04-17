@@ -295,5 +295,6 @@ AVSValue ArrayGet(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue ArraySize(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue ArrayIns(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue ArrayDel(AVSValue args, void*, IScriptEnvironment* env);
+AVSValue ArraySort(AVSValue args, void*, IScriptEnvironment* env);
 
 #endif  // __Script_H__

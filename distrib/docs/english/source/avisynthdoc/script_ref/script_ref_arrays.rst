@@ -23,6 +23,7 @@ Beginning Avisynth+ 3.6 script arrays are supported. Functionality is different 
   - ArrayDel - delete from position
   - ArraySet - replace at position
   - ArrayGet - a function-like version of the bracket-type [] syntax
+  - ArraySort - sort arrays of bool, numeric or string values
 
 -  Query the array length with ``ArraySize``
 -  Test is a variable is of explicite array type: ``IsArray``
@@ -102,7 +103,48 @@ ArraySize
 Returns the size of the parameter.
 For getting the size of a subarray, pass the inner element.
 
-Examples:
+ArraySort
+^^^^^^^^^
+::
+
+  ArraySort(array_to_sort)
+
+Sorts an one dimensional array of bool, numeric or string values.
+
+Returns a new sorted array.
+Different basic types cannot be mixed inside the array, e.g. elements must be all bools, numbers or strings.
+Integer and floating point values can be mixed however.
+
+The original array remains untouched.
+
+::
+
+    a = ["banana", "apple", "lemon", "aardvark"]
+    b = arraySort(a)
+    for (i=1, ArraySize(b)) {
+      SubTitle(Format("Element i={i} = {0} ", b[i-1] ), x=0, y=i*20)
+    }
+    # Element i=1 = aardvark
+    # Element i=2 = apple
+    # Element i=3 = banana
+    # Element i=4 = lemon
+
+::
+
+    a = [7, 3.1, 5.1, 4, 9.0, 7]
+    c = arraySort(a)
+    for (i=1, ArraySize(c)) {
+      SubTitle(Format("Element i={i} = {0} ", c[i-1] ), x=300, y=i*20)
+    }
+    # Element i=1 = 3.100000
+    # Element i=2 = 4
+    # Element i=3 = 5.100000
+    # Element i=4 = 7
+    # Element i=5 = 7
+    # Element i=6 = 9.000000
+
+General examples
+----------------
 
 ::
 
@@ -200,6 +242,7 @@ Examples:
         }
         return a
       }
+
 
 Arrays in user defined functions
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

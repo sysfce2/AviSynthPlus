@@ -63,6 +63,8 @@
 #include <utility>
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
+#include <algorithm>
+#include <cstring>
 
 #ifndef MINGW_HAS_SECURE_API
 #define sprintf_s sprintf
@@ -317,6 +319,7 @@ extern const AVSFunction Script_functions[] = {
   { "ArrayAdd",  BUILTIN_FUNC_PREFIX, "..i*", ArrayIns, (void*)1 },
   { "ArraySet",  BUILTIN_FUNC_PREFIX, "..i+", ArrayIns, (void*)2 },
   { "ArrayDel",  BUILTIN_FUNC_PREFIX, ".i+", ArrayIns, (void*)3 },
+  { "ArraySort",  BUILTIN_FUNC_PREFIX, ".", ArraySort, (void*)0 },
 
   /*
   { "IsArrayOf", BUILTIN_FUNC_PREFIX, ".s", IsArrayOf },
@@ -2290,5 +2293,96 @@ AVSValue ArrayIns(AVSValue args, void* user_data, IScriptEnvironment* env)
     return AVSValue(nullptr, 0); // zero array
 
   return AVSValue(new_val.data(), new_size);
+}
+
+// Custom comparator functions for sorting
+bool customCompareBool(const std::pair<const AVSValue*, int>& a, const std::pair<const AVSValue*, int>& b) {
+  return (a.first)->AsBool() < (b.first)->AsBool();
+}
+
+bool customCompareInt(const std::pair<const AVSValue *, int>& a, const std::pair<const AVSValue *, int>& b) {
+  return (a.first)->AsInt() < (b.first)->AsInt();
+}
+
+bool customCompareFloat(const std::pair<const AVSValue*, int>& a, const std::pair<const AVSValue*, int>& b) {
+  return (a.first)->AsFloatf() < (b.first)->AsFloatf();
+}
+
+bool customCompareString(const std::pair<const AVSValue*, int>& a, const std::pair<const AVSValue*, int>& b) {
+  return std::strcmp((a.first)->AsString(), (b.first)->AsString()) < 0;
+}
+
+AVSValue ArraySort(AVSValue args, void* user_data, IScriptEnvironment* env)
+{
+  // [0] array to sort;
+
+  if (!args[0].IsArray())
+    env->ThrowError("ArraySort error: array type required.");
+
+  const auto size = args[0].ArraySize();
+
+  if (size == 0)
+    return AVSValue(nullptr, 0); // zero array
+
+  std::vector<std::pair<const AVSValue*, int>> indexedArr(size);
+
+  // Create a pair of (element reference, index) with type checks
+  // Note: integers and float can be mixed, sort by the broadest type
+  AvsValueType finalType = (args[0][0]).GetType();
+  for (int i = 0; i < size; ++i) {
+    indexedArr[i] = { &args[0][i], i };
+    AvsValueType currentType = indexedArr[i].first->GetType();
+    if (finalType == AvsValueType::VALUE_TYPE_INT && currentType == AvsValueType::VALUE_TYPE_LONG)
+    {
+      // promote int to long; note: still no int64 in avs+
+      finalType = currentType;
+    }
+    else if (finalType == AvsValueType::VALUE_TYPE_FLOAT && currentType == AvsValueType::VALUE_TYPE_DOUBLE)
+    {
+      // promote float to double; note: still no double in avs+
+      finalType = currentType;
+    }
+    else if ((finalType == AvsValueType::VALUE_TYPE_INT || finalType == AvsValueType::VALUE_TYPE_LONG) &&
+      (currentType == AvsValueType::VALUE_TYPE_FLOAT || currentType == AvsValueType::VALUE_TYPE_DOUBLE)) {
+      // promote int-like to float-like; note: still no int64/double in avs+
+      finalType = currentType;
+    }
+    // cannot mix bools, ints and strings
+    if (finalType == AvsValueType::VALUE_TYPE_STRING) {
+      if (currentType != AvsValueType::VALUE_TYPE_STRING)
+        env->ThrowError("ArraySort: array contains different basic types, string expected.");
+    }
+    else if (finalType == AvsValueType::VALUE_TYPE_BOOL) {
+      if (currentType != AvsValueType::VALUE_TYPE_BOOL)
+        env->ThrowError("ArraySort: array contains different basic types, bool expected.");
+    }
+    else {
+      // int-like or float-like
+      if (currentType != AvsValueType::VALUE_TYPE_INT &&
+        currentType != AvsValueType::VALUE_TYPE_LONG &&
+        currentType != AvsValueType::VALUE_TYPE_FLOAT &&
+        currentType != AvsValueType::VALUE_TYPE_DOUBLE)
+        env->ThrowError("ArraySort: array contains different basic types, number expected.");
+    }
+  }
+
+  switch(finalType){
+  case AvsValueType::VALUE_TYPE_BOOL: std::sort(indexedArr.begin(), indexedArr.end(), customCompareBool); break;
+  case AvsValueType::VALUE_TYPE_INT: std::sort(indexedArr.begin(), indexedArr.end(), customCompareInt); break;
+  //case AvsValueType::VALUE_TYPE_LONG: std::sort(indexedArr.begin(), indexedArr.end(), customCompareInt64); break;
+  case AvsValueType::VALUE_TYPE_FLOAT: std::sort(indexedArr.begin(), indexedArr.end(), customCompareFloat); break;
+  //case AvsValueType::VALUE_TYPE_DOUBLE: std::sort(indexedArr.begin(), indexedArr.end(), customCompareDouble); break;
+  case AvsValueType::VALUE_TYPE_STRING: std::sort(indexedArr.begin(), indexedArr.end(), customCompareString); break;
+  default:
+    env->ThrowError("ArraySort: unsupported data type");
+  }
+
+  // copy the results once
+  std::vector<AVSValue> new_val(size);
+  for (int i = 0; i < size; ++i) {
+    new_val[i] = *indexedArr[i].first;
+  }
+
+  return AVSValue(new_val.data(), size);
 }
 

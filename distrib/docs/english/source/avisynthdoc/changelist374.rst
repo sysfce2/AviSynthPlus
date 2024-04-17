@@ -19,6 +19,7 @@ Additions, changes
 - Studio RGB (narrow, limited) range will now be recognized (through _ColorRange=1)
   and utilized in conversions from RGB, such as in GreyScale, ConvertToY, ConvertToYUVxxx
 - #392 "break" and "continue" in for-next and while loops
+- Add "ArraySort" for sorting simple bool, numeric or string arrays
 
 Build environment, Interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -60,7 +61,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2024/04/10 9:34:00 $
+$Date: 2024/04/17 13:32:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
