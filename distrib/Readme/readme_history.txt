@@ -6,8 +6,34 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
-20240410 3.7.3 post ??
+20240417 3.7.3 post ??
 ----------------------
+- Add "ArraySort" which sorts an 1D array in ascending order. supported types: bool, string and numbers (integers or floating point)
+  Strings are sorted as case sensitive (strcmp).
+  
+    a = ["banana", "apple", "lemon", "aardvark"]
+    b = arraySort(a)
+    for (i=1, ArraySize(b)) {
+      SubTitle(Format("Element i={i} = {0} ", b[i-1] ), x=0, y=i*20)
+    }
+
+    a = [7, 3.1, 5.1, 4, 7, 9.0]
+    c = arraySort(a)
+    for (i=1, ArraySize(c)) {
+      SubTitle(Format("Element i={i} = {0} ", c[i-1] ), x=300, y=i*20)
+    }
+
+- [no upstream commit yet] test build to avoid unwanted growth of memory consumption by recognizing the change in frame access pattern (order of forward/backward)
+  https://github.com/AviSynth/AviSynthPlus/issues/379
+- [no upstream commit yet] accessing frame #0 does not affect prefetch frame access 
+  pattern recognition (frame #0 is usually requested for clip-property-like frame 
+  properties)
+- [no upstream commit yet] requesting the same frame again does not affect 
+  frame access pattern recognition in prefetch procedure
+- Improve:
+  Internal string heap to recognize duplicate string constants and store them only once on the ever-growing Avisynth heap.
+  Primarily prevents adding the same string constants from a ScriptClip in each frame, but helps in the done-once-per-script parsing phase as well.
+  https://github.com/AviSynth/AviSynthPlus/issues/389
 - Fix SetLogParams defaults. Now if parameters are omitted then stderr and LOG_INFO is used as documentation says.
   mentioned in #391
 - #392 "break" and "continue" in for-next and while loops
