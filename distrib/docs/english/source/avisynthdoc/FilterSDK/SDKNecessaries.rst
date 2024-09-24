@@ -20,15 +20,15 @@ You must have some compatible development tool
   Both 2019 and 2022 versions still support Windows XP when you include Visual Studio 2017 XP (v141_xp) platform toolset in the customized installation.
   (Though user must not update their VC++ redistributables after a specific version point, when XP support has been stopped)
   
-- Intel ICX NextGen 2023, 2021.4 or ICL 2021.4 (19.2 Classic)
+- Intel ICX NextGen 2024.1, 2023, 2021.4 or ICL 2021.4 (19.2 Classic)
 
   You need either or both Intel C++ compiler engine:
   
-  - Intel C++ 2021 or 2023 (ICX: LLVM based NextGen) in Base Kit
+  - Intel C++ 2021, 2023, 2024 (ICX: LLVM based NextGen) in Base Kit
   
     Intel oneAPI Base Kit `download <https://www.intel.com/content/www/us/en/developer/articles/news/free-intel-software-developer-tools.html>`__
 
-    We need it for Intel® oneAPI DPC++/C++ Compiler. It includes C++ 2021.4 but we don't need DPC++ - it is not suitable for Avisynth+)
+    We need it for Intel® oneAPI DPC++/C++ Compiler. It includes DPC++ but this flavour of compiler is not suitable for Avisynth+.
 
   - Intel C++ Classic (ICL 19.2) addon in HPC toolkit
 
@@ -38,7 +38,8 @@ You must have some compatible development tool
     The oneAPI HPC Toolkit is an addon (complements) to the base toolkit.
     For less disk space and omit unnecassary components, choose Custom Installation (Fortran support not needed)
 
-  During installation they integrate with Visual Studio IDE (2017, 2019 and 2022).
+  During installation they integrate with Visual Studio IDE (2017, 2019 and 2022). 
+  The Intel 2024 compiler version no longer supports VS2017.
   Note: when you install VS2022 after installing base toolkit,
   you'll need to install the toolkit again to have VS2022 integration.
 
@@ -176,7 +177,7 @@ language) by SAPikachu, see `discussion`_
 
 Back to :doc:`FilterSDK <FilterSDK>`
 
-$Date: 2023/03/22 16:54:10 $
+$Date: 2024/05/02 10:19 $
 
 .. _[1]:
    http://www.google.nl/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&cad=rja&ved=0CCoQFjAA&url=http://go.microsoft.com/?linkid=7729279&ei=HfWhUuTjL8Og0wW7wYDwBw&usg=AFQjCNEulTGchEeozkLGRH8LZELiTKlC5A&sig2=Mi7Rwn_jNL5Qffi7LiGS3w&bvm=bv.57752919,d.d2k

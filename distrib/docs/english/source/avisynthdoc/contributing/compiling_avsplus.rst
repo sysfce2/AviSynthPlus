@@ -29,9 +29,7 @@ AviSynth+ can be built by a few different compilers:
   - native msvc or clang-cl
 * Clang 7.0.1 or higher.
 * GCC 7 or higher.
-* Intel C++ Compiler 2023 (ICX: LLVM based NextGen)
-* Intel C++ Compiler 2022 (ICX: LLVM based NextGen)
-* Intel C++ Compiler 2021 (ICX: LLVM based NextGen)
+* Intel C++ Compiler (2021-) (ICX: LLVM based NextGen)
 * Intel C++ Compiler 19.2 (ICL: classic)
 
 
@@ -442,6 +440,7 @@ There are two main flavours which we can use (DPC++ is not compatible with Avisy
 
 - Intel® NextGen Compiler (in base kit, LLVM based)
 
+  - TOOLSET = "Intel C++ Compiler 2024", COMPILER EXE NAME = icx.exe
   - TOOLSET = "Intel C++ Compiler 2023", COMPILER EXE NAME = icx.exe
   - TOOLSET = "Intel C++ Compiler 2022", COMPILER EXE NAME = icx.exe
   - TOOLSET = "Intel C++ Compiler 2021", COMPILER EXE NAME = icx.exe
@@ -457,7 +456,24 @@ Once installed first one or both, check some files.
 CMake integration and support files
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-1. For Intel C++ Compiler 2023:
+1. For Intel C++ Compiler 2024:
+
+   Info from: c:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\lib\cmake\IntelDPCPP\ReadMeDPCPP.txt
+
+   Copy
+
+     c:\\Program Files (x86)\\Intel\oneAPI\\compiler\\latest\\windows\\IntelDPCPP\\IntelDPCPPConfig.cmake
+
+   and
+
+     c:\\Program Files (x86)\\Intel\oneAPI\\compiler\\latest\\windows\\IntelDPCPP\\IntelDPCPPConfigVersion.cmake
+
+   to
+
+    c:\\Program Files\\CMake\\share\\cmake-3.25\\Modules\\
+
+
+2. For Intel C++ Compiler 2023:
 
    Info from: c:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\windows\\IntelDPCPP\\ReadMe.txt
 
@@ -470,7 +486,7 @@ CMake integration and support files
     c:\\Program Files\\CMake\\share\\cmake-3.25\\Modules\\
 
 
-2. For Intel C++ Compiler 2021:
+3. For Intel C++ Compiler 2021:
 
    Info from: c:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\windows\\cmake\\SYCL\\
 
@@ -482,7 +498,7 @@ CMake integration and support files
 
      c:\\Program Files\\CMake\\share\\cmake-3.20\\Modules\\
 
-Note: Intel C++ Compilers need Cmake 3.22.3 (Windows) or 3.20 (Linux) as a minimum (as of Intel 2023)
+Note: Intel C++ Compilers need Cmake 3.22.3 (Windows) or 3.22.1 (Linux) as a minimum (as of Intel 2024)
 
 
 From CMake GUI:
@@ -501,6 +517,7 @@ From CMake GUI:
 
   - For LLVM based icx:
   
+    - `Intel C++ Compiler 2024` or
     - `Intel C++ Compiler 2023` or
     - `Intel C++ Compiler 2022` or
     - `Intel C++ Compiler 2021`
@@ -578,7 +595,7 @@ Examples (assuming we are in ``avisynth-build`` folder). Config can be Debug, Re
       @rem cd avisynth-build
       del .\CMakeCache.txt
       C:\Program Files (x86)\Intel\oneAPI\setvars.bat
-      cmake ../ -T "Intel C++ Compiler 2023" -DCMAKE_CXX_COMPILER="icx.exe" -DBUILD_DIRECTSHOWSOURCE:bool=off -DENABLE_PLUGINS:bool=on -DENABLE_INTEL_SIMD:bool=ON
+      cmake ../ -T "Intel C++ Compiler 2024" -DCMAKE_CXX_COMPILER="icx.exe" -DBUILD_DIRECTSHOWSOURCE:bool=off -DENABLE_PLUGINS:bool=on -DENABLE_INTEL_SIMD:bool=ON
       cmake --build . --config Debug --clean-first
 
 ``x_icx_cleanfirst_no_simd.bat``
@@ -589,7 +606,7 @@ This one will build only Avisynth.dll, no external plugins, plain C code (no SIM
       @rem cd avisynth-build
       del .\CMakeCache.txt
       C:\Program Files (x86)\Intel\oneAPI\setvars.bat
-      cmake ../ -T "Intel C++ Compiler 2023" -DCMAKE_CXX_COMPILER="icx.exe" -DBUILD_DIRECTSHOWSOURCE:bool=off -DENABLE_PLUGINS:bool=OFF -DENABLE_INTEL_SIMD:bool=OFF
+      cmake ../ -T "Intel C++ Compiler 2024" -DCMAKE_CXX_COMPILER="icx.exe" -DBUILD_DIRECTSHOWSOURCE:bool=off -DENABLE_PLUGINS:bool=OFF -DENABLE_INTEL_SIMD:bool=OFF
       cmake --build . --config Debug --clean-first
 
 
