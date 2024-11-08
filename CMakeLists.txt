@@ -109,7 +109,7 @@ endif()
 
   option(ENABLE_PLUGINS "Build set of default external plugins" ON)
   option(ENABLE_INTEL_SIMD "Enable SIMD intrinsics for Intel processors" "${INTEL_SIMD}")
-  set(USER_AVS_PLUGINDIR_LOCATION "$ENV{HOME}/.local/lib/avisynth" CACHE STRING "Override path for user-local plugins (default: $HOME/.local/lib/avisynth)")
+  set(USER_AVS_PLUGINDIR_LOCATION ".local/lib/avisynth" CACHE STRING "Override path for user-local plugins, with $HOME omitted (default: .local/lib/avisynth)")
   option(ENABLE_CUDA "Enable CUDA support" OFF)
 
   if(CMAKE_CONFIGURATION_TYPES)
