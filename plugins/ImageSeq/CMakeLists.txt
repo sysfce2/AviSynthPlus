@@ -89,4 +89,4 @@ if (MSVC_IDE)
 endif()
 
 INSTALL(TARGETS "${ProjectName}"
-        DESTINATION "${CMAKE_INSTALL_LIBDIR}/avisynth")
+        DESTINATION "${CORE_PLUGIN_INSTALL_PATH}/avisynth")

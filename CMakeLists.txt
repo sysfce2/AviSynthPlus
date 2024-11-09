@@ -111,6 +111,7 @@ endif()
   option(ENABLE_INTEL_SIMD "Enable SIMD intrinsics for Intel processors" "${INTEL_SIMD}")
   set(USER_AVS_PLUGINDIR_LOCATION ".local/lib/avisynth" CACHE STRING "Override path for user-local plugins, with $HOME omitted (default: .local/lib/avisynth)")
   option(ENABLE_CUDA "Enable CUDA support" OFF)
+  set(CORE_PLUGIN_INSTALL_PATH "${CMAKE_INSTALL_FULL_LIBDIR}" CACHE STRING "Set system plugin install parent directory (default: value of CMAKE_INSTALL_FULL_LIBDIR)")
 
   if(CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_CONFIGURATION_TYPES Debug Release RelWithDebInfo)
