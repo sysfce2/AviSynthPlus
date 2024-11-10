@@ -48,6 +48,7 @@
 #include <vector>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
@@ -2400,6 +2401,18 @@ ScriptEnvironment::ScriptEnvironment()
     user_avs_plugindir.append(user_avs_dirname);
 
     user_avs_plugindir_local.append("/").append(user_avs_plugindir_configurable);
+
+    if (std::getenv("LD_LIBRARY_PATH")) {
+        std::string ldrel_avs_plugindir, ldrel_stor;
+        ldrel_avs_plugindir.append(std::getenv("LD_LIBRARY_PATH"));
+
+        std::istringstream ldrelin(ldrel_avs_plugindir);
+
+        while(getline(ldrelin, ldrel_stor, ':')) {
+            ldrel_stor.append("/avisynth");
+            plugin_manager->AddAutoloadDir(ldrel_stor, false);
+        }
+    }
 
     plugin_manager->AddAutoloadDir(user_avs_plugindir, false);
     plugin_manager->AddAutoloadDir(user_avs_plugindir_local, false);
