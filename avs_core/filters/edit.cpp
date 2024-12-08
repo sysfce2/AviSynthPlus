@@ -81,7 +81,7 @@ extern const AVSFunction Edit_filters[] = {
   { "FadeOut",  BUILTIN_FUNC_PREFIX, "ci[color]i[fps]f[color_yuv]i[colors]f+", Create_Fade, (void*)FADE_MODE_OUT },
   { "FadeOut2", BUILTIN_FUNC_PREFIX, "ci[color]i[fps]f[color_yuv]i[colors]f+", Create_Fade, (void*)FADE_MODE_OUT2 },
   { "FadeIn0",  BUILTIN_FUNC_PREFIX, "ci[color]i[fps]f[color_yuv]i[colors]f+", Create_Fade, (void*)FADE_MODE_IN0 },
-  { "FadeIn",   BUILTIN_FUNC_PREFIX, "ci[color]i[fps]f[color_yuv]i[colors]f+", Create_Fade, (void*)FADE_MODE_IN2 },
+  { "FadeIn",   BUILTIN_FUNC_PREFIX, "ci[color]i[fps]f[color_yuv]i[colors]f+", Create_Fade, (void*)FADE_MODE_IN },
   { "FadeIn2",  BUILTIN_FUNC_PREFIX, "ci[color]i[fps]f[color_yuv]i[colors]f+", Create_Fade, (void*)FADE_MODE_IN2 },
   { "FadeIO0",  BUILTIN_FUNC_PREFIX, "ci[color]i[fps]f[color_yuv]i[colors]f+", Create_Fade, (void*)FADE_MODE_IO0 },
   { "FadeIO",   BUILTIN_FUNC_PREFIX, "ci[color]i[fps]f[color_yuv]i[colors]f+", Create_Fade, (void*)FADE_MODE_IO },
