@@ -2,39 +2,64 @@
 AviSynth Syntax - Plugins
 =========================
 
-With these functions you can add external functions to AviSynth.
+With these functions you can add external functions to AviSynth or
+get/set autoload directories.
 
-``LoadPlugin`` ("filename" [, ...])
+Manual plugin loading
+---------------------
+
+LoadPlugin
+~~~~~~~~~~
+::
+
+    LoadPlugin ("filename" [, ...])
 
 Loads one or more external avisynth plugins (DLLs).
 
+Plugins can be either C or C++ plugins, they are autodetected.
 
---------
 
-``LoadVirtualDubPlugin`` ("filename", "filtername", preroll)
+LoadVirtualDubPlugin
+~~~~~~~~~~~~~~~~~~~~
+::
+
+    LoadVirtualDubPlugin ("filename", "filtername", preroll)
 
 This loads a plugin written for VirtualDub. "filename" is the name of the
 .vdf file. After calling this function, the filter will be known as
-"filtername" in avisynth. VirtualDub filters only supports RGB32. If the
-video happens to be in RGB24-format, then you must use ``ConvertToRGB32``
-(``ConvertToRGB`` won't suffice).
+"filtername" in avisynth. 
+
+Old VirtualDub filters only supports RGB32, but then some came with YUV support
+(a newer API). The most compatible way of using them is using ``ConvertToRGB32``
+(``ConvertToRGB`` won't suffice for an RGB24 source).
 
 Some filters output depends on previous frames; for those preroll should be
 set to at least the number of frames the filter needs to pre-process to fill
 its buffers and/or updates its internal variables.
 
 
---------
+LoadVFAPIPlugin (removed, not part of AviSynth+)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+::
 
-``LoadVFAPIPlugin`` ("filename", "filtername")
+    LoadVFAPIPlugin ("filename", "filtername")
 
 This allows you to use VFAPI plugins (TMPGEnc import plugins).
 
 
---------
+LoadCPlugin
+~~~~~~~~~~~
+Load_Stdcall_Plugin
+~~~~~~~~~~~~~~~~~~~
+::
 
-``LoadCPlugin`` ("filename" [, ...])
-``Load_Stdcall_Plugin`` ("filename" [, ...])
+    LoadCPlugin ("filename" [, ...])
+    Load_Stdcall_Plugin ("filename" [, ...])
+
+In Avisynth+ these function were kept for script compatibility reasons.
+
+LoadPlugin can load any type of (C or C++) plugins by automatically detecting 
+their types.
 
 Loads so called Avisynth C-plugins (DLLs).
 Load_Stdcall_Plugin() is an alias for LoadCPlugin().
@@ -49,11 +74,53 @@ Kevins version. Advice: keep these plugins outside your auto plugin loading
 directory to prevent crashes. `[discussion]`_ `[AVISynth C API (by
 kevina20723)]`_
 
---------
+
+Autoload helper functions
+-------------------------
+
+AddAutoloadDir
+~~~~~~~~~~~~~~
+::
+
+    AddAutoloadDir (string "directory", bool toFront = true)
+
+This function appends an extra directory to the autoload directory list. The plugins
+are searched in the order the directories appear in the list. Setting the optional 
+``toFront`` parameter to false will put the directory at the end of 
+the list (the lowest priority place).
+
+ClearAutoloadDirs
+~~~~~~~~~~~~~~~~~
+::
+
+    ClearAutoloadDirs
+
+Removes everything from the plugin autoload directory list, making a clean 
+start for your custom environment.
+
+ListAutoloadDirs
+~~~~~~~~~~~~~~~~
+::
+
+    ListAutoloadDirs
+
+Returns a LF (0x0A, \\n) separated list of the currently set autoload directories.
+The (multiline) string can be displayed with "Text" directly.
+Displaying it with (Windows) Subtitle is a bit tricky: add lsp=0 (multiline) parameter
+and replace the control characters with visible "\\n", in order the string contains
+a real backslash followed by 'n' character.
+
+AutoloadPlugins
+~~~~~~~~~~~~~~~
+::
+
+    AutoloadPlugins
+
+Initiates plugin autoloading, if it did not happened so far.
 
 
-Plugin autoload and name precedence (v2)
-----------------------------------------
+Plugin autoload and name precedence (Historical, Avisynth v2)
+-------------------------------------------------------------
 
 It is possible to put all plugins and script files with user-defined
 functions or (global) variables in a directory from where all files with the
@@ -119,7 +186,7 @@ or with mpeg2dec3.dll (which outputs YV12):
     # using mpeg2source from mpeg2dec3.dll
     mpeg2dec3_mpeg2source("F:\From_hell\from_hell.d2v")
 
-$Date: 2008/04/20 19:07:34 $
+$Date: 2024/12/13 13:54:00 $
 
 .. _[discussion]: http://forum.doom9.org/showthread.php?s=&threadid=58840
 .. _[AVISynth C API (by kevina20723)]:

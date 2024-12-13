@@ -6,7 +6,7 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
-202412xx 3.7.3 post ??
+20241213 3.7.3 post ??
 ----------------------
 - Fix FadeIn, which behaved like FadeIn2
 - Config: add LOONGARCH support
@@ -16,6 +16,10 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
   used a more robust tactic to find the value of $HOME. Switch
   USER_AVS_PLUGINDIR_LOCATION to the same method.
 - Posix: Detect additional plugindirs from LD_LIBRARY_PATH environment variable
+- #413 Add ListAutoloadDirs() script function. Returns a string with LF (\n) separated 
+  directory list which can be displayed with Text for example.
+- Update plugins section in rst docs.
+
 
 20240417 3.7.3 post ??
 ----------------------
