@@ -64,6 +64,8 @@ public:
 
   void UpdateFunctionExports(const char* funcName, const char* funcParams, const char *exportVar);
 
+  std::string ListAutoloadDirs();
+
   bool FunctionExists(const char* name) const;
   std::string PluginLoading() const;    // Returns the basename of the plugin DLL that is currently being loaded, or NULL if no plugin is being loaded
   void AutoloadPlugins();

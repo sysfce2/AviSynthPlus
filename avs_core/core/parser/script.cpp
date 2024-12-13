@@ -265,6 +265,7 @@ extern const AVSFunction Script_functions[] = {
 
   { "AddAutoloadDir",     BUILTIN_FUNC_PREFIX, "s[toFront]b", AddAutoloadDir  },
   { "ClearAutoloadDirs",  BUILTIN_FUNC_PREFIX, "", ClearAutoloadDirs  },
+  { "ListAutoloadDirs",   BUILTIN_FUNC_PREFIX, "", ListAutoloadDirs },
   { "AutoloadPlugins",    BUILTIN_FUNC_PREFIX, "", AutoloadPlugins  },
   { "FunctionExists",     BUILTIN_FUNC_PREFIX, "s", FunctionExists  },
   { "InternalFunctionExists", BUILTIN_FUNC_PREFIX, "s", InternalFunctionExists  },
@@ -1781,6 +1782,13 @@ AVSValue ClearAutoloadDirs (AVSValue args, void*, IScriptEnvironment* env)
   env2->ClearAutoloadDirs();
   return AVSValue();
 }
+
+AVSValue ListAutoloadDirs(AVSValue args, void*, IScriptEnvironment* env)
+{
+  InternalEnvironment* envi = static_cast<InternalEnvironment*>(env);
+  return AVSValue(envi->ListAutoloadDirs());
+}
+
 
 AVSValue AutoloadPlugins (AVSValue args, void*, IScriptEnvironment* env)
 {

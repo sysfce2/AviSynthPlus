@@ -200,6 +200,7 @@ public:
   virtual IJobCompletion* __stdcall NewCompletion(size_t capacity) = 0;
   virtual void __stdcall ParallelJob(ThreadWorkerFuncPtr jobFunc, void* jobData, IJobCompletion* completion) = 0;
   // InternalEnvironment
+  virtual char *__stdcall ListAutoloadDirs() = 0;
   virtual int __stdcall IncrImportDepth() = 0;
   virtual int __stdcall DecrImportDepth() = 0;
   virtual void __stdcall AdjustMemoryConsumption(size_t amount, bool minus) = 0;

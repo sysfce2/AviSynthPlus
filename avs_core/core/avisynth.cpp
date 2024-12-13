@@ -857,6 +857,8 @@ public:
   ThreadPool* NewThreadPool(size_t nThreads);
   void SetGraphAnalysis(bool enable) { graphAnalysisEnable = enable; }
 
+  char* ListAutoloadDirs();
+
   void IncEnvCount() { InterlockedIncrement(&EnvCount); }
   void DecEnvCount() { InterlockedDecrement(&EnvCount); }
 
@@ -1882,6 +1884,11 @@ public:
   void __stdcall AddFunction(const char* name, const char* params, ApplyFunc apply, void* user_data, const char* exportVar)
   {
     core->AddFunction(name, params, apply, user_data, exportVar);
+  }
+
+  char* __stdcall ListAutoloadDirs()
+  {
+    return core->ListAutoloadDirs();
   }
 
   int __stdcall IncrImportDepth()
@@ -3046,6 +3053,14 @@ void ScriptEnvironment::ClearAutoloadDirs()
 {
   std::unique_lock<std::recursive_mutex> env_lock(plugin_mutex);
   plugin_manager->ClearAutoloadDirs();
+}
+
+char* ScriptEnvironment::ListAutoloadDirs()
+{
+  std::unique_lock<std::recursive_mutex> env_lock(plugin_mutex);
+
+  std::string str = plugin_manager->ListAutoloadDirs();
+  return threadEnv->SaveString(str.c_str(), (int)str.size());
 }
 
 void ScriptEnvironment::AutoloadPlugins()

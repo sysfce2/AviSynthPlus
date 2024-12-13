@@ -990,6 +990,19 @@ bool PluginManager::LoadPlugin(PluginFile &plugin, bool throwOnError, AVSValue *
   return true;
 }
 
+std::string PluginManager::ListAutoloadDirs()
+{
+  // lf separated list, no separator after the last one
+  std::string result;
+  if (!AutoloadDirs.empty()) {
+    result = AutoloadDirs[0];
+    for (size_t i = 1; i < AutoloadDirs.size(); ++i) {
+      result += "\n" + AutoloadDirs[i];
+    }
+  }
+  return result;
+}
+
 const AVSFunction* PluginManager::Lookup(const FunctionMap& map, const char* search_name, const AVSValue* args, size_t num_args,
                     bool strict, size_t args_names_count, const char* const* arg_names) const
 {
