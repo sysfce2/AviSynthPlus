@@ -30,7 +30,7 @@ AviSynth+ can be built by a few different compilers:
 * Clang 7.0.1 or higher.
 * GCC 7 or higher.
 * Intel C++ Compiler (2021-) (ICX: LLVM based NextGen)
-* Intel C++ Compiler 19.2 (ICL: classic)
+* Intel C++ Compiler 19.2 (ICL: classic) - discontinued by Intel
 
 
 | Download and install Visual Studio Community:
@@ -440,6 +440,7 @@ There are two main flavours which we can use (DPC++ is not compatible with Avisy
 
 - Intel® NextGen Compiler (in base kit, LLVM based)
 
+  - TOOLSET = "Intel C++ Compiler 2025", COMPILER EXE NAME = icx.exe
   - TOOLSET = "Intel C++ Compiler 2024", COMPILER EXE NAME = icx.exe
   - TOOLSET = "Intel C++ Compiler 2023", COMPILER EXE NAME = icx.exe
   - TOOLSET = "Intel C++ Compiler 2022", COMPILER EXE NAME = icx.exe
@@ -456,9 +457,25 @@ Once installed first one or both, check some files.
 CMake integration and support files
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-1. For Intel C++ Compiler 2024:
+1. For Intel C++ Compiler 2025:
 
-   Info from: c:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\lib\cmake\IntelDPCPP\ReadMeDPCPP.txt
+   Info from: c:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\lib\\cmake\\IntelDPCPP\\ReadMeDPCPP.txt
+
+   Copy
+
+     c:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\lib\\cmake\\IntelDPCPP\\IntelDPCPPConfig.cmake
+
+   and
+
+     c:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\lib\\cmake\\IntelDPCPP\\IntelDPCPPConfigVersion.cmake
+
+   to
+
+    c:\\Program Files\\CMake\\share\\cmake-3.25\\Modules\\IntelDPCPP\\
+
+2. For Intel C++ Compiler 2024:
+
+   Info from: c:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\lib\\cmake\\IntelDPCPP\\ReadMeDPCPP.txt
 
    Copy
 
@@ -473,7 +490,7 @@ CMake integration and support files
     c:\\Program Files\\CMake\\share\\cmake-3.25\\Modules\\
 
 
-2. For Intel C++ Compiler 2023:
+3. For Intel C++ Compiler 2023:
 
    Info from: c:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\windows\\IntelDPCPP\\ReadMe.txt
 
@@ -486,7 +503,7 @@ CMake integration and support files
     c:\\Program Files\\CMake\\share\\cmake-3.25\\Modules\\
 
 
-3. For Intel C++ Compiler 2021:
+4. For Intel C++ Compiler 2021:
 
    Info from: c:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\windows\\cmake\\SYCL\\
 
@@ -498,7 +515,7 @@ CMake integration and support files
 
      c:\\Program Files\\CMake\\share\\cmake-3.20\\Modules\\
 
-Note: Intel C++ Compilers need Cmake 3.22.3 (Windows) or 3.22.1 (Linux) as a minimum (as of Intel 2024)
+Note: Intel C++ Compilers need Cmake 3.22.3 (Windows) or 3.22.1 (Linux) as a minimum (as of Intel 2024 or 2025)
 
 
 From CMake GUI:
@@ -517,6 +534,7 @@ From CMake GUI:
 
   - For LLVM based icx:
   
+    - `Intel C++ Compiler 2025` or
     - `Intel C++ Compiler 2024` or
     - `Intel C++ Compiler 2023` or
     - `Intel C++ Compiler 2022` or
@@ -528,8 +546,14 @@ From CMake GUI:
 
 7. Specify native compilers (checkbox): browse for the appropriate compiler executable path.
 
-  - icx: C:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\windows\\bin\\icx.exe
-  - icl: C:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\windows\\bin\\intel64\\icl.exe
+  - Intel C++ Compiler 2025:
+
+    - icx: c:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\bin\\icx.exe
+
+  - Intel C++ Compiler 2024:
+
+    - icx: C:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\windows\\bin\\icx.exe
+    - icl: C:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\windows\\bin\\intel64\\icl.exe
 
 If you have errors like ``xilink: : error : Assertion failed (shared/driver/drvutils.c, line 312`` then
 as a workaround you must copy clang.exe (by default it is located in C:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\latest\\windows\\bin)
@@ -538,6 +562,13 @@ to the folder beside xilink (for x64 configuration it is in C:\\Program Files (x
 Successful log looks like:
 
 (Note: If CXX compiler is not the Intel one, then you probably missed step #7.)
+
+::
+
+      The CXX compiler identification is IntelLLVM 2025.0.0 with MSVC-like command-line
+      Check for working CXX compiler: C:/Program Files (x86)/Intel/oneAPI/compiler/2025.0/bin/icx.exe
+
+or
 
 ::
 
@@ -595,7 +626,7 @@ Examples (assuming we are in ``avisynth-build`` folder). Config can be Debug, Re
       @rem cd avisynth-build
       del .\CMakeCache.txt
       C:\Program Files (x86)\Intel\oneAPI\setvars.bat
-      cmake ../ -T "Intel C++ Compiler 2024" -DCMAKE_CXX_COMPILER="icx.exe" -DBUILD_DIRECTSHOWSOURCE:bool=off -DENABLE_PLUGINS:bool=on -DENABLE_INTEL_SIMD:bool=ON
+      cmake ../ -T "Intel C++ Compiler 2025" -DCMAKE_CXX_COMPILER="icx.exe" -DBUILD_DIRECTSHOWSOURCE:bool=off -DENABLE_PLUGINS:bool=on -DENABLE_INTEL_SIMD:bool=ON
       cmake --build . --config Debug --clean-first
 
 ``x_icx_cleanfirst_no_simd.bat``
@@ -606,7 +637,7 @@ This one will build only Avisynth.dll, no external plugins, plain C code (no SIM
       @rem cd avisynth-build
       del .\CMakeCache.txt
       C:\Program Files (x86)\Intel\oneAPI\setvars.bat
-      cmake ../ -T "Intel C++ Compiler 2024" -DCMAKE_CXX_COMPILER="icx.exe" -DBUILD_DIRECTSHOWSOURCE:bool=off -DENABLE_PLUGINS:bool=OFF -DENABLE_INTEL_SIMD:bool=OFF
+      cmake ../ -T "Intel C++ Compiler 2025" -DCMAKE_CXX_COMPILER="icx.exe" -DBUILD_DIRECTSHOWSOURCE:bool=off -DENABLE_PLUGINS:bool=OFF -DENABLE_INTEL_SIMD:bool=OFF
       cmake --build . --config Debug --clean-first
 
 

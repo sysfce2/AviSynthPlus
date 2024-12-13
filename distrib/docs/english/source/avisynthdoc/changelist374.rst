@@ -29,6 +29,7 @@ Build environment, Interface
 - add LOONGARCH support
 - (not done yet: Use system installs of DevIL and SoundTouch on all platforms, remove in-tree binaries/code)
 - avisynth.h: add ListAutoloadDirs() to internal interface declarations
+- CMakeList.txt to accept Intel C++ Compiler 2025
 
 Bugfixes
 ~~~~~~~~
@@ -67,6 +68,7 @@ Documentation
 - update ShowAlpha/Red/...
 - Update Intel 2024 compiler build process
 - Add autoload helper functions to rst docs, update content and bring syntax_plugins.rst to new format
+- update compile_avsplus.rst online docs with Intel C++ Compiler 2025
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_

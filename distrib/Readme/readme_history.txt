@@ -19,6 +19,7 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 - #413 Add ListAutoloadDirs() script function. Returns a string with LF (\n) separated 
   directory list which can be displayed with Text for example.
 - Update plugins section in rst docs.
+- Intel C++ Compiler 2025 support in CMakeList.txt, update compile_avsplus.rst online docs
 
 
 20240417 3.7.3 post ??
