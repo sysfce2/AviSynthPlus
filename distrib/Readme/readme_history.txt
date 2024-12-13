@@ -6,6 +6,17 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
+202412xx 3.7.3 post ??
+----------------------
+- Fix FadeIn, which behaved like FadeIn2
+- Config: add LOONGARCH support
+- Make configurable user plugindir more robust.
+  There was no need for it to use ENV${HOME} in CMakeLists.txt,
+  when the usage of $HOME/.avisynth in the autoload defaults already
+  used a more robust tactic to find the value of $HOME. Switch
+  USER_AVS_PLUGINDIR_LOCATION to the same method.
+- Posix: Detect additional plugindirs from LD_LIBRARY_PATH environment variable
+
 20240417 3.7.3 post ??
 ----------------------
 - Add "ArraySort" which sorts an 1D array in ascending order. supported types: bool, string and numbers (integers or floating point)

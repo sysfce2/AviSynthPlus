@@ -20,9 +20,13 @@ Additions, changes
   and utilized in conversions from RGB, such as in GreyScale, ConvertToY, ConvertToYUVxxx
 - #392 "break" and "continue" in for-next and while loops
 - Add "ArraySort" for sorting simple bool, numeric or string arrays
+- SoundTouch: Increased the max number of channels to 32ch from the old limit of 16ch.
+- Posix: Detect additional plugindirs from LD_LIBRARY_PATH environment variable
 
 Build environment, Interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+- add LOONGARCH support
+- (not done yet: Use system installs of DevIL and SoundTouch on all platforms, remove in-tree binaries/code)
 
 Bugfixes
 ~~~~~~~~
@@ -39,6 +43,7 @@ Bugfixes
   Regression in 3.7.3 reintroduced audio cache.
 - Fix #370: array size assert error in ConvertToYUY2 when internally ConvertToYUV422 is called
 - Leave _ColorRange frame property as-is, when using matrix names "PC.709" or "PC.601", for example in ConvertToRGB32.
+- Fix FadeIn, which behaved like FadeIn2
 
 
 Optimizations
@@ -58,11 +63,12 @@ Documentation
 - Update Import (add utf8)
 - update Conditional filters, Runtime functions
 - update ShowAlpha/Red/...
+- Update Intel 2024 compiler build process
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2024/04/17 13:32:00 $
+$Date: 2024/12/13 13:32:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
