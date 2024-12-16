@@ -73,14 +73,22 @@
 
 static int64_t signed_saturated_add64(int64_t x, int64_t y) {
   // determine the lower or upper bound of the result
-  int64_t ret =  (x < 0) ? INT64_MIN : INT64_MAX;
+  int64_t ret = (x < 0) ? INT64_MIN : INT64_MAX;
   // this is always well defined:
   // if x < 0 this adds a positive value to INT64_MIN
   // if x > 0 this subtracts a positive value from INT64_MAX
   int64_t comp = ret - x;
-  // the codition is equivalent to
-  // ((x < 0) && (y > comp)) || ((x >=0) && (y <= comp))
-  if ((x < 0) == (y > comp)) ret = x + y;
+  // the condition is equivalent to this longer one.
+#ifdef MSVC_PURE
+  // Due to a compiler bug (bad code gen) in VS2022 MSVC 17.12.3 and before,
+  // the short version of the condition cannot be used safely.
+  // Issue is reported: https://developercommunity.visualstudio.com/t/Bad-code-gen-with-inlined-functions-with/10813706
+  // Workaround is presented here, until the fix.
+  if ((x < 0 && y > comp) || (x >= 0 && y <= comp))
+#else
+  if ((x < 0) == (y > comp)) // short, quicker one
+#endif
+    ret = x + y;
   return ret;
 }
 
