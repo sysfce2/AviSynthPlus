@@ -162,7 +162,7 @@ Configure the build:
 
     ::
 
-        cmake ../ -G "Visual Studio 16 2019" -A "x64" -T "v141_xp" ^
+        cmake ../../ -G "Visual Studio 16 2019" -A "x64" -T "v141_xp" ^
         -DCMAKE_INSTALL_PREFIX=%AVS_DEPS_BUILD_HOME%\avsplus_build_deps\x86-64
 
 Compile and install in one step:
@@ -185,7 +185,7 @@ Configure the build:
 
     ::
 
-        cmake ../ -G "Visual Studio 16 2019" -A ARM64 ^
+        cmake ../../ -G "Visual Studio 16 2019" -A ARM64 ^
         -DCMAKE_INSTALL_PREFIX=%AVS_DEPS_BUILD_HOME%\avsplus_build_deps\arm64
 
 Compile and install in one step:
@@ -208,7 +208,7 @@ Configure the build:
 
     ::
 
-        cmake ../ -G "Visual Studio 16 2019" -A "Win32" -T "v141_xp" ^
+        cmake ../../ -G "Visual Studio 16 2019" -A "Win32" -T "v141_xp" ^
         -DCMAKE_INSTALL_PREFIX=%AVS_DEPS_BUILD_HOME%\avsplus_build_deps\x86-32
 
 Compile and install in one step:
