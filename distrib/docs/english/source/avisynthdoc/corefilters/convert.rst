@@ -272,19 +272,20 @@ Syntax and parameters
     ``"auto"`` marker after a ``":"``
 
     e.g. ``"709:l"`` means the same as the old "Rec709"
+
     When there is no limited-ness marker, or is set to "auto" then value of _ColorRange frame property is used 
 
     Note: old-style "matrix" parameters are kept, their name indicate the full/limited except ``"PC.601"`` and ``"PC.709"``
 
     For memo and the similar new string
 
-        "rec601" same as "470bg:l"
-        "rec709" "709:l"
-        "pc.601" and "pc601" "470bg:f" - but only if source has _ColorRange = 0 (full) 
-        "pc.709" and "pc709" "709:f" - but only if source has _ColorRange = 0 (full)
-        "average" - kept for compatibility, really it has no standard _Matrix equivalent
-        "rec2020" "2020cl:l"
-        "pc.2020" and "pc2020" "2020cl:f" - but only if source has _ColorRange = 0 (full)
+    - "rec601" same as "470bg:l"
+    - "rec709" "709:l"
+    - "pc.601" and "pc601" "470bg:f" - but only if source has _ColorRange = 0 (full) 
+    - "pc.709" and "pc709" "709:f" - but only if source has _ColorRange = 0 (full)
+    - "average" - kept for compatibility, really it has no standard _Matrix equivalent
+    - "rec2020" "2020cl:l"
+    - "pc.2020" and "pc2020" "2020cl:f" - but only if source has _ColorRange = 0 (full)
 
 .. describe:: interlaced
 

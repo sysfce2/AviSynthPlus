@@ -2,6 +2,11 @@
 AviSynth Syntax - Plugins
 =========================
 
+.. toctree::
+    :maxdepth: 3
+
+.. contents:: Table of contents
+
 With these functions you can add external functions to AviSynth or
 get/set autoload directories.
 
