@@ -22,12 +22,13 @@ Additions, changes
 - Add "ArraySort" for sorting simple bool, numeric or string arrays
 - SoundTouch: Increased the max number of channels to 32ch from the old limit of 16ch.
 - Posix: Detect additional plugindirs from LD_LIBRARY_PATH environment variable
-- #413 Add ListAutoloadDirs() script function
+- #413 Add ListAutoloadDirs() script function returing a LF delimited string with directory list.
+- SubTitle to accept real LF (``\r``) or CR LF (``\r\n``) control characters for line break.
 
-Build environment, Interface
+Build environment, Intenface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 - add LOONGARCH support
-- (not done yet: Use system installs of DevIL and SoundTouch on all platforms, remove in-tree binaries/code)
+- Use system installs of DevIL and SoundTouch on all platforms, remove in-tree binaries/code
 - avisynth.h: add ListAutoloadDirs() to internal interface declarations
 - CMakeList.txt to accept Intel C++ Compiler 2025
 
@@ -73,7 +74,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2024/12/13 14:25:00 $
+$Date: 2024/12/31 8:30:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

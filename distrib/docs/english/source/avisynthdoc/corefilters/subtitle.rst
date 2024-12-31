@@ -125,6 +125,12 @@ versions of a frame at once, and you want to label them to remember which is whi
     In the unlikely event that you want to output the characters "\\n" literally
     in a multi-line text, you can do this by using "\\\\n".
 
+    Since 3.7.4 SubTitle accept real LF (``\r``) or CR LF (``\r\n``) control
+    characters for line break, without the need of specifying ``lsp`` parameter.
+
+    String functions which return an LF separated list such as
+    :doc:`ListAutoloadDirs <../syntax/syntax_plugins>` can be Subtitle'd directly.
+
 .. describe:: font_width
 
     Set character width in logical units, to the nearest 0.125 unit.
@@ -180,6 +186,9 @@ Text
 The **Text** filter is a stripped-down version of the `Subtitle`_ filter that
 works with bitmap fonts. It includes 2 fonts or can load an external `BDF`_ font
 file.
+
+Text treats real LF (``\n``) control characters for line break, without the need 
+of specifying ``lsp`` parameter.
 
 .. rubric:: Syntax and Parameters
 
@@ -286,6 +295,15 @@ It results in: ::
     Some text on line 1\nMore text on line 1
     Some text on line 2
 
+**Prints text on multiple lines, direct control characters** ::
+
+    BlankClip()
+    Subtitle( \
+      e"Some text on line 1\n" + \
+      "Some text on line 2", \
+             , halo_color=$ff000000)
+    #note: using e-prefixed escape sequence aware string literal
+
 **Use String() to display values of functions.** ::
 
     AviSource("clip.avi")
@@ -369,6 +387,9 @@ Changelog
 +-----------------+--------------------------------------------------------------------------+
 | Version         | Changes                                                                  |
 +=================+==========================================================================+
+| 3.7.4           | Feature: SubTitle to accept real LF (``\r``) or CR LF (``\r\n``) control |
+|                 | characters for line break.                                               |
++-----------------+--------------------------------------------------------------------------+
 | AviSynth+ 3.7.3 || Fix: "Text" filter negative x or y coordinates (e.g. 0 instead of -1)   |
 |                 || Fix: "Text" filter would omit last character when x<0                   |
 |                 || "Text" Fix: ``halo_color`` needs only MSB=$FF and not the exact         |
@@ -406,7 +427,7 @@ Changelog
 |                 | (undocumented prior to v2.07)                                            |
 +-----------------+--------------------------------------------------------------------------+
 
-$Date: 2022/01/19 15:28:44 $
+$Date: 2024/12/31 8:30:00 $
 
 .. _BDF:
     https://en.wikipedia.org/wiki/Glyph_Bitmap_Distribution_Format

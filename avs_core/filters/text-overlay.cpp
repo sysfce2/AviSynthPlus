@@ -1780,32 +1780,62 @@ AVSValue __cdecl Subtitle::Create(AVSValue args, void*, IScriptEnvironment* env)
                       bold, italic, noaa, env);
 }
 
-static int CorrectYbyTextAndAlignment(int real_y, int align, int fontsize, int lsp, const char* text, bool real_LF)
-{
+// multiline separator: string contains '\' and 'n' characters explicitely
+// SubTitle compatibility: literal "\n" means line break, but "\\n" means that literal "\n" will be printed
+// Since 3.7.4 the C style LF '\n' or CR LF ('\r' and '\n') always results in new line
+static std::vector<std::string> SplitLines(const char* text, bool multiline_by_param) {
   std::string s = text;
-  // multiline separator: string contains '\' and 'n' characters explicitely
-  // SubTitle compatibility: literal "\n" means line break, but "\\n" means that literal "\n" will be printed
-  size_t index = 0;
-  int lines = 1;
-  while (true) {
-    index = real_LF ? s.find("\n", index) : s.find("\\n", index);
-    if (index == std::string::npos) break;
-    if (!real_LF && index > 0 && s.at(index - 1) == '\\') // \\n case: \n is preceded by '\'
-      index += 3;
-    else {
-      index += 2;
-      if (index < s.length()) // except when the new line marker LF appears at the very end
-        lines++;
+  std::vector<std::string> lines;
+  size_t start = 0;
+  size_t length = s.length();
+
+  for (size_t i = 0; i < length; ++i) {
+
+    if (multiline_by_param && s[i] == '\\') {
+      if (i + 1 < length && s[i + 1] == 'n') {
+        if (i > 0 && s[i - 1] == '\\') {
+          // "\\n" case: keep as literal "\n"
+          i++;
+        }
+        else {
+          // "\n" case: split the line
+          lines.push_back(s.substr(start, i - start));
+          start = i + 2;
+          i++;
+        }
+      }
+    }
+    else if (s[i] == '\n') {
+      // Usual line feed '\n' case: split the line
+      lines.push_back(s.substr(start, i - start));
+      start = i + 1;
+    }
+    else if (s[i] == '\r' && i + 1 < length && s[i + 1] == '\n') {
+      // Windows-style CR LF case: split the line
+      lines.push_back(s.substr(start, i - start));
+      start = i + 2;
+      i++;
     }
   }
+
+  // Add the last line if it's not empty
+  if (start < length) {
+    lines.push_back(s.substr(start));
+  }
+
+  return lines;
+}
+
+static int CorrectYbyTextAndAlignment(int real_y, int align, int fontsize, int lsp, size_t line_count)
+{
   // note: we do not really have a vertical center alignment for multiline strings since it means not centering.
   // TA_BASELINE is aligning (x,y) to the character's baseline: letters like g, y and q would reach below that baseline)
 
   // when multiline, bottom and vertically centered cases affect starting y
   if (align == 1 || align == 2 || align == 3) // bottom
-    real_y -= (fontsize + lsp) * (lines - 1);
+    real_y -= (fontsize + lsp) * (line_count - 1);
   else if (align == 4 || align == 5 || align == 6)
-    real_y -= ((fontsize + lsp) * (lines - 1) + 1) / 2;
+    real_y -= ((fontsize + lsp) * (line_count - 1) + 1) / 2;
   return real_y;
 }
 
@@ -1817,8 +1847,7 @@ void Subtitle::InitAntialiaser(IScriptEnvironment* env)
   int real_x = x;
   int real_y = y;
   unsigned int al = 0;
-  char *_text = 0;
-  wchar_t *_textw = 0;
+  std::vector<std::string> lines;
 
   HDC hdcAntialias = antialiaser->GetDC();
   if (!hdcAntialias) goto GDIError;
@@ -1838,78 +1867,31 @@ void Subtitle::InitAntialiaser(IScriptEnvironment* env)
   if (SetTextCharacterExtra(hdcAntialias, spc) == 0x80000000) goto GDIError;
   if (SetTextAlign(hdcAntialias, al) == GDI_ERROR) goto GDIError;
 
-  if (multiline) { // filter parameter, true when lsp is given
-    real_y = CorrectYbyTextAndAlignment(real_y, align, size, lsp, text, false); // find literal \ n for LF, not real LF 0x0A
-  }
+  // multiline is filter parameter, true when lsp is given.
+  // 3.7.4 real LF or CR LF breaks line unconditionally.
+  lines = SplitLines(text, multiline);
+  if (lines.size() == 0) return;
+  real_y = CorrectYbyTextAndAlignment(real_y, align, size, lsp, lines.size()); // find literal \ n for LF, not real LF 0x0A
 
   if (utf8) {
     // Test:
     // Title="Cherry blossom "+CHR($E6)+CHR($A1)+CHR($9C)+CHR($E3)+CHR($81)+CHR($AE)+CHR($E8)+CHR($8A)+CHR($B1)
     // SubTitle(Title, utf8 = true)
-    auto textw = Utf8ToWideChar(text);
-
-    if (!multiline) {
-      if (!TextOutW(hdcAntialias, real_x + 16, real_y + 16, textw.get(), (int)wcslen(textw.get())))
-      {
+    int y_inc = real_y + 16;
+    for(auto s : lines) {
+      auto textw = Utf8ToWideChar(s.c_str());
+      if (!TextOutW(hdcAntialias, real_x + 16, y_inc, textw.get(), (int)wcslen(textw.get())))
         goto GDIError;
-      }
+      y_inc += size + lsp;
     }
-    else {
-      // multiline patch -- tateu
-      wchar_t *pdest, *psrc;
-      int result, y_inc = real_y + 16;
-      wchar_t search[] = L"\\n";
-      psrc = _textw = _wcsdup(textw.get()); // don't mangle the string constant -- Gavino
-      if (!_textw) goto GDIError;
-      int length = (int)wcslen(psrc);
 
-      do {
-        pdest = wcsstr(psrc, search); // strstr
-        while (pdest != NULL && pdest != psrc && *(pdest - 1) == L'\\') { // \n escape -- foxyshadis
-          for (size_t i = pdest - psrc; i > 0; i--) psrc[i] = psrc[i - 1];
-          psrc++;
-          --length;
-          pdest = wcsstr(pdest + 1, search); // strstr
-        }
-        result = pdest == NULL ? length : (int)size_t(pdest - psrc);
-        if (!TextOutW(hdcAntialias, real_x + 16, y_inc, psrc, result)) goto GDIError;
-        y_inc += size + lsp;
-        psrc = pdest + 2;
-        length -= result + 2;
-      } while (pdest != NULL && length > 0);
-      free(_textw);
-      _textw = NULL;
-    }
   }
   else {
-    if (!multiline) {
-      if (!TextOut(hdcAntialias, real_x + 16, real_y + 16, text, (int)strlen(text))) goto GDIError;
-    }
-    else {
-    // multiline patch -- tateu
-      char *pdest, *psrc;
-      int result, y_inc = real_y + 16;
-      char search[] = "\\n";
-      psrc = _text = _strdup(text); // don't mangle the string constant -- Gavino
-      if (!_text) goto GDIError;
-      int length = (int)strlen(psrc);
-
-      do {
-        pdest = strstr(psrc, search);
-        while (pdest != NULL && pdest != psrc && *(pdest - 1) == '\\') { // \n escape -- foxyshadis
-          for (size_t i = pdest - psrc; i > 0; i--) psrc[i] = psrc[i - 1];
-          psrc++;
-          --length;
-          pdest = strstr(pdest + 1, search);
-        }
-        result = pdest == NULL ? length : (int)size_t(pdest - psrc);
-        if (!TextOut(hdcAntialias, real_x + 16, y_inc, psrc, result)) goto GDIError;
-        y_inc += size + lsp;
-        psrc = pdest + 2;
-        length -= result + 2;
-      } while (pdest != NULL && length > 0);
-      free(_text);
-      _text = NULL;
+    int y_inc = real_y + 16;
+    for (auto s : lines) {
+      if (!TextOut(hdcAntialias, real_x + 16, y_inc, s.c_str(), s.length()))
+        goto GDIError;
+      y_inc += size + lsp;
     }
   }
   if (!GdiFlush()) goto GDIError;
@@ -1918,8 +1900,6 @@ void Subtitle::InitAntialiaser(IScriptEnvironment* env)
 GDIError:
   delete antialiaser;
   antialiaser = 0;
-  free(_text);
-  free(_textw);
 
   env->ThrowError("Subtitle: GDI or Insufficient Memory Error");
 }
