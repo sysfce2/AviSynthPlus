@@ -1961,27 +1961,6 @@ PVideoFrame Histogram::DrawModeLevels(int n, IScriptEnvironment* env) {
             ptr -= dstPitch;
           }
 
-#if 0
-          // Code below removed because visual result makes it more like a graphical glitch.
-          // (Grey leveled bar tops on white bars in a colored background, where grey darkness
-          // is proportional to the fraction of bar height)
-
-          // fractional color shade, scaled to 0 <= x < 220 (Y) or 0 <= x < 256 (RGB)
-          // or when RGB, max color value would not be black but nicely fit in the background r,g,b shade?
-          int left =
-            RGB ?
-            (int)(256.0f * (scaled_h - (float)((int)scaled_h))) : // full scale
-            (int)(220.0f * (scaled_h - (float)((int)scaled_h)));
-          // top color is a shaded one, its intensity is proportional to the fractional part of the bar height
-          int color_top = RGB ? left : 16 + left;
-          int color_top_i = RGB ? (int)(color_top * color_shift_factor + 0.5f) : color_top << color_shift; // max_luma
-          float color_top_f = color_top / 255.0f;
-          // FIXME: top color for RGB must shade of the r _or_ g _or_ b background value
-          ptr = pdstb + h*dstPitch;
-          if (pixelsize == 1)       ptr[x] = color_top_i;
-          else if (pixelsize == 2)  reinterpret_cast<uint16_t *>(ptr)[x] = color_top_i;
-          else                   reinterpret_cast<float *>(ptr)[x] = color_top_f;
-#endif
         }
       }
     }

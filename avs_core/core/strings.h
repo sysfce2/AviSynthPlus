@@ -57,8 +57,5 @@ std::unique_ptr<wchar_t[]> Utf8ToWideChar(const char* s_ansi);
 size_t str_utf8_size(const std::string& s);
 std::string U16_to_utf8(uint16_t u16);
 std::string charToUtf8(const char* text, bool utf8);
-#if 0
-std::wstring charToWstring(const char* text, bool utf8);
-#endif
 
 #endif // AVSCORE_STRINGS_H

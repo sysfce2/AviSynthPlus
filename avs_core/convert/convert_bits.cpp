@@ -734,18 +734,6 @@ static void convert_float_to_float_c(const BYTE* srcp, BYTE* dstp, int src_rowsi
   bits_conv_constants d;
   get_bits_conv_constants(d, chroma, fulls, fulld, source_bitdepth, target_bitdepth);
 
-#if 0
-  float src_offset = 0;
-
-  if constexpr (/*chroma ||*/ !fulls) {
-    src_offset = d.src_offset;
-  }
-  else {
-    assert(d.src_offset == 0);
-    src_offset = 0; // helps optimizer
-  }
-#endif
-
   for (int y = 0; y < src_height; y++)
   {
     for (int x = 0; x < src_width; x++)

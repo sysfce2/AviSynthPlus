@@ -1217,16 +1217,6 @@ void af_horizontal_planar_mmx(BYTE* dstp, size_t height, size_t pitch, size_t wi
 
 
 
-#if 0
-static AVS_FORCEINLINE __m128i ts_multiply_repack_sse2(const __m128i &src, const __m128i &div, __m128i &halfdiv, __m128i &zero) {
-  __m128i acc = _mm_madd_epi16(src, div);
-  acc = _mm_add_epi32(acc, halfdiv);
-  acc = _mm_srli_epi32(acc, 15);
-  acc = _mm_packs_epi32(acc, acc);
-  return _mm_packus_epi16(acc, zero);
-}
-#endif
-
 static inline __m128i _mm_cmple_epu8(__m128i x, __m128i y)
 {
   // Returns 0xFF where x <= y:

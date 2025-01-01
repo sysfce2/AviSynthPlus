@@ -66,64 +66,6 @@ struct ihash_ascii
   }
 };
 
-#if 0
-class VarTable
-{
-private:
-  VarTable* const dynamic_parent;
-  VarTable* const lexical_parent;
-
-  typedef std::unordered_map<const char*, AVSValue, ihash_ascii, iequal_to_ascii> ValueMap;
-  ValueMap variables;
-
-  // avoid write/read concurrency of global variables in runtime scripts in MT
-  mutable std::mutex var_mutex;
-
-public:
-  VarTable(VarTable* _dynamic_parent, VarTable* _lexical_parent) :
-    dynamic_parent(_dynamic_parent), lexical_parent(_lexical_parent),
-    variables()
-  {
-    variables.max_load_factor(0.8f);
-  }
-
-  VarTable* Pop()
-  {
-    VarTable* _dynamic_parent = this->dynamic_parent;
-    delete this;
-    return _dynamic_parent;
-  }
-
-  // This method will not modify the *val argument if it returns false.
-  bool Get(const char* name, AVSValue *val) const
-  {
-    std::lock_guard<std::mutex> lock(var_mutex); // avoid concurrency for global variables
-    ValueMap::const_iterator v = variables.find(name);
-    if (v != variables.end())
-    {
-      *val = v->second;
-      return true;
-    }
-
-    if (lexical_parent)
-      return lexical_parent->Get(name, val);
-    else
-      return false;
-  }
-
-  bool Set(const char* name, const AVSValue& val)
-  {
-    std::lock_guard<std::mutex> lock(var_mutex); // avoid concurrency for global variables
-    std::pair<ValueMap::iterator, bool> ret = variables.insert(ValueMap::value_type(name, val));
-    ret.first->second = val;
-    return ret.second;
-  }
-};
-#endif
-
-#define USE_STRING_CACHE 1
-
-#if USE_STRING_CACHE
 // Custom hash function for composite keys (const char* pointer + size_t length)
 struct CompositeKeyDjb2Hash {
   size_t operator()(const std::pair<const char*, size_t>& key) const {
@@ -145,7 +87,6 @@ struct CompositeKeyEqual {
     return (lhs.second == rhs.second) && (std::strncmp(lhs.first, rhs.first, lhs.second) == 0);
   }
 };
-#endif
 
 // This doles out storage space for strings.  No space is ever freed
 // until the class instance is destroyed (which happens when a script
@@ -155,7 +96,7 @@ class StringDump {
    char* current_block;
    size_t block_pos, block_size;
 
-#if USE_STRING_CACHE
+   // string cache
    std::unordered_map<std::pair<const char*, size_t>, const char*, CompositeKeyDjb2Hash, CompositeKeyEqual> cache;
 
    // Get the pointer to the string (if it exists)
@@ -172,7 +113,6 @@ class StringDump {
    void add_string(const char* keyStr, size_t keyLen) {
      cache[{keyStr, keyLen}] = keyStr;
    }
-#endif
 
    void ensure_length(int len)
    {
@@ -231,20 +171,19 @@ public:
        len = srclen;
      }
 
-#if USE_STRING_CACHE
+    // check in cache content
     const char* test_ptr = get_string(s, len);
     if(test_ptr != nullptr) // same string found in cache
       return const_cast<char *>(test_ptr);
-#endif
+
     ensure_length(len);
     char* result = current_block + block_pos;
     memcpy(result, s, len);
     result[len] = 0;
     block_pos += AlignNumber(len + 1, (int)sizeof(char*)); // Keep word-aligned
 
-#if USE_STRING_CACHE
     add_string(result, len); // update cache
-#endif
+
     return result;
    }
 
@@ -260,7 +199,6 @@ public:
       }
    }
 };
-#undef USE_STRING_CACHE
 
 class VarFrame
 {

@@ -266,33 +266,6 @@ static AVS_FORCEINLINE void af_horizontal_planar_process_line_uint16_c(uint16_t 
   dstp[x] = ScaledPixelClipEx((weight_t)(dstp[x] * (weight_t)center_weight + (left + dstp[x]) * (weight_t)outer_weight), max_pixel_value);
 }
 
-#if 0
-static AVS_FORCEINLINE void af_horizontal_planar_process_line_float_c(float left, float *dstp, size_t row_size, float center_weight, float outer_weight) {
-    size_t x;
-    size_t width = row_size / sizeof(float);
-    for (x = 0; x < width-1; ++x) {
-        float temp = dstp[x] * center_weight + (left + dstp[x+1]) * outer_weight;
-        left = dstp[x];
-        dstp[x] = temp;
-    }
-    dstp[x] = dstp[x] * center_weight + (left + dstp[x]) * outer_weight;
-}
-
-static void af_horizontal_planar_float_c(BYTE* dstp8, size_t height, size_t pitch8, size_t row_size, float amount)
-{
-    float* dstp = reinterpret_cast<float *>(dstp8);
-    size_t pitch = pitch8 / sizeof(float);
-    float center_weight = amount;
-    float outer_weight = (1.0f - amount) / 2.0f;
-    float left;
-    for (size_t y = height; y>0; --y) {
-        left = dstp[0];
-        af_horizontal_planar_process_line_float_c(left, dstp, row_size, center_weight, outer_weight);
-        dstp += pitch;
-    }
-}
-#endif
-
 void af_horizontal_planar_avx2(BYTE* dstp, size_t height, size_t pitch, size_t width, size_t amount) {
   size_t mod32_width = (width / 32) * 32;
   size_t sse_loop_limit = width == mod32_width ? mod32_width - 32 : mod32_width;

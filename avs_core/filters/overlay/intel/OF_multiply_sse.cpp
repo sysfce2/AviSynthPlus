@@ -74,25 +74,6 @@ static AVS_FORCEINLINE __m128 FourChromapixels_to_floats(const pixel_t* src, con
   return _mm_cvtepi32_ps(srci);
 }
 
-#if 0
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
-// fake half _mm_packus_epi32 (orig is SSE4.1 only)
-// only four 32 bit numbers to to lower 4 16bits
-static AVS_FORCEINLINE __m128i _MM_PACKUS_4_EPI32(__m128i a)
-{
-  const __m128i val_32 = _mm_set1_epi32(0x8000); // make signed
-  const __m128i val_16 = _mm_set1_epi16(0x8000);
-
-  a = _mm_sub_epi32(a, val_32);
-  a = _mm_packs_epi32(a, a);
-  a = _mm_add_epi16(a, val_16); // back to unsigned
-  return a;
-}
-#endif
-
 template<typename pixel_t>
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("sse4.1")))
@@ -100,7 +81,6 @@ __attribute__((__target__("sse4.1")))
 static AVS_FORCEINLINE void Store_Fourpixels(pixel_t* dst, __m128 what, const __m128 rounder) {
   what = _mm_add_ps(what, rounder); // round
   __m128i si32 = _mm_cvttps_epi32(what); // truncate
-  //__m128i result_16 = _MM_PACKUS_4_EPI32(si32); // only 4 pixels
   __m128i result_16 = _mm_packus_epi32(si32, si32); // sse4.1
   if constexpr (sizeof(pixel_t) == 1) {
     __m128i result_8 = _mm_packus_epi16(result_16, result_16);
@@ -118,7 +98,6 @@ __attribute__((__target__("sse4.1")))
 static AVS_FORCEINLINE void Store_FourChromapixels(pixel_t* dst, __m128 what, const __m128 half_plus_rounder) {
   what = _mm_add_ps(what, half_plus_rounder); // chroma offset back with rounder
   __m128i si32 = _mm_cvttps_epi32(what); // truncate
-  //__m128i result_16 = _MM_PACKUS_4_EPI32(si32); // only 4 pixels, SSE2
   __m128i result_16 = _mm_packus_epi32(si32, si32); // sse4.1
   if constexpr (sizeof(pixel_t) == 1) {
     __m128i result_8 = _mm_packus_epi16(result_16, result_16);

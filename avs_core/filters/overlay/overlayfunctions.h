@@ -103,18 +103,6 @@ class OL_AddImage : public OverlayFunction {
   void BlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
 };
 
-#if 0
-// common with Add
-class OL_SubtractImage : public OverlayFunction {
-  void DoBlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);
-  void DoBlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
-  template<typename pixel_t>
-  void BlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);
-  template<typename pixel_t>
-  void BlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
-};
-#endif
-
 class OL_MultiplyImage : public OverlayFunction {
   void DoBlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);
   void DoBlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
@@ -123,43 +111,6 @@ class OL_MultiplyImage : public OverlayFunction {
   template<typename pixel_t>
   void BlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
 };
-
-#if 0
-// made common with OF_Blend
-class OL_BlendLumaImage : public OverlayFunction {
-  void DoBlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);
-  void DoBlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
-  template<typename pixel_t>
-  void BlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);
-  template<typename pixel_t>
-  void BlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
-private:
-};
-#endif
-
-#if 0
-// made common with OF_Blend
-class OL_BlendChromaImage : public OverlayFunction {
-  void DoBlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);
-  void DoBlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
-  template<typename pixel_t>
-  void BlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);
-  template<typename pixel_t>
-  void BlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
-private:
-};
-#endif
-
-#if 0
-class OL_LightenImage : public OverlayFunction {
-  void DoBlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);
-  void DoBlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
-  template<typename pixel_t>
-  void BlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);
-  template<typename pixel_t>
-  void BlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
-};
-#endif
 
 // common darken/lighten
 class OL_DarkenImage : public OverlayFunction {
@@ -179,18 +130,6 @@ class OL_SoftLightImage : public OverlayFunction {
   template<typename pixel_t, bool maskMode, bool hardLight>
   void BlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
 };
-
-#if 0
-// common with OL_HardLightImage
-class OL_HardLightImage : public OverlayFunction {
-  void DoBlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);
-  void DoBlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
-  template<typename pixel_t>
-  void BlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);
-  template<typename pixel_t, bool maskMode>
-  void BlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
-};
-#endif
 
 class OL_DifferenceImage : public OverlayFunction {
   void DoBlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);

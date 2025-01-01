@@ -1833,9 +1833,9 @@ static int CorrectYbyTextAndAlignment(int real_y, int align, int fontsize, int l
 
   // when multiline, bottom and vertically centered cases affect starting y
   if (align == 1 || align == 2 || align == 3) // bottom
-    real_y -= (fontsize + lsp) * (line_count - 1);
+    real_y -= (fontsize + lsp) * ((int)line_count - 1);
   else if (align == 4 || align == 5 || align == 6)
-    real_y -= ((fontsize + lsp) * (line_count - 1) + 1) / 2;
+    real_y -= ((fontsize + lsp) * ((int)line_count - 1) + 1) / 2;
   return real_y;
 }
 
@@ -1889,7 +1889,7 @@ void Subtitle::InitAntialiaser(IScriptEnvironment* env)
   else {
     int y_inc = real_y + 16;
     for (auto s : lines) {
-      if (!TextOut(hdcAntialias, real_x + 16, y_inc, s.c_str(), s.length()))
+      if (!TextOut(hdcAntialias, real_x + 16, y_inc, s.c_str(), (int)s.length()))
         goto GDIError;
       y_inc += size + lsp;
     }

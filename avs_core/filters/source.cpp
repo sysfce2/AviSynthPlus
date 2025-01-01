@@ -1903,33 +1903,6 @@ public:
   }
 };
 
-
-/********************************************************************
-********************************************************************/
-
-
-
-/********************************************************************
-********************************************************************/
-
-#if 0
-class QuickTimeSource : public IClip {
-public:
-  QuickTimeSource() {
-//    extern void foo();
-//    foo();
-  }
-  PVideoFrame GetFrame(int n, IScriptEnvironment* env) {}
-  void GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env) {}
-  const VideoInfo& GetVideoInfo() {}
-  bool GetParity(int n) { return false; }
-
-  static AVSValue __cdecl Create(AVSValue args, void*, IScriptEnvironment* env) {
-    return new QuickTimeSource;
-  }
-};
-#endif
-
 /********************************************************************
 ********************************************************************/
 

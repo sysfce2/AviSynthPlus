@@ -295,15 +295,6 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
   fast_resize = false;
 #endif
 
-#if 0
-  if (false && resampling_program_luma->filter_size == 1 && vi.IsPlanar()) {
-    // dead code?
-    fast_resize = true;
-    resampler_h_luma = resize_h_pointresize;
-    resampler_h_chroma = resize_h_pointresize;
-  }
-  else
-#endif
     if (!fast_resize) {
 
       // nonfast-resize: using V resizer for horizontal resizing between a turnleft/right

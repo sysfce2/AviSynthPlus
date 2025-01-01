@@ -161,58 +161,6 @@ static void convert_rgb_to_yuy2_c(
   }
 }
 
-// matrix multiplication for u and v like in generic planar conversions
-// kept for reference
-#if 0
-static void convert_rgb_to_yuy2_generic_c(const bool pcrange, const BYTE* rgb,
-  BYTE* yuv, const int yuv_offset,
-  const int rgb_offset, const int rgb_inc,
-  int width, int height, ConversionMatrix& matrix) {
-/*
-    int Y = matrix.offset_y + (((int)matrix.y_b * b + (int)matrix.y_g * g + (int)matrix.y_r * r + 16384) >> 15);
-    int U = 128 + (((int)matrix.u_b * b + (int)matrix.u_g * g + (int)matrix.u_r * r + 16384) >> 15);
-    int V = 128 + (((int)matrix.v_b * b + (int)matrix.v_g * g + (int)matrix.v_r * r + 16384) >> 15);
-*/
-  constexpr int PRECBITS = 15;
-  constexpr int ROUNDER = 1 << (PRECBITS - 1); // for 1<<(15-1)
-  constexpr int ROUNDER4X = ROUNDER << 2;
-
-  for (int y = height; y > 0; --y)
-  {
-    // Use left most pixel for edge condition
-    int y0 = matrix.offset_y + (((int)matrix.y_b * rgb[0] + (int)matrix.y_g * rgb[1] + (int)matrix.y_r * rgb[2] + ROUNDER) >> PRECBITS);
-    const BYTE* rgb_prev = rgb;
-    for (int x = 0; x < width; x += 2)
-    {
-      const BYTE* const rgb_next = rgb + rgb_inc;
-      // y1 and y2 can't overflow
-      const int y1 = matrix.offset_y + (((int)matrix.y_b * rgb[0] + (int)matrix.y_g * rgb[1] + (int)matrix.y_r * rgb[2] + ROUNDER) >> PRECBITS);
-      yuv[0] = y1;
-      const int y2 = matrix.offset_y + (((int)matrix.y_b * rgb_next[0] + (int)matrix.y_g * rgb_next[1] + (int)matrix.y_r * rgb_next[2] + ROUNDER) >> PRECBITS);
-      yuv[2] = y2;
-
-      int b = (rgb_prev[0] + rgb[0] * 2 + rgb_next[0]);
-      int g = (rgb_prev[1] + rgb[1] * 2 + rgb_next[1]);
-      int r = (rgb_prev[2] + rgb[2] * 2 + rgb_next[2]);
-
-      int u = 128 + (((int)matrix.u_b * b + (int)matrix.u_g * g + (int)matrix.u_r * r + ROUNDER4X) >> (PRECBITS + 2));
-      int v = 128 + (((int)matrix.v_b * b + (int)matrix.v_g * g + (int)matrix.v_r * r + ROUNDER4X) >> (PRECBITS + 2));
-
-      yuv[1] = PixelClip(u);
-      yuv[3] = PixelClip(v);
-
-      y0 = y2;
-
-      rgb_prev = rgb_next;
-      rgb = rgb_next + rgb_inc;
-      yuv += 4;
-    }
-    rgb += rgb_offset;
-    yuv += yuv_offset;
-  }
-}
-#endif
-
 /* YV12 -> YUY2 conversion */
 
 
