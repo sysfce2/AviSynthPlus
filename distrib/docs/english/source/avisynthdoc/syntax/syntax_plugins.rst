@@ -110,10 +110,7 @@ ListAutoloadDirs
     ListAutoloadDirs
 
 Returns a LF (0x0A, \\n) separated list of the currently set autoload directories.
-The (multiline) string can be displayed with "Text" directly.
-Displaying it with (Windows) Subtitle is a bit tricky: add lsp=0 (multiline) parameter
-and replace the control characters with visible "\\n", in order the string contains
-a real backslash followed by 'n' character.
+The multiline string can be displayed with "Text" or "Subtitle" directly.
 
 AutoloadPlugins
 ~~~~~~~~~~~~~~~
