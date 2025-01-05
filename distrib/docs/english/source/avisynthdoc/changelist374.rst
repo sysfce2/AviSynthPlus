@@ -48,7 +48,7 @@ Bugfixes
 - Fix #370: array size assert error in ConvertToYUY2 when internally ConvertToYUV422 is called
 - Leave _ColorRange frame property as-is, when using matrix names "PC.709" or "PC.601", for example in ConvertToRGB32.
 - Fix FadeIn, which behaved like FadeIn2
-
+- Fix #418: ShowSMTPE/ShowTime alignment - NO_WIN_GDI case (e.g. Posix)
 
 Optimizations
 ~~~~~~~~~~~~~

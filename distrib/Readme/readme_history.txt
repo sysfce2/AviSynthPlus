@@ -6,10 +6,18 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
-20241213 3.7.3 post ??
+20250105 3.7.3 post ??
 ----------------------
+- Fix #418: ShowSMTPE/ShowTime alignment - NO_WIN_GDI case (e.g. Posix)
+- Bump year to 2025
+- Posix: Detect additional plugindirs from LD_LIBRARY_PATH environment variable
+- avisynth.h: add ListAutoloadDirs() to internal interface declarations
+- #413 Add ListAutoloadDirs() script function returing a LF delimited string with directory list.
+- Use system installs of DevIL and SoundTouch on all platforms, remove in-tree binaries/code
+- SubTitle to accept real LF (``\r``) or CR LF (``\r\n``) control characters for line break.
 - Fix FadeIn, which behaved like FadeIn2
 - Config: add LOONGARCH support
+- SoundTouch: Increased the max number of channels to 32ch from the old limit of 16ch.
 - Make configurable user plugindir more robust.
   There was no need for it to use ENV${HOME} in CMakeLists.txt,
   when the usage of $HOME/.avisynth in the autoload defaults already

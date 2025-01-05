@@ -1550,7 +1550,7 @@ PVideoFrame __stdcall ShowSMPTE::GetFrame(int n, IScriptEnvironment* env)
 #else
   const bool utf8 = true;
   auto s_utf8 = charToUtf8(text, utf8);
-  SimpleTextOutW(current_font.get(), vi, frame, x + 2, y + 2, s_utf8, true, textcolor, halocolor, false, 5, chromaplacement);
+  SimpleTextOutW(current_font.get(), vi, frame, x + 2, y + 2, s_utf8, true, textcolor, halocolor, false, 2 /* V baseline H center */, chromaplacement);
 #endif
 
   return frame;
