@@ -2404,12 +2404,18 @@ ScriptEnvironment::ScriptEnvironment()
     // system_avs_plugindir relies on install path, it and user_avs_plugindir_configurable get
     // defined in avisynth_conf.h.in when configuring.
 
-    std::string user_avs_plugindir = std::getenv("HOME");
-    std::string user_avs_plugindir_local = std::getenv("HOME");
-    std::string user_avs_dirname = "/.avisynth";
-    user_avs_plugindir.append(user_avs_dirname);
+    if(std::getenv("HOME")) {
+        std::string user_avs_plugindir = std::getenv("HOME");
+        std::string user_avs_plugindir_local = std::getenv("HOME");
+        std::string user_avs_dirname = "/.avisynth";
 
-    user_avs_plugindir_local.append("/").append(user_avs_plugindir_configurable);
+        user_avs_plugindir.append(user_avs_dirname);
+
+        user_avs_plugindir_local.append("/").append(user_avs_plugindir_configurable);
+
+        plugin_manager->AddAutoloadDir(user_avs_plugindir, false);
+        plugin_manager->AddAutoloadDir(user_avs_plugindir_local, false);
+    }
 
     if (std::getenv("LD_LIBRARY_PATH")) {
         std::string ldrel_avs_plugindir, ldrel_stor;
@@ -2423,8 +2429,6 @@ ScriptEnvironment::ScriptEnvironment()
         }
     }
 
-    plugin_manager->AddAutoloadDir(user_avs_plugindir, false);
-    plugin_manager->AddAutoloadDir(user_avs_plugindir_local, false);
     plugin_manager->AddAutoloadDir(system_avs_plugindir, false);
 #endif
 
