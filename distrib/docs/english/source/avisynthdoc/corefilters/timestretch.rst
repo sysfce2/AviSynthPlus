@@ -241,38 +241,55 @@ Credits
 
     | Copyright © Olli Parviainen
     | SoundTouch home page: http://www.surina.net/soundtouch/
+    | Source: https://codeberg.org/soundtouch/soundtouch
+
+
+Build instructions
+------------------
+
+TimeStretch is part of Avisynth+ as an external DLL, which is - under Windows - is shipped with 
+the normal installer.
+
+For other operating systems or custom builds see instructions:
+
+:doc:`This page <../contributing/avsplus_external_deps_guide_manual>` which describes the build process.
 
 
 Changelog
 ---------
 
-+------------------+---------------------------------------------------------+
-| Version          | Changes                                                 |
-+==================+=========================================================+
-| AviSynth+ 3.7.3  || Update SoundTouch library to v2.3.1.                   |
-|                  || Add TimeStretch overload with rational pair arguments. |
-+------------------+---------------------------------------------------------+
-| AviSynth+ 3.4.0  | Update SoundTouch library to  v2.1.3 (Jan 07, 2019).    |
-+------------------+---------------------------------------------------------+
-| AviSynth+ r2003  || Merge TimeStretch changes from AviSynth 2.6.1          |
-|                  || Update SoundTouch library to v1.9.2 - fixes            |
-|                  |  multichannel issues.                                   |
-+------------------+---------------------------------------------------------+
-| AviSynth+ <r1555 || Sep 15, 2013                                           |
-|                  || Put TimeStretch function into its own plugin.          |
-|                  || TimeStretch no longer automatically converts input     |
-|                  |  clip to Float.                                         |
-|                  || Update SoundTouch library to v1.7.1, results in        |
-|                  |  audible quality improvement for TimeStretch.           |
-+------------------+---------------------------------------------------------+
-| AviSynth 2.5.7   || Expose SoundTouch adavanced parameters.                |
-|                  || Update SoundTouch library to v1.3.1.                   |
-+------------------+---------------------------------------------------------+
-| AviSynth 2.5.5   | Initial Release (based on SoundTouch library v1.2.1).   |
-+------------------+---------------------------------------------------------+
++------------------+-------------------------------------------------------------------+
+| Version          | Changes                                                           |
++==================+===================================================================+
+| AviSynth+ 3.7.4  || SoundTouch library *source* is no longer part of AviSynth repo   |
+|                  || Actual version is 2.3.3                                          |
+|                  || Increase max nr. of channels from 16 to 32 (upstream)            |
++------------------+-------------------------------------------------------------------+
+| AviSynth+ 3.7.3  || Update SoundTouch library to v2.3.1.                             |
+|                  || Add TimeStretch overload with rational pair arguments.           |
++------------------+-------------------------------------------------------------------+
+| AviSynth+ 3.4.0  | Update SoundTouch library to  v2.1.3 (Jan 07, 2019).              |
++------------------+-------------------------------------------------------------------+
+| AviSynth+ r2003  || Merge TimeStretch changes from AviSynth 2.6.1                    |
+|                  || Update SoundTouch library to v1.9.2 - fixes                      |
+|                  |  multichannel issues.                                             |
++------------------+-------------------------------------------------------------------+
+| AviSynth+ <r1555 || Sep 15, 2013                                                     |
+|                  || Put TimeStretch function into its own plugin.                    |
+|                  || TimeStretch no longer automatically converts input               |
+|                  |  clip to Float.                                                   |
+|                  || Update SoundTouch library to v1.7.1, results in                  |
+|                  |  audible quality improvement for TimeStretch.                     |
++------------------+-------------------------------------------------------------------+
+| AviSynth 2.5.7   || Expose SoundTouch adavanced parameters.                          |
+|                  || Update SoundTouch library to v1.3.1.                             |
++------------------+-------------------------------------------------------------------+
+| AviSynth 2.5.5   | Initial Release (based on SoundTouch library v1.2.1).             |
++------------------+-------------------------------------------------------------------+
 
 
-$Date: 2022/03/22 16:46:19 $
+$Date: 2025/01/15 16:46:19 $
+
 
 .. _pitch:
     https://en.wikipedia.org/wiki/Pitch_(music)
