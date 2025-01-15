@@ -16,6 +16,7 @@ Contents:
    avisynthdoc/FilterSDK/FilterSDK
    avisynthdoc/contributing/compiling_avsplus
    avisynthdoc/contributing/posix
+   avisynthdoc/contributing/avsplus_external_deps_guide_manual
    avisynthdoc/contributing/contributing_with_git
    avisynthdoc/index
 
