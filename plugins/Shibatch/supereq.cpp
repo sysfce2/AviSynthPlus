@@ -238,10 +238,28 @@ void __stdcall GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironm
 };
 
 AVSValue __cdecl Create_SuperEq(AVSValue args, void*, IScriptEnvironment* env) {
+
+  PClip clip = args[0].AsClip();
+
+  if (!clip->GetVideoInfo().HasAudio())
+    env->ThrowError("Input clip does not have audio.");
+
+  if (!(clip->GetVideoInfo().SampleType()&SAMPLE_FLOAT))
+    env->ThrowError("Input audio sample format to SuperEQ must be float.");
+
   return new AVSsupereq(args[0].AsClip(), args[1].AsString(), env);
 }
 
 AVSValue __cdecl Create_SuperEqCustom(AVSValue args, void*, IScriptEnvironment* env) {
+
+  PClip clip = args[0].AsClip();
+
+  if (!clip->GetVideoInfo().HasAudio())
+    env->ThrowError("Input clip does not have audio.");
+
+  if (!(clip->GetVideoInfo().SampleType()&SAMPLE_FLOAT))
+    env->ThrowError("Input audio sample format to SuperEQ must be float.");
+
   int eq[N_BANDS];
   AVSValue args_c = args[1];
   const int num_args = args_c.ArraySize();

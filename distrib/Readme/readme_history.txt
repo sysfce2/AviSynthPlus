@@ -8,6 +8,7 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
 20250105 3.7.3 post ??
 ----------------------
+- Fix #421: add safety checks to SuperEQ to match SSRC
 - Fix #418: ShowSMTPE/ShowTime alignment - NO_WIN_GDI case (e.g. Posix)
 - Bump year to 2025
 - Posix: Detect additional plugindirs from LD_LIBRARY_PATH environment variable

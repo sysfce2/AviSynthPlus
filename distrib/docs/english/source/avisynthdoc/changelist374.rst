@@ -49,6 +49,7 @@ Bugfixes
 - Leave _ColorRange frame property as-is, when using matrix names "PC.709" or "PC.601", for example in ConvertToRGB32.
 - Fix FadeIn, which behaved like FadeIn2
 - Fix #418: ShowSMTPE/ShowTime alignment - NO_WIN_GDI case (e.g. Posix)
+- Fix #421: add safety checks to SuperEQ to match SSRC
 
 Optimizations
 ~~~~~~~~~~~~~
