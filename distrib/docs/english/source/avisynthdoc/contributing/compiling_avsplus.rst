@@ -89,8 +89,8 @@ DirectShowSource requires strmbase.lib, the C++ Base Classes library, which for 
 reason isn't included in a standard install of Visual Studio.  The source code for
 the library is provided with the Windows SDK, and requires the user to build it first.
 
-| Download the Windows SDK 7.1:
-| `<http://www.microsoft.com/en-US/download/details.aspx?Id=8442>`_
+| Download the Windows SDK 7.1 (Windows SDK for Windows 7 and .NET Framework 4, June 2010):
+| `<https://developer.microsoft.com/en-us/windows/downloads/sdk-archive/>`_
 
 | Download the following ISO for 32-bit Windows installations:
 | GRMSDK_EN_DVD.iso
