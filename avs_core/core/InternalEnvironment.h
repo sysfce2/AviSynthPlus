@@ -6,6 +6,7 @@
 #include <string>
 #include <memory>
 #include "function.h"
+#include "CompatEnvironment.h"
 
 class ClipDataStore;
 
