@@ -2102,8 +2102,8 @@ AVSValue __cdecl SimpleText::Create(AVSValue args, void*, IScriptEnvironment* en
   const char* font_filename = args[16].AsString("");
   const bool utf8 = args[17].AsBool(false); // linux: n/a
   const bool bold = args[18].AsBool(false); // valid SubTitle parameter since v3.7.3
-  const bool italic = args[19].AsBool(false); // valid SubTitle parameter since v3.7.3, but n/a
-  const bool noaa = args[20].AsBool(false); // valid SubTitle parameter since v3.7.3, but n/a
+  [[maybe_unused]] const bool italic = args[19].AsBool(false); // valid SubTitle parameter since v3.7.3, but in "Text" not implemented
+  [[maybe_unused]] const bool noaa = args[20].AsBool(false); // valid SubTitle parameter since v3.7.3, but in "Text" not implemented
   // "placement" as chroma location, only "Text"
   const char* placement_name = args.ArraySize() >= 23 ? args[22].AsString(nullptr) : nullptr; // different from SubTitle, guard array access of extra parameter
 

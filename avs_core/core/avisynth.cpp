@@ -211,13 +211,13 @@ static size_t GetNumPhysicalCPUs()
   PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer = NULL;
   PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr = NULL;
   DWORD returnLength = 0;
-  DWORD logicalProcessorCount = 0;
-  DWORD numaNodeCount = 0;
-  DWORD processorCoreCount = 0;
-  DWORD processorL1CacheCount = 0;
-  DWORD processorL2CacheCount = 0;
-  DWORD processorL3CacheCount = 0;
-  DWORD processorPackageCount = 0;
+  [[maybe_unused]] DWORD logicalProcessorCount = 0;
+  [[maybe_unused]] DWORD numaNodeCount = 0;
+  [[maybe_unused]] DWORD processorCoreCount = 0;
+  [[maybe_unused]] DWORD processorL1CacheCount = 0;
+  [[maybe_unused]] DWORD processorL2CacheCount = 0;
+  [[maybe_unused]] DWORD processorL3CacheCount = 0;
+  [[maybe_unused]] DWORD processorPackageCount = 0;
   DWORD byteOffset = 0;
   PCACHE_DESCRIPTOR Cache;
 
@@ -1099,6 +1099,10 @@ public:
     va_start(val, fmt);
     VThrowError(fmt, val);
     va_end(val);
+    // Compiler doesn't recognize that the function would not return.
+    // With this line we are satisfying the noreturn attribute.
+    // Anyway, this is unreachable code.
+    std::terminate();
   }
   void __stdcall VThrowError(const char* fmt, va_list va)
   {
@@ -3546,9 +3550,9 @@ void ScriptEnvironment::ShrinkCache(Device *device)
   if (shrinkcount)
   {
     _RPT1(0, "EnsureMemoryLimit GC start: memused=%" PRIu64 "\n", device->memory_used.load());
-    int freed_vfb_count = 0;
-    int freed_frame_count = 0;
-    int unfreed_frame_count = 0;
+    [[maybe_unused]] int freed_vfb_count = 0;
+    [[maybe_unused]] int freed_frame_count = 0;
+    [[maybe_unused]] int unfreed_frame_count = 0;
     for (auto &it: FrameRegistry2)
     {
       for (FrameBufferRegistryType::iterator it2 = (it.second).begin(), end_it2 = (it.second).end();
@@ -5294,9 +5298,6 @@ ThreadPool* ScriptEnvironment::NewThreadPool(size_t nThreads)
 {
   // Creates threads with threadIDs (which envI->GetThreadId() is returning) starting from 
   // (nTotalThreads+0) to (nTotalThreads+nThreads-1)
-#ifndef OLD_PREFETCH
-  auto nThreadsBase = nTotalThreads;
-#endif
   ThreadPool* pool = new ThreadPool(nThreads, nTotalThreads, threadEnv.get());
   ThreadPoolRegistry.emplace_back(pool);
 

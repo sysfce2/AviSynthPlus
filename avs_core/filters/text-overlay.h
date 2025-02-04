@@ -125,9 +125,9 @@ private:
   const int offset;
   const int size, x, y;
   const int textcolor, halocolor;
-  const bool bold;
-  const bool italic; // n/a in NO_WIN_GDI
-  const bool noaa; // n/a in NO_WIN_GDI
+  [[maybe_unused]] const bool bold;
+  [[maybe_unused]] const bool italic; // n/a in NO_WIN_GDI
+  [[maybe_unused]] const bool noaa; // n/a in NO_WIN_GDI
 };
 
 class ShowCRC32 : public GenericVideoFilter
@@ -163,9 +163,9 @@ private:
   const int offset;
   const int size, x, y;
   const int textcolor, halocolor;
-  const bool bold;
-  const bool italic; // n/a in NO_WIN_GDI
-  const bool noaa; // n/a in NO_WIN_GDI
+  [[maybe_unused]] const bool bold;
+  [[maybe_unused]] const bool italic; // n/a in NO_WIN_GDI
+  [[maybe_unused]] const bool noaa; // n/a in NO_WIN_GDI
 };
 
 
@@ -201,9 +201,9 @@ private:
   const int x, y;
   bool dropframe;
   const int textcolor, halocolor;
-  const bool bold;
-  const bool italic; // n/a in NO_WIN_GDI
-  const bool noaa; // n/a in NO_WIN_GDI
+  [[maybe_unused]] const bool bold;
+  [[maybe_unused]] const bool italic; // n/a in NO_WIN_GDI
+  [[maybe_unused]] const bool noaa; // n/a in NO_WIN_GDI
 };
 
 
@@ -320,9 +320,9 @@ private:
   std::unique_ptr<BitmapFont> current_font;
   int chromaplacement;
 #endif
-  const bool bold;
-  const bool italic;
-  const bool noaa;
+  [[maybe_unused]] const bool bold;
+  [[maybe_unused]] const bool italic;
+  [[maybe_unused]] const bool noaa;
   const bool cpu;
   const int x, y;
   const int align;
