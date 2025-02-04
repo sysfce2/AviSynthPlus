@@ -65,15 +65,36 @@ public:
   {
     return pairs[i].second.get();
   }
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpessimizing-move"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpessimizing-move"
+#elif defined(_MSC_VER)
+  // Add MSVC-specific pragma if needed
+#endif
   void __stdcall Reset()
   {
     for (size_t i = 0; i < nJobs; ++i)
     {
+      // To be on the safe side, keep std::move to ensure efficient move semantics, 
+      // even if copy elision is possible (despite compiler warnings).
+      // AVSValue does not have a move constructor or move assignment operator. 
+      // It only has a copy constructor and copy assignment operator. This means that 
+      // AVSValue objects will be copied rather than moved, which can be less efficient.
       pairs[i].first = std::move(AVSPromise());
       pairs[i].second = std::move(pairs[i].first.get_future());
     }
     nJobs = 0;
   }
+#ifdef __clang__
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+  // Add MSVC-specific pragma if needed
+#endif
   void __stdcall Destroy()
   {
     delete this;

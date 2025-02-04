@@ -146,6 +146,17 @@ struct IAvisynthClipInfo : IUnknown {
   virtual bool __stdcall IsFieldBased() = 0;
 };
 
+// Silence warning for STDMETHODIMP: 
+// "exception specification of overriding function is more lax than base version [-Wmicrosoft-exception-spec]"
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmicrosoft-exception-spec"
+#elif defined(__GNUC__)
+//#pragma GCC diagnostic push
+// gcc has no problem
+// #pragma GCC diagnostic ignored "-Wnoexcept"
+#endif
+
 // final is used to silence warning:
 // delete called on non-final 'CAVIFileSynth' that has virtual functions but non-virtual destructor [-Wdelete-non-abstract-non-virtual-dtor]
 class CAVIFileSynth final: public IAVIFile, public IPersistFile, public IClassFactory, public IAvisynthClipInfo {
@@ -193,7 +204,7 @@ public:
   // 2023: Lots of clang-cl LLVM warning:
   // "exception specification of overriding function is more lax than base version[-Wmicrosoft-exception-spec]"
   // it's because STDMETHOD and STDMETHODIMP is differing by COM_DECLSPEC_NOTHROW that is __declspec(nothrow).
-  // Cannot do anything against that, this is by MS design
+  // All we can do is to disable warnings. This is by MS design.
   STDMETHODIMP QueryInterface(const IID& iid, void** ppv);
   STDMETHODIMP_(ULONG) AddRef();
   STDMETHODIMP_(ULONG) Release();
@@ -288,6 +299,12 @@ private:
 
   HRESULT Read2(LONG lStart, LONG lSamples, LPVOID lpBuffer, LONG cbBuffer, LONG *plBytes, LONG *plSamples);
 };
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+//#pragma GCC diagnostic pop
+#endif
 
 #ifndef AVS_STATIC_LIB
 BOOL APIENTRY DllMain(HANDLE hModule, ULONG ulReason, LPVOID lpReserved) {

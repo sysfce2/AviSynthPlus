@@ -116,7 +116,7 @@ void convert_yv24_to_rgb_avx2(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, co
       __m128i src_y = _mm_load_si128(reinterpret_cast<const __m128i*>(srcY + x)); //Y15 .. Y7 Y6 Y5 Y4 Y3 Y2 Y1 Y0
       __m128i src_u = _mm_load_si128(reinterpret_cast<const __m128i*>(srcU + x)); //U15 .. U7 U6 U5 U4 U3 U2 U1 U0
       __m128i src_v = _mm_load_si128(reinterpret_cast<const __m128i*>(srcV + x)); //V15 .. V7 V6 V5 V4 V3 V2 V1 V0
-      __m128i src_a;
+      [[maybe_unused]] __m128i src_a;
       if constexpr(hasAlpha)
         src_a = _mm_load_si128(reinterpret_cast<const __m128i*>(srcA + x)); //A15 .. A7 A6 A5 A4 A3 A2 A1 A0
 

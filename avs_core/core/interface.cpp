@@ -1135,38 +1135,8 @@ static const AVS_Linkage avs_linkage = {    // struct AVS_Linkage {
   &AVSValue::ArraySize,                     //   int             (AVSValue::*ArraySize)() const;
 // end class AVSValue
 /**********************************************************************/
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
-  NULL,                                     //   reserved for AVS classic
+  // a single { nullptr } initializes the whole placeholder array
+  { nullptr },                              // void    (VideoInfo::* reserved[27])(); // reserved for AVS classic
 /**********************************************************************/
   // AviSynth+ additions
   &VideoInfo::NumComponents,                //   int     (VideoInfo::*NumChannels)() const;
@@ -1229,39 +1199,9 @@ static const AVS_Linkage avs_linkage = {    // struct AVS_Linkage {
   &VideoInfo::SetChannelMask,               //   void    (VideoInfo::*SetChannelMask)();
   &VideoInfo::GetChannelMask,               //   int     (VideoInfo::*GetChannelMask)()  const;
 
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
-  NULL,                                     //   reserved for AviSynth+
+  // a single { nullptr } initializes the whole placeholder array
+  { nullptr },                              // void          (VideoInfo::* reserved2[64 - 31])(); // Reserve pointer space for Avisynth+
+
 /**********************************************************************/
   // AviSynth Neo additions
   &GetAvsEnv
