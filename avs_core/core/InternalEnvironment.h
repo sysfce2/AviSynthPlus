@@ -217,9 +217,57 @@ public:
   virtual void __stdcall VThrowError(const char* fmt, va_list va) = 0;
   virtual void __stdcall SetMaxCPU(const char *feature) = 0;
 
-  virtual IScriptEnvironment2* __stdcall GetEnv2() final { return this; }
-  virtual IScriptEnvironment_Avs25* __stdcall GetEnv25() final { return this; }
+  /*
+    How casting down works in Avisynth, when passing differently typed 
+    IScriptEnvironment variant pointers to plugins.
 
+    We have one big InternalEnvironment (further inherited by ThreadScriptEnvironment).
+    InternalEnvironment inherits all IScriptEnvironment variants, which have strictly 
+    identical function order of their pure virtual functions.
+
+    When we pass an IScriptEnvironment variant to a plugin/client (who is just seeing
+    Avisynth's standard IScriptEnvironment), then really we pass the proper VMT table.
+
+    Let's see an example for IScriptEnvironment_Avs25.
+
+    For the static_cast to work correctly, the IScriptEnvironment_Avs25 interface must 
+    have the same order of methods as they appear in the InternalEnvironment class.
+    This ensures that the VMT entries align properly, allowing the cast pointer to 
+    correctly access the methods defined in IScriptEnvironment_Avs25.
+
+    In C++, the order of methods in the VMT is determined by the order in which they are 
+    declared in the class or interface.
+    Therefore, as long as IScriptEnvironment_Avs25 is a base class of InternalEnvironment 
+    and the methods are declared in the same order, the static_cast will work as expected.
+
+    When we cast a Derived* to a Base*, e.g. InternalEnvironment*  to IScriptEnvironment2*,
+    the pointer might be adjusted to point to the Base sub-object within Derived.
+    This ensures that the VMT entries for Base methods are correctly aligned.
+
+    If we have multiple base classes with the same pure virtual function names
+    (NewVideoFrame, MakeWritable, etc..), and the derived class (InternalEnvironment) 
+    provides the implementation, the VMT entries for all those base classes will point 
+    to the same implementation in the derived class.
+
+    The implemented pure virtual function addresses will be written back to all 
+    IScriptEnvironmentXXXXX variant's VMT entries. So the same NewVideoFrame address
+    will appear in IScriptEnvironment2 and IScriptEnvironment_Avs25 VMT table.
+
+    Trick:
+    There are differences, that must handle differently for different IScriptEnvironment types.
+    E.g. IScriptEnvironment_Avs25 implements its own AddFunction. Place of AddFunction in VMT table
+    is fixed (VMT index N). In the class definition we use the name AddFunction25 instead 
+    of AddFunction. It will appear at VMT index N in IScriptEnvironment_Avs25, since the 
+    order is kept similar to IScriptEnvironment's order. 
+    Because if was named differently, InternalEnvironment's implementation
+    will put a different address into IScriptEnvironment_Avs25's VMT table.
+    When this pointer is passed to a plugin, (which sees only an IScriptEnvironment*)
+    when it calles AddFunction (that is VMT index N), it hiddenly will call AddFunction25 instead.
+  */
+
+  // interface conversions
+  virtual IScriptEnvironment2* __stdcall GetEnv2() final { return static_cast<IScriptEnvironment2*>(this); }
+  virtual IScriptEnvironment_Avs25* __stdcall GetEnv25() final { return static_cast<IScriptEnvironment_Avs25*>(this);; }
 
   virtual void __stdcall SetGraphAnalysis(bool enable) = 0;
 
