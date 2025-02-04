@@ -1134,6 +1134,7 @@ private:
 }; // end class VideoFrame
 
 enum CachePolicyHint {
+  CACHE_25_NOTHING_26_UNUSED_0 = 0,
   // Values 0 to 5 are reserved for old 2.5 plugins
   // do not use them in new plugins
 
