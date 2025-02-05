@@ -212,11 +212,12 @@ AVSValue ExpForLoop::Evaluate(IScriptEnvironment* env)
     env->ThrowError("for: final value must be int");
   if (!stepVal.IsInt())
     env->ThrowError("for: step value must be int");
-  if (stepVal.AsInt() == 0)
+  if (stepVal.AsLong() == 0)
     env->ThrowError("for: step value must be non-zero");
 
-  const int iLimit = limitVal.AsInt(), iStep = stepVal.AsInt();
-  int i = initVal.AsInt();
+  const int64_t iLimit = limitVal.AsLong();
+  const int64_t iStep = stepVal.AsLong();
+  int64_t i = initVal.AsLong();
 
   AVSValue result;
   env->GetVarTry("last", &result);
@@ -252,8 +253,12 @@ AVSValue ExpForLoop::Evaluate(IScriptEnvironment* env)
     AVSValue idVal = env->GetVar(id); // may have been updated in body
     if (!idVal.IsInt())
       env->ThrowError("for: loop variable '%s' has been assigned a non-int value", id);
-    i = idVal.AsInt() + iStep;
-    env->SetVar(id, i);
+    i = idVal.AsLong() + iStep;
+    // store back to smaller type
+    if (i >= INT_MIN && i <= INT_MAX)
+      env->SetVar(id, (int)i);
+    else
+      env->SetVar(id, i);
   }
   return result;  // overall result is that of final body evaluation (if any)
 }
