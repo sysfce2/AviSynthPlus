@@ -317,7 +317,7 @@ and underscores (_), but no other characters. The name cannot start with a
 digit.
 
 You may use characters from your language system codepage (locale) in strings
-and file names (ANSI 8 bit only, not Unicode).
+and file names (ANSI 8 bit, utf8, but not a 16 bit Unicode).
 
 The following types of variables can be used:
 
@@ -333,16 +333,35 @@ The following types of variables can be used:
     Subtitle
     ("""This displays "hello world" with quotes""")
 
-- *int*: entered as a string of digits, optionally with a + or - at the
-  beginning.
-- *float*: entered as a string of digits with a period (.) somewhere in it and an
+Strings containing escaped characters start with ``e`` prefix before the
+quotation mark.
+
+::
+
+    Subtitle
+    (e"This displays \"hello world\" with quotes\nand automatic multiline")
+
+- *int*, *long*: entered as a string of digits, optionally with a + or - at the
+  beginning. Since 3.7.4 64-bit integers are supported. In general 'int' covers
+  any 32 or 64-bit integer.
+- *float*, *double*: entered as a string of digits with a period (.) somewhere in it and an
   optional + or -. For example, +1. is treated as a floating-point number.
+  Since 3.7.4 64-bit double is supported. In general 'float' covers
+  any 32 or 64-bit floating point number.
 - *val*: as type of a function argument where it does not matter if it is int or
   float
 - *bool*: can be TRUE or FALSE
 - *hexadecimal numbers*: entered by preceding it with a $. This variable is
   treated as an integer. Several filters use this notation for specifying
-  colors. For example, $FF8800 is a shade of orange.
+  colors. For example, $FF8800 is a shade of orange. A hexadecimal constant is 
+  32-bit integer by default. Suffixed by "L" or "l" makes it 64-bit long.
+
+::
+
+    a = $FFFFFFFF  # integer = -1
+    b = $FFFFFFFFL # long 64 bit = 4294967295
+
+
 - *global*: defines a global variable, which can be used by all user-defined
   functions and the main script in common.
 
@@ -417,15 +436,15 @@ Operators
 | ``<`` less than
 | ``>`` greater than
 
-AviSynth in former versions parsed expressions from right to left, which gave
-unexpected results:
-::
+Note: since 3.7.4 ``int`` and ``float`` means any 32 or 64-bit integer or floating point value, respectively.
+The exact type of value (e.g. if a variable or constant is 32-bit float or 64-bit double) is known.
+('i'nteger - 32-bit integer, 'l'ong - 64-bit integer, 'f'loat - 32-bit foating point, 'd'ouble - 64-bit floating point) 
 
-    a = 10 - 5 - 5
-    resulted in 10 - (5 - 5) = 10
-    instead of (10 - 5) - 5 = 0 ! This bug has been corrected! Starting
-    from v2.53 also multiplication and division are parsed from left to right
-    (instead of right to left).
+Integer calculations are done in 64-bit precision. When the result fits into the 32 bit range, it is stored back as 32-bit integer ``i``.
+Otherwise the result is stored into 64-bit long ``l``.
+
+When both operands are 32-bit float, arithmetic is done in 32-bits and the result is a 32-bit float.
+Otherwise the calculation is done in 64-bit double ``d`` precision.
 
 | For string type:
 | ``+`` add
@@ -458,6 +477,13 @@ variables used in the script.
 
 Numerical functions
 ~~~~~~~~~~~~~~~~~~~
+
+Except ``MulDiv``, ``Rand`` and ``Spline`` the calculations are 64-bit (int or double) compatible.
+``HexValue`` has a special ``HexValue64`` variant.
+
+See :doc:`AviSynth Syntax - Numeric functions <syntax_internal_functions_numeric>`, and
+:doc:`AviSynth Syntax - Numeric functions <syntax_internal_functions_conversion>`.
+
 
 +----------------------------------------------------------+---------------------------------------------+
 | ``Max(int, int[, ...])`` / ``Max(float, float[, ...])``: || ``Max`` (1, 2) = 2                         |
@@ -500,8 +526,13 @@ Numerical functions
 |   Returns sign of value (1, 0 or -1).                    || ``Sign`` (3.5) = 1                         |
 |                                                          || ``Sign`` (0) = 0                           |
 +----------------------------------------------------------+---------------------------------------------+
-| ``HexValue(string)``:                                    | ``HexValue`` ("FF00") = 65280               |
-|   Evaluates string as hexadecimal value.                 |                                             |
+| ``HexValue(string)``:                                    || ``HexValue`` ("FF00") = 65280              |
+|   Evaluates string as hexadecimal value.                 || ``HexValue`` ("FFFFFFFF") = -1             |
+|   Result is always 32-bits.                              |                                             |
++----------------------------------------------------------+---------------------------------------------+
+| ``HexValue64(string)``:                                  || ``HexValue64`` ("FF00") = 65280            |
+|   Evaluates string as hexadecimal value.                 || ``HexValue64`` ("FFFFFFFF") = 4294967295   |
+|   Result is always 64-bits.                              |                                             |
 +----------------------------------------------------------+---------------------------------------------+
 | ``Sin(float)``:                                          || ``Sin`` (Pi()/4) = 0.707                   |
 |   Returns the sine of the argument (assumes it is        || ``Sin`` (Pi()/2) = 1.0                     |
@@ -658,7 +689,9 @@ Test functions
 
 | ``IsBool(var)``
 | ``IsInt(var)``
+| ``IsLong(var)``
 | ``IsFloat(var)``
+| ``IsFloatf(var)``
 | ``IsString(var)``
 | ``IsClip(var)``
 
@@ -727,26 +760,15 @@ it.
 Control Functions
 ------------------
 
-``SetMemoryMax`` (int): Sets the maximum memory that AviSynth uses (in MB).
-Setting to zero just returns the current Memory Max value. **v2, (=0)
-v2.5.8**
+:doc:`AviSynth Syntax - Global options and resource control <syntax_internal_functions_global_options>`
+and
+:doc:`AviSynth+ Syntax - Multithreading functions <syntax_internal_functions_multithreading_new>`
 
-In the 2.5 series the default Memory Max value is 25% the free physical
-memory, with a minimum of 16MB. From rev 2.5.8 RC4, the default Memory Max is
-also limited to 512MB.
+for old Avisynth 2.6 see
 
-+-------------------------------+-----+-----+-----+-----+------+------+------+
-| Free memory:                  | <64 | 128 | 256 | 512 | 1024 | 2048 | 3072 |
-+===============================+=====+=====+=====+=====+======+======+======+
-| Default Max v2.5.7 and older: | 16  | 32  | 64  | 128 | 256  | 512  | 768  |
-+-------------------------------+-----+-----+-----+-----+------+------+------+
-| Default Max since v2.5.8 RC4: | 16  | 32  | 64  | 128 | 256  | 512  | 512  |
-+-------------------------------+-----+-----+-----+-----+------+------+------+
+:doc:`AviSynth Syntax - Global options and resource control <syntax_internal_functions_multithreading>`.
 
-In some older versions there is a default setting of 5MB, which is quite low.
-If you encounter problems (e.g. low speed) try to set this values to at least
-32MB. Too high values can result in crashes because of 2GB address space
-limit. Return value: Actual MemoryMax value set.
+This section is mainly historical.
 
 ``SetPlanarLegacyAlignment`` (clip, bool): Set alignment mode for planar
 frames. **v2.5.6**
@@ -797,6 +819,11 @@ Clip Properties
 
 These functions take a clip as input and you get back a property of the clip.
 
+Since Avisynth 2.6 many more property checkers are available (more color spaces, audio channels), 
+see the relevant sections.
+
+See :doc:`AviSynth Clip properties <syntax_clip_properties>`.
+
 +------------------------------------------+--------------------------------------------------------+
 | ``Width(clip)``                          | Returns the width of the clip in pixels (type: int).   |
 +------------------------------------------+--------------------------------------------------------+
@@ -807,27 +834,29 @@ These functions take a clip as input and you get back a property of the clip.
 | ``Framerate(clip)``                      | Returns the number of frames per seconds of the clip.  |
 |                                          | (type: float)                                          |
 +------------------------------------------+--------------------------------------------------------+
-| ``FramerateNumerator(clip)`` **v2.55**   |                                                        |
+| ``FramerateNumerator(clip)``             |                                                        |
 +------------------------------------------+--------------------------------------------------------+
-| ``FramerateDenominator(clip)`` **v2.55** |                                                        |
+| ``FramerateDenominator(clip)``           |                                                        |
 +------------------------------------------+--------------------------------------------------------+
 | ``Audiorate(clip)``                      | Returns the sample rate of the audio of the clip.      |
 +------------------------------------------+--------------------------------------------------------+
 | ``Audiolength(clip)``                    | Returns the number of samples of the audio of the clip |
-|                                          | (type: int). Be aware of possible overflow on very     |
-|                                          | long clips ( 2^31 samples limit).                      |
+|                                          | (type: int, since 3.7.4 exact 64 bit number).          |
+|                                          | On pre-3.7.4 be aware of possible overflow on very     |
+|                                          | long clips ( 2^31 samples limit - 32 bit integer).     |
 +------------------------------------------+--------------------------------------------------------+
-| ``AudiolengthF(clip)`` **v2.55**         | Returns the number of samples of the audio of the clip |
-|                                          | (type: float).                                         |
+| ``AudiolengthF(clip)``                   | Returns the number of samples of the audio of the clip |
+|                                          | (type: float, since 3.7.4 a 64 bit double, still not   |
+|                                          | exact and may overflow, use Audiolength)               |
 +------------------------------------------+--------------------------------------------------------+
 | ``Audiochannels(clip)``                  | Returns the number of audio channels of the clip.      |
 +------------------------------------------+--------------------------------------------------------+
 | ``Audiobits(clip)``                      | Returns the audio bit depth of the clip.               |
 +------------------------------------------+--------------------------------------------------------+
-| ``IsAudioFloat(clip)`` **v2.55**         | Returns true if the bit depth of the audio of the clip |
+| ``IsAudioFloat(clip)``                   | Returns true if the bit depth of the audio of the clip |
 |                                          | is float.                                              |
 +------------------------------------------+--------------------------------------------------------+
-| ``IsAudioInt(clip)`` **v2.55**           | Returns true if the bit depth of the audio of the clip |
+| ``IsAudioInt(clip)``                     | Returns true if the bit depth of the audio of the clip |
 |                                          | an integer.                                            |
 +------------------------------------------+--------------------------------------------------------+
 | ``IsRGB(clip)``                          | Returns true if the clip is RGB, false otherwise       |
@@ -842,16 +871,16 @@ These functions take a clip as input and you get back a property of the clip.
 | ``IsYUY2(clip)``                         | Returns true if the clip is YUY2, false otherwise      |
 |                                          | (type: bool).                                          |
 +------------------------------------------+--------------------------------------------------------+
-| ``IsYV12(clip)`` **v2.51**               | Returns true if the clip is YV12, false otherwise      |
+| ``IsYV12(clip)``                         | Returns true if the clip is YV12, false otherwise      |
 |                                          | (type: bool).                                          |
 +------------------------------------------+--------------------------------------------------------+
-| ``IsYUV(clip)`` **v2.54**                | Returns true if the clip is YUV, false otherwise       |
+| ``IsYUV(clip)``                          | Returns true if the clip is YUV, false otherwise       |
 |                                          | (type: bool).                                          |
 +------------------------------------------+--------------------------------------------------------+
-| ``IsPlanar(clip)`` **v2.51**             | Returns true if the clip color format is planar,       |
+| ``IsPlanar(clip)``                       | Returns true if the clip color format is planar,       |
 |                                          | false otherwise (type: bool).                          |
 +------------------------------------------+--------------------------------------------------------+
-| ``IsInterleaved(clip)`` **v2.51**        | Returns true if the clip color format is interleaved,  |
+| ``IsInterleaved(clip)``                  | Returns true if the clip color format is interleaved,  |
 |                                          | false otherwise (type: bool).                          |
 +------------------------------------------+--------------------------------------------------------+
 | ``IsFieldBased(clip)``                   |                                                        |
@@ -862,10 +891,10 @@ These functions take a clip as input and you get back a property of the clip.
 |                                          | fieldbased clip, or it is full frame with top field    |
 |                                          | first of framebased clip (type: bool).                 |
 +------------------------------------------+--------------------------------------------------------+
-| ``HasAudio(clip)`` **v2.56**             | Returns true if the clip has audio, false otherwise    |
+| ``HasAudio(clip)``                       | Returns true if the clip has audio, false otherwise    |
 |                                          | (type: bool).                                          |
 +------------------------------------------+--------------------------------------------------------+
-| ``HasVideo(clip)`` **v2.56**             | Returns true if the clip has video, false otherwise    |
+| ``HasVideo(clip)``                       | Returns true if the clip has video, false otherwise    |
 |                                          | (type: bool).                                          |
 +------------------------------------------+--------------------------------------------------------+
 
@@ -965,6 +994,8 @@ With these functions you can add external functions to AviSynth.
 
 Loads one or more external avisynth plugins (DLLs).
 
+Avisynth+ can automatically detect and load any C or CPP plugins by a simple LoadPlugin.
+
 
 --------
 
@@ -1047,7 +1078,7 @@ error in a namespace conflict.
 Plugin autoload and conflicting function names **v2.55**
 --------------------------------------------------------
 
-Starting from v2.55 there is DLLName_function() support. The problem is that
+Starting from v2.55 there is DLLName_function() naming convention support. The problem is that
 two plugins can have different functions which are named the same. To call
 the needed one, DLLName_function() support is added. It auto-generates the
 additional names both for auto-loaded plugins and for plugins loaded with
@@ -1077,7 +1108,23 @@ or with mpeg2dec3.dll (which outputs YV12):
     # using mpeg2source from mpeg2dec3.dll
     mpeg2dec3_mpeg2source("F:\From_hell\from_hell.d2v")
 
-$Date: 2008/12/06 16:37:26 $
+
+
+Changelog
+~~~~~~~~~
++----------------+------------------------------------------------------------+
+| Version        | Changes                                                    |
++================+============================================================+
+| Avisynth 3.7.4 | | Added 64-bit types, integer long, floating point double  |
+|                | | Add "L" suffixed hexadecimal notation                    |
+|                | | Add HexValue64 function                                  |
+|                | | Add IsFloatF() and IsLong()                              |
+|                | | Add Double(), FloatF(), Long(), IntI() type casts        |
+|                | | AudioLength returns 64 bit integer (exact size)          |
+|                | | AudioLengthF returns 64 bit double                       |
++----------------+------------------------------------------------------------+
+
+$Date: 2025/02/05 10:22:00 $
 
 .. _discussion: http://forum.doom9.org/showthread.php?s=&threadid=58840
 .. _AVISynth C API (by kevina20723):
