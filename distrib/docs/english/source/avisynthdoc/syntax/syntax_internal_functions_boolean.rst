@@ -56,6 +56,8 @@ the :doc:`AviSynth Syntax <syntax>`.
     IsFloat("42.") = false
     IsFloat(2) = true   # ints are considered to be floats by this function
     IsReallyFloat(2) = false # see below
+    IsReallyDouble(2.0) = true # see below
+    IsReallyDouble(Floatf(2.0)) = false # see below
 
 As a workaround for the issue noted above, you may use the following user function: 
 ::
@@ -66,6 +68,43 @@ As a workaround for the issue noted above, you may use the following user functi
         return (IsInt(v)==false) && IsFloat(v)
     }
 
+    ## return true for 64 bit doubles only
+    function IsReallyDouble(val v)
+    {
+        return !IsFloatF(v) # IsFloatF covers integers and 32 bit float
+    }
+
+IsFloatF
+--------
+::
+
+    IsFloatF(var)
+
+Tests if *var* is of the 32 bit float type or any integer. *var* can be any expression allowed by
+the :doc:`AviSynth Syntax <syntax>`.
+
+Since Avisynth 3.7.4.
+
+*Examples:*
+::
+
+    f = Sqrt(2.0)
+    IsFloatf(f) = false # arithmetic is 64 bit precision since 3.7.4
+    IsFloat(true) = false
+    IsFloat("42.") = false # string :)
+    IsFloat(2) = true   # ints (either 32 or 64 bits) are considered to be floats by this function
+    IsReallyFloatf(2) = false # see below
+
+As a workaround for the issue noted above, you may use the following user function: 
+::
+
+    ## return true for floats only
+    function IsReallyFloatf(val v)
+    {
+        return (IsInt(v)==false) && IsFloatf(v)
+    }
+
+
 IsInt
 -----
 ::
@@ -75,12 +114,34 @@ IsInt
 Tests if *var* is of the int type. *var* can be any expression allowed by the
 :doc:`AviSynth Syntax <syntax>`.
 
+Since 3.7.4 we have 64 bit longs, IsInt returns true for any 32 or 64-bit integer number.
+
 *Examples:*
 ::
 
     IsInt(2) = true
+    IsInt(9007199254740992) = true # big number, 2^53 is stored as 64 bit integer, which is still Int
     IsInt(2.1) = false
     IsInt(true) = false
+
+IsLong
+------
+::
+
+    IsLong(var)
+
+Tests if *var* is of the 64-bit int type 'long'. *var* can be any expression allowed by the
+:doc:`AviSynth Syntax <syntax>`.
+
+Since Avisynth 3.7.4.
+
+*Examples:*
+::
+
+    IsLong(2) = false # literals if fit into 32 bit, keep 32 bit integer type
+    IsLong($FFL) = true # forced 64 bit hexadecimal literal
+    IsLong(9007199254740992) = true # big number, 2^53 is stored as 64 bit integer
+    IsLong(2.1) = false
 
 IsString
 --------
@@ -195,6 +256,9 @@ Changelog
 +----------------+----------------------------------+
 | Version        | Changes                          |
 +================+==================================+
+| 3.7.4          | | Changed "IsFloat", "IsInt"     |
+|                | | Added "IsFloatF", "IsLong"     |
++----------------+----------------------------------+
 | Avisynth+      | | Added "IsFunction"             |
 |                | | Added "FunctionExists"         |
 |                | | Added "InternalFunctionExists" |
@@ -203,4 +267,4 @@ Changelog
 
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
-$Date: 2024/01/05 10:54:00 $
+$Date: 2025/02/05 11:53:00 $
