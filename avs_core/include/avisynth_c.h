@@ -776,25 +776,27 @@ typedef struct AVS_VideoFrameBuffer {
 
 // AVS_VideoFrame is laid out identically to VideoFrame
 // DO NOT USE THIS STRUCTURE DIRECTLY
+// In V11 header a leading '_' was added to member names intentionally.
+// Stop direct access and use avs_get_xxx API calls instead!
 typedef struct AVS_VideoFrame {
-  volatile long refcount;
-  AVS_VideoFrameBuffer * vfb;
-  int offset;
+  volatile long _refcount;
+  AVS_VideoFrameBuffer * _vfb;
+  int _offset;
   // DO NOT USE THEM DIRECTLY
   // Use avs_get_pitch_p, avs_get_row_size_p, avs_get_height_p
-  int pitch, row_size, height;
-  int offsetU, offsetV;
-  int pitchUV;  // U&V offsets are from top of picture.
-  int row_sizeUV, heightUV; // for Planar RGB offsetU, offsetV is for the 2nd and 3rd Plane.
+  int _pitch, _row_size, _height;
+  int _offsetU, _offsetV;
+  int _pitchUV;  // U&V offsets are from top of picture.
+  int _row_sizeUV, _heightUV; // for Planar RGB offsetU, offsetV is for the 2nd and 3rd Plane.
                             // for Planar RGB pitchUV and row_sizeUV = 0, because when no VideoInfo (MakeWriteable)
                             // the decision on existence of UV is checked by zero pitch
   // AVS+ extension, avisynth.h: class does not break plugins if appended here
-  int offsetA;
-  int pitchA, row_sizeA; // 4th alpha plane support, pitch and row_size is 0 is none
-  void* properties; // interface V8: frame properties
+  int _offsetA;
+  int _pitchA, _row_sizeA; // 4th alpha plane support, pitch and row_size is 0 is none
+  void* _properties; // interface V8: frame properties
   // DO NOT USE DIRECTLY
   // Use avs_video_frame_get_pixel_type (and avs_video_frame_amend_pixel_type in special cases)
-  int pixel_type; // Interface V10: an automatically maintained copy from AVS_VideoInfo
+  int _pixel_type; // Interface V10: an automatically maintained copy from AVS_VideoInfo
 } AVS_VideoFrame;
 
 // Access functions for AVS_VideoFrame
