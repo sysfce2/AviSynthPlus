@@ -85,6 +85,8 @@
 #include "MTGuard.h"
 #include "cache.h"
 #include <clocale>
+#include <cmath>
+#include <limits>
 
 #include "FilterGraph.h"
 #include "DeviceManager.h"
@@ -795,14 +797,18 @@ public:
   char propGetType(const AVSMap* map, const char* key) AVS_NOEXCEPT;
   int propDeleteKey(AVSMap* map, const char* key) AVS_NOEXCEPT;
   int64_t propGetInt(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
+  int propGetIntSaturated(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
   double propGetFloat(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
+  float propGetFloatSaturated(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
   const char* propGetData(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
   int propGetDataSize(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
+  int propGetDataTypeHint(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
   PClip propGetClip(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
   const PVideoFrame propGetFrame(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT;
   int propSetInt(AVSMap* map, const char* key, int64_t i, int append) AVS_NOEXCEPT;
   int propSetFloat(AVSMap* map, const char* key, double d, int append) AVS_NOEXCEPT;
   int propSetData(AVSMap* map, const char* key, const char* d, int length, int append) AVS_NOEXCEPT;
+  int propSetDataH(AVSMap* map, const char* key, const char* d, int length, int type, int append) AVS_NOEXCEPT;
   int propSetClip(AVSMap* map, const char* key, PClip& clip, int append) AVS_NOEXCEPT;
   int propSetFrame(AVSMap* map, const char* key, const PVideoFrame& frame, int append) AVS_NOEXCEPT;
 
@@ -869,6 +875,9 @@ public:
 
   void UpdateFunctionExports(const char* funcName, const char* funcParams, const char* exportVar);
 
+  // public, AVSMap error should access
+  void ThrowError(const char* fmt, ...);
+
   ThreadScriptEnvironment* GetMainThreadEnv() { return threadEnv.get(); }
 
 private:
@@ -891,7 +900,6 @@ private:
 
   long EnvCount; // for ThreadScriptEnvironment leak detection
 
-  void ThrowError(const char* fmt, ...);
   void VThrowError(const char* fmt, va_list va);
 
   const Function* Lookup(const char* search_name, const AVSValue* args, size_t num_args,
@@ -1588,9 +1596,17 @@ public:
   {
     return core->propGetInt(map, key, index, error);
   }
+  int __stdcall propGetIntSaturated(const AVSMap* map, const char* key, int index, int* error)
+  {
+    return core->propGetIntSaturated(map, key, index, error);
+  }
   double __stdcall propGetFloat(const AVSMap* map, const char* key, int index, int* error)
   {
     return core->propGetFloat(map, key, index, error);
+  }
+  float __stdcall propGetFloatSaturated(const AVSMap* map, const char* key, int index, int* error)
+  {
+    return core->propGetFloatSaturated(map, key, index, error);
   }
   const char* __stdcall propGetData(const AVSMap* map, const char* key, int index, int* error)
   {
@@ -1599,6 +1615,10 @@ public:
   int __stdcall propGetDataSize(const AVSMap* map, const char* key, int index, int* error)
   {
     return core->propGetDataSize(map, key, index, error);
+  }
+  int __stdcall propGetDataTypeHint(const AVSMap* map, const char* key, int index, int* error)
+  {
+    return core->propGetDataTypeHint(map, key, index, error);
   }
   PClip __stdcall propGetClip(const AVSMap* map, const char* key, int index, int* error)
   {
@@ -1619,6 +1639,10 @@ public:
   int __stdcall propSetData(AVSMap* map, const char* key, const char* d, int length, int append)
   {
     return core->propSetData(map, key, d, length, append);
+  }
+  int __stdcall propSetDataH(AVSMap* map, const char* key, const char* d, int length, int type, int append)
+  {
+    return core->propSetDataH(map, key, d, length, type, append);
   }
   int __stdcall propSetClip(AVSMap* map, const char* key, PClip& clip, int append)
   {
@@ -5059,22 +5083,28 @@ const char* ScriptEnvironment::propGetKey(const AVSMap* map, int index) AVS_NOEX
   return map->key(index);
 }
 
-static int propNumElementsInternal(const AVSMap* map, const std::string& key) AVS_NOEXCEPT {
-  FramePropVariant* val = map->find(key);
-  return val ? (int)val->size() : -1;
-}
-
-
 int ScriptEnvironment::propNumElements(const AVSMap* map, const char* key) AVS_NOEXCEPT {
   assert(map && key);
-  return propNumElementsInternal(map, key);
+  VSArrayBase* val = map->find(key);
+  return val ? static_cast<int>(val->size()) : -1;
 }
 
 char ScriptEnvironment::propGetType(const AVSMap* map, const char* key) AVS_NOEXCEPT {
   assert(map && key);
-  const char a[] = { 'u', 'i', 'f', 's', 'c', 'v', 'm' };
-  FramePropVariant* val = map->find(key);
-  return val ? a[val->getType()] : 'u';
+  const char a[] = { 'u', 'i', 'f', 's', 'm', 'c', '?', 'v', '?' };
+  /*
+    u PROPERTYTYPE_UNSET = 0, // ptUnset = 0,
+    i PROPERTYTYPE_INT = 1, // ptInt = 1,
+    f PROPERTYTYPE_FLOAT = 2, //  ptFloat = 2,
+    s PROPERTYTYPE_DATA = 3, // ptData = 3,
+    m //  ptFunction = 4,
+    c PROPERTYTYPE_CLIP = 5, // ptVideoNode = 5,
+    ? //  ptAudioNode = 6,
+    v PROPERTYTYPE_FRAME = 7, //  ptVideoFrame = 7,
+    ? //  ptAudioFrame = 8
+  */
+  VSArrayBase* val = map->find(key);
+  return val ? a[val->type()] : 'u';
 }
 
 int ScriptEnvironment::propDeleteKey(AVSMap* map, const char* key) AVS_NOEXCEPT {
@@ -5082,53 +5112,158 @@ int ScriptEnvironment::propDeleteKey(AVSMap* map, const char* key) AVS_NOEXCEPT 
   return map->erase(key);
 }
 
-#define PROP_GET_SHARED(vt, retexpr) \
-    assert(map && key); \
-    if (map->hasError()) \
-        ThrowError("Attempted to read key '%s' from a map with error set: %s", key, map->getErrorMessage().c_str()); \
-    int err = 0; \
-    FramePropVariant *l = map->find(key); \
-    if (l && l->getType() == (vt)) { \
-        if (index >= 0 && static_cast<size_t>(index) < l->size()) { \
-            if (error) \
-                *error = 0; \
-            return (retexpr); \
-        } else { \
-            err |= AVSGetPropErrors::GETPROPERROR_INDEX; \
-        } \
-    } else if (l) { \
-        err |= AVSGetPropErrors::GETPROPERROR_TYPE; \
-    } else { \
-        err = AVSGetPropErrors::GETPROPERROR_UNSET; \
-    } \
-    if (!error) \
-        ThrowError("Property read unsuccessful but no error output: %s", key); \
-    *error = err; \
-    return 0;
+static VSArrayBase* propGetShared(const AVSMap* map, const char* key, int index, int* error, AVSPropertyType propType, ScriptEnvironment *env) noexcept {
+  assert(map && key && index >= 0);
+
+  if (error)
+    *error = AVSGetPropErrors::GETPROPERROR_SUCCESS; // peSuccess;
+
+  if (map->hasError()) {
+    if (error)
+      *error = AVSGetPropErrors::GETPROPERROR_ERROR; // peError;
+    else
+      env->ThrowError(("Property read unsuccessful on map with error set but no error output: " + std::string(key)).c_str());
+    return nullptr;
+  }
+
+  VSArrayBase* arr = map->find(key);
+
+  if (!arr) {
+    if (error)
+      *error = AVSGetPropErrors::GETPROPERROR_UNSET; // peUnset;
+    else
+      env->ThrowError(("Property read unsuccessful due to missing key but no error output: " + std::string(key)).c_str());
+    return nullptr;
+  }
+
+  if (index < 0 || index >= static_cast<int>(arr->size())) {
+    if (error)
+      *error = AVSGetPropErrors::GETPROPERROR_INDEX; // peIndex;
+    else
+      env->ThrowError(("Property read unsuccessful due to out of bounds index but no error output: " + std::string(key)).c_str());
+    return nullptr;
+  }
+
+  if (arr->type() != propType) {
+    if (error)
+      *error = AVSGetPropErrors::GETPROPERROR_TYPE; // peType;
+    else
+      env->ThrowError(("Property read unsuccessful due to wrong type but no error output: " + std::string(key)).c_str());
+    return nullptr;
+  }
+
+  return arr;
+}
 
 int64_t ScriptEnvironment::propGetInt(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
-  PROP_GET_SHARED(FramePropVariant::vInt, l->getValue<int64_t>(index))
+  VSArrayBase* arr = propGetShared(map, key, index, error, AVSPropertyType::PROPERTYTYPE_INT, this); //  ptInt
+  if (arr)
+    return reinterpret_cast<const VSIntArray*>(arr)->at(index);
+  else
+    return 0;
+}
+
+int ScriptEnvironment::propGetIntSaturated(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
+  int internalError = 0;
+  int64_t value = propGetInt(map, key, index, &internalError);
+
+  if (error) {
+    *error = internalError;
+  }
+
+  if (internalError == 0) {
+    if (value > std::numeric_limits<int>::max()) {
+      return std::numeric_limits<int>::max();
+    }
+    if (value < std::numeric_limits<int>::min()) {
+      return std::numeric_limits<int>::min();
+    }
+  }
+
+  return static_cast<int>(value);
 }
 
 double ScriptEnvironment::propGetFloat(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
-  PROP_GET_SHARED(FramePropVariant::vFloat, l->getValue<double>(index))
+  VSArrayBase* arr = propGetShared(map, key, index, error, AVSPropertyType::PROPERTYTYPE_FLOAT, this); // ptFloat
+  if (arr)
+    return reinterpret_cast<const VSFloatArray*>(arr)->at(index);
+  else
+    return 0;
+}
+
+float ScriptEnvironment::propGetFloatSaturated(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
+  int internalError = 0;
+  double value = propGetFloat(map, key, index, &internalError);
+
+  if (error) {
+    *error = internalError;
+  }
+
+  if (internalError == 0) {
+    if (std::isnan(value)) {
+      return std::numeric_limits<float>::quiet_NaN();
+    }
+    if (value > std::numeric_limits<float>::max()) {
+      return std::numeric_limits<float>::max();
+    }
+    if (value < -std::numeric_limits<float>::max()) {
+      return -std::numeric_limits<float>::max();
+    }
+  }
+
+  return static_cast<float>(value);
 }
 
 const char* ScriptEnvironment::propGetData(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
-  PROP_GET_SHARED(FramePropVariant::vData, l->getValue<VSMapData>(index)->c_str())
+  VSArrayBase* arr = propGetShared(map, key, index, error, AVSPropertyType::PROPERTYTYPE_DATA, this); // ptData
+  if (arr)
+    return reinterpret_cast<const VSDataArray*>(arr)->at(index).data.c_str();
+  else
+    return nullptr;
 }
 
 int ScriptEnvironment::propGetDataSize(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
-  PROP_GET_SHARED(FramePropVariant::vData, static_cast<int>(l->getValue<VSMapData>(index)->size()))
+  VSArrayBase* arr = propGetShared(map, key, index, error, AVSPropertyType::PROPERTYTYPE_DATA, this); // ptData
+  if (arr)
+    return static_cast<int>(reinterpret_cast<const VSDataArray*>(arr)->at(index).data.size());
+  else
+    return -1;
+}
+
+int ScriptEnvironment::propGetDataTypeHint(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
+  VSArrayBase* arr = propGetShared(map, key, index, error, AVSPropertyType::PROPERTYTYPE_DATA, this); // ptData
+  if (arr)
+    return reinterpret_cast<const VSDataArray*>(arr)->at(index).typeHint;
+  else
+    return AVSPropDataTypeHint::PROPDATATYPEHINT_UNKNOWN; // dtUnknown;
 }
 
 PClip ScriptEnvironment::propGetClip(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
-  PROP_GET_SHARED(FramePropVariant::vClip, l->getValue<PClip>(index))
+  int dummyError;
+  VSArrayBase* arr = propGetShared(map, key, index, &dummyError, AVSPropertyType::PROPERTYTYPE_CLIP, this); // ptVideoNode
+  if (arr) {
+    // PClip itself is reference counted
+    PClip ref = reinterpret_cast<VSVideoNodeArray*>(arr)->at(index);
+    return ref;
+  }
+  else {
+    // no separate audio node in AVS
+    return nullptr;
+  }
 }
 
 const PVideoFrame ScriptEnvironment::propGetFrame(const AVSMap* map, const char* key, int index, int* error) AVS_NOEXCEPT {
   // PVideoFrame itself is reference counted
-  PROP_GET_SHARED(FramePropVariant::vFrame, l->getValue<PVideoFrame>(index))
+  int dummyError;
+  VSArrayBase* arr = propGetShared(map, key, index, &dummyError, AVSPropertyType::PROPERTYTYPE_FRAME, this); //  ptVideoFrame
+  if (arr) {
+    PVideoFrame ref = reinterpret_cast<VSVideoFrameArray*>(arr)->at(index);
+    return ref;
+  }
+  else {
+    // no separate audio frame in AVS
+    return nullptr;
+  }
 }
 
 static inline bool isAlphaUnderscore(char c) {
@@ -5152,86 +5287,158 @@ static bool isValidVSMapKey(const std::string& s) {
   return true;
 }
 
-// insert and append are guarded and make new copy of actual storage before the modification
-#define PROP_SET_SHARED(vv, appendexpr) \
-    assert(map && key); \
-    if (append != AVSPropAppendMode::PROPAPPENDMODE_REPLACE && \
-        append != AVSPropAppendMode::PROPAPPENDMODE_APPEND && \
-        append != AVSPropAppendMode::PROPAPPENDMODE_TOUCH) \
-        ThrowError("Invalid prop append mode given when setting key '%s'", key); \
-    std::string skey = key; \
-    if (!isValidVSMapKey(skey)) \
-        return 1; \
-    if (append != AVSPropAppendMode::PROPAPPENDMODE_REPLACE && map->contains(skey)) { \
-        FramePropVariant &l = map->at(skey); \
-        if (l.getType() != (vv)) \
-            return 1; \
-        else if (append == AVSPropAppendMode::PROPAPPENDMODE_APPEND) \
-            map->append(skey, appendexpr); \
-    } else { \
-        FramePropVariant l((vv)); \
-        if (append != AVSPropAppendMode::PROPAPPENDMODE_TOUCH) \
-            l.append(appendexpr); \
-        map->insert(skey, std::move(l)); \
-    } \
-    return 0;
+static int mapSetEmpty(AVSMap* map, const char* key, int type) AVS_NOEXCEPT {
+  assert(map && key);
+  if (!isValidVSMapKey(key))
+    return 1;
+
+  std::string skey = key;
+  if (map->find(skey))
+    return 1;
+
+  switch (type) {
+  case AVSPropertyType::PROPERTYTYPE_INT: // ptInt:
+    map->insert(key, new VSIntArray);
+    break;
+  case AVSPropertyType::PROPERTYTYPE_FLOAT: // ptFloat:
+    map->insert(key, new VSFloatArray);
+    break;
+  case AVSPropertyType::PROPERTYTYPE_DATA: // ptData:
+    map->insert(key, new VSDataArray);
+    break;
+  case AVSPropertyType::PROPERTYTYPE_CLIP: // ptVideoNode:
+    map->insert(key, new VSVideoNodeArray);
+    break;
+  /*
+  case ptAudioNode:
+    map->insert(key, new VSAudioNodeArray);
+    break;
+  */
+  case AVSPropertyType::PROPERTYTYPE_FRAME: // ptVideoFrame:
+    map->insert(key, new VSVideoFrameArray);
+    break;
+  /*
+  case ptAudioFrame:
+    map->insert(key, new VSAudioFrameArray);
+    break;
+  */
+  /*
+  case AVSPropertyType::PROPERTYTYPE_FUNCTION: // ptFunction:
+    map->insert(key, new VSFunctionArray);
+    break;
+  */
+  default:
+    return 1;
+  }
+  return 0;
+}
+
+template<typename T, AVSPropertyType propType>
+bool propSetShared(AVSMap* map, const char* key, const T& val, int append, ScriptEnvironment *env) {
+  assert(map && key);
+  if (append != AVSPropAppendMode::PROPAPPENDMODE_REPLACE && 
+      append != AVSPropAppendMode::PROPAPPENDMODE_APPEND && 
+      append != AVSPropAppendMode::PROPAPPENDMODE_TOUCH) // in VS4 this mode was dropped
+    env->ThrowError("Invalid prop append mode given when setting key '%s'", key);
+
+  if (!isValidVSMapKey(key))
+    return false;
+  std::string skey = key;
+
+  if (append == AVSPropAppendMode::PROPAPPENDMODE_REPLACE) {
+    VSArray<T, propType>* v = new VSArray<T, propType>();
+    v->push_back(val);
+    map->insert(key, v);
+    return true;
+  }
+  else if (append == AVSPropAppendMode::PROPAPPENDMODE_APPEND) {
+    VSArrayBase* arr = map->find(skey);
+    if (arr && arr->type() == propType) {
+      arr = map->detach(skey);
+      reinterpret_cast<VSArray<T, propType>*>(arr)->push_back(val);
+      return true;
+    }
+    else if (arr) {
+      return false;
+    }
+    else {
+      VSArray<T, propType>* v = new VSArray<T, propType>();
+      v->push_back(val);
+      map->insert(key, v);
+      return true;
+    }
+  }
+  else /* if (append == vs3::paTouch) */ {
+    return !mapSetEmpty(map, key, propType);
+  }
+}
 
 
 int ScriptEnvironment::propSetInt(AVSMap* map, const char* key, int64_t i, int append) AVS_NOEXCEPT {
-  PROP_SET_SHARED(FramePropVariant::vInt, i)
+  return !propSetShared<int64_t, AVSPropertyType::PROPERTYTYPE_INT>(map, key, i, append, this); // ptInt
 }
 
 int ScriptEnvironment::propSetFloat(AVSMap* map, const char* key, double d, int append) AVS_NOEXCEPT {
-  PROP_SET_SHARED(FramePropVariant::vFloat, d)
+  return !propSetShared<double, AVSPropertyType::PROPERTYTYPE_FLOAT>(map, key, d, append, this); // ptFloat
 }
 
+// Unlike VS API4, Avisynth must maintain old function name, and introduce propSetDataH
 int ScriptEnvironment::propSetData(AVSMap* map, const char* key, const char* d, int length, int append) AVS_NOEXCEPT {
-  PROP_SET_SHARED(FramePropVariant::vData, length >= 0 ? std::string(d, length) : std::string(d))
+  return propSetDataH(map, key, d, length, AVSPropDataTypeHint::PROPDATATYPEHINT_UNKNOWN, append); // dtUnknown
+}
+
+// v11
+int ScriptEnvironment::propSetDataH(AVSMap* map, const char* key, const char* d, int length, int type, int append) AVS_NOEXCEPT {
+  return !propSetShared<VSMapData, AVSPropertyType::PROPERTYTYPE_DATA>(map, key, { static_cast<AVSPropDataTypeHint>(type), (length >= 0) ? std::string(d, length) : std::string(d) }, append, this);
 }
 
 int ScriptEnvironment::propSetClip(AVSMap* map, const char* key, PClip& clip, int append) AVS_NOEXCEPT {
-  PROP_SET_SHARED(FramePropVariant::vClip, clip)
+  return !propSetShared<PClip, AVSPropertyType::PROPERTYTYPE_CLIP>(map, key, clip, append, this); // ptVideoNode
 }
 
 int ScriptEnvironment::propSetFrame(AVSMap* map, const char* key, const PVideoFrame &frame, int append) AVS_NOEXCEPT {
-  PROP_SET_SHARED(FramePropVariant::vFrame, frame)
+  return !propSetShared<PVideoFrame, AVSPropertyType::PROPERTYTYPE_FRAME>(map, key, frame, append, this); // ptVideoFrame
 }
 
 const int64_t* ScriptEnvironment::propGetIntArray(const AVSMap* map, const char* key, int* error) AVS_NOEXCEPT {
-  int index = 0;
-  PROP_GET_SHARED(FramePropVariant::vInt, l->getArray<int64_t>())
+  const VSArrayBase* arr = propGetShared(map, key, 0, error, AVSPropertyType::PROPERTYTYPE_INT, this);
+  if (arr) {
+    return reinterpret_cast<const VSIntArray*>(arr)->getDataPointer();
+  }
+  else {
+    return nullptr;
+  }
 }
 
 const double* ScriptEnvironment::propGetFloatArray(const AVSMap* map, const char* key, int* error) AVS_NOEXCEPT {
-  int index = 0;
-  PROP_GET_SHARED(FramePropVariant::vFloat, l->getArray<double>())
+  const VSArrayBase* arr = propGetShared(map, key, 0, error, AVSPropertyType::PROPERTYTYPE_FLOAT, this);
+  if (arr) {
+    return reinterpret_cast<const VSFloatArray*>(arr)->getDataPointer();
+  }
+  else {
+    return nullptr;
+  }
 }
 
 int ScriptEnvironment::propSetIntArray(AVSMap* map, const char* key, const int64_t* i, int size) AVS_NOEXCEPT {
   assert(map && key && size >= 0);
   if (size < 0)
     return 1;
-  std::string skey = key;
-  if (!isValidVSMapKey(skey))
+  if (!isValidVSMapKey(key))
     return 1;
-  FramePropVariant l(FramePropVariant::vInt);
-  l.setArray(i, size);
-  map->insert(skey, std::move(l));
+  map->insert(key, new VSIntArray(i, size));
   return 0;
 }
 
  int ScriptEnvironment::propSetFloatArray(AVSMap* map, const char* key, const double* d, int size) AVS_NOEXCEPT {
-  assert(map && key && size >= 0);
-  if (size < 0)
-    return 1;
-  std::string skey = key;
-  if (!isValidVSMapKey(skey))
-    return 1;
-  FramePropVariant l(FramePropVariant::vFloat);
-  l.setArray(d, size);
-  map->insert(skey, std::move(l));
-  return 0;
-}
+   assert(map && key && size >= 0);
+   if (size < 0)
+     return 1;
+   if (!isValidVSMapKey(key))
+     return 1;
+   map->insert(key, new VSFloatArray(d, size));
+   return 0;
+ }
 
 AVSMap* ScriptEnvironment::createMap() AVS_NOEXCEPT {
   return new AVSMap();
@@ -5470,122 +5677,7 @@ AVSC_API(IScriptEnvironment2*, CreateScriptEnvironment2)(int version)
     return NULL;
 }
 
-FramePropVariant::FramePropVariant(FramePropVType vtype) : vtype(vtype), internalSize(0), storage(nullptr) {
-}
 
-FramePropVariant::FramePropVariant(const FramePropVariant& v) : vtype(v.vtype), internalSize(v.internalSize), storage(nullptr) {
-  if (internalSize) {
-    switch (vtype) {
-    case FramePropVariant::vInt:
-      storage = new IntList(*reinterpret_cast<IntList*>(v.storage)); break;
-    case FramePropVariant::vFloat:
-      storage = new FloatList(*reinterpret_cast<FloatList*>(v.storage)); break;
-    case FramePropVariant::vData:
-      storage = new DataList(*reinterpret_cast<DataList*>(v.storage)); break;
-    case FramePropVariant::vClip:
-      storage = new ClipList(*reinterpret_cast<ClipList*>(v.storage)); break;
-    case FramePropVariant::vFrame:
-      storage = new FrameList(*reinterpret_cast<FrameList*>(v.storage)); break;
-/*    case FramePropVariant::vMethod:
-      storage = new FuncList(*reinterpret_cast<FuncList*>(v.storage)); break;*/
-    default:;
-    }
-  }
-}
-
-FramePropVariant::FramePropVariant(FramePropVariant&& v) : vtype(v.vtype), internalSize(v.internalSize), storage(v.storage) {
-  v.vtype = vUnset;
-  v.storage = nullptr;
-  v.internalSize = 0;
-}
-
-FramePropVariant::~FramePropVariant() {
-  if (storage) {
-    switch (vtype) {
-    case FramePropVariant::vInt:
-      delete reinterpret_cast<IntList*>(storage); break;
-    case FramePropVariant::vFloat:
-      delete reinterpret_cast<FloatList*>(storage); break;
-    case FramePropVariant::vData:
-      delete reinterpret_cast<DataList*>(storage); break;
-    case FramePropVariant::vClip:
-      delete reinterpret_cast<ClipList*>(storage); break;
-    case FramePropVariant::vFrame:
-      delete reinterpret_cast<FrameList*>(storage); break;
-/*    case FramePropVariant::vMethod:
-      delete reinterpret_cast<FuncList*>(storage); break;*/
-    default:;
-    }
-  }
-}
-
-size_t FramePropVariant::size() const {
-  return internalSize;
-}
-
-FramePropVariant::FramePropVType FramePropVariant::getType() const {
-  return vtype;
-}
-
-void FramePropVariant::append(int64_t val) {
-  initStorage(vInt);
-  reinterpret_cast<IntList*>(storage)->push_back(val);
-  internalSize++;
-}
-
-void FramePropVariant::append(double val) {
-  initStorage(vFloat);
-  reinterpret_cast<FloatList*>(storage)->push_back(val);
-  internalSize++;
-}
-
-void FramePropVariant::append(const std::string& val) {
-  initStorage(vData);
-  reinterpret_cast<DataList*>(storage)->push_back(std::make_shared<std::string>(val));
-  internalSize++;
-}
-
-void FramePropVariant::append(const PClip& val) {
-  initStorage(vClip);
-  reinterpret_cast<ClipList*>(storage)->push_back(val);
-  internalSize++;
-}
-
-void FramePropVariant::append(const PVideoFrame& val) {
-  initStorage(vFrame);
-  reinterpret_cast<FrameList*>(storage)->push_back(val);
-  internalSize++;
-}
-
-/*
-void FramePropVariant::append(const PExtFunction& val) {
-  initStorage(vMethod);
-  reinterpret_cast<FuncList*>(storage)->push_back(val);
-  internalSize++;
-}
-*/
-
-void FramePropVariant::initStorage(FramePropVType t) {
-  assert(vtype == vUnset || vtype == t);
-  vtype = t;
-  if (!storage) {
-    switch (t) {
-    case FramePropVariant::vInt:
-      storage = new IntList(); break;
-    case FramePropVariant::vFloat:
-      storage = new FloatList(); break;
-    case FramePropVariant::vData:
-      storage = new DataList(); break;
-    case FramePropVariant::vClip:
-      storage = new ClipList(); break;
-    case FramePropVariant::vFrame:
-      storage = new FrameList(); break;
-/*    case FramePropVariant::vMethod:
-      storage = new FuncList(); break;*/
-    default:;
-    }
-  }
-}
 
 ///////////////
 

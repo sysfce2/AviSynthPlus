@@ -46,6 +46,12 @@
 //           new: AVSValue::AsLong(int64_t def)
 //           (AsFloat returned double --> no AsDouble needed)
 //           new AVSValue constructors for 64 bit types
+//           Frame property changes backported from VapourSynth API4
+//           - New propGetIntSaturated and propGetFloatSaturated
+//           - New enum: AVSPropDataTypeHint (VSAPI4: VSDataTypeHint)
+//           - New propGetDataTypeHint (VSAPI4: mapGetDataTypeHint)
+//           - New propSetDataH, like propSetData but with optional data type hint (byte/string)
+//             (VSAPI4: mapSetData, our propSetData became VSAPI4: mapSetData3)
 
 // http://www.avisynth.org
 
@@ -238,7 +244,7 @@ class IFunction;
 class SINGLE_INHERITANCE PFunction;
 class Device;
 class SINGLE_INHERITANCE PDevice;
-class AVSMap;
+struct AVSMap;
 
 
 
@@ -1299,10 +1305,9 @@ public:
 #endif
 }; // end class PClip
 
-// enums for frame property functions
 enum AVSPropTypes {
   PROPTYPE_UNSET = 'u', // ptUnset
-  PROPTYPE_INT = 'i', // peType
+  PROPTYPE_INT = 'i', // ptInt
   PROPTYPE_FLOAT = 'f', // ptFloat
   PROPTYPE_DATA = 's', // ptData
   PROPTYPE_CLIP = 'c', // ptClip
@@ -1311,8 +1316,10 @@ enum AVSPropTypes {
 };
 
 enum AVSGetPropErrors {
+  GETPROPERROR_SUCCESS = 0,
   GETPROPERROR_UNSET = 1, // peUnset
   GETPROPERROR_TYPE = 2, // peType
+  GETPROPERROR_ERROR = 3, // map has error state set
   GETPROPERROR_INDEX = 4 // peIndex
 };
 
@@ -1322,6 +1329,11 @@ enum AVSPropAppendMode {
   PROPAPPENDMODE_TOUCH = 2 // paTouch
 };
 
+enum AVSPropDataTypeHint {
+  PROPDATATYPEHINT_UNKNOWN = -1, // dtUnknown = -1,
+  PROPDATATYPEHINT_BINARY = 0, // dtBinary = 0,
+  PROPDATATYPEHINT_UTF8 = 1 // dtUtf8 = 1
+};
 
 class AVSValue {
 public:
@@ -1693,6 +1705,12 @@ public:
 
   // V9
   virtual bool __stdcall MakePropertyWritable(PVideoFrame* pvf) = 0;
+
+  // V11
+  virtual int __stdcall propGetIntSaturated(const AVSMap* map, const char* key, int index, int* error) = 0;
+  virtual float __stdcall propGetFloatSaturated(const AVSMap* map, const char* key, int index, int* error) = 0;
+  virtual int __stdcall propGetDataTypeHint(const AVSMap* map, const char* key, int index, int* error) = 0; // returns AVSPropDataTypeHint
+  virtual int __stdcall propSetDataH(AVSMap* map, const char* key, const char* d, int length, int type, int append) = 0;
 
 }; // end class IScriptEnvironment. Order is important. Avoid overloads with the same name.
 

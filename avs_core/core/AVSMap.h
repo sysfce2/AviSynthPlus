@@ -1,5 +1,22 @@
 #pragma once
+/*
+This program is free software; you can redistribute it and /or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation.
 
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+Helper structures for frame properties a.k.a VSMap.
+Based on VapourSynth API4, copyright (c) Fredrik Mellbin
+
+*/
 #include <map>
 #include <mutex>
 #include <string>
@@ -7,188 +24,319 @@
 #include <atomic>
 #include <vector>
 #include <memory>
+#include <cassert>
 
-// Helper structures for frame properties. Borrowed from VapourSynth
-// node-clip, VSVariant-FramePropVariant VSMap-AVSMap
+// VS node ~ Avisynth clip, VSMap-AVSMap
 // See also in Avisynth.cpp
 
+// INTRUSIVE_PTR_H 
+
+#include <algorithm>
+
+template<typename T>
+class vs_intrusive_ptr {
+private:
+  T* obj;
+public:
+  vs_intrusive_ptr(T* ptr = nullptr, bool add_ref = false) noexcept {
+    obj = ptr;
+    if (add_ref && obj)
+      obj->add_ref();
+  }
+
+  vs_intrusive_ptr(const vs_intrusive_ptr& ptr) noexcept {
+    obj = ptr.obj;
+    if (obj)
+      obj->add_ref();
+  }
+
+  vs_intrusive_ptr(vs_intrusive_ptr&& ptr) noexcept {
+    obj = ptr.obj;
+    ptr.obj = nullptr;
+  }
+
+  ~vs_intrusive_ptr() noexcept {
+    if (obj)
+      obj->release();
+  }
+
+  vs_intrusive_ptr& operator=(vs_intrusive_ptr const& ptr) noexcept {
+    if (obj)
+      obj->release();
+    obj = ptr.obj;
+    if (obj)
+      obj->add_ref();
+    return *this;
+  }
+
+  T* operator->() const noexcept {
+    return obj;
+  }
+
+  T& operator*() const noexcept {
+    return *obj;
+  }
+
+  operator bool() const noexcept {
+    return !!obj;
+  }
+
+  T* get() const noexcept {
+    return obj;
+  }
+
+  void reset() noexcept {
+    if (obj) {
+      obj->release();
+      obj = nullptr;
+    }
+  }
+
+  void swap(vs_intrusive_ptr& ptr) noexcept {
+    std::swap(obj, ptr.obj);
+  }
+};
+
+#define AVS_NOEXCEPT noexcept
+
+// enums for frame property functions
+
+// VS: typedef enum VSPropertyType
+typedef enum AVSPropertyType {
+  PROPERTYTYPE_UNSET = 0, // ptUnset = 0,
+  PROPERTYTYPE_INT = 1, // ptInt = 1,
+  PROPERTYTYPE_FLOAT = 2, //  ptFloat = 2,
+  PROPERTYTYPE_DATA = 3, // ptData = 3,
+  //  ptFunction = 4, // Avisynth: functions not supported here
+  PROPERTYTYPE_CLIP = 5, // ptVideoNode = 5,
+  //  ptAudioNode = 6, // Avisynth: no special audio clip
+  PROPERTYTYPE_FRAME = 7, //  ptVideoFrame = 7,
+  //  ptAudioFrame = 8 // Avisynth: no special audio frame
+} AVSPropertyType;
+
+class VSArrayBase {
+protected:
+  std::atomic<long> refcount;
+  AVSPropertyType ftype;
+  size_t fsize = 0;
+  explicit VSArrayBase(AVSPropertyType type) : refcount(1), ftype(type) {}
+  virtual ~VSArrayBase() {}
+public:
+  AVSPropertyType type() const {
+    return ftype;
+  }
+
+  size_t size() const {
+    return fsize;
+  }
+
+  bool unique() const noexcept {
+    return (refcount == 1);
+  }
+
+  void add_ref() noexcept {
+    ++refcount;
+  }
+
+  void release() noexcept {
+    assert(refcount > 0);
+    if (--refcount == 0)
+      delete this;
+  }
+
+  virtual VSArrayBase* copy() const noexcept = 0;
+};
+
+typedef vs_intrusive_ptr<VSArrayBase> PVSArrayBase;
+
+template<typename T, AVSPropertyType propType>
+class VSArray final : public VSArrayBase {
+private:
+  T singleData = {};
+  std::vector<T> data;
+public:
+  explicit VSArray() noexcept : VSArrayBase(propType) {}
+
+  explicit VSArray(const VSArray& other) noexcept : VSArrayBase(other.ftype) {
+    fsize = other.fsize;
+    if (fsize == 1)
+      singleData = other.singleData;
+    else if (fsize > 1)
+      data = other.data;
+  }
+
+  explicit VSArray(const T* val, size_t count) noexcept : VSArrayBase(propType) { // only enable for POD types
+    fsize = count;
+    if (count == 1) {
+      singleData = *val;
+    }
+    else {
+      data.resize(count);
+      memcpy(data.data(), val, sizeof(T) * count);
+    }
+  }
+
+  virtual VSArrayBase* copy() const noexcept {
+    return new VSArray(*this);
+  }
+
+  const T* getDataPointer() const noexcept { // only enable for POD types
+    if (fsize == 1)
+      return &singleData;
+    else
+      return data.data();
+  }
+
+  void push_back(const T& val) noexcept {
+    if (fsize == 0) {
+      singleData = val;
+    }
+    else if (fsize == 1) {
+      data.reserve(8);
+      data.push_back(std::move(singleData));
+      data.push_back(val);
+    }
+    else {
+      if (data.capacity() == data.size())
+        data.reserve(data.capacity() * 2);
+      data.push_back(val);
+    }
+    fsize++;
+  }
+
+  const T& at(size_t pos) const noexcept {
+    assert(pos < fsize);
+    if (fsize == 1)
+      return singleData;
+    else
+      return data.at(pos);
+  }
+};
+
 // variant types
-typedef std::shared_ptr<std::string> VSMapData;
+class VSMapData {
+public:
+  AVSPropDataTypeHint typeHint;
+  std::string data;
+};
+
+typedef VSArray<int64_t, AVSPropertyType::PROPERTYTYPE_INT> VSIntArray; // ptInt
+typedef VSArray<double, AVSPropertyType::PROPERTYTYPE_FLOAT> VSFloatArray; // ptFloat
+typedef VSArray<VSMapData, AVSPropertyType::PROPERTYTYPE_DATA> VSDataArray; // ptData
+typedef VSArray<PClip, AVSPropertyType::PROPERTYTYPE_CLIP> VSVideoNodeArray; // ptVideoNode
+typedef VSArray<PVideoFrame, AVSPropertyType::PROPERTYTYPE_FRAME> VSVideoFrameArray; // ptVideoFrame
+//typedef VSArray<PFunction, ptFunction> VSFunctionArray;
+
+
 typedef std::vector<int64_t> IntList;
 typedef std::vector<double> FloatList;
 typedef std::vector<VSMapData> DataList;
 typedef std::vector<PClip> ClipList;
 typedef std::vector<PVideoFrame> FrameList;
-//typedef std::vector<PExtFunction> FuncList;
+//typedef std::vector<PFunction> FuncList;
 
-#define AVS_NOEXCEPT noexcept
-
-class FramePropVariant {
-public:
-  enum FramePropVType { vUnset, vInt, vFloat, vData, vClip, vFrame/*, vMethod*/ };
-  FramePropVariant(FramePropVType vtype = vUnset);
-  FramePropVariant(const FramePropVariant& v);
-  FramePropVariant(FramePropVariant&& v);
-  ~FramePropVariant();
-
-  size_t size() const;
-  FramePropVType getType() const;
-
-  void append(int64_t val);
-  void append(double val);
-  void append(const std::string& val);
-  void append(const PClip& val);
-  void append(const PVideoFrame& val);
-  //void append(const PExtFunction& val); // not in avs+
-
-  template<typename T>
-  const T& getValue(size_t index) const {
-    return reinterpret_cast<std::vector<T>*>(storage)->at(index);
-  }
-
-  template<typename T>
-  const T* getArray() const {
-    return reinterpret_cast<std::vector<T>*>(storage)->data();
-  }
-
-  template<typename T>
-  void setArray(const T* val, size_t size) {
-    assert(val && !storage);
-    std::vector<T>* vect = new std::vector<T>(size);
-    if (size)
-      memcpy(vect->data(), val, size * sizeof(T));
-    internalSize = size;
-    storage = vect;
-  }
-
-private:
-  FramePropVType vtype;
-  size_t internalSize;
-  void* storage;
-
-  void initStorage(FramePropVType t);
-};
 
 class VSMapStorage {
 private:
-  std::atomic<int> refCount;
+  std::atomic<long> refcount;
 public:
-  std::map<std::string, FramePropVariant> data;
+  std::map<std::string, PVSArrayBase> data;
   bool error;
 
-  VSMapStorage() : refCount(1), error(false) {}
+  explicit VSMapStorage() : refcount(1), error(false) {}
 
-  VSMapStorage(const VSMapStorage& s) : refCount(1), data(s.data), error(s.error) {}
-
-  bool unique() {
-    return (refCount == 1);
-  };
-
-  void addRef() {
-    ++refCount;
+  explicit VSMapStorage(const VSMapStorage& s) : refcount(1), data(s.data), error(s.error) {
   }
 
-  void release() {
-    if (!--refCount)
+  void clear() noexcept {
+    data.clear();
+    error = false;
+  }
+
+  bool unique() noexcept {
+    return (refcount == 1);
+  };
+
+  void add_ref() noexcept {
+    ++refcount;
+  }
+
+  void release() noexcept {
+    assert(refcount > 0);
+    if (--refcount == 0)
       delete this;
   }
 };
 
+typedef vs_intrusive_ptr<VSMapStorage> PVSMapStorage;
 
-
-class AVSMap {
+// This one is referenced in avisynth.h.
+// For avoiding dual plugin name collisions, renamed VSMap->AVSMap
+struct AVSMap {
 private:
-  VSMapStorage* data;
-
-  void detach() {
-    if (!data->unique()) {
-      VSMapStorage* old = data;
-      data = new VSMapStorage(*data);
-      old->release();
-    }
-  }
+  PVSMapStorage data;
 public:
-  AVSMap() : data(new VSMapStorage()) {}
-
-  AVSMap(const AVSMap& map) : data(map.data) {
-    data->addRef();
-  }
-
-  AVSMap(AVSMap&& map) : data(map.data) {
-    map.data = new VSMapStorage();
-  }
-
-  ~AVSMap() {
-    data->release();
+  AVSMap(const AVSMap* map = nullptr) : data(map ? map->data : new VSMapStorage()) {
   }
 
   AVSMap& operator=(const AVSMap& map) {
-    data->release();
     data = map.data;
-    data->addRef();
     return *this;
   }
 
-  bool contains(const std::string& key) const {
-    return !!data->data.count(key);
+  bool detach() {
+    if (!data->unique()) {
+      data = new VSMapStorage(*data);
+      return true;
+    }
+    return false;
   }
 
-  FramePropVariant& at(const std::string& key) const {
-    return data->data.at(key);
-  }
-
-  FramePropVariant& operator[](const std::string& key) const {
-    // implicit creation is unwanted so make sure it doesn't happen by wrapping at() instead
-    return data->data.at(key);
-  }
-
-  FramePropVariant* find(const std::string& key) const {
+  VSArrayBase* find(const std::string& key) const {
     auto it = data->data.find(key);
-    return it == data->data.end() ? nullptr : &it->second;
+    return (it == data->data.end()) ? nullptr : it->second.get();
+  }
+
+  VSArrayBase* detach(const std::string& key) {
+    detach();
+    auto it = data->data.find(key);
+    if (it != data->data.end()) {
+      if (!it->second->unique())
+        it->second = it->second->copy();
+      return it->second.get();
+    }
+    return nullptr;
   }
 
   bool erase(const std::string& key) {
-    detach();
-    return data->data.erase(key) > 0;
+    auto it = data->data.find(key);
+    if (it != data->data.end()) {
+      if (detach())
+        it = data->data.find(key);
+      data->data.erase(it);
+      return true;
+    }
+    return false;
   }
 
-  bool insert(const std::string& key, FramePropVariant&& v) {
+  void insert(const std::string& key, VSArrayBase* val) {
     detach();
-    data->data.erase(key);
-    data->data.insert(std::make_pair(key, v));
-    return true;
+    auto it = data->data.find(key);
+    if (it != data->data.end()) {
+      it->second = val;
+    }
+    else {
+      data->data.insert(std::make_pair(key, val));
+    }
   }
 
-  // make append safe like erase and insert
-  // or else append from different threads to the same key (array) would be possible
-  bool append(const std::string& key, int64_t i) {
-    detach();
-    (data->data.find(key)->second).append(i);
-    return true;
-  }
+  void copy(const AVSMap* src) {
+    if (src == this)
+      return;
 
-  bool append(const std::string& key, double d) {
     detach();
-    (data->data.find(key)->second).append(d);
-    return true;
-  }
-
-  bool append(const std::string& key, const std::string &s) {
-    detach();
-    (data->data.find(key)->second).append(s);
-    return true;
-  }
-
-  bool append(const std::string& key,const  PClip& c) {
-    detach();
-    (data->data.find(key)->second).append(c);
-    return true;
-  }
-
-  bool append(const std::string& key, const PVideoFrame& f) {
-    detach();
-    (data->data.find(key)->second).append(f);
-    return true;
+    for (auto& iter : src->data->data)
+      data->data[iter.first] = iter.second;
   }
 
   size_t size() const {
@@ -196,27 +344,25 @@ public:
   }
 
   void clear() {
-    data->release();
-    data = new VSMapStorage();
+    if (data->unique())
+      data->clear();
+    else
+      data = new VSMapStorage();
   }
 
-  const char* key(int n) const {
-    if (n >= static_cast<int>(size()))
+  const char* key(size_t n) const {
+    if (n >= size())
       return nullptr;
     auto iter = data->data.cbegin();
     std::advance(iter, n);
     return iter->first.c_str();
   }
 
-  const std::map<std::string, FramePropVariant>& getStorage() const {
-    return data->data;
-  }
-
   void setError(const std::string& errMsg) {
     clear();
-    FramePropVariant v(FramePropVariant::vData);
-    v.append(errMsg);
-    insert("_Error", std::move(v));
+    VSDataArray* arr = new VSDataArray();
+    arr->push_back({ AVSPropDataTypeHint::PROPDATATYPEHINT_UTF8, errMsg }); // dtUtf8
+    data->data.insert(std::make_pair("_Error", arr));
     data->error = true;
   }
 
@@ -224,7 +370,14 @@ public:
     return data->error;
   }
 
-  const std::string& getErrorMessage() const {
-    return *((*this)["_Error"].getValue<VSMapData>(0).get());
+  const char* getErrorMessage() const {
+    if (data->error) {
+      return reinterpret_cast<VSDataArray*>(data->data.at("_Error").get())->at(0).data.c_str();
+    }
+    else {
+      return nullptr;
+    }
   }
+
+  //bool isV3Compatible() const noexcept; // VS special
 };

@@ -176,7 +176,7 @@ public:
   virtual int __stdcall GetVarInt(const char* name, int def) const = 0; // ex: int  __stdcall GetVar(const char* name, int def) const = 0;
   virtual double __stdcall GetVarDouble(const char* name, double def) const = 0; // ex: virtual double  __stdcall GetVar(const char* name, double def) const = 0;
   virtual const char* __stdcall GetVarString(const char* name, const char* def) const = 0; // ex: virtual const char* __stdcall GetVar(const char* name, const char* def) const = 0;
-  virtual int64_t __stdcall GetVarLong(const char* name, int64_t def) const = 0; // brand new in v8 - though no real int64 support yet
+  virtual int64_t __stdcall GetVarLong(const char* name, int64_t def) const = 0; // brand new in v8 - v11: real int64 support
 
   // Invoke functions renamed for keeping vtable order in IS
   // moved from IS2
@@ -188,7 +188,14 @@ public:
   virtual AVSValue __stdcall Invoke3(const AVSValue& implicit_last, const PFunction& func, const AVSValue args, const char* const* arg_names = 0) = 0;
   virtual bool __stdcall Invoke3Try(AVSValue* result, const AVSValue& implicit_last, const PFunction& func, const AVSValue args, const char* const* arg_names = 0) = 0;
 
-  virtual bool __stdcall MakePropertyWritable(PVideoFrame* pvf) = 0; // V9
+  // V9
+  virtual bool __stdcall MakePropertyWritable(PVideoFrame* pvf) = 0;
+
+  // V11
+  virtual int __stdcall propGetIntSaturated(const AVSMap* map, const char* key, int index, int* error) = 0;
+  virtual float __stdcall propGetFloatSaturated(const AVSMap* map, const char* key, int index, int* error) = 0;
+  virtual int __stdcall propGetDataTypeHint(const AVSMap* map, const char* key, int index, int* error) = 0; /* returns AVSPropDataTypeHint */
+  virtual int __stdcall propSetDataH(AVSMap* map, const char* key, const char* d, int length, int type, int append) = 0;
 
   // IScriptEnvironment2
   virtual bool __stdcall LoadPlugin(const char* filePath, bool throwOnError, AVSValue *result) = 0;
@@ -200,6 +207,7 @@ public:
   virtual void __stdcall SetFilterMTMode(const char* filter, MtMode mode, bool force) = 0;
   virtual IJobCompletion* __stdcall NewCompletion(size_t capacity) = 0;
   virtual void __stdcall ParallelJob(ThreadWorkerFuncPtr jobFunc, void* jobData, IJobCompletion* completion) = 0;
+
   // InternalEnvironment
   virtual char *__stdcall ListAutoloadDirs() = 0;
   virtual int __stdcall IncrImportDepth() = 0;
