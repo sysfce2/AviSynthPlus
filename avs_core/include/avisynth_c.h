@@ -1335,6 +1335,11 @@ AVSC_API(double, avs_get_var_double)(AVS_ScriptEnvironment*, const char* name, d
 AVSC_API(const char*, avs_get_var_string)(AVS_ScriptEnvironment*, const char* name, const char* def);
 AVSC_API(int64_t, avs_get_var_long)(AVS_ScriptEnvironment*, const char* name, int64_t def);
 
+// This is an example of dynamically loading Avisynth function addresses
+// instead of statically linked library. (Windows API)
+// In general: define AVSC_NO_DECLSPEC for only API prototypes, then manually load and get
+// function addresses from avisynth.dll/libavisynth.so
+
 #if defined(AVS_WINDOWS)
 // The following stuff is only relevant for Windows DLL handling; Linux does it completely differently.
 #ifdef AVSC_NO_DECLSPEC
@@ -1591,11 +1596,13 @@ AVSC_INLINE AVS_Library * avs_load_library() {
 
 #define __AVSC_STRINGIFY(x) #x
 #define AVSC_STRINGIFY(x) __AVSC_STRINGIFY(x)
-#define AVSC_LOAD_FUNC(name) {\
+#define AVSC_DO_LOAD_FUNC(name, allow_missing) {\
   library->name = (name##_func) GetProcAddress(library->handle, AVSC_STRINGIFY(name));\
-  if (library->name == NULL)\
+  if (!allow_missing && library->name == NULL)\
     goto fail;\
 }
+#define AVSC_LOAD_FUNC(name) AVSC_DO_LOAD_FUNC(name, 0)
+#define AVSC_LOAD_FUNC_OPT(name) AVSC_DO_LOAD_FUNC(name, 1)
 
 #ifdef AVS26_FALLBACK_SIMULATION
 // When an API function is not loadable, let's try a replacement
@@ -1712,77 +1719,93 @@ avs_bits_per_component    constant 8 (8 bits/component)
   AVSC_LOAD_FUNC_FALLBACK_SIMULATED(avs_bits_per_component, avs_bits_per_component_fallback);
 #else
   // Avisynth+ specific
-  AVSC_LOAD_FUNC(avs_is_rgb48);
-  AVSC_LOAD_FUNC(avs_is_rgb64);
-  AVSC_LOAD_FUNC(avs_is_444);
-  AVSC_LOAD_FUNC(avs_is_422);
-  AVSC_LOAD_FUNC(avs_is_420);
-  AVSC_LOAD_FUNC(avs_is_y);
-  AVSC_LOAD_FUNC(avs_is_yuva);
-  AVSC_LOAD_FUNC(avs_is_planar_rgb);
-  AVSC_LOAD_FUNC(avs_is_planar_rgba);
-  AVSC_LOAD_FUNC(avs_num_components);
-  AVSC_LOAD_FUNC(avs_component_size);
-  AVSC_LOAD_FUNC(avs_bits_per_component);
+  AVSC_LOAD_FUNC_OPT(avs_is_rgb48);
+  AVSC_LOAD_FUNC_OPT(avs_is_rgb64);
+  AVSC_LOAD_FUNC_OPT(avs_is_444);
+  AVSC_LOAD_FUNC_OPT(avs_is_422);
+  AVSC_LOAD_FUNC_OPT(avs_is_420);
+  AVSC_LOAD_FUNC_OPT(avs_is_y);
+  AVSC_LOAD_FUNC_OPT(avs_is_yuva);
+  AVSC_LOAD_FUNC_OPT(avs_is_planar_rgb);
+  AVSC_LOAD_FUNC_OPT(avs_is_planar_rgba);
+  AVSC_LOAD_FUNC_OPT(avs_num_components);
+  AVSC_LOAD_FUNC_OPT(avs_component_size);
+  AVSC_LOAD_FUNC_OPT(avs_bits_per_component);
 #endif
   // Avisynth+ interface V8, no backward compatible simulation
-  AVSC_LOAD_FUNC(avs_subframe_planar_a);
+  AVSC_LOAD_FUNC_OPT(avs_subframe_planar_a);
   // frame properties
-  AVSC_LOAD_FUNC(avs_copy_frame_props);
-  AVSC_LOAD_FUNC(avs_get_frame_props_ro);
-  AVSC_LOAD_FUNC(avs_get_frame_props_rw);
-  AVSC_LOAD_FUNC(avs_prop_num_keys);
-  AVSC_LOAD_FUNC(avs_prop_get_key);
-  AVSC_LOAD_FUNC(avs_prop_num_elements);
-  AVSC_LOAD_FUNC(avs_prop_get_type);
-  AVSC_LOAD_FUNC(avs_prop_get_int);
-  AVSC_LOAD_FUNC(avs_prop_get_float);
-  AVSC_LOAD_FUNC(avs_prop_get_data);
-  AVSC_LOAD_FUNC(avs_prop_get_data_size);
-  AVSC_LOAD_FUNC(avs_prop_get_clip);
-  AVSC_LOAD_FUNC(avs_prop_get_frame);
-  AVSC_LOAD_FUNC(avs_prop_delete_key);
-  AVSC_LOAD_FUNC(avs_prop_set_int);
-  AVSC_LOAD_FUNC(avs_prop_set_float);
-  AVSC_LOAD_FUNC(avs_prop_set_data);
-  AVSC_LOAD_FUNC(avs_prop_set_clip);
-  AVSC_LOAD_FUNC(avs_prop_set_frame);
+  AVSC_LOAD_FUNC_OPT(avs_copy_frame_props);
+  AVSC_LOAD_FUNC_OPT(avs_get_frame_props_ro);
+  AVSC_LOAD_FUNC_OPT(avs_get_frame_props_rw);
+  AVSC_LOAD_FUNC_OPT(avs_prop_num_keys);
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_key);
+  AVSC_LOAD_FUNC_OPT(avs_prop_num_elements);
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_type);
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_int);
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_float);
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_data);
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_data_size);
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_clip);
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_frame);
+  AVSC_LOAD_FUNC_OPT(avs_prop_delete_key);
+  AVSC_LOAD_FUNC_OPT(avs_prop_set_int);
+  AVSC_LOAD_FUNC_OPT(avs_prop_set_float);
+  AVSC_LOAD_FUNC_OPT(avs_prop_set_data);
+  AVSC_LOAD_FUNC_OPT(avs_prop_set_clip);
+  AVSC_LOAD_FUNC_OPT(avs_prop_set_frame);
 
-  AVSC_LOAD_FUNC(avs_prop_get_int_array);
-  AVSC_LOAD_FUNC(avs_prop_get_float_array);
-  AVSC_LOAD_FUNC(avs_prop_set_int_array);
-  AVSC_LOAD_FUNC(avs_prop_set_float_array);
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_int_array);
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_float_array);
+  AVSC_LOAD_FUNC_OPT(avs_prop_set_int_array);
+  AVSC_LOAD_FUNC_OPT(avs_prop_set_float_array);
 
-  AVSC_LOAD_FUNC(avs_clear_map);
+  AVSC_LOAD_FUNC_OPT(avs_clear_map);
 
   // NewVideoFrame with frame properties
-  AVSC_LOAD_FUNC(avs_new_video_frame_p);
-  AVSC_LOAD_FUNC(avs_new_video_frame_p_a);
+  AVSC_LOAD_FUNC_OPT(avs_new_video_frame_p);
+  AVSC_LOAD_FUNC_OPT(avs_new_video_frame_p_a);
 
-  AVSC_LOAD_FUNC(avs_get_env_property);
+  AVSC_LOAD_FUNC_OPT(avs_get_env_property);
 
-  AVSC_LOAD_FUNC(avs_get_var_try);
-  AVSC_LOAD_FUNC(avs_get_var_bool);
-  AVSC_LOAD_FUNC(avs_get_var_int);
-  AVSC_LOAD_FUNC(avs_get_var_double);
-  AVSC_LOAD_FUNC(avs_get_var_string);
-  AVSC_LOAD_FUNC(avs_get_var_long);
+  AVSC_LOAD_FUNC_OPT(avs_get_var_try);
+  AVSC_LOAD_FUNC_OPT(avs_get_var_bool);
+  AVSC_LOAD_FUNC_OPT(avs_get_var_int);
+  AVSC_LOAD_FUNC_OPT(avs_get_var_double);
+  AVSC_LOAD_FUNC_OPT(avs_get_var_string);
+  AVSC_LOAD_FUNC_OPT(avs_get_var_long);
 
-  AVSC_LOAD_FUNC(avs_pool_allocate);
-  AVSC_LOAD_FUNC(avs_pool_free);
+  AVSC_LOAD_FUNC_OPT(avs_pool_allocate);
+  AVSC_LOAD_FUNC_OPT(avs_pool_free);
 
   // V9
-  AVSC_LOAD_FUNC(avs_make_property_writable);
-  AVSC_LOAD_FUNC(avs_is_property_writable);
+  AVSC_LOAD_FUNC_OPT(avs_make_property_writable);
+  AVSC_LOAD_FUNC_OPT(avs_is_property_writable);
 
   // V10
-  AVSC_LOAD_FUNC(avs_video_frame_get_pixel_type);
-  AVSC_LOAD_FUNC(avs_video_frame_amend_pixel_type);
+  AVSC_LOAD_FUNC_OPT(avs_video_frame_get_pixel_type);
+  AVSC_LOAD_FUNC_OPT(avs_video_frame_amend_pixel_type);
+  AVSC_LOAD_FUNC_OPT(avs_is_channel_mask_known);
+  AVSC_LOAD_FUNC_OPT(avs_set_channel_mask);
+  AVSC_LOAD_FUNC_OPT(avs_get_channel_mask);
 
-  // V10
-  AVSC_LOAD_FUNC(avs_is_channel_mask_known);
-  AVSC_LOAD_FUNC(avs_set_channel_mask);
-  AVSC_LOAD_FUNC(avs_get_channel_mask);
+  // V11
+  // setters for all types (avs_set_to_clip already existed)
+  AVSC_LOAD_FUNC_OPT(avs_set_to_error);
+  AVSC_LOAD_FUNC_OPT(avs_set_to_bool);
+  AVSC_LOAD_FUNC_OPT(avs_set_to_int);
+  AVSC_LOAD_FUNC_OPT(avs_set_to_string);
+  AVSC_LOAD_FUNC_OPT(avs_set_to_float);
+  AVSC_LOAD_FUNC_OPT(avs_set_to_long);
+  AVSC_LOAD_FUNC_OPT(avs_set_to_double);
+  AVSC_LOAD_FUNC_OPT(avs_set_to_array_dyn);
+  // these have inline equivalents as well
+  AVSC_LOAD_FUNC_OPT(avs_api_as_error);
+  AVSC_LOAD_FUNC_OPT(avs_api_as_bool);
+  AVSC_LOAD_FUNC_OPT(avs_api_as_int);
+  AVSC_LOAD_FUNC_OPT(avs_api_as_string);
+  AVSC_LOAD_FUNC_OPT(avs_api_as_float);
+  AVSC_LOAD_FUNC_OPT(avs_api_as_long);
   // frame property
   AVSC_LOAD_FUNC_OPT(avs_prop_get_int_saturated);
   AVSC_LOAD_FUNC_OPT(avs_prop_get_float_saturated);
@@ -1791,7 +1814,9 @@ avs_bits_per_component    constant 8 (8 bits/component)
 
 #undef __AVSC_STRINGIFY
 #undef AVSC_STRINGIFY
+#undef AVSC_DO_LOAD_FUNC
 #undef AVSC_LOAD_FUNC
+#undef AVSC_LOAD_FUNC_OPT
 #undef AVSC_LOAD_FUNC_FALLBACK
 #undef AVSC_LOAD_FUNC_FALLBACK_SIMULATED
 
