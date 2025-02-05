@@ -280,14 +280,14 @@ void matrix_parse_merge_with_props_def(bool rgb_in, bool rgb_out, const char* ma
   if (props) {
     // _ColorRange exists for RGB as well
     if (env->propNumElements(props, "_ColorRange") > 0) {
-      _ColorRange_In = (int)env->propGetInt(props, "_ColorRange", 0, nullptr); // fixme: range check
+      _ColorRange_In = (int)env->propGetIntSaturated(props, "_ColorRange", 0, nullptr);
       _ColorRange_Default = _ColorRange_In;
       if (rgb_in && rgb_out) // rgb in and out: keep input
         _Default_ColorRange_Out = _ColorRange_In;
     }
     if (!rgb_in) {
       if (env->propNumElements(props, "_Matrix") > 0) {
-        int tmp_matrix = (int)env->propGetInt(props, "_Matrix", 0, nullptr); // fixme: range check
+        int tmp_matrix = (int)env->propGetIntSaturated(props, "_Matrix", 0, nullptr);
         if (tmp_matrix != Matrix_e::AVS_MATRIX_UNSPECIFIED)
           _Matrix_Default = tmp_matrix;
       }
@@ -382,7 +382,7 @@ void chromaloc_parse_merge_with_props(VideoInfo& vi, const char* chromaloc_name,
   if (props) {
     if (vi.Is420() || vi.Is422() || vi.IsYV411()) { // yes, YV411 can also have valid _ChromaLocation, if 'left'-ish one is given
       if (env->propNumElements(props, "_ChromaLocation") > 0) {
-        _ChromaLocation_Default = (int)env->propGetInt(props, "_ChromaLocation", 0, nullptr); // fixme: range check
+        _ChromaLocation_Default = (int)env->propGetIntSaturated(props, "_ChromaLocation", 0, nullptr);
       }
     }
     else {

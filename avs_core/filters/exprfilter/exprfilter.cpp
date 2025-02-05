@@ -4336,13 +4336,14 @@ void Exprfilter::preReadFrameProps(int plane, std::vector<PVideoFrame>& src, ISc
 
     int error;
     // only float and int are valid
+    // cast to float: Expr supports 32 bit float, no double, 
     if (res == 'i') {
       int64_t result = env->propGetInt(avsmap, fpname.c_str(), 0, &error);
       if (!error) varToStore = static_cast<float>(result);
     }
     else if (res == 'f') {
-      double result = env->propGetFloat(avsmap, fpname.c_str(), 0, &error);
-      if (!error) varToStore = static_cast<float>(result);
+      float result = env->propGetFloatSaturated(avsmap, fpname.c_str(), 0, &error);
+      if (!error) varToStore = result;
     }
 
     framePropToRead.value = varToStore;

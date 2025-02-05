@@ -1258,7 +1258,7 @@ AVSValue __cdecl ConvertBits::Create(AVSValue args, void* user_data, IScriptEnvi
     auto frame0 = clip->GetFrame(0, env);
     const AVSMap* props = env->getFramePropsRO(frame0);
     if (env->propNumElements(props, "_ColorRange") > 0) {
-      ColorRange_src = (int)env->propGetInt(props, "_ColorRange", 0, nullptr); // fixme: range check
+      ColorRange_src = (int)env->propGetIntSaturated(props, "_ColorRange", 0, nullptr);
     }
     else {
       // no param, no frame property -> rgb is full others are limited
