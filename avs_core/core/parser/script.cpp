@@ -705,7 +705,12 @@ AVSValue ScriptFileUtf8(AVSValue args, void*, IScriptEnvironment* env) { return 
 AVSValue ScriptDirUtf8(AVSValue args, void*, IScriptEnvironment* env) { return env->GetVarDef("$ScriptDirUtf8$"); }
 AVSValue SetWorkingDir(AVSValue args, void*, IScriptEnvironment* env) { return env->SetWorkingDir(args[0].AsString()); }
 
-AVSValue Muldiv(AVSValue args, void*, IScriptEnvironment* ) { return int(MulDiv(args[0].AsInt(), args[1].AsInt(), args[2].AsInt())); }
+AVSValue Muldiv(AVSValue args, void*, IScriptEnvironment* ) {
+  // designed for 32 bits, no change other than read int64 parameters, 
+  // though they are caster back immediately to int
+  auto result = MulDiv((int)args[0].AsLong(), (int)args[1].AsLong(), (int)args[2].AsLong());
+  return (int)result;
+}
 
 // v11: up to int64 range
 AVSValue Floor(AVSValue args, void*, IScriptEnvironment* ) { 
