@@ -287,8 +287,9 @@ What's new in the api V8
 
 - C API (AVISYNTH_INTERFACE_VERSION = 8):
         - mostly the same functions as provided in C++ interface.
-          naming convention is kept. E.g. propSetFloat in C++ is prop_set_float in C
-        - Important note: frame property access in V8 is broken. Safely available since V8.1
+          Naming convention is kept. E.g. propSetFloat in C++ is prop_set_float in C
+        - Important note: frame property access in V8 is broken. Safely available since V8.1.
+          or check simply for V9 like ffmpeg does.
 
 - C API (AVISYNTH_INTERFACE_VERSION = 8, AVISYNTH_INTERFACE_BUGFIX = 1):
         - working frame property access (see v9 comments for fixes)
@@ -316,6 +317,7 @@ What's new in the API V10
         - New: :ref:`VideoFrame <cplusplus_videoframe>` (c++) and AVS_VideoFrame (c) now have its own pixel_type field. Before, there was no reliable way of knowing it on a frame from :ref:`propGetFrame <cplusplus_propgetframe>`.
         - New: :ref:`VideoFrame::GetPixelType <cplusplus_getpixeltype>` (avs_video_frame_get_pixel_type) returns the video format of a VideoFrame, ideally kept in sync with VideoInfo::pixel_type.
         - New: :ref:`VideoFrame::AmendPixelType <cplusplus_amendpixeltype>` (avs_video_frame_amend_pixel_type) changes the pixel_type field of a VideoFrame (special cases)
+
           C interface equivalents: avs_video_frame_get_pixel_type and avs_video_frame_amend_pixel_type
         - New: :ref:`AVSValue::GetType <cplusplus_avsvaluegettype>` returns the underlying type directly
         - Added ``AvsValueType`` enum for the above case to avisynth.h
@@ -325,6 +327,80 @@ What's new in the API V10
         - New: :ref:`VideoInfo::GetChannelMask <videoinfo_getchannelmask>` (c++) and 'avs_get_channel_mask' (c) Audio channel layout support. returns the channel mask stored in VideoInfo struct
         - New: :ref:`VideoInfo::SetChannelMask <videoinfo_setchannelmask>` (c++) and 'avs_set_channel_mask' Audio channel layout support. sets the validity and the layout mask value into VideoInfo
         - New: :ref:`VideoInfo::IsChannelMaskKnown <videoinfo_ischannelmaskknown>` (c++) and 'avs_is_channel_mask_known' (c) Audio channel layout support. Returns if clip has valid channel mask in its VideoInfo
+
+.. _api_v11_whats_new:
+
+What's new in the API V11
+-------------------------
+
+- C and C++ API (AVISYNTH_INTERFACE_VERSION = 11):
+        - General: support 64 bit data types in ``AVSValue``/``AVS_Value``: ``double`` and ``long`` (``int64_t``), also for 32 bit Avisynth!
+        - C++ interface
+        
+          - changed: ``AVSValue::IsFloat`` true for any 32/64 bit floating point or integer types
+          - changed: ``AVSValue::IsInt`` true for any 32/64 bit integer types
+          - new: ``AVSValue::IsFloatf`` : true is AVSValue is 32 bit float or 32/64 bit integer type; same as former IsFloat
+          - new: ``AVSValue::IsLong`` : returns true only if AVSValue is stricly 64 bit integer
+          - new: ``AVSValue::AsLong`` : returns int64_t
+          - new: ``AVSValue::AsLong(int64_t def)``
+          - No change: since AsFloat return type was double --> no change, it retrieves double values as well
+          - new AVSValue constructors for 64 bit types
+          - new: ``IScriptInterface::propGetIntSaturated`` and ``IScriptInterface::propGetFloatSaturated``
+          - new: ``IScriptInterface::propGetDataTypeHint`` and ``IScriptInterface::propSetDataH``
+          - New enum ``AVSPropDataTypeHint``: ``DATATYPEHINT_UNKNOWN``, ``DATATYPEHINT_BINARY`` and ``DATATYPEHINT_UTF8``.
+          
+        - C interface
+
+          - New getter API calls: ``avs_api_as_long``, ``avs_api_as_int``, ``avs_api_as_float``
+            and the rest: ``avs_api_as_bool``, ``avs_api_as_string``, ``avs_api_as_error``
+
+          - Modified INLINE typecheck and getter helpers for 64-bit data type awareness:
+            
+            * ``avs_is_int``, ``avs_is_float``
+            * ``avs_as_int``, ``avs_as_float``
+          
+          - New INLINE getter helpers for 64-bit data (prefer using API calls):
+
+            * ``avs_as_long``, ``avs_as_float``
+          - New setter API calls: 
+            
+            * ``avs_set_to_double``, ``avs_set_to_long``
+            * ``avs_set_to_array_dyn`` (deep arrays, deep copy, like in AviSynth+)
+              (Note: avs_release_value and avs_copy_value are required for destruct or copy arrays)
+          - API version of existing INLINE value setters (``new_value_xxx``) for the rest value types, to make the world round:
+            
+            * ``avs_set_to_error``, ``avs_set_to_bool``, ``avs_set_to_int``, ``avs_set_to_float``, ``avs_set_to_string``
+          - New optional plugin entry point: ``avisynth_c_plugin_init2``
+            
+            * A C plugin signals to AviSynth that it is V11 interface (64-bit data) ready by implementing ``avisynth_c_plugin_init2`` as well.
+            * ``avisynth_c_plugin_init2`` has the same signature as ``avisynth_c_plugin_init`` and can
+              simply call forward to the old ``avisynth_c_plugin_init`` entry point. Both entry points can be implemented; 
+              AviSynth+ will first check ``avisynth_c_plugin_init2``, then ``avisynth_c_plugin_init``.
+              Don't forget to add a new 
+              ::
+              
+                avisynth_c_plugin_init2@4 = _avisynth_c_plugin_init2@4
+                
+              line to your existing .def file on Win32.
+              
+          - New ``avs_prop_get_int_saturated`` and ``avs_prop_get_float_saturated``
+          - New ``avs_prop_get_data_type_hint`` and ``avs_prop_set_data_h``
+          - New constants AVS_PROPDATATYPEHINT_UNKNOWN, AVS_PROPDATATYPEHINT_BINARY and AVS_PROPDATATYPEHINT_UTF8
+
+          - Deprecated inline helper functions. 
+            
+            * ``avs_get_pitch`` => ``avs_get_pitch_p(p, AVS_DEFAULT_PLANE)``
+            * ``avs_get_row_size`` => ``avs_get_row_size_p(p, AVS_DEFAULT_PLANE``)
+            * ``avs_get_height`` => ``avs_get_height_p(p, AVS_DEFAULT_PLANE)``
+            * ``avs_get_read_ptr`` => ``avs_get_read_ptr_p(p, AVS_DEFAULT_PLANE)``
+            * ``avs_get_write_ptr`` => ``avs_get_write_ptr_p(p, AVS_DEFAULT_PLANE)``
+            * ``avs_release_frame`` => ``avs_release_video_frame``
+            * ``avs_copy_frame`` => ``avs_copy_video_frame``
+            * Use ``#define AVSC_ALLOW_DEPRECATED`` before including ``avisynth_c.h`` if they still need for you, 
+              but better fix your code: use the recommended replacements.
+              
+          - Add missing ``AVS_MT_xxxx mode`` constants to ``avisynth_c.h`` (similar to c++ ``avisynth.h`` header ``enum MtMode``)
+
 
 Some history
 ------------
@@ -353,12 +429,12 @@ License terms
 
 Note: Avisynth Filter SDK parts are under specific :doc:`SDK license <SDKLicense>` terms.
 
-$Date: 2023/03/22 20:23:11 $
+$Date: 2025/02/03 11:11:11 $
 
 Latest online Avisynth+ version is at https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html
 This one is maintained properly.
 
-Latest online mediaWiki version is at http://avisynth.nl/Filter_SDK
+Latest online mediaWiki version is at http://avisynth.nl/index.php/Filter_SDK
 
 .. _[SDK]: http://virtualdub.org/filtersdk
 .. _[function pointers]: http://function-pointer.org/
