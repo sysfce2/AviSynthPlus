@@ -41,6 +41,8 @@
 #include <vector>
 #include <fstream>
 #include <memory>
+#include <limits>
+#include <bitset>
 
 #ifdef AVS_WINDOWS
 #include <io.h>
@@ -114,6 +116,11 @@ extern const AVSFunction Script_functions[] = {
   { "bitnot",   BUILTIN_FUNC_PREFIX, "i",BitNot},
   { "bitor",    BUILTIN_FUNC_PREFIX, "ii",BitOr},
   { "bitxor",   BUILTIN_FUNC_PREFIX, "ii",BitXor},
+  // v11
+  { "bitand64",   BUILTIN_FUNC_PREFIX, "ii",BitAnd64},
+  { "bitnot64",   BUILTIN_FUNC_PREFIX, "i",BitNot64},
+  { "bitor64",    BUILTIN_FUNC_PREFIX, "ii",BitOr64},
+  { "bitxor64",   BUILTIN_FUNC_PREFIX, "ii",BitXor64},
 
   { "bitlshift",  BUILTIN_FUNC_PREFIX, "ii",BitLShift},
   { "bitlshiftl", BUILTIN_FUNC_PREFIX, "ii",BitLShift},
@@ -122,6 +129,9 @@ extern const AVSFunction Script_functions[] = {
   { "bitlshifts", BUILTIN_FUNC_PREFIX, "ii",BitLShift},
   { "bitshl",     BUILTIN_FUNC_PREFIX, "ii",BitLShift},
   { "bitsal",     BUILTIN_FUNC_PREFIX, "ii",BitLShift},
+  // v11 omg under how many names do the same?! keep only two
+  { "bitshl64",     BUILTIN_FUNC_PREFIX, "ii",BitLShift64},
+  { "bitsal64",     BUILTIN_FUNC_PREFIX, "ii",BitLShift64},
 
   { "bitrshiftl", BUILTIN_FUNC_PREFIX, "ii",BitRShiftL},
   { "bitrshifta", BUILTIN_FUNC_PREFIX, "ii",BitRShiftA},
@@ -129,11 +139,17 @@ extern const AVSFunction Script_functions[] = {
   { "bitrshifts", BUILTIN_FUNC_PREFIX, "ii",BitRShiftA},
   { "bitshr",     BUILTIN_FUNC_PREFIX, "ii",BitRShiftL},
   { "bitsar",     BUILTIN_FUNC_PREFIX, "ii",BitRShiftA},
+  // v11
+  { "bitshr64",     BUILTIN_FUNC_PREFIX, "ii",BitRShift64L},
+  { "bitsar64",     BUILTIN_FUNC_PREFIX, "ii",BitRShift64A},
 
   { "bitlrotate", BUILTIN_FUNC_PREFIX, "ii",BitRotateL},
   { "bitrrotate", BUILTIN_FUNC_PREFIX, "ii",BitRotateR},
   { "bitrol",     BUILTIN_FUNC_PREFIX, "ii",BitRotateL},
   { "bitror",     BUILTIN_FUNC_PREFIX, "ii",BitRotateR},
+  // v11
+  { "bitrol64",     BUILTIN_FUNC_PREFIX, "ii",BitRotate64L},
+  { "bitror64",     BUILTIN_FUNC_PREFIX, "ii",BitRotate64R},
 
   { "bitchg",    BUILTIN_FUNC_PREFIX, "ii",BitChg},
   { "bitchange", BUILTIN_FUNC_PREFIX, "ii",BitChg},
@@ -143,6 +159,12 @@ extern const AVSFunction Script_functions[] = {
   { "bittst",    BUILTIN_FUNC_PREFIX, "ii",BitTst},
   { "bittest",   BUILTIN_FUNC_PREFIX, "ii",BitTst},
   { "bitsetcount", BUILTIN_FUNC_PREFIX, "i+",BitSetCount }, // avs+ 180221
+  // v11
+  { "bitchg64",    BUILTIN_FUNC_PREFIX, "ii",BitChg64},
+  { "bitclr64",    BUILTIN_FUNC_PREFIX, "ii",BitClr64},
+  { "bitset64",    BUILTIN_FUNC_PREFIX, "ii",BitSet64},
+  { "bittst64",    BUILTIN_FUNC_PREFIX, "ii",BitTst64},
+  { "bitsetcount64", BUILTIN_FUNC_PREFIX, "i+",BitSetCount64 },
 
   { "lcase",    BUILTIN_FUNC_PREFIX, "s",LCase},
   { "ucase",    BUILTIN_FUNC_PREFIX, "s",UCase},
@@ -696,19 +718,35 @@ AVSValue Tau(AVSValue args, void* , IScriptEnvironment* ) { return 6.28318530717
 #endif
 AVSValue Sign(AVSValue args, void*, IScriptEnvironment* ) { return args[0].AsFloat()==0 ? 0 : args[0].AsFloat() > 0 ? 1 : -1; }
 
+// v11: These bitwise functions are strictly for 32 bit, if 64 bit versions are implemented they will have different names
+
 AVSValue BitAnd(AVSValue args, void*, IScriptEnvironment* ) { return args[0].AsInt() & args[1].AsInt(); }
 AVSValue BitNot(AVSValue args, void*, IScriptEnvironment* ) { return ~args[0].AsInt(); }
 AVSValue BitOr(AVSValue args, void*, IScriptEnvironment* )  { return args[0].AsInt() | args[1].AsInt(); }
 AVSValue BitXor(AVSValue args, void*, IScriptEnvironment* ) { return args[0].AsInt() ^ args[1].AsInt(); }
 
+AVSValue BitAnd64(AVSValue args, void*, IScriptEnvironment*) { return args[0].AsLong() & args[1].AsLong(); }
+AVSValue BitNot64(AVSValue args, void*, IScriptEnvironment*) { return ~args[0].AsLong(); }
+AVSValue BitOr64(AVSValue args, void*, IScriptEnvironment*) { return args[0].AsLong() | args[1].AsLong(); }
+AVSValue BitXor64(AVSValue args, void*, IScriptEnvironment*) { return args[0].AsLong() ^ args[1].AsLong(); }
+
 AVSValue BitLShift(AVSValue args, void*, IScriptEnvironment* ) { return args[0].AsInt() << args[1].AsInt(); }
 AVSValue BitRShiftL(AVSValue args, void*, IScriptEnvironment* ) { return int(unsigned(args[0].AsInt()) >> unsigned(args[1].AsInt())); }
 AVSValue BitRShiftA(AVSValue args, void*, IScriptEnvironment* ) { return args[0].AsInt() >> args[1].AsInt(); }
+
+AVSValue BitLShift64(AVSValue args, void*, IScriptEnvironment*) { return args[0].AsLong() << args[1].AsInt(); }
+AVSValue BitRShift64L(AVSValue args, void*, IScriptEnvironment*) { return int64_t(uint64_t(args[0].AsLong()) >> unsigned(args[1].AsInt())); }
+AVSValue BitRShift64A(AVSValue args, void*, IScriptEnvironment*) { return args[0].AsLong() >> args[1].AsInt(); }
 
 static unsigned int a_rol(unsigned int value, int shift) {
   if ((shift &= sizeof(value)*8 - 1) == 0)
       return value;
   return (value << shift) | (value >> (sizeof(value)*8 - shift));
+}
+static uint64_t a_rol(uint64_t value, int shift) {
+  if ((shift &= sizeof(value) * 8 - 1) == 0)
+    return value;
+  return (value << shift) | (value >> (sizeof(value) * 8 - shift));
 }
 
 static unsigned int a_ror(unsigned int value, int shift) {
@@ -716,9 +754,18 @@ static unsigned int a_ror(unsigned int value, int shift) {
       return value;
   return (value >> shift) | (value << (sizeof(value)*8 - shift));
 }
+static uint64_t a_ror(uint64_t value, int shift) {
+  if ((shift &= sizeof(value) * 8 - 1) == 0)
+    return value;
+  return (value >> shift) | (value << (sizeof(value) * 8 - shift));
+}
 
 static int a_btc(int value, int bit) {
   value ^= 1 << bit;
+  return value;
+}
+static int64_t a_btc(int64_t value, int bit) {
+  value ^= static_cast<int64_t>(1) << bit;
   return value;
 }
 
@@ -726,23 +773,40 @@ static int a_btr(int value, int bit) {
   value &= ~(1 << bit);
   return value;
 }
+static int64_t a_btr(int64_t value, int bit) {
+  value &= ~(static_cast<int64_t>(1) << bit);
+  return value;
+}
 
 static int a_bts(int value, int bit) {
   value |= (1 << bit);
   return value;
 }
+static int64_t a_bts(int64_t value, int bit) {
+  value |= (static_cast<int64_t>(1) << bit);
+  return value;
+}
 
-static bool a_bt (int value, int bit) {
+static bool a_bt(int value, int bit) {
   return (value & (1 << bit)) ? true : false;
+}
+static bool a_bt(int64_t value, int bit) {
+  return (value & (static_cast<int64_t>(1)<< bit)) ? true : false;
 }
 
 AVSValue BitRotateL(AVSValue args, void*, IScriptEnvironment* ) { return (int)a_rol((unsigned int)args[0].AsInt(), args[1].AsInt()); }
 AVSValue BitRotateR(AVSValue args, void*, IScriptEnvironment* ) { return (int)a_ror((unsigned int)args[0].AsInt(), args[1].AsInt()); }
+AVSValue BitRotate64L(AVSValue args, void*, IScriptEnvironment*) { return (int64_t)a_rol((uint64_t)args[0].AsLong(), args[1].AsInt()); }
+AVSValue BitRotate64R(AVSValue args, void*, IScriptEnvironment*) { return (int64_t)a_ror((uint64_t)args[0].AsLong(), args[1].AsInt()); }
 
 AVSValue BitChg(AVSValue args, void*, IScriptEnvironment* ) { return a_btc(args[0].AsInt(), args[1].AsInt()); }
 AVSValue BitClr(AVSValue args, void*, IScriptEnvironment* ) { return a_btr(args[0].AsInt(), args[1].AsInt()); }
 AVSValue BitSet(AVSValue args, void*, IScriptEnvironment* ) { return a_bts(args[0].AsInt(), args[1].AsInt()); }
 AVSValue BitTst(AVSValue args, void*, IScriptEnvironment* ) { return a_bt (args[0].AsInt(), args[1].AsInt()); }
+AVSValue BitChg64(AVSValue args, void*, IScriptEnvironment*) { return a_btc(args[0].AsLong(), args[1].AsInt()); }
+AVSValue BitClr64(AVSValue args, void*, IScriptEnvironment*) { return a_btr(args[0].AsLong(), args[1].AsInt()); }
+AVSValue BitSet64(AVSValue args, void*, IScriptEnvironment*) { return a_bts(args[0].AsLong(), args[1].AsInt()); }
+AVSValue BitTst64(AVSValue args, void*, IScriptEnvironment*) { return a_bt(args[0].AsLong(), args[1].AsInt()); }
 
 static int numberOfSetBits(uint32_t i)
 {
@@ -751,13 +815,27 @@ static int numberOfSetBits(uint32_t i)
   return (((i + (i >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
 }
 
+static int numberOfSetBits64(uint64_t i) {
+  return static_cast<int>(std::bitset<64>(i).count());
+}
+
 AVSValue BitSetCount(AVSValue args, void*, IScriptEnvironment*) {
   if (args[0].IsInt())
-    return numberOfSetBits(args[0].AsInt());
-
+    return numberOfSetBits(static_cast<uint32_t>(args[0].AsInt()));
+  // multiple integer parameters
   int count = 0;
   for (int i = 0; i < args[0].ArraySize(); i++)
-    count += numberOfSetBits(args[0][i].AsInt());
+    count += numberOfSetBits(static_cast<uint32_t>(args[0][i].AsInt()));
+  return count;
+}
+
+AVSValue BitSetCount64(AVSValue args, void*, IScriptEnvironment*) {
+  if (args[0].IsInt())
+    return numberOfSetBits64(static_cast<uint64_t>(args[0].AsLong()));
+  // multiple integer parameters
+  int count = 0;
+  for (int i = 0; i < args[0].ArraySize(); i++)
+    count += numberOfSetBits64(static_cast<uint64_t>(args[0][i].AsLong()));
   return count;
 }
 

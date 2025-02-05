@@ -187,19 +187,33 @@ AVSValue BitAnd(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue BitNot(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue BitOr(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue BitXor(AVSValue args, void*, IScriptEnvironment* env);
+AVSValue BitAnd64(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue BitNot64(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue BitOr64(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue BitXor64(AVSValue args, void*, IScriptEnvironment* env); // v11
 
 AVSValue BitLShift(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue BitRShiftL(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue BitRShiftA(AVSValue args, void*, IScriptEnvironment* env);
+AVSValue BitLShift64(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue BitRShift64L(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue BitRShift64A(AVSValue args, void*, IScriptEnvironment* env); // v11
 
 AVSValue BitRotateL(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue BitRotateR(AVSValue args, void*, IScriptEnvironment* env);
+AVSValue BitRotate64L(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue BitRotate64R(AVSValue args, void*, IScriptEnvironment* env); // v11
 
 AVSValue BitChg(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue BitClr(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue BitSet(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue BitTst(AVSValue args, void*, IScriptEnvironment* env);
+AVSValue BitChg64(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue BitClr64(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue BitSet64(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue BitTst64(AVSValue args, void*, IScriptEnvironment* env); // v11
 AVSValue BitSetCount(AVSValue args, void*, IScriptEnvironment* env);
+AVSValue BitSetCount64(AVSValue args, void*, IScriptEnvironment* env); // v11
 
 AVSValue UCase(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue LCase(AVSValue args, void*, IScriptEnvironment* env);
