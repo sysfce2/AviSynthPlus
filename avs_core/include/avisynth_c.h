@@ -368,6 +368,7 @@ enum {  // SUBTYPES
 };
 
 enum {
+  AVS_CACHE_25_NOTHING_26_UNUSED = 0,
   // New 2.6 explicitly defined cache hints.
   AVS_CACHE_NOTHING = 10, // Do not cache video.
   AVS_CACHE_WINDOW = 11, // Hard protect up to X frames within a range of X from the current frame N.
@@ -468,8 +469,10 @@ enum {
 
 // AVSGetPropErrors for avs_prop_get_...
 enum {
+  AVS_GETPROPERROR_SUCCESS = 0,
   AVS_GETPROPERROR_UNSET = 1,
   AVS_GETPROPERROR_TYPE = 2,
+  AVS_GETPROPERROR_ERROR = 3,
   AVS_GETPROPERROR_INDEX = 4
 };
 
@@ -477,7 +480,7 @@ enum {
 enum {
   AVS_PROPAPPENDMODE_REPLACE = 0,
   AVS_PROPAPPENDMODE_APPEND = 1,
-  AVS_PROPAPPENDMODE_TOUCH = 2
+  AVS_PROPAPPENDMODE_TOUCH = 2 // n/a
 };
 
 // AvsEnvProperty for avs_get_env_property
@@ -506,6 +509,17 @@ enum {
   AVS_ALLOCTYPE_NORMAL_ALLOC = 1,
   AVS_ALLOCTYPE_POOLED_ALLOC = 2
 };
+
+// Multithreading behaviour. AVS_Clip avs_set_cache_hints can return them on AVS_CACHE_GET_MTMODE query
+enum {
+  AVS_MT_INVALID = 0,
+  AVS_MT_NICE_FILTER = 1,
+  AVS_MT_MULTI_INSTANCE = 2,
+  AVS_MT_SERIALIZED = 3,
+  AVS_MT_SPECIAL_MT = 4,
+  AVS_MT_MODE_COUNT = 5
+};
+
 
 #ifdef BUILDING_AVSCORE
 AVSValue create_c_video_filter(AVSValue args, void * user_data, IScriptEnvironment * e0);
@@ -592,6 +606,8 @@ AVSC_API(int, avs_bmp_size)(const AVS_VideoInfo * vi);
 AVSC_API(int, avs_is_color_space)(const AVS_VideoInfo * p, int c_space);
 
 // no API for these, inline helper functions
+
+// this is _not_ for frame properties
 AVSC_INLINE int avs_is_property(const AVS_VideoInfo * p, int property)
 {
   return ((p->image_type & property) == property);
