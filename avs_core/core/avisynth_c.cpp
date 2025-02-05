@@ -254,88 +254,44 @@ int AVSC_CC avs_bmp_size(const AVS_VideoInfo * vi)
 extern "C"
 int AVSC_CC avs_get_pitch_p(const AVS_VideoFrame * p, int plane)
 {
-  switch (plane) {
-  case AVS_PLANAR_U: case AVS_PLANAR_V: return p->pitchUV;
-  case AVS_PLANAR_A: return p->pitchA;
-  }
-  return p->pitch; // Y, G, B, R
+  // Memo: the lines in class PVideoFrame:
+  //   VideoFrame* p;
+  //   VideoFrame* operator->() const { return p; }
+  // help when you use the arrow operator on a PVideoFrame object, it will return 
+  // the "VideoFrame* p" pointer, allowing you to access members of the 
+  // VideoFrame class directly.
+  return (*(const PVideoFrame*)&p)->GetPitch(plane);
 }
 
 extern "C"
 int AVSC_CC avs_get_row_size_p(const AVS_VideoFrame * p, int plane)
 {
-  int r;
-
-  switch (plane) {
-  case AVS_PLANAR_U: case AVS_PLANAR_V:
-    return (p->pitchUV) ? p->row_sizeUV : 0;
-
-  case AVS_PLANAR_U_ALIGNED: case AVS_PLANAR_V_ALIGNED:
-    if (p->pitchUV) {
-      r = (p->row_sizeUV + FRAME_ALIGN - 1) & (~(FRAME_ALIGN - 1)); // Aligned rowsize
-      return (r <= p->pitchUV) ? r : p->row_sizeUV;
-    }
-    else
-      return 0;
-
-  case AVS_PLANAR_ALIGNED: case AVS_PLANAR_Y_ALIGNED:
-  case AVS_PLANAR_R_ALIGNED: case AVS_PLANAR_G_ALIGNED: case AVS_PLANAR_B_ALIGNED:
-    r = (p->row_size + FRAME_ALIGN - 1) & (~(FRAME_ALIGN - 1)); // Aligned rowsize
-    return (r <= p->pitch) ? r : p->row_size;
-  case AVS_PLANAR_A:
-    return (p->pitchA) ? p->row_sizeA : 0;
-  case AVS_PLANAR_A_ALIGNED:
-    if (p->pitchA) {
-      r = (p->row_sizeA + FRAME_ALIGN - 1) & (~(FRAME_ALIGN - 1)); // Aligned rowsize
-      return (r <= p->pitchA) ? r : p->row_sizeA;
-    }
-    else
-      return 0;
-  }
-  return p->row_size;
+  return (*(const PVideoFrame*)&p)->GetRowSize(plane);
 }
 
 extern "C"
 int AVSC_CC avs_get_height_p(const AVS_VideoFrame * p, int plane)
 {
-  switch (plane) {
-  case AVS_PLANAR_U: case AVS_PLANAR_V:
-    return (p->pitchUV) ? p->heightUV : 0;
-  case AVS_PLANAR_A:
-    return (p->pitchA) ? p->height : 0;
-  }
-  return p->height; // Y, G, B, R, A
+  return (*(const PVideoFrame*)&p)->GetHeight(plane);
 }
 
 extern "C"
 const BYTE * AVSC_CC avs_get_read_ptr_p(const AVS_VideoFrame * p, int plane)
 {
-  switch (plane) {
-  case AVS_PLANAR_U: case AVS_PLANAR_B: return p->vfb->data + p->offsetU; // G is first. Then B,R order like U,V
-  case AVS_PLANAR_V: case AVS_PLANAR_R: return p->vfb->data + p->offsetV;
-  case AVS_PLANAR_A: return p->vfb->data + p->offsetA;
-  default:           return p->vfb->data + p->offset;
-  } // AVS_PLANAR Y, AVS_PLANAR_G
+  return (*(const PVideoFrame*)&p)->GetReadPtr(plane);
 }
 
 extern "C"
 int AVSC_CC avs_is_writable(const AVS_VideoFrame * p)
 {
-  if (p->refcount == 1 && p->vfb->refcount == 1) {
-    InterlockedIncrement(&(p->vfb->sequence_number));
-    return 1;
-  }
-  return 0;
+  return (*(const PVideoFrame*)&p)->IsWritable() ? 1 : 0;
 }
 
 // V9
 extern "C"
 int AVSC_CC avs_is_property_writable(const AVS_VideoFrame * p)
 {
-  if (p->refcount == 1) {
-    return 1;
-  }
-  return 0;
+  return (*(const PVideoFrame*)&p)->IsPropertyWritable() ? 1 : 0;
 }
 
 // V10
@@ -354,16 +310,7 @@ void AVSC_CC avs_video_frame_amend_pixel_type(AVS_VideoFrame* p, int new_pixel_t
 extern "C"
 BYTE * AVSC_CC avs_get_write_ptr_p(const AVS_VideoFrame * p, int plane)
 {
-  switch (plane) {
-  case AVS_PLANAR_U: case AVS_PLANAR_B: return p->vfb->data + p->offsetU;
-  case AVS_PLANAR_V: case AVS_PLANAR_R: return p->vfb->data + p->offsetV;
-  case AVS_PLANAR_A: return p->vfb->data + p->offsetA;
-  default:           break;
-  }
-  if (avs_is_writable(p)) {
-    return p->vfb->data + p->offset; // Y,G
-  }
-  return 0;
+  return (*(const PVideoFrame*)&p)->GetWritePtr(plane);
 }
 
 extern "C"
