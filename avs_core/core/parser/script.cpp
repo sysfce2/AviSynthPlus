@@ -265,6 +265,7 @@ extern const AVSFunction Script_functions[] = {
 
   { "value",    BUILTIN_FUNC_PREFIX, "s",Value},
   { "hexvalue", BUILTIN_FUNC_PREFIX, "s[pos]i",HexValue}, // avs+ 20180222 new pos parameter
+  { "hexvalue64", BUILTIN_FUNC_PREFIX, "s[pos]i",HexValue64 }, // v11
 
   { "VersionNumber", BUILTIN_FUNC_PREFIX, "", VersionNumber },
   { "VersionString", BUILTIN_FUNC_PREFIX, "", VersionString },
@@ -1778,18 +1779,39 @@ AVSValue Frac(AVSValue args, void*, IScriptEnvironment*) {  return args[0].AsFlo
 AVSValue Float(AVSValue args, void*, IScriptEnvironment*) {  return args[0].AsFloat(); }
 
 AVSValue Value(AVSValue args, void*, IScriptEnvironment*) {  char *stopstring; return strtod(args[0].AsString(),&stopstring); }
+
 AVSValue HexValue(AVSValue args, void*, IScriptEnvironment*)
 {
   // Added optional pos arg default = 1, start position in string of the HexString, 1 denotes the string beginning.
   // Will return 0 if error in 'pos' ie if pos is less than 1 or greater than string length.
-  const char *str = args[0].AsString();
-  int pos = args[1].AsInt(1) - 1;
-  int sz = static_cast<int>(strlen(str));
-  if (pos<0 || pos >= sz)
+  const char* str = args[0].AsString();
+  int64_t pos = args[1].AsLong(1) - 1; // start is pos 1
+  size_t sz = strlen(str);
+  if (pos < 0 || static_cast<size_t>(pos) >= sz)
     return 0;
   str += pos;
-  char *stopstring;
-  return (int)(strtoul(str, &stopstring, 16));
+  char* stopstring;
+  unsigned long result = strtoul(str, &stopstring, 16);
+  // keep int range, FFFFFFFF is negative - compatibility, see HexValue64
+  return (int)(result);
+}
+
+// new in v11
+AVSValue HexValue64(AVSValue args, void*, IScriptEnvironment*)
+{
+  // Added optional pos arg default = 1, start position in string of the HexString, 1 denotes the string beginning.
+  // Will return 0 if error in 'pos' ie if pos is less than 1 or greater than string length.
+  const char* str = args[0].AsString();
+  int64_t pos = args[1].AsLong(1) - 1; // start is pos 1
+  size_t sz = strlen(str);
+  if (pos < 0 || static_cast<size_t>(pos) >= sz)
+    return 0;
+  str += pos;
+  char* stopstring;
+  // v11: strtoul --> strtoull to 64 bit results long long
+  unsigned long long result = strtoull(str, &stopstring, 16);
+  // FFFFFFFF is positive
+  return static_cast<int64_t>(result);
 }
 
 AVSValue AvsMin(AVSValue args, void*, IScriptEnvironment* env )

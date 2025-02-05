@@ -182,6 +182,7 @@ AVSValue Frac(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue Float(AVSValue args, void*,IScriptEnvironment* env);
 AVSValue Value(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue HexValue(AVSValue args, void*, IScriptEnvironment* env);
+AVSValue HexValue64(AVSValue args, void*, IScriptEnvironment* env); // v11
 
 AVSValue BitAnd(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue BitNot(AVSValue args, void*, IScriptEnvironment* env);
