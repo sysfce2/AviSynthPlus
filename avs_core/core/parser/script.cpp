@@ -1201,6 +1201,7 @@ AVSValue FindStr(AVSValue args, void*, IScriptEnvironment*)
   return result;
 }
 
+// FIXME: to v11 64 bit support
 AVSValue Rand(AVSValue args, void*, IScriptEnvironment*)
  { int limit = args[0].AsInt(RAND_MAX);
    bool scale_mode = args[1].AsBool((abs(limit) > RAND_MAX));
@@ -1219,10 +1220,12 @@ AVSValue Rand(AVSValue args, void*, IScriptEnvironment*)
  }
 
 AVSValue Select(AVSValue args, void*, IScriptEnvironment* env)
-{ int i = args[0].AsInt();
-  if ((args[1].ArraySize() <= i) || (i < 0))
+{
+  // arraysize is still int
+  int64_t i = args[0].AsLong();
+  if ((args[1].ArraySize() <= i) || (i < 0) || (i > INT_MAX))
     env->ThrowError("Select: Index value out of range");
-  return args[1][i];
+  return args[1][static_cast<int>(i)];
 }
 
 AVSValue NOP(AVSValue args, void*, IScriptEnvironment*) { return 0;}
@@ -1375,10 +1378,11 @@ AVSValue AVSTime(AVSValue args, void*, IScriptEnvironment* env)
   return env->SaveString(s);
 }
 
-AVSValue Spline(AVSValue args, void*, IScriptEnvironment* env )
+// FIXME: to v11 64 bit support
+AVSValue Spline(AVSValue args, void*, IScriptEnvironment* env)
 {
   int n;
-  float x,y;
+  float x, y;
   int i;
   bool cubic;
 
