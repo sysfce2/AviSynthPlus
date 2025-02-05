@@ -2009,60 +2009,85 @@ AVSValue HexValue64(AVSValue args, void*, IScriptEnvironment*)
   return static_cast<int64_t>(result);
 }
 
-AVSValue AvsMin(AVSValue args, void*, IScriptEnvironment* env )
+AVSValue AvsMin(AVSValue args, void*, IScriptEnvironment* env)
 {
   int i;
   bool isInt = true;
+  bool isFloat32 = true;
 
   const int n = args[0].ArraySize();
-  if (n < 2) env->ThrowError("To few arguments for Min");
+  if (n < 2) env->ThrowError("Too few arguments for Min");
 
   // If all numbers are Ints return an Int
-  for (i=0; i < n; i++)
+  for (int i = 0; i < n; i++)
     if (!args[0][i].IsInt()) {
       isInt = false;
       break;
-  }
+    }
+
+  // v11: If all numbers are 32 bit floats return real float instead of double
+  for (int i = 0; i < n; i++)
+    if (!args[0][i].IsFloatf()) {
+      isFloat32 = false;
+      break;
+    }
 
   if (isInt) {
-    int V = args[0][0].AsInt();
-    for (i=1; i < n; i++)
-      V = min(V, args[0][i].AsInt());
+    int64_t V = args[0][0].AsLong();
+    for (int i = 1; i < n; i++)
+      V = min(V, args[0][i].AsLong());
+    // keep the smaller type
+    if (V >= INT_MIN && V <= INT_MAX)
+      return (int)V;
     return V;
   }
   else {
-    float V = args[0][0].AsFloatf();
-    for (i=1; i < n; i++)
-      V = min(V, args[0][i].AsFloatf());
+    double V = args[0][0].AsFloat();
+    for (int i = 1; i < n; i++)
+      V = min(V, args[0][i].AsFloat());
+    if (isFloat32)
+      return (float)V;
     return V;
   }
 }
 
-AVSValue AvsMax(AVSValue args, void*, IScriptEnvironment* env )
+AVSValue AvsMax(AVSValue args, void*, IScriptEnvironment* env)
 {
-  int i;
   bool isInt = true;
+  bool isFloat32 = true;
 
   const int n = args[0].ArraySize();
-  if (n < 2) env->ThrowError("To few arguments for Max");
+  if (n < 2) env->ThrowError("Too few arguments for Max");
 
   // If all numbers are Ints return an Int
-  for (i=0; i < n; i++)
+  for (int i = 0; i < n; i++)
     if (!args[0][i].IsInt()) {
       isInt = false;
       break;
-  }
+    }
+
+  // v11: If all numbers are 32 bit floats return real float instead of double
+  for (int i = 0; i < n; i++)
+    if (!args[0][i].IsFloatf()) {
+      isFloat32 = false;
+      break;
+    }
 
   if (isInt) {
-    int V = args[0][0].AsInt();
-    for (i=1; i < n; i++)
-      V = max(V, args[0][i].AsInt());
+    int64_t V = args[0][0].AsLong();
+    for (int i = 1; i < n; i++)
+      V = max(V, args[0][i].AsLong());
+    // keep the smaller type
+    if (V >= INT_MIN && V <= INT_MAX)
+      return (int)V;
     return V;
   }
   else {
-    float V = args[0][0].AsFloatf();
-    for (i=1; i < n; i++)
-      V = max(V, args[0][i].AsFloatf());
+    double V = args[0][0].AsFloat();
+    for (int i = 1; i < n; i++)
+      V = max(V, args[0][i].AsFloat());
+    if (isFloat32)
+      return (float)V;
     return V;
   }
 }
