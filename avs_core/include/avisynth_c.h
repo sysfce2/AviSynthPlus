@@ -158,10 +158,10 @@
 // Constants
 //
 
-#ifndef __AVISYNTH_10_H__
+#ifndef __AVISYNTH_11_H__
 enum {
   AVISYNTH_INTERFACE_CLASSIC_VERSION = 6,
-  AVISYNTH_INTERFACE_VERSION = 10,
+  AVISYNTH_INTERFACE_VERSION = 11,
   AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 0 // reset to zero whenever the normal interface version bumps
 };
 #endif
