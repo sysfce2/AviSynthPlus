@@ -999,14 +999,16 @@ PVideoFrame __stdcall SetProperty::GetFrame(int n, IScriptEnvironment* env)
       if (propType == 3 && x != 's') break; // string does not match
       
       if (propType == 1) {
-        if (!result.IsInt()) break;
+        if (!result.IsInt()) break; // IsInt checks for Long as well
         auto val = env->propGetInt(avsmap_r, name, 0, nullptr);
-        if (val == result.AsInt()) return frame; // value match -> return unaltered
+        if (val == result.AsLong()) return frame; // value match -> return unaltered
+        // v11: AsLong instead of AsInt
       } 
       else if (propType == 2) {
         if (!result.IsFloat()) break;
         auto val = env->propGetFloat(avsmap_r, name, 0, nullptr);
         if (val == result.AsFloat()) return frame; // value match -> return unaltered
+        // memo: AsFloat returns double
       }
       else if (propType == 3) {
         if (!result.IsString()) break;
@@ -1029,8 +1031,8 @@ PVideoFrame __stdcall SetProperty::GetFrame(int n, IScriptEnvironment* env)
     // special case: zero sized array -> entry deleted
     if (result.IsArray() && result.ArraySize() == 0)
       res = env->propDeleteKey(avsmap, name); // 0 is success
-    else if (propType == 1 && result.IsInt())
-      res = env->propSetInt(avsmap, name, result.AsInt(), append_mode);
+    else if (propType == 1 && result.IsInt()) // IsInt checks for Long as well
+      res = env->propSetInt(avsmap, name, result.AsLong(), append_mode); // v11: AsLong instead of AsInt
     else if (propType == 2 && result.IsFloat())
       res = env->propSetFloat(avsmap, name, result.AsFloat(), append_mode);
     else if (propType == 3 && result.IsString())
@@ -1045,9 +1047,9 @@ PVideoFrame __stdcall SetProperty::GetFrame(int n, IScriptEnvironment* env)
       int size = result.ArraySize();
       std::vector<int64_t> int64array(size); // avs can do int only, temporary array needed
       for (int i = 0; i < size; i++) {
-        if (!result[i].IsInt())
+        if (!result[i].IsInt()) // IsInt checks for Long as well
           env->ThrowError("Wrong data type in property '%s': all array elements should be the same (integer) type", name);
-        int64array[i] = result[i].AsInt(); // all elements should be int
+        int64array[i] = result[i].AsLong(); // all elements should be int
       }
       res = env->propSetIntArray(avsmap, name, int64array.data(), size);
     }
@@ -1058,7 +1060,7 @@ PVideoFrame __stdcall SetProperty::GetFrame(int n, IScriptEnvironment* env)
       for (int i = 0; i < size; i++) {
         if (!result[i].IsFloat())
           env->ThrowError("Wrong data type in property '%s': all array elements should be the same (float) type", name);
-        d_array[i] = result[i].AsFloat(); // all elements should be float or int
+        d_array[i] = result[i].AsFloat(); // all elements should be float/double or int/long
       }
       res = env->propSetFloatArray(avsmap, name, d_array.data(), size);
     }

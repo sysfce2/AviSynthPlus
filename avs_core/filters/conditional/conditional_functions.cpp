@@ -934,8 +934,8 @@ AVSValue GetProperty::Create(AVSValue args, void* user_data, IScriptEnvironment*
   int propType = (int)(intptr_t)user_data;
   // vUnset, vInt, vFloat, vData, vNode/Clip, vFrame/*, vMethod*/ }
   // 0: auto
-  // 1: integer
-  // 2: float
+  // 1: integer (int64 long)
+  // 2: float (double)
   // 3: char (null terminated data)
   // 4: Clip
 
@@ -972,7 +972,7 @@ AVSValue GetProperty::Create(AVSValue args, void* user_data, IScriptEnvironment*
   if (propType == 1) {
     int64_t result = env->propGetInt(avsmap, propName, index, &error);
     if(!error)
-      return AVSValue((int)result);
+      return AVSValue(result); // v11: no need for (int) cast
   }
   else if (propType == 2) {
     double result = env->propGetFloat(avsmap, propName, index, &error);
@@ -1046,16 +1046,16 @@ AVSValue GetPropertyAsArray::Create(AVSValue args, void* , IScriptEnvironment* e
   std::vector<AVSValue> result(size);
 
   // propGetIntArray or propGetFloatArray is available
-  // note: AVSValue is int and float, prop arrays are int64_t and double
+  // Pre interface V11: AVSValue is int and float, prop arrays are int64_t and double
   if (propType == 'i') {
     const int64_t* arr = env->propGetIntArray(avsmap, propName, &error);
     for (int i = 0; i < size; ++i)
-      result[i] = (int)arr[i];
+      result[i] = arr[i]; // v11: no need for (int) cast
   }
   else if (propType == 'f') {
     const double* arr = env->propGetFloatArray(avsmap, propName, &error);
     for (int i = 0; i < size; ++i)
-      result[i] = (float)arr[i];
+      result[i] = arr[i]; // v11: no need for (float) cast
   }
   else
   {
@@ -1063,8 +1063,8 @@ AVSValue GetPropertyAsArray::Create(AVSValue args, void* , IScriptEnvironment* e
     for (int i = 0; i < size; ++i) {
       AVSValue elem;
       switch (propType) {
-      case 'i': elem = AVSValue((int)env->propGetInt(avsmap, propName, i, &error)); break; // though handled earlier
-      case 'f': elem = AVSValue((float)env->propGetFloat(avsmap, propName, i, &error)); break; // though handled earlier
+      case 'i': elem = AVSValue(env->propGetInt(avsmap, propName, i, &error)); break; // though handled earlier
+      case 'f': elem = AVSValue(env->propGetFloat(avsmap, propName, i, &error)); break; // though handled earlier
       case 's': {
         const char* s = env->propGetData(avsmap, propName, i, &error);
         if (!error)
@@ -1147,23 +1147,23 @@ AVSValue GetAllProperties::Create(AVSValue args, void*, IScriptEnvironment* env)
     }
     else if (propType == 'i') {
       if(propNumElements == 1)
-        elem = AVSValue((int)env->propGetInt(avsmap, propName, 0, &error));
+        elem = AVSValue(env->propGetInt(avsmap, propName, 0, &error)); // v11: no need for (int) cast
       else {
         std::vector<AVSValue> avsarr(propNumElements);
         const int64_t* arr = env->propGetIntArray(avsmap, propName, &error);
         for (int i = 0; i < propNumElements; ++i)
-          avsarr[i] = (int)arr[i];
+          avsarr[i] = arr[i]; // v11: no need for (int) cast
         elem = AVSValue(avsarr.data(), propNumElements); // array deep copy
       }
     }
     else if (propType == 'f') {
       if(propNumElements == 1)
-        elem = AVSValue((float)env->propGetFloat(avsmap, propName, 0, &error));
+        elem = AVSValue(env->propGetFloat(avsmap, propName, 0, &error)); // since v11 no need for (float) cast
       else {
         std::vector<AVSValue> avsarr(propNumElements);
         const double* arr = env->propGetFloatArray(avsmap, propName, &error);
         for (int i = 0; i < propNumElements; ++i)
-          avsarr[i] = (float)arr[i];
+          avsarr[i] = arr[i]; // v11: no need for (float) cast
         elem = AVSValue(avsarr.data(), propNumElements); // array deep copy
       }
     }
