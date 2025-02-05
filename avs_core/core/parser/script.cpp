@@ -233,7 +233,9 @@ extern const AVSFunction Script_functions[] = {
 
   { "IsBool",   BUILTIN_FUNC_PREFIX, ".", IsBool },
   { "IsInt",    BUILTIN_FUNC_PREFIX, ".", IsInt },
+  { "IsLong",   BUILTIN_FUNC_PREFIX, ".", IsLong }, // v11
   { "IsFloat",  BUILTIN_FUNC_PREFIX, ".", IsFloat },
+  { "IsFloatF", BUILTIN_FUNC_PREFIX, ".", IsFloatf }, // v11
   { "IsString", BUILTIN_FUNC_PREFIX, ".", IsString },
   { "IsClip",   BUILTIN_FUNC_PREFIX, ".", IsClip },
   { "IsFunction", BUILTIN_FUNC_PREFIX, ".", IsFunction },
@@ -259,9 +261,14 @@ extern const AVSFunction Script_functions[] = {
   { "Time",   BUILTIN_FUNC_PREFIX, "s", AVSTime },
   { "Spline", BUILTIN_FUNC_PREFIX, "[x]ff+[cubic]b", Spline },
 
+  // parameter is 'f' which cover any integer or float numbers
   { "int",   BUILTIN_FUNC_PREFIX, "f", Int },
-  { "frac",  BUILTIN_FUNC_PREFIX, "f", Frac},
-  { "float", BUILTIN_FUNC_PREFIX, "f",Float},
+  { "frac",  BUILTIN_FUNC_PREFIX, "f", Frac },
+  { "float", BUILTIN_FUNC_PREFIX, "f", Float },
+  { "inti",  BUILTIN_FUNC_PREFIX, "f", IntI }, // v11
+  { "long",  BUILTIN_FUNC_PREFIX, "f", Long }, // v11
+  { "floatf", BUILTIN_FUNC_PREFIX, "f", Floatf }, // v11
+  { "double", BUILTIN_FUNC_PREFIX, "f", Double }, // v11
 
   { "value",    BUILTIN_FUNC_PREFIX, "s",Value},
   { "hexvalue", BUILTIN_FUNC_PREFIX, "s[pos]i",HexValue}, // avs+ 20180222 new pos parameter
@@ -690,9 +697,27 @@ AVSValue SetWorkingDir(AVSValue args, void*, IScriptEnvironment* env) { return e
 
 AVSValue Muldiv(AVSValue args, void*, IScriptEnvironment* ) { return int(MulDiv(args[0].AsInt(), args[1].AsInt(), args[2].AsInt())); }
 
-AVSValue Floor(AVSValue args, void*, IScriptEnvironment* ) { return int(floor(args[0].AsFloat())); }
-AVSValue Ceil(AVSValue args, void*, IScriptEnvironment* ) { return int(ceil(args[0].AsFloat())); }
-AVSValue Round(AVSValue args, void*, IScriptEnvironment* ) { return args[0].AsFloat()<0 ? -int(-args[0].AsFloat()+.5) : int(args[0].AsFloat()+.5); }
+// v11: up to int64 range
+AVSValue Floor(AVSValue args, void*, IScriptEnvironment* ) { 
+  int64_t result = static_cast<int64_t>(floor(args[0].AsFloat()));
+  if (result >= INT_MIN && result <= INT_MAX)
+    return (int)result;
+  return result;
+}
+// v11: up to int64 range
+AVSValue Ceil(AVSValue args, void*, IScriptEnvironment* ) { 
+  int64_t result = static_cast<int64_t>(ceil(args[0].AsFloat()));
+  if (result >= INT_MIN && result <= INT_MAX)
+    return (int)result;
+  return result;
+}
+// v11: up to int64 range
+AVSValue Round(AVSValue args, void*, IScriptEnvironment* ) { 
+  int64_t result = args[0].AsFloat() < 0 ? -static_cast<int64_t>(-args[0].AsFloat() + .5) : static_cast<int64_t>(args[0].AsFloat() + .5);
+  if (result >= INT_MIN && result <= INT_MAX)
+    return (int)result;
+  return result;
+}
 
 AVSValue Acos(AVSValue args, void* , IScriptEnvironment* ) { return acos(args[0].AsFloat()); }
 AVSValue Asin(AVSValue args, void* , IScriptEnvironment* ) { return asin(args[0].AsFloat()); }
@@ -711,7 +736,13 @@ AVSValue Tan(AVSValue args, void* , IScriptEnvironment* ) { return tan(args[0].A
 AVSValue Tanh(AVSValue args, void* , IScriptEnvironment* ) { return tanh(args[0].AsFloat()); }
 AVSValue Sqrt(AVSValue args, void* , IScriptEnvironment* ) { return sqrt(args[0].AsFloat()); }
 
-AVSValue Abs(AVSValue args, void* , IScriptEnvironment* ) { return abs(args[0].AsInt()); }
+// v11: up to int64 range
+AVSValue Abs(AVSValue args, void* , IScriptEnvironment* ) { 
+  int64_t result = abs(args[0].AsLong());
+  if (result >= INT_MIN && result <= INT_MAX)
+    return (int)result;
+  return result;
+}
 AVSValue FAbs(AVSValue args, void* , IScriptEnvironment* ) { return fabs(args[0].AsFloat()); }
 AVSValue Pi(AVSValue args, void* , IScriptEnvironment* )  { return 3.14159265358979324; }
 #ifdef OPT_ScriptFunctionTau
@@ -1727,7 +1758,9 @@ AVSValue Func(AVSValue args, void*, IScriptEnvironment*) { return args[0]; }
 
 AVSValue IsBool(AVSValue args, void*, IScriptEnvironment*) {  return args[0].IsBool(); }
 AVSValue IsInt(AVSValue args, void*, IScriptEnvironment*) {  return args[0].IsInt(); }
+AVSValue IsLong(AVSValue args, void*, IScriptEnvironment*) { return args[0].IsLong(); }
 AVSValue IsFloat(AVSValue args, void*, IScriptEnvironment*) {  return args[0].IsFloat(); }
+AVSValue IsFloatf(AVSValue args, void*, IScriptEnvironment*) { return args[0].IsFloatf(); }
 AVSValue IsString(AVSValue args, void*, IScriptEnvironment*) {  return args[0].IsString(); }
 AVSValue IsClip(AVSValue args, void*, IScriptEnvironment*) {  return args[0].IsClip(); }
 AVSValue IsFunction(AVSValue args, void*, IScriptEnvironment*) { return args[0].IsFunction(); }
@@ -1738,10 +1771,14 @@ const char* GetAVSTypeName(AVSValue value) {
     return "clip";
   else if (value.IsBool())
     return "bool";
+  else if (value.IsLong()) // must be before IsInt
+    return "long";
   else if (value.IsInt())
     return "int";
-  else if (value.IsFloat())
+  else if (value.IsFloatf())
     return "float";
+  else if (value.IsFloat())
+    return "double";
   else if (value.IsString())
     return "string";
   else if (value.IsArray())
@@ -1774,9 +1811,62 @@ AVSValue IsVersionOrGreater(AVSValue args, void*, IScriptEnvironment* env)
   return bugfixVersion <= AVS_BUGFIX_VER;
 }
 
-AVSValue Int(AVSValue args, void*, IScriptEnvironment*) {  return int(args[0].AsFloat()); }
-AVSValue Frac(AVSValue args, void*, IScriptEnvironment*) {  return args[0].AsFloat() - int64_t(args[0].AsFloat()); }
-AVSValue Float(AVSValue args, void*, IScriptEnvironment*) {  return args[0].AsFloat(); }
+AVSValue Frac(AVSValue args, void*, IScriptEnvironment*) {
+  if (args[0].IsInt()) return 0.f;
+  double result = args[0].AsFloat() - int64_t(args[0].AsFloat());
+  if (args[0].IsFloat())
+    return (float)result;
+  return result;
+}
+
+AVSValue Int(AVSValue args, void*, IScriptEnvironment*) {  
+  if (args[0].IsLong()) return args[0].AsLong();
+  if (args[0].IsInt()) return args[0].AsInt();
+  
+  int64_t result = int64_t(args[0].AsFloat());
+  if (result >= INT_MIN && result <= INT_MAX)
+    return (int)result;
+  return result;
+}
+
+AVSValue IntI(AVSValue args, void*, IScriptEnvironment*) {
+  if (args[0].IsInt()) return static_cast<int>(args[0].AsLong());
+
+  int result = static_cast<int>(args[0].AsFloat());
+  return result;
+}
+
+AVSValue Long(AVSValue args, void*, IScriptEnvironment*) {
+  if (args[0].IsInt()) return args[0].AsLong();
+
+  int64_t result = static_cast<int64_t>(args[0].AsFloat());
+  return result;
+}
+
+// casting an int/int64 to float will result in double if the float would not hold the integer losslessly.
+AVSValue Float(AVSValue args, void*, IScriptEnvironment*) {
+  if (args[0].IsInt()) {
+    int64_t param = args[0].AsLong();
+    // if integer range allows, use real float
+    // +/-16,777,216 would fit into float32
+    if (param >= -16777216 && param <= 16777216)
+      return (float)param;
+    return double(param);
+  };
+  if(args[0].IsFloatf())
+    return args[0].AsFloatf();
+  return args[0].AsFloat();
+}
+
+// Always to 64 bit double
+AVSValue Double(AVSValue args, void*, IScriptEnvironment*) {
+  return args[0].AsFloat();
+}
+
+// Always to 32 bit float
+AVSValue Floatf(AVSValue args, void*, IScriptEnvironment*) {
+  return args[0].AsFloatf();
+}
 
 AVSValue Value(AVSValue args, void*, IScriptEnvironment*) {  char *stopstring; return strtod(args[0].AsString(),&stopstring); }
 

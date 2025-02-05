@@ -163,7 +163,9 @@ AVSValue FormatString(AVSValue args, void*, IScriptEnvironment* env);
 
 AVSValue IsBool(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue IsInt(AVSValue args, void*, IScriptEnvironment* env);
+AVSValue IsLong(AVSValue args, void*, IScriptEnvironment* env); // v11
 AVSValue IsFloat(AVSValue args, void*, IScriptEnvironment* env);
+AVSValue IsFloatf(AVSValue args, void*, IScriptEnvironment* env); // v11
 AVSValue IsString(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue IsClip(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue IsFunction(AVSValue args, void*, IScriptEnvironment* env);
@@ -180,6 +182,10 @@ AVSValue IsVersionOrGreater(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue Int(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue Frac(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue Float(AVSValue args, void*,IScriptEnvironment* env);
+AVSValue IntI(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue Long(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue Double(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue Floatf(AVSValue args, void*, IScriptEnvironment* env); // v11
 AVSValue Value(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue HexValue(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue HexValue64(AVSValue args, void*, IScriptEnvironment* env); // v11
