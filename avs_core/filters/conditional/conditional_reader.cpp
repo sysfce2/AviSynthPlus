@@ -1036,7 +1036,9 @@ PVideoFrame __stdcall SetProperty::GetFrame(int n, IScriptEnvironment* env)
     else if (propType == 3 && result.IsString())
     {
       const char* s = result.AsString(); // no need for SaveString, it has its own storage
-      res = env->propSetData(avsmap, name, s, -1, append_mode); // -1: auto string length
+      // assume string: AVSPropDataTypeHint::DATATYPEHINT_UTF8
+      res = env->propSetDataH(avsmap, name, s, -1, AVSPropDataTypeHint::PROPDATATYPEHINT_UTF8, append_mode); // -1: auto string length
+      // test res = env->propSetDataH(avsmap, name, s, -1, AVSPropDataTypeHint::DATATYPEHINT_BINARY, append_mode);
     }
     else if (propType == 4 && result[0].IsInt())
     {
@@ -1068,7 +1070,8 @@ PVideoFrame __stdcall SetProperty::GetFrame(int n, IScriptEnvironment* env)
       for (int i = 0; i < size; i++) {
         if (!result[i].IsString())
           env->ThrowError("Wrong data type in property '%s': all array elements should be the same (string) type", name);
-        res = env->propSetData(avsmap, name, result[i].AsString(), -1, AVSPropAppendMode::PROPAPPENDMODE_APPEND); // all elements should be string
+        // assume string: AVSPropDataTypeHint::DATATYPEHINT_UTF8
+        res = env->propSetDataH(avsmap, name, result[i].AsString(), -1, AVSPropDataTypeHint::PROPDATATYPEHINT_UTF8, AVSPropAppendMode::PROPAPPENDMODE_APPEND); // all elements should be string
         if (res)
           break;
       }
@@ -1329,7 +1332,8 @@ static void CopyOneFrameProp(const char* key, AVSMap* mapv, const AVSMap* avsmap
         // string, byte array in general
         auto src = env->propGetData(avsmap_from, key, index, &error);
         auto size = env->propGetDataSize(avsmap_from, key, index, &error);
-        env->propSetData(mapv, key, src, size, AVSPropAppendMode::PROPAPPENDMODE_APPEND);
+        auto typehint = env->propGetDataTypeHint(avsmap_from, key, index, &error); // v11
+        env->propSetDataH(mapv, key, src, size, typehint, AVSPropAppendMode::PROPAPPENDMODE_APPEND);
       }
     }
   }
