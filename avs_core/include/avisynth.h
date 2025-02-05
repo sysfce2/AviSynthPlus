@@ -36,6 +36,16 @@
 //           Audio channel mask support for VideoInfo: 
 //           Use 20 bits in VideoInfo::image_type for channel mask mapping
 //           IsChannelMaskKnown, SetChannelMask, GetChannelMask in VideoInfo
+// 202502xx  V11
+//           64 bit data types in AVSValue: double and long (int64_t), also for 32 bit Avisynth!
+//           changed: AVSValue::IsFloat true for any 32/64 bit floating point or integer types
+//           changed: AVSValue::IsInt true for any 32/64 bit integer types
+//           new: AVSValue::IsFloatf: true if AVSValue is 32 bit float or 32/64 bit integer type; same as former IsFloat
+//           new: AVSValue::IsLong  : returns true only if AVSValue is strictly 64 bit integer
+//           new: AVSValue::AsLong  : returns int64_t
+//           new: AVSValue::AsLong(int64_t def)
+//           (AsFloat returned double --> no AsDouble needed)
+//           new AVSValue constructors for 64 bit types
 
 // http://www.avisynth.org
 
@@ -376,13 +386,19 @@ struct AVS_Linkage {
   bool            (AVSValue::*AsBool1)() const;
   int             (AVSValue::*AsInt1)() const;
   const char*     (AVSValue::*AsString1)() const;
-  double          (AVSValue::*AsFloat1)() const;
+  double          (AVSValue::*AsFloat1)() const; // AsDouble1
   bool            (AVSValue::*AsBool2)(bool def) const;
   int             (AVSValue::*AsInt2)(int def) const;
-  double          (AVSValue::*AsDblDef)(double def) const;
+  double          (AVSValue::*AsDblDef)(double def) const; // AsDouble2
   double          (AVSValue::*AsFloat2)(float def) const;
   const char*     (AVSValue::*AsString2)(const char* def) const;
   int             (AVSValue::*ArraySize)() const;
+  // v11
+  bool            (AVSValue::*IsLong)() const;
+  bool            (AVSValue::*IsFloatf)() const;
+  int64_t         (AVSValue::*AsLong1)() const;
+  int64_t         (AVSValue::*AsLong2)(int64_t def) const;
+  void            (AVSValue::*AVSValue_CONSTRUCTOR12)(int64_t l);
 // end class AVSValue
 
 /**********************************************************************/
@@ -1315,7 +1331,6 @@ public:
   AVSValue(const PClip& c) AVS_BakedCode( AVS_LinkCall_Void(AVSValue_CONSTRUCTOR2)(c) )
   AVSValue(bool b) AVS_BakedCode( AVS_LinkCall_Void(AVSValue_CONSTRUCTOR3)(b) )
   AVSValue(int i) AVS_BakedCode( AVS_LinkCall_Void(AVSValue_CONSTRUCTOR4)(i) )
-//  AVSValue(int64_t l);
   AVSValue(float f) AVS_BakedCode( AVS_LinkCall_Void(AVSValue_CONSTRUCTOR5)(f) )
   AVSValue(double f) AVS_BakedCode( AVS_LinkCall_Void(AVSValue_CONSTRUCTOR6)(f) )
   AVSValue(const char* s) AVS_BakedCode( AVS_LinkCall_Void(AVSValue_CONSTRUCTOR7)(s) )
@@ -1323,19 +1338,22 @@ public:
   AVSValue(const AVSValue& a, int size) AVS_BakedCode( AVS_LinkCall_Void(AVSValue_CONSTRUCTOR8)(&a, size) )
   AVSValue(const AVSValue& v) AVS_BakedCode( AVS_LinkCall_Void(AVSValue_CONSTRUCTOR9)(v) )
   AVSValue(const PFunction& n) AVS_BakedCode(AVS_LinkCall_Void(AVSValue_CONSTRUCTOR11)(n))
+  AVSValue(int64_t l) AVS_BakedCode(AVS_LinkCall_Void(AVSValue_CONSTRUCTOR12)(l))
 
   ~AVSValue() AVS_BakedCode( AVS_LinkCall_Void(AVSValue_DESTRUCTOR)() )
   AVSValue& operator=(const AVSValue& v) AVS_BakedCode( return AVS_LinkCallV(AVSValue_OPERATOR_ASSIGN)(v) )
 
-  // Note that we transparently allow 'int' to be treated as 'float'.
+  // Transparently allow 'long' (v11) and 'int' to be treated as 'float'.
+  // v11: Transparently allow 'long', 'int' and 'float' to be treated as 'double'.
   // There are no int<->bool conversions, though.
 
   bool Defined() const AVS_BakedCode( return AVS_LinkCall(Defined)() )
   bool IsClip() const AVS_BakedCode( return AVS_LinkCall(IsClip)() )
   bool IsBool() const AVS_BakedCode( return AVS_LinkCall(IsBool)() )
   bool IsInt() const AVS_BakedCode( return AVS_LinkCall(IsInt)() )
-//  bool IsLong() const;
+  bool IsLong() const AVS_BakedCode(return AVS_LinkCall(IsLong)()) // v11
   bool IsFloat() const AVS_BakedCode( return AVS_LinkCall(IsFloat)() )
+  bool IsFloatf() const AVS_BakedCode( return AVS_LinkCall(IsFloatf)() ) // v11
   bool IsString() const AVS_BakedCode( return AVS_LinkCall(IsString)() )
   bool IsArray() const AVS_BakedCode( return AVS_LinkCall(IsArray)() )
   bool IsFunction() const AVS_BakedCode( return AVS_LinkCall(IsFunction)() )
@@ -1343,14 +1361,15 @@ public:
   PClip AsClip() const AVS_BakedCode( return AVS_LinkCall(AsClip)() )
   bool AsBool() const AVS_BakedCode( return AVS_LinkCall(AsBool1)() )
   int AsInt() const AVS_BakedCode( return AVS_LinkCall(AsInt1)() )
-//  int AsLong() const;
+  int64_t AsLong() const AVS_BakedCode(return AVS_LinkCall(AsLong1)()) // v11
   const char* AsString() const AVS_BakedCode( return AVS_LinkCall(AsString1)() )
   double AsFloat() const AVS_BakedCode( return AVS_LinkCall(AsFloat1)() )
   float AsFloatf() const AVS_BakedCode( return float( AVS_LinkCall(AsFloat1)() ) )
 
   bool AsBool(bool def) const AVS_BakedCode( return AVS_LinkCall(AsBool2)(def) )
   int AsInt(int def) const AVS_BakedCode( return AVS_LinkCall(AsInt2)(def) )
-  double AsDblDef(double def) const AVS_BakedCode( return AVS_LinkCall(AsDblDef)(def) ) // Value is still a float
+  int64_t AsLong(int64_t def) const AVS_BakedCode( return AVS_LinkCall(AsLong2)(def) ) // v11
+  double AsDblDef(double def) const AVS_BakedCode( return AVS_LinkCall(AsDblDef)(def) )
   double AsFloat(float def) const AVS_BakedCode( return AVS_LinkCall(AsFloat2)(def) )
   float AsFloatf(float def) const AVS_BakedCode( return float( AVS_LinkCall(AsFloat2)(def) ) )
   const char* AsString(const char* def) const AVS_BakedCode( return AVS_LinkCall(AsString2)(def) )
@@ -1362,7 +1381,7 @@ public:
 
 private:
 
-  short type;  // 'a'rray, 'c'lip, 'b'ool, 'i'nt, 'f'loat, 's'tring, 'v'oid, fu'n'ction, or RFU: 'l'ong ('d'ouble)
+  short type;  // 'a'rray, 'c'lip, 'b'ool, 'i'nt, 'f'loat, 's'tring, 'v'oid, fu'n'ction, 'l'ong, 'd'ouble
   short array_size;
   union {
     IClip* clip;
@@ -1373,9 +1392,12 @@ private:
     const AVSValue* array;
     IFunction* function;
     #ifdef X86_64
-    // if ever, only x64 will support. It breaks struct size on 32 bit
     int64_t longlong; // 8 bytes
     double double_pt; // 8 bytes
+    #else
+    // 32 bit support trick, pointers dont't break struct size on 32 bit
+    int64_t* longlong_ptr;
+    double* double_pt_ptr;
     #endif
   };
 
@@ -1397,6 +1419,7 @@ public:
   void            CONSTRUCTOR8(const AVSValue* a, int size);
   void            CONSTRUCTOR9(const AVSValue& v);
   void            CONSTRUCTOR11(const PFunction& n);
+  void            CONSTRUCTOR12(int64_t l);
   void            DESTRUCTOR();
   AVSValue&       OPERATOR_ASSIGN(const AVSValue& v);
   const AVSValue& OPERATOR_INDEX(int index) const;
@@ -1404,12 +1427,14 @@ public:
   bool            AsBool1() const;
   int             AsInt1() const;
   const char*     AsString1() const;
-  double          AsFloat1() const;
+  double          AsFloat1() const; // AsDouble1
+  int64_t         AsLong1() const; // v11
 
   bool            AsBool2(bool def) const;
   int             AsInt2(int def) const;
   double          AsFloat2(float def) const;
   const char*     AsString2(const char* def) const;
+  int64_t         AsLong2(int64_t def) const; // v11
 
   void            MarkArrayAsC(); // for C interface, no deep-copy and deep-free
   void            CONSTRUCTOR10(const AVSValue& v, bool c_arrays);
@@ -1652,7 +1677,7 @@ public:
   virtual int  __stdcall GetVarInt(const char* name, int def) const = 0;
   virtual double  __stdcall GetVarDouble(const char* name, double def) const = 0;
   virtual const char* __stdcall GetVarString(const char* name, const char* def) const = 0;
-  // brand new in v8 - though no real int64 support yet
+  // brand new in v8 - v11: real int64 support
   virtual int64_t __stdcall GetVarLong(const char* name, int64_t def) const = 0;
 
   // 'Invoke' functions moved here from internal ScriptEnvironments are renamed in order to keep vtable order

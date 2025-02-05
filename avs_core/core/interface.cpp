@@ -753,7 +753,17 @@ AVSValue::AVSValue(float f)                              { CONSTRUCTOR5(f); }
 void AVSValue::CONSTRUCTOR5(float f)                     { type = 'f'; array_size = 0; clip = NULL; floating_pt = f; }
 
 AVSValue::AVSValue(double f)                             { CONSTRUCTOR6(f); }
-void AVSValue::CONSTRUCTOR6(double f)                    { type = 'f'; array_size = 0; clip = NULL; floating_pt = float(f); }
+void AVSValue::CONSTRUCTOR6(double f)
+{
+  type = 'd'; array_size = 0; clip = NULL;
+#ifdef X86_64
+  // pre-v11: floating_pt = float(f);
+  double_pt = f; // v11: real 64 bit double!
+#else
+  double_pt_ptr = new double;
+  *double_pt_ptr = f;
+#endif
+}
 
 AVSValue::AVSValue(const char* s)                        { CONSTRUCTOR7(s); }
 void AVSValue::CONSTRUCTOR7(const char* s)               { type = 's'; array_size = 0; string = s; }
@@ -787,6 +797,16 @@ void AVSValue::CONSTRUCTOR10(const AVSValue& v, bool c_arrays)  { Assign2(&v, tr
 AVSValue::AVSValue(const PFunction& n) { CONSTRUCTOR11(n); }
 void AVSValue::CONSTRUCTOR11(const PFunction& n) { type = 'n'; array_size = 0; function = n.GetPointerWithAddRef(); }
 
+AVSValue::AVSValue(int64_t l) { CONSTRUCTOR12(l); }
+void AVSValue::CONSTRUCTOR12(int64_t l) { type = 'l'; array_size = 0; clip = NULL; 
+#ifdef X86_64
+  longlong = l; 
+#else
+  longlong_ptr = new int64_t;
+  *longlong_ptr = l;
+#endif
+}
+
 AVSValue::~AVSValue()                                    { DESTRUCTOR(); }
 void AVSValue::DESTRUCTOR()
 {
@@ -794,6 +814,17 @@ void AVSValue::DESTRUCTOR()
     clip->Release();
   if (IsFunction() && function)
     function->Release();
+#ifndef X86_64
+  // 32-bit systems support 64-bit data through dynamic allocation.
+  if (type == 'l' && longlong_ptr) {
+    delete longlong_ptr;
+    longlong_ptr = nullptr;
+  }
+  else if (type == 'd' && double_pt_ptr) {
+    delete double_pt_ptr;
+    double_pt_ptr = nullptr;
+  }
+#endif
   if (IsArray() && array_size>0) {
     // array_size < 0: marked as C array internally, don't free elements
     delete[] array; // calls AVSValue destructors for all elements
@@ -811,15 +842,23 @@ void AVSValue::MarkArrayAsC()
 AVSValue& AVSValue::operator=(const AVSValue& v)         { return OPERATOR_ASSIGN(v); }
 AVSValue& AVSValue::OPERATOR_ASSIGN(const AVSValue& v)   { Assign(&v, false); return *this; }
 
-// Note that we transparently allow 'int' to be treated as 'float'.
-// There are no int<->bool conversions, though.
+// pre-v11: Transparently allow 'int' to be treated as 'float'.
+// No int<->bool conversions.
+// v11 64 bit value changes:
+// 'long' is int64_t.
+// IsInt returns true for both 'long' and 'int' 
+// IsLong returns true only for exact 64-bit integer type
+// Transparently allow 'long' and 'int' to be treated as 'float' or 'double'
+// IsFloat returns true for both 'float' and 'double' (old IsFloat + 'double').
+// IsFloatf returns true for only real floats (including int and long): the old IsFloat.
 
 bool AVSValue::Defined() const { return type != 'v'; }
 bool AVSValue::IsClip() const { return type == 'c'; }
 bool AVSValue::IsBool() const { return type == 'b'; }
-bool AVSValue::IsInt() const { return type == 'i'; }
-//  bool IsLong() const { return (type == 'l'|| type == 'i'); }
-bool AVSValue::IsFloat() const { return type == 'f' || type == 'i'; }
+bool AVSValue::IsInt() const { return type == 'i' || type == 'l'; }
+bool AVSValue::IsLong() const { return type == 'l'; }
+bool AVSValue::IsFloat() const { return type == 'd' || type == 'f' || type == 'i' || type == 'l'; }
+bool AVSValue::IsFloatf() const { return type == 'f' || type == 'i' || type == 'l'; }
 bool AVSValue::IsString() const { return type == 's'; }
 bool AVSValue::IsArray() const { return type == 'a'; }
 bool AVSValue::IsFunction() const { return type == 'n'; }
@@ -829,33 +868,93 @@ PClip AVSValue::AsClip() const { _ASSERTE(IsClip()); return IsClip()?clip:0; }
 bool AVSValue::AsBool1() const { _ASSERTE(IsBool()); return boolean; }
 bool AVSValue::AsBool() const { return AsBool1(); }
 
-int AVSValue::AsInt1() const { _ASSERTE(IsInt()); return integer; }
+int AVSValue::AsInt1() const { 
+  _ASSERTE(IsInt()); 
+  // simple typecast, no saturation
+#ifdef X86_64
+  return type == 'i' ? integer : (int)longlong;
+#else
+  return type == 'i' ? integer : (int)*longlong_ptr;
+#endif
+}
+
 int AVSValue::AsInt() const { return AsInt1(); }
-//  int AsLong() const { _ASSERTE(IsLong()); return IsInt()?integer:longlong; }
+
+int64_t AVSValue::AsLong1() const {
+  _ASSERTE(IsInt());
+#ifdef X86_64
+  return type == 'i' ? integer : longlong;
+#else
+  return type == 'i' ? integer : *longlong_ptr;
+#endif
+}
+int64_t AVSValue::AsLong() const { return AsLong1(); }
 
 const char* AVSValue::AsString1() const { _ASSERTE(IsString()); return IsString()?string:0; }
 const char* AVSValue::AsString() const { return AVSValue::AsString1(); }
-/* Baked ********************
-double AVSValue::AsFloat() const { _ASSERTE(IsFloat()); return IsInt()?integer:floating_pt; }
-   Baked ********************/
 
-double AVSValue::AsFloat1() const { _ASSERTE(IsFloat()); return IsInt()?integer:floating_pt; }
+double AVSValue::AsFloat1() const { 
+#ifdef X86_64
+  _ASSERTE(IsFloat()); return type == 'i' ? (double)integer : type == 'l' ? (double)longlong : type == 'f' ? (double)floating_pt : double_pt;
+#else
+  _ASSERTE(IsFloat()); return type == 'i' ? (double)integer : type == 'l' ? (double)*longlong_ptr : type == 'f' ? (double)floating_pt : *double_pt_ptr;
+#endif
+}
+
 double AVSValue::AsFloat() const { return AsFloat1(); }
-float AVSValue::AsFloatf() const { return float( AsFloat1() ); }
 
+float AVSValue::AsFloatf() const { 
+#ifdef X86_64
+  _ASSERTE(IsFloat()); return type == 'i' ? (float)integer : type == 'l' ? (float)longlong : type == 'f' ? floating_pt : (float)double_pt;
+#else
+  _ASSERTE(IsFloat()); return type == 'i' ? (float)integer : type == 'l' ? (float)*longlong_ptr : type == 'f' ? floating_pt : (float)*double_pt_ptr;
+#endif
+}
 
 bool AVSValue::AsBool2(bool def) const { _ASSERTE(IsBool()||!Defined()); return IsBool() ? boolean : def; }
 bool AVSValue::AsBool(bool def) const { return AsBool2(def); }
 
-int AVSValue::AsInt2(int def) const { _ASSERTE(IsInt()||!Defined()); return IsInt() ? integer : def; }
-int AVSValue::AsInt(int def) const { return AsInt2(def); }
-/* Baked ********************
-double AVSValue::AsFloat(double def) const { _ASSERTE(IsFloat()||!Defined()); return IsInt() ? integer : type=='f' ? floating_pt : def; }
-   Baked ********************/
-double AVSValue::AsDblDef(double def) const { _ASSERTE(IsFloat()||!Defined()); return IsInt() ? integer : type=='f' ? floating_pt : def; }
-//float  AVSValue::AsFloat(double def) const { _ASSERTE(IsFloat()||!Defined()); return IsInt() ? integer : type=='f' ? floating_pt : (float)def; }
+int AVSValue::AsInt2(int def) const { 
+  _ASSERTE(IsInt()||!Defined());
+#ifdef X86_64
+  return type == 'i' ? integer : type == 'l' ? (int)longlong : def;
+#else
+  return type == 'i' ? integer : type == 'l' ? (int)*longlong_ptr : def;
+#endif
+}
 
-double AVSValue::AsFloat2(float def) const { _ASSERTE(IsFloat()||!Defined()); return IsInt() ? integer : type=='f' ? floating_pt : def; }
+int AVSValue::AsInt(int def) const { return AsInt2(def); }
+int64_t AVSValue::AsLong2(int64_t def) const {
+  _ASSERTE(IsInt() || !Defined());
+#ifdef X86_64
+  return type == 'i' ? integer : type == 'l' ? longlong : def;
+#else
+  return type == 'i' ? integer : type == 'l' ? *longlong_ptr : def;
+#endif
+}
+
+int64_t AVSValue::AsLong(int64_t def) const {
+  return AsLong2(def);
+}
+
+double AVSValue::AsDblDef(double def) const { 
+  _ASSERTE(IsFloat()||!Defined());
+#ifdef X86_64
+  return type == 'i' ? (double)integer : type == 'l' ? (double)longlong : type == 'f' ? (double)floating_pt : type == 'd' ? double_pt : def;
+#else
+  return type == 'i' ? (double)integer : type == 'l' ? (double)*longlong_ptr : type == 'f' ? (double)floating_pt : type == 'd' ? *double_pt_ptr : def;
+#endif
+}
+
+double AVSValue::AsFloat2(float def) const { 
+  _ASSERTE(IsFloat()||!Defined()); 
+#ifdef X86_64
+  return type == 'i' ? integer : type == 'l' ? (double)longlong : type == 'f' ? (double)floating_pt : type == 'd' ? double_pt : (double)def;
+#else
+  return type == 'i' ? integer : type == 'l' ? (double)*longlong_ptr : type == 'f' ? (double)floating_pt : type == 'd' ? *double_pt_ptr : (double)def;
+#endif
+}
+
 double AVSValue::AsFloat(float def) const { return AsFloat2(def); }
 float AVSValue::AsFloatf(float def) const { return float( AsFloat2(def) ); }
 
@@ -883,72 +982,117 @@ void AVSValue::Assign2(const AVSValue* src, bool init, bool c_arrays) {
     src->clip->AddRef();
   if (src->IsFunction() && src->function)
     src->function->AddRef();
+
+  // "this" (left side of the assignment) will be overwritten by src, 
+  // thus it should be released/freed up if needed
+  bool shouldReleaseClip = !init && IsClip() && clip;
+  bool shouldReleaseFunction = !init && IsFunction() && function;
+#ifndef X86_64
+  bool shouldReleaseDouble = !init && type == 'd' && double_pt_ptr;
+  bool shouldReleaseLong = !init && type == 'l' && longlong_ptr;
+#endif
+  // release at the end, shares the same pointer: function, clip, double_pt_ptr and longlong_ptr
+  void* prev_pointer_to_release = (void*)clip;
+
   if (c_arrays) {
     // don't free array members!
-    if (!init && IsClip() && clip)
-      clip->Release();
-    if (!init && IsFunction() && function)
-      function->Release();
 
     this->type = src->type;
     this->array_size = src->array_size;
-    this->clip = src->clip; // "clip" is the largest member of the union, making sure we copy everything
-    return;
-  }
-  bool shouldReleaseClip = !init && IsClip() && clip;
-  bool shouldReleaseFunction = !init && IsFunction() && function;
-  void *prev_pointer_to_release = (void*)clip; // release at the end
-
-  bool prevIsArray = IsArray();
-  bool nextIsArray = src->IsArray();
-
-  AVSValue* tmp;
-
-  // save existing
-  short tmp_type = src->type;
-  short tmp_array_size = src->array_size;
-  IClip *tmp_pointer = (IClip*)((void*)src->clip); // covers whole union
-
-  bool needtmpcopy = nextIsArray && tmp_array_size>0;
-  // make backup, avoid args = args[0] case
-  if (needtmpcopy)
-  {
-    tmp = new AVSValue[tmp_array_size];
-    for (int i = 0; i < tmp_array_size; i++) {
-      tmp[i].Assign(&src->array[i], true); // init from source
+#ifndef X86_64
+    if (this->type == 'l') {
+      uint64_t l = *src->longlong_ptr;
+      this->longlong_ptr = new int64_t;
+      *this->longlong_ptr = l;
+    } 
+    else if (this->type == 'd') {
+      double d = *src->double_pt_ptr;
+      this->double_pt_ptr = new double;
+      *this->double_pt_ptr = d;
     }
-  }
-
-  // remove existing
-  if (prevIsArray && !init)
-  {
-    // same as in destructor
-    if (array_size>0) {
-      delete[] array; // calls destructor of AVSValue elements
-      array = nullptr;
-    }
-  }
-
-  if (nextIsArray) {
-    // copy backup source array
-    if (needtmpcopy)
-      array = tmp; // tmp already allocated and filled
     else
-      array = nullptr;
-    this->type = tmp_type;
-    this->array_size = tmp_array_size;
+#endif
+    {
+      this->clip = src->clip; // "clip" is the largest member of the union, making sure we copy everything
+    }
   }
-  else {
-    // using tmp_pointer, because if there were array before, that got free'd before
-    // value = value[x] case where source value[x] is not array
-    this->clip = tmp_pointer; // "clip" is the largest member of the union, making sure we copy everything
-    this->type = tmp_type;
-    this->array_size = tmp_array_size; // n/a
+  else
+  {
+
+    bool prevIsArray = IsArray();
+    bool nextIsArray = src->IsArray();
+
+    AVSValue* tmp;
+
+    // save existing
+    short tmp_type = src->type;
+    short tmp_array_size = src->array_size;
+    IClip* tmp_pointer = (IClip*)((void*)src->clip);
+    // covers whole union: value or pointer
+
+    bool needtmpcopy = nextIsArray && tmp_array_size > 0;
+    // make backup, avoid args = args[0] case
+    if (needtmpcopy)
+    {
+      tmp = new AVSValue[tmp_array_size];
+      for (int i = 0; i < tmp_array_size; i++) {
+        tmp[i].Assign(&src->array[i], true); // init from source
+      }
+    }
+
+    // remove existing
+    if (prevIsArray && !init)
+    {
+      // same as in destructor
+      if (array_size > 0) {
+        delete[] array; // calls destructor of AVSValue elements
+        array = nullptr;
+      }
+    }
+
+    if (nextIsArray) {
+      // copy backup source array
+      if (needtmpcopy)
+        array = tmp; // tmp already allocated and filled
+      else
+        array = nullptr;
+      this->type = tmp_type;
+      this->array_size = tmp_array_size;
+    }
+    else {
+      // using tmp_pointer, because if there were array before, that got free'd before
+      // value = value[x] case where source value[x] is not array
+      this->type = tmp_type;
+      this->array_size = tmp_array_size; // n/a
+      // if former this->type would have been a to-be-freed/released 
+      // type, there is prev_pointer_to_release
+#ifndef X86_64
+    // 32 bit Avisynth: new 64 bit types are specially treated
+      if (this->type == 'l') {
+        const uint64_t l = *src->longlong_ptr;
+        this->longlong_ptr = new int64_t;
+        *this->longlong_ptr = l;
+      }
+      else if (this->type == 'd') {
+        const double d = *src->double_pt_ptr;
+        this->double_pt_ptr = new double;
+        *this->double_pt_ptr = d;
+      }
+      else
+#endif
+      {
+        this->clip = tmp_pointer; // "clip" is the largest member of the union, making sure we copy everything
+      }
+    }
   }
   if (shouldReleaseClip)
     ((IClip *)prev_pointer_to_release)->Release();
   if (shouldReleaseFunction)
     ((IFunction *)prev_pointer_to_release)->Release();
+#ifndef X86_64
+  if (shouldReleaseDouble || shouldReleaseLong)
+    delete prev_pointer_to_release;
+#endif
 }
 
 AvsValueType AVSValue::GetType() const { return (AvsValueType)type; }
@@ -1126,14 +1270,19 @@ static const AVS_Linkage avs_linkage = {    // struct AVS_Linkage {
   &AVSValue::AsBool1,                       //   bool            (AVSValue::*AsBool1)() const;
   &AVSValue::AsInt1,                        //   int             (AVSValue::*AsInt1)() const;
   &AVSValue::AsString1,                     //   const char*     (AVSValue::*AsString1)() const;
-  &AVSValue::AsFloat1,                      //   double          (AVSValue::*AsFloat1)() const;
+  &AVSValue::AsFloat1,                      //   double          (AVSValue::*AsFloat1)() const; // AsDouble1
   &AVSValue::AsBool2,                       //   bool            (AVSValue::*AsBool2)(bool def) const;
   &AVSValue::AsInt2,                        //   int             (AVSValue::*AsInt2)(int def) const;
-  &AVSValue::AsDblDef,                      //   double          (AVSValue::*AsDblDef)(double def) const;
+  &AVSValue::AsDblDef,                      //   double          (AVSValue::*AsDblDef)(double def) const; // AsDouble2
   &AVSValue::AsFloat2,                      //   double          (AVSValue::*AsFloat2)(float def) const;
   &AVSValue::AsString2,                     //   const char*     (AVSValue::*AsString2)(const char* def) const;
   &AVSValue::ArraySize,                     //   int             (AVSValue::*ArraySize)() const;
-// end class AVSValue
+  &AVSValue::IsLong,                        //   bool            (AVSValue::*IsLong)() const; // v11
+  &AVSValue::IsFloatf,                      //   bool            (AVSValue::*IsFloatf() const; // v11
+  &AVSValue::AsLong1,                       //   int64_t         (AVSValue::*AsLong1)() const; // v11
+  &AVSValue::AsLong2,                       //   int64_t         (AVSValue::*AsLong2)(int64_t def) const; // v11
+  &AVSValue::CONSTRUCTOR12,                 //   void            (AVSValue::*AVSValue_CONSTRUCTOR12)(int64_ l); // v11
+  // end class AVSValue
 /**********************************************************************/
   // a single { nullptr } initializes the whole placeholder array
   { nullptr },                              // void    (VideoInfo::* reserved[27])(); // reserved for AVS classic

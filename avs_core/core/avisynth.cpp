@@ -1400,7 +1400,7 @@ public:
     if (DISPATCH(closing)) return def;  // We easily risk  being inside the critical section below, while deleting variables.
     AVSValue val;
     if (this->GetVarTry(name, &val))
-      return (int)(val.AsInt(def)); // until we have int64
+      return val.AsLong(def); // v11: real int64 support
     else
       return def;
   }
