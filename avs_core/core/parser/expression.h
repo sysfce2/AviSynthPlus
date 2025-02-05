@@ -110,7 +110,9 @@ public:
   ExpConstant(std::vector<AVSValue>* v) : val(v->data(), (int)(v->size())) {} // array of AVSValue*
   ExpConstant(AVSValue v) : val(v) {}
   ExpConstant(int i) : val(i) {}
+  ExpConstant(int64_t i) : val(i) {}
   ExpConstant(float f) : val(f) {}
+  ExpConstant(double f) : val(f) {}
   ExpConstant(const char* s) : val(s) {}
   virtual AVSValue Evaluate(IScriptEnvironment* env) {
     AVS_UNUSED(env);
@@ -473,7 +475,7 @@ public:
   const PExpression body;
   const char* name;
   const char* param_types;
-  bool *param_floats;
+  bool* param_floats;
   const char** param_names;
   int var_count;
   const char** var_names;

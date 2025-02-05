@@ -53,11 +53,13 @@ public:
   explicit Tokenizer(Tokenizer* old);
 
   void NextToken();
-
-  inline bool IsIdentifier() const { return type == 'd'; }
+  
+  // unlike AVSValue, these Is-of-Type checks are exact
+  inline bool IsIdentifier() const { return type == 'I'; }
   inline bool IsOperator() const { return type == 'o'; }
   inline bool IsInt() const { return type == 'i'; }
-  inline bool IsFloat() const { return type == 'f'; }
+  inline bool IsFloat() const { return type == 'f'; } // means by double internally
+  inline bool IsLong() const { return type == 'l'; } 
   inline bool IsString() const { return type == 's'; }
 #ifdef ARRAYS_AT_TOKENIZER_LEVEL
   inline bool IsArray() const { return type == 'a'; }
@@ -69,10 +71,12 @@ public:
   inline bool IsOperator(int o) const
     { return IsOperator() && o == op; }
 
-  const char* AsIdentifier() const { AssertType('d'); return identifier; }
+  const char* AsIdentifier() const { AssertType('I'); return identifier; }
   int AsOperator() const { AssertType('o'); return op; }
   int AsInt() const { AssertType('i'); return integer; }
-  float AsFloat() const { AssertType('f'); return floating_pt; }
+  //float AsFloat() const { AssertType('f'); return floating_pt; }
+  double AsFloat() const { AssertType('f'); return double_pt; } // v11: using double internally
+  int64_t AsLong() const { AssertType('l'); return longlong; }
   const char* AsString() const { AssertType('s'); return string; }
 #ifdef ARRAYS_AT_TOKENIZER_LEVEL
   std::vector<AVSValue>* AsArray() const { AssertType('a'); return array2; }
@@ -92,14 +96,16 @@ private:
   const char* token_start;
   const char* pc;
   int line;
-  char type;   // i'd'entifier, 'o'perator, 'i'nt, 'f'loat, 's'tring, 'n'ewline, 'a'rray, 0=eof
+  char type;   // 'I'dentifier, 'o'perator, 'i'nt, 'f'loat, 's'tring, 'n'ewline, 'a'rray, 'l'ong, 0=eof. no 'd', float holds double
   union
   {
     const char* identifier;
     const char* string;
     int op;   // '+', '++', '.', ',', '(', ')','[', ']', 0=eoln
     int integer;
-    float floating_pt;
+    //float floating_pt; replaced by double internally
+    int64_t longlong; // if it fits, integer is used instead (leave as much compatibility)
+    double double_pt;
 #ifdef ARRAYS_AT_TOKENIZER_LEVEL
     // not used now, finally arrays are implemented with helper script functions
     std::vector<AVSValue>* array2;

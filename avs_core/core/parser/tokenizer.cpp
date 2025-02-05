@@ -301,7 +301,7 @@ void Tokenizer::NextToken() {
         do {
           pc++;
         } while (*pc == '_' || isalnum(*pc));
-        type = 'd';
+        type = 'I';
         identifier = env->SaveString(token_start, int(pc - token_start));
         if (!lstrcmpi(identifier, "__END__")) {
           type = 0;
@@ -348,39 +348,52 @@ void Tokenizer::AssertType(char expected_type) const
 
 void Tokenizer::GetNumber()
 {
-  // start by assuming an int and switch to float if necessary
-  type = 'i';
-  integer = 0;
+  // old: start by assuming an int and switch to float if necessary
+  // v11: default precision is 64 bit
+  //      start by assuming long and switch to double if necessary
+  constexpr int64_t INT64_MAX_DIV_10 = INT64_MAX / 10;
+  constexpr int64_t INT64_MAX_MOD_10 = INT64_MAX % 10;
+  type = 'l';
+  longlong = 0;
   double dtemp = 0;
   double place = 1;
 
   do {
     if (*pc == '.') {
+      // first, gather into double
       type = 'f';
       ++pc;
       while (isdigit(*pc)) {
         place *= 10;
-        dtemp = dtemp*10 + (*pc - '0');
+        dtemp = dtemp * 10 + (*pc - '0');
         ++pc;
       }
       break;
-    } else {
-      integer = integer*10 + (*pc - '0');
-	  dtemp   = dtemp*10   + (*pc - '0');
+    }
+    else {
+      if (type != 'f') {
+        // Check for potential overflow before performing the operation, but go on anyway
+        if (longlong > INT64_MAX_DIV_10 || (longlong == INT64_MAX_DIV_10 && (*pc - '0') > INT64_MAX_MOD_10))
+          type = 'f';
+        else
+          longlong = longlong * 10 + (*pc - '0');
+      }
+      dtemp = dtemp * 10 + (*pc - '0'); // gather always
     }
     ++pc;
   } while (isdigit(*pc) || *pc == '.');
 
   dtemp /= place;
-  if (dtemp > FLT_MAX)
-	env->ThrowError("Tokenizer: Number is to big.");
+  if (dtemp >= DBL_MAX)
+    env->ThrowError("Tokenizer: Number is to big.");
 
   if (type == 'f') {
-	floating_pt = (float)dtemp;
+    double_pt = dtemp; // v11: type name remained 'f' but content is double
   }
-  else if (dtemp > INT_MAX) {
-	type = 'f';
-	floating_pt = (float)dtemp;
+  else if (longlong <= INT_MAX) {
+    // store into a more simple type
+    type = 'i';
+    integer = (int)longlong;
   }
 }
 
@@ -403,9 +416,10 @@ static const char* GetTypeName(char type)
     case 'a': return "array";
     case 'b': return "boolean";
     case 'c': return "clip";
-    case 'd': return "identifier";
-    case 'f': return "floating-point";
+    case 'I': return "identifier";
+    case 'f': return "floating-point"; // v11: double
     case 'i': return "integer";
+    case 'l': return "long";
     case 'o': return "operator";
     case 's': return "string";
     default: return "unknown";

@@ -153,10 +153,10 @@ PExpression ScriptParser::ParseFunctionDefinition(void)
         // we have a variable type preceding its name
         if (tokenizer.IsIdentifier("val")) type = '.';
         else if (tokenizer.IsIdentifier("bool")) type = 'b';
-        else if (tokenizer.IsIdentifier("int")) type = 'i';
+        else if (tokenizer.IsIdentifier("int")) type = 'i'; // also accepts 64 bit long since v11
         else if (tokenizer.IsIdentifier("float")) {
           param_floats[param_count] = true;
-          type = 'f';
+          type = 'f'; // also accepts doubles since v11
         }
         else if (tokenizer.IsIdentifier("string")) type = 's';
         else if (tokenizer.IsIdentifier("clip")) type = 'c';
@@ -828,8 +828,13 @@ PExpression ScriptParser::ParseAtom(void)
     tokenizer.NextToken();
     return new ExpConstant(result);
   }
+  else if (tokenizer.IsLong()) {
+    int64_t result = tokenizer.AsLong();
+    tokenizer.NextToken();
+    return new ExpConstant(result);
+  }
   else if (tokenizer.IsFloat()) {
-    float result = tokenizer.AsFloat();
+    double result = tokenizer.AsFloat();
     tokenizer.NextToken();
     return new ExpConstant(result);
   }
