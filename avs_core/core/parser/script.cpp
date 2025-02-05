@@ -519,7 +519,7 @@ AVSValue EvalOop(AVSValue args, void*, IScriptEnvironment* env)
   }
   catch(...) {
     env->SetVar("last", prev_last);          // Restore implicit last
-	throw;
+    throw;
   }
   env->SetVar("last", prev_last);            // Restore implicit last
   return result;
@@ -1259,65 +1259,66 @@ AVSValue Exist(AVSValue args, void*, IScriptEnvironment*nv) {
 // Spline functions to generate and evaluate a natural bicubic spline
 void spline(float x[], float y[], int n, float y2[])
 {
-	int i,k;
-	float p, qn, sig, un, *u;
+  int i, k;
+  float p, qn, sig, un, * u;
 
-	u = new float[n];
+  u = new float[n];
 
-	y2[1]=u[1]=0.0f;
+  y2[1] = u[1] = 0.0f;
 
-	for (i=2; i<=n-1; i++) {
-		sig = (x[i] - x[i-1])/(x[i+1] - x[i-1]);
-		p = sig * y2[i-1] + 2.0f;
-		y2[i] = (sig - 1.0f) / p;
-		u[i] = (y[i+1] - y[i])/(x[i+1] - x[i]) - (y[i] - y[i-1])/(x[i] - x[i-1]);
-		u[i] = (6.0f*u[i]/(x[i+1] - x[i-1]) - sig*u[i-1])/p;
-	}
-	qn=un=0.0f;
-	y2[n]=(un - qn*u[n-1])/(qn * y2[n-1] + 1.0f);
-	for (k=n-1; k>=1; k--) {
-		y2[k] = y2[k] * y2[k+1] + u[k];
-	}
+  for (i = 2; i <= n - 1; i++) {
+    sig = (x[i] - x[i - 1]) / (x[i + 1] - x[i - 1]);
+    p = sig * y2[i - 1] + 2.0f;
+    y2[i] = (sig - 1.0f) / p;
+    u[i] = (y[i + 1] - y[i]) / (x[i + 1] - x[i]) - (y[i] - y[i - 1]) / (x[i] - x[i - 1]);
+    u[i] = (6.0f * u[i] / (x[i + 1] - x[i - 1]) - sig * u[i - 1]) / p;
+  }
+  qn = un = 0.0f;
+  y2[n] = (un - qn * u[n - 1]) / (qn * y2[n - 1] + 1.0f);
+  for (k = n - 1; k >= 1; k--) {
+    y2[k] = y2[k] * y2[k + 1] + u[k];
+  }
 
-	delete[] u;
+  delete[] u;
 }
 
-int splint(float xa[], float ya[], float y2a[], int n, float x, float &y, bool cubic)
+int splint(float xa[], float ya[], float y2a[], int n, float x, float& y, bool cubic)
 {
-	int klo, khi, k;
-	float h,b,a;
+  int klo, khi, k;
+  float h, b, a;
 
-	klo=1;
-	khi=n;
-	while (khi-klo > 1) {
-		k=(khi + klo) >> 1;
-		if (xa[k] > x ) khi = k;
-		else klo = k;
-	}
-	h = xa[khi] - xa[klo];
-	if (h==0.0f) {
-		y=0.0f;
-		return -1;	// all x's have to be different
-	}
-	a = (xa[khi] - x)/h;
-	b = (x - xa[klo])/h;
+  klo = 1;
+  khi = n;
+  while (khi - klo > 1) {
+    k = (khi + klo) >> 1;
+    if (xa[k] > x) khi = k;
+    else klo = k;
+  }
+  h = xa[khi] - xa[klo];
+  if (h == 0.0f) {
+    y = 0.0f;
+    return -1;	// all x's have to be different
+  }
+  a = (xa[khi] - x) / h;
+  b = (x - xa[klo]) / h;
 
-	if (cubic) {
-		y = a * ya[klo] + b*ya[khi] + ((a*a*a - a)*y2a[klo] + (b*b*b - b)*y2a[khi]) * (h*h) / 6.0f;
-	} else {
-		y = a * ya[klo] + b*ya[khi];
-	}
-	return 0;
+  if (cubic) {
+    y = a * ya[klo] + b * ya[khi] + ((a * a * a - a) * y2a[klo] + (b * b * b - b) * y2a[khi]) * (h * h) / 6.0f;
+  }
+  else {
+    y = a * ya[klo] + b * ya[khi];
+  }
+  return 0;
 }
 
 // the script functions
-AVSValue AVSChr(AVSValue args, void*, IScriptEnvironment* env )
+AVSValue AVSChr(AVSValue args, void*, IScriptEnvironment* env)
 {
-    char s[2];
+  char s[2];
 
-	s[0]=(char)(args[0].AsInt());
-	s[1]=0;
-    return env->SaveString(s);
+  s[0] = (char)(args[0].AsInt());
+  s[1] = 0;
+  return env->SaveString(s);
 }
 
 AVSValue AVSOrd(AVSValue args, void*, IScriptEnvironment*)
@@ -1362,57 +1363,57 @@ AVSValue FillStr(AVSValue args, void*, IScriptEnvironment* env )
     return ret;
 }
 
-AVSValue AVSTime(AVSValue args, void*, IScriptEnvironment* env )
+AVSValue AVSTime(AVSValue args, void*, IScriptEnvironment* env)
 {
-	time_t lt_t;
-	struct tm * lt;
-	time(&lt_t);
-	lt = localtime (&lt_t);
-    char s[1024];
-    strftime(s,1024,args[0].AsString(""),lt);
-    s[1023] = 0;
-    return env->SaveString(s);
+  time_t lt_t;
+  struct tm* lt;
+  time(&lt_t);
+  lt = localtime(&lt_t);
+  char s[1024];
+  strftime(s, 1024, args[0].AsString(""), lt);
+  s[1023] = 0;
+  return env->SaveString(s);
 }
 
 AVSValue Spline(AVSValue args, void*, IScriptEnvironment* env )
 {
-	int n;
-	float x,y;
-	int i;
-	bool cubic;
+  int n;
+  float x,y;
+  int i;
+  bool cubic;
 
-	AVSValue coordinates;
+  AVSValue coordinates;
 
-	x = args[0].AsFloatf(0);
-	coordinates = args[1];
-	cubic = args[2].AsBool(true);
+  x = args[0].AsFloatf(0);
+  coordinates = args[1];
+  cubic = args[2].AsBool(true);
 
-	n = coordinates.ArraySize() ;
+  n = coordinates.ArraySize();
 
-	if (n<4 || n&1) env->ThrowError("To few arguments for Spline");
+  if (n < 4 || n & 1) env->ThrowError("To few arguments for Spline");
 
-	n=n/2;
+  n = n / 2;
 
-  float *buf = new float[(n+1)*3];
-  float *xa  = &(buf[(n+1) * 0]);
-  float *ya  = &(buf[(n+1) * 1]);
-  float *y2a = &(buf[(n+1) * 2]);
+  float* buf = new float[(n + 1) * 3];
+  float* xa = &(buf[(n + 1) * 0]);
+  float* ya = &(buf[(n + 1) * 1]);
+  float* y2a = &(buf[(n + 1) * 2]);
 
-	for (i=1; i<=n; i++) {
-		xa[i] = coordinates[(i-1)*2+0].AsFloatf(0);
-		ya[i] = coordinates[(i-1)*2+1].AsFloatf(0);
-	}
+  for (i = 1; i <= n; i++) {
+    xa[i] = coordinates[(i - 1) * 2 + 0].AsFloatf(0);
+    ya[i] = coordinates[(i - 1) * 2 + 1].AsFloatf(0);
+  }
 
-	for (i=1; i<n; i++) {
-		if (xa[i] >= xa[i+1]) env->ThrowError("Spline: all x values have to be different and in ascending order!");
-	}
+  for (i = 1; i < n; i++) {
+    if (xa[i] >= xa[i + 1]) env->ThrowError("Spline: all x values have to be different and in ascending order!");
+  }
 
-	spline(xa, ya, n, y2a);
-	splint(xa, ya, y2a, n, x, y, cubic);
+  spline(xa, ya, n, y2a);
+  splint(xa, ya, y2a, n, x, y, cubic);
 
   delete[] buf;
 
-	return y;
+  return y;
 }
 
 // WE <-
@@ -2164,9 +2165,9 @@ AVSValue LogMsg(AVSValue args, void*, IScriptEnvironment* env)
 
 AVSValue SetCacheMode(AVSValue args, void*, IScriptEnvironment* env)
 {
-	InternalEnvironment *envI = static_cast<InternalEnvironment*>(env);
+  InternalEnvironment *envI = static_cast<InternalEnvironment*>(env);
   envI->SetCacheMode((CacheMode)args[0].AsInt());
-	return AVSValue();
+  return AVSValue();
 }
 
 AVSValue SetDeviceOpt(AVSValue args, void*, IScriptEnvironment* env)
