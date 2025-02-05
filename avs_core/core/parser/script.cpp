@@ -2311,12 +2311,14 @@ bool customCompareBool(const std::pair<const AVSValue*, int>& a, const std::pair
   return (a.first)->AsBool() < (b.first)->AsBool();
 }
 
+// v11: 64 bit content as well
 bool customCompareInt(const std::pair<const AVSValue *, int>& a, const std::pair<const AVSValue *, int>& b) {
-  return (a.first)->AsInt() < (b.first)->AsInt();
+  return (a.first)->AsLong() < (b.first)->AsLong(); // v11: AsLong instead of AsInt
 }
 
+// v11: 64 bit content as well
 bool customCompareFloat(const std::pair<const AVSValue*, int>& a, const std::pair<const AVSValue*, int>& b) {
-  return (a.first)->AsFloatf() < (b.first)->AsFloatf();
+  return (a.first)->AsFloat() < (b.first)->AsFloat(); // v11: AsFloat instead of AsFloatf
 }
 
 bool customCompareString(const std::pair<const AVSValue*, int>& a, const std::pair<const AVSValue*, int>& b) {
@@ -2345,17 +2347,17 @@ AVSValue ArraySort(AVSValue args, void* user_data, IScriptEnvironment* env)
     AvsValueType currentType = indexedArr[i].first->GetType();
     if (finalType == AvsValueType::VALUE_TYPE_INT && currentType == AvsValueType::VALUE_TYPE_LONG)
     {
-      // promote int to long; note: still no int64 in avs+
+      // promote int to long; note: since v11: long (int64) exists
       finalType = currentType;
     }
     else if (finalType == AvsValueType::VALUE_TYPE_FLOAT && currentType == AvsValueType::VALUE_TYPE_DOUBLE)
     {
-      // promote float to double; note: still no double in avs+
+      // promote float to double; note: since v11: double exists
       finalType = currentType;
     }
     else if ((finalType == AvsValueType::VALUE_TYPE_INT || finalType == AvsValueType::VALUE_TYPE_LONG) &&
       (currentType == AvsValueType::VALUE_TYPE_FLOAT || currentType == AvsValueType::VALUE_TYPE_DOUBLE)) {
-      // promote int-like to float-like; note: still no int64/double in avs+
+      // promote int-like to float-like; note: since v11: int64/double exists
       finalType = currentType;
     }
     // cannot mix bools, ints and strings
@@ -2379,10 +2381,12 @@ AVSValue ArraySort(AVSValue args, void* user_data, IScriptEnvironment* env)
 
   switch(finalType){
   case AvsValueType::VALUE_TYPE_BOOL: std::sort(indexedArr.begin(), indexedArr.end(), customCompareBool); break;
-  case AvsValueType::VALUE_TYPE_INT: std::sort(indexedArr.begin(), indexedArr.end(), customCompareInt); break;
-  //case AvsValueType::VALUE_TYPE_LONG: std::sort(indexedArr.begin(), indexedArr.end(), customCompareInt64); break;
-  case AvsValueType::VALUE_TYPE_FLOAT: std::sort(indexedArr.begin(), indexedArr.end(), customCompareFloat); break;
-  //case AvsValueType::VALUE_TYPE_DOUBLE: std::sort(indexedArr.begin(), indexedArr.end(), customCompareDouble); break;
+  case AvsValueType::VALUE_TYPE_INT:
+  case AvsValueType::VALUE_TYPE_LONG:
+    std::sort(indexedArr.begin(), indexedArr.end(), customCompareInt); break;
+  case AvsValueType::VALUE_TYPE_FLOAT:
+  case AvsValueType::VALUE_TYPE_DOUBLE:
+    std::sort(indexedArr.begin(), indexedArr.end(), customCompareFloat); break;
   case AvsValueType::VALUE_TYPE_STRING: std::sort(indexedArr.begin(), indexedArr.end(), customCompareString); break;
   default:
     env->ThrowError("ArraySort: unsupported data type");
