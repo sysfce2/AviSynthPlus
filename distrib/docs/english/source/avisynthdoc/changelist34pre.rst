@@ -1,8 +1,4 @@
 
-Changes.
-========
-
-
 Changes from to r1825 to last <3.x build
 ----------------------------------------
 

@@ -1,10 +1,6 @@
 
-Changes.
-========
-
-
-Changes from 2.5
-----------------
+Changes from 2.5 to 2.6
+-----------------------
 
 
 Additions
