@@ -889,57 +889,96 @@ AVSValue BitSetCount64(AVSValue args, void*, IScriptEnvironment*) {
 AVSValue UCase(AVSValue args, void*, IScriptEnvironment* env) { return _strupr(env->SaveString(args[0].AsString())); }
 AVSValue LCase(AVSValue args, void*, IScriptEnvironment* env) { return _strlwr(env->SaveString(args[0].AsString())); }
 
-AVSValue StrLen(AVSValue args, void*, IScriptEnvironment* ) { return int(strlen(args[0].AsString())); }
+AVSValue StrLen(AVSValue args, void*, IScriptEnvironment* ) { 
+  size_t len = strlen(args[0].AsString());
+  if (len > static_cast<size_t>(std::numeric_limits<int>::max()))
+    return static_cast<int64_t>(len);
+  else
+    return static_cast<int>(len);
+}
 AVSValue RevStr(AVSValue args, void*, IScriptEnvironment* env) { return _strrev(env->SaveString(args[0].AsString())); }
 
 AVSValue LeftStr(AVSValue args, void*, IScriptEnvironment* env)
- {
-   const int count = args[1].AsInt();
-   if (count < 0)
-      env->ThrowError("LeftStr: Negative character count not allowed");
-   char *result = new(std::nothrow) char[count+1];
-   if (!result) env->ThrowError("LeftStr: malloc failure!");
-   *result = 0;
-   strncat(result, args[0].AsString(), count);
-   AVSValue ret = env->SaveString(result);
-   delete[] result;
-   return ret;
- }
+{
+  const int64_t _count = args[1].AsLong();
+  if (_count < 0) {
+    env->ThrowError("LeftStr: Negative character count not allowed");
+  }
+  if (static_cast<uint64_t>(_count) > std::numeric_limits<size_t>::max() - 1) {
+    env->ThrowError("LeftStr: Character count exceeds maximum allowed value");
+  }
+  const size_t count = static_cast<size_t>(_count);
+
+  char* result = new(std::nothrow) char[count + 1];
+  if (!result) env->ThrowError("LeftStr: malloc failure (%zu bytes)!", count + 1);
+  strncpy(result, args[0].AsString(), count);
+  result[count] = '\0'; // Ensure null termination
+  AVSValue ret = env->SaveString(result);
+  delete[] result;
+  return ret;
+}
 
 AVSValue MidStr(AVSValue args, void*, IScriptEnvironment* env)
 {
-  const int maxlen = (int)strlen(args[0].AsString());
-  if (args[1].AsInt() < 1)
-      env->ThrowError("MidStr: Illegal character location");
-  int len = args[2].AsInt(maxlen);
-  if (len < 0)
-      env->ThrowError("MidStr: Illegal character count");
-  int offset = args[1].AsInt() - 1;
-  if (maxlen <= offset) { offset = 0; len = 0;}
-  char *result = new(std::nothrow) char[len+1];
-  if (!result) env->ThrowError("MidStr: malloc failure!");
-  *result = 0;
-  strncat(result, args[0].AsString()+offset, len);
+  const size_t maxlen = strlen(args[0].AsString());
+
+  if (args[1].AsLong() < 1)
+      env->ThrowError("MidStr: Illegal character location. Positions start with 1.");
+
+  if (static_cast<uint64_t>(args[1].AsLong() - 1) > std::numeric_limits<size_t>::max() - 1)
+    env->ThrowError("MidStr: Offset exceeds maximum allowed value");
+
+  size_t offset = static_cast<size_t>(args[1].AsLong() - 1); // pos=1 specifies start.
+
+  int64_t _len = args[2].AsLong(maxlen);
+  if (_len < 0)
+      env->ThrowError("MidStr: Character count cannot be negative");
+  if (maxlen <= offset) { offset = 0; _len = 0;}
+
+  if (static_cast<uint64_t>(_len) > std::numeric_limits<size_t>::max() - 1)
+    env->ThrowError("MidStr: Character count exceeds maximum allowed value");
+  size_t len = static_cast<size_t>(_len);
+
+  if (offset + len > maxlen)
+    len = maxlen - offset; // though strncpy handles premature string end
+
+  char *result = new(std::nothrow) char[len + 1];
+  if (!result) env->ThrowError("MidStr: malloc failure (%zu bytes)!", len + 1);
+  strncpy(result, args[0].AsString() + offset, len);
+  result[len] = '\0';
+
   AVSValue ret = env->SaveString(result);
   delete[] result;
   return ret;
 }
 
 AVSValue RightStr(AVSValue args, void*, IScriptEnvironment* env)
- {
-   if (args[1].AsInt() < 0)
-      env->ThrowError("RightStr: Negative character count not allowed");
+{
+  const int64_t _count = args[1].AsLong();
+  if (_count < 0)
+    env->ThrowError("RightStr: Negative character count not allowed");
 
-   int offset = (int)strlen(args[0].AsString()) - args[1].AsInt();
-   if (offset < 0) offset = 0;
-   char *result = new(std::nothrow) char[args[1].AsInt()+1];
-   if (!result) env->ThrowError("RightStr: malloc failure!");
-   *result = 0;
-   strncat(result, args[0].AsString()+offset, args[1].AsInt());
-   AVSValue ret = env->SaveString(result);
-   delete[] result;
-   return ret;
- }
+  if (static_cast<uint64_t>(_count) > std::numeric_limits<size_t>::max() - 1)
+    env->ThrowError("RightStr: Character count exceeds maximum allowed value");
+
+  size_t count = static_cast<size_t>(_count);
+  const size_t len = strlen(args[0].AsString());
+  if (count > len)
+    count = len;
+  // no error given, limit to string length
+  // env->ThrowError("RightStr: Character count (%zu) exceeds string length (%zu)", count, len);
+
+  const size_t offset = len - count;
+
+  char* result = new(std::nothrow) char[count + 1];
+  if (!result) env->ThrowError("RightStr: memory allocation failure (%zu bytes)!", count + 1);
+  strncpy(result, args[0].AsString() + offset, count);
+  result[count] = '\0';
+
+  AVSValue ret = env->SaveString(result);
+  delete[] result;
+  return ret;
+}
 
 AVSValue ReplaceStr(AVSValue args, void*, IScriptEnvironment* env) {
   char const * const original = args[0].AsString();
@@ -1288,22 +1327,37 @@ AVSValue AVSOrd(AVSValue args, void*, IScriptEnvironment*)
 
 AVSValue FillStr(AVSValue args, void*, IScriptEnvironment* env )
 {
-    const int count = args[0].AsInt();
-    if (count <= 0)
-      env->ThrowError("FillStr: Repeat count must greater than zero!");
+    const int64_t _count = args[0].AsLong();
+    if (_count <= 0)
+      env->ThrowError("FillStr: Repeat count must be greater than zero!");
 
     const char *str = args[1].AsString(" ");
-    const int len = lstrlen(str);
-    const int total = count * len;
+    const size_t len_to_repeat = strlen(str);
+    if (len_to_repeat == 0)
+      return str;
 
-    char *buff = new(std::nothrow) char[total];
+    constexpr size_t max_size_t = std::numeric_limits<size_t>::max();
+    size_t max_repeats = (max_size_t - 1) / len_to_repeat;
+
+    size_t count = static_cast<size_t>(_count);
+    if (count > max_repeats)
+      env->ThrowError("FillStr: too many repeats, resulting string exceeds the maximum allowed length!");
+
+    const size_t total = count * len_to_repeat;
+
+    char *buff = new(std::nothrow) char[total+1];
     if (!buff)
-      env->ThrowError("FillStr: malloc failure!");
+      env->ThrowError("FillStr: memory allocation failure (%zu bytes)!", total + 1);
 
-    for (int i=0; i<total; i+=len)
-      memcpy(buff+i, str, len);
+    if (len_to_repeat == 1)
+      std::fill_n(buff, total, str[0]);
+    else {
+      for (size_t i = 0; i < count; i++)
+        memcpy(buff + i * len_to_repeat, str, len_to_repeat);
+    }
+    buff[total] = '\0';
 
-    AVSValue ret = env->SaveString(buff, total);
+    AVSValue ret = env->SaveString(buff);
     delete[] buff;
     return ret;
 }
