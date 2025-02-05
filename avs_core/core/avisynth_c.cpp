@@ -1538,6 +1538,9 @@ int64_t AVSC_CC avs_get_var_long(AVS_ScriptEnvironment * p, const char* name, in
 //
 //
 
+// prototype from avisynth.cpp
+IScriptEnvironment2* CreateScriptEnvironment2_internal(int version, bool fromAvs25, bool fromC);
+
 extern "C"
 AVS_ScriptEnvironment * AVSC_CC avs_create_script_environment(int version)
 {
@@ -1545,7 +1548,7 @@ AVS_ScriptEnvironment * AVSC_CC avs_create_script_environment(int version)
   try {
     if (version < AVISYNTH_CLASSIC_INTERFACE_VERSION)
       version = AVISYNTH_CLASSIC_INTERFACE_VERSION; // always request a more modern ScriptEnvironment.
-    e->env = CreateScriptEnvironment(version);
+    e->env = CreateScriptEnvironment2_internal(version, false, true); // flag: from C
     e->error = NULL;
   }
   catch (const AvisynthError& err) {
