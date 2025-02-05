@@ -13,7 +13,7 @@ letters, digits, and underscores (_), but no other characters. The name
 cannot start with a digit.
 
 You may use characters from your language system codepage (locale) in strings
-and file names (ANSI 8 bit only, not Unicode).
+and file names (ANSI 8 bit, utf8, but not a 16 bit Unicode).
 
 A variable's placement in an *expression* is determined by the
 :doc:`AviSynth Syntax <syntax_ref>`.
@@ -30,10 +30,8 @@ this type.
 A sequence of characters representing text. String literals are written as
 text surrounded either by "quotation marks" or by """three quotes""". The
 text can contain any characters except the terminating quotation mark or
-triple-quote sequence. The manual used to mention *TeX-style quotes*, but it
-has been confirmed that AviSynth doesn't work this way since v1.03. If you
-need to put a quotation mark inside a string, you need to use `Python-style`_
-"""three quotes""". For example:
+triple-quote sequence. If you need to put a quotation mark inside a string, 
+you need to use `Python-style`_ """three quotes""". For example:
 ::
 
     Subtitle("""AVISynth is as they say "l33t".""")
@@ -68,17 +66,26 @@ Converted escape sequences:
     e"Hello \n" will store actual LF (0x0A, 10) control character into the string
 
 -   int
+-   long
 
-An integer (32 bits, signed). An integer literal is entered as a sequence of
-digits, optionally with a + or - at the beginning. The value can be given in
-*hexadecimal* by preceding them with a "$" character. For example ``$FF`` as
-well as ``$ff`` (case does not matter) are equal to 255.
+Integer is signed 32-bit. Long is signed 64-bit. In general when 'integer' is 
+mentioned, it can be any (32 or 64-bit) integers.
+64-bit is available since Avisynth version 3.7.4 (3.8?).
+An integer literal is entered as a sequence of digits, optionally with a + or - 
+at the beginning.
+
+The value can be given in *hexadecimal* by preceding them with a "$" character. 
+For example ``$FF`` as well as ``$ff`` (case does not matter) are equal to 255.
+Unlike decimal constants, hexadecimal constants are 32 bit by default.
+Suffixed by "L" or "l" makes it 64-bit long.
+
 
 -   float
+-   double
 
-A single-precision, `floating-point`_ number. Literals are entered as a
-sequence of digits with a decimal point (.) somewhere in it and an optional +
-or -. For example, +1. is treated as a floating-point number. Note that
+Float is a single-precision, double is a 64-bit `floating-point`_ number. 
+Literals are entered as a sequence of digits with a decimal point (.) somewhere 
+in it and an optional + or -. For example, +1. is treated as a floating-point number. Note that
 exponent-style notation is **not** supported.
 
 -   bool
@@ -152,13 +159,17 @@ Changelog
 +----------------+------------------------------------------------------------+
 | Version        | Changes                                                    |
 +================+============================================================+
+| Avisynth 3.7.4 | Added 64-bit decimals                                      |
+|                | Added 64-bit floating point                                |
+|                | Added "L" suffixed hexadecimal notation                    |
++----------------+------------------------------------------------------------+
 | Avisynth 3.6.0 | Added "Usevar"                                             |
 |                | Added types: function objects and array                    |
 |                | escaped string literal syntax                              |
 +----------------+------------------------------------------------------------+
 
 
-$Date: 2024/01/09 11:08:59 $
+$Date: 2025/02/05 11:11:11 $
 
 .. _Python-style: http://forum.doom9.org/showthread.php?s=&threadid=71597
 .. _floating-point: http://en.wikipedia.org/wiki/Floating_point
