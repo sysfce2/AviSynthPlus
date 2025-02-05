@@ -84,7 +84,7 @@
 //         Add avs_video_frame_get_pixel_type and avs_video_frame_amend_pixel_type for getting and setting AVS_VideoFrame pixel_type
 //         Additional AviSynth+ V10 interface additions:
 //         Add enum AVS_SPEAKER_xxx, AVS_IT_SPEAKER_xxx
-//         audio channel mask support avs_is_channel_mask_known, avs_set_channel_mask, avs_get_channel_mask
+//         Audio channel mask support API: avs_is_channel_mask_known, avs_set_channel_mask, avs_get_channel_mask
 
 #ifndef __AVISYNTH_C__
 #define __AVISYNTH_C__
@@ -829,7 +829,7 @@ AVSC_API(AVS_VideoFrame *, avs_copy_video_frame)(AVS_VideoFrame *);
 
 // V10
 AVSC_API(int, avs_video_frame_get_pixel_type)(const AVS_VideoFrame* p);
-// V10
+
 AVSC_API(void, avs_video_frame_amend_pixel_type)(AVS_VideoFrame* p, int new_pixel_type);
 
 #ifndef AVSC_NO_DECLSPEC
@@ -1113,11 +1113,11 @@ struct AVS_FilterInfo
 };
 
 // Create a new filter
-// fi is set to point to the AVS_FilterInfo so that you can
+// 'fi' is set to point to the AVS_FilterInfo so that you can
 //   modify it once it is initialized.
-// store_child should generally be set to true.  If it is not
-//    set than ALL methods (the function pointers) must be defined
-// If it is set than you do not need to worry about freeing the child
+// 'store_child' should generally be set to true.  If it is not
+//   set then ALL methods (the function pointers) must be defined
+// If it is set then you do not need to worry about freeing the child
 //    clip.
 AVSC_API(AVS_Clip *, avs_new_c_filter)(AVS_ScriptEnvironment * e,
                                        AVS_FilterInfo * * fi,
