@@ -86,6 +86,65 @@
 //         Add enum AVS_SPEAKER_xxx, AVS_IT_SPEAKER_xxx
 //         Audio channel mask support API: avs_is_channel_mask_known, avs_set_channel_mask, avs_get_channel_mask
 
+// 2025    Follow AviSynth+ V11 interface additions (AVSValue new 64-bit types); 
+//         Implement some inline functions in the API.
+//         Saturated frame property readout if 32 bit type is enough. (Like in VS API 4)
+//         New getter API calls for all types:
+//         - avs_api_as_bool, avs_api_as_int, avs_api_as_long, avs_api_as_string
+//           avs_api_as_float, avs_api_as_error
+//         Modified INLINE typecheck and getter helpers for 64-bit data type awareness:
+//         - avs_is_int, avs_is_float
+//         - avs_as_int, avs_as_float
+//         New INLINE getter helpers for 64-bit data (prefer using API calls):
+//         - avs_as_long
+//         New setter API calls: 
+//         - avs_set_to_double, avs_set_to_long
+//         - avs_set_to_array_dyn (deep arrays, deep copy, like in AviSynth+)
+//           (avs_release_value and avs_copy_value are required for them)
+//         API version of existing INLINE value setters (new_value_xxx) for the rest value types, to make the world round:
+//         - avs_set_to_error, avs_set_to_bool, avs_set_to_int, avs_set_to_float, avs_set_to_string
+//         New optional plugin entry point: avisynth_c_plugin_init2
+//         - A C plugin signals to AviSynth that it is V11 interface (64-bit data) ready by implementing avisynth_c_plugin_init2 as well.
+//           avisynth_c_plugin_init2 has the same signature as avisynth_c_plugin_init and can
+//           simply call forward to the old avisynth_c_plugin_init entry point. Both entry points can be implemented; 
+//           AviSynth+ will first check avisynth_c_plugin_init2, then avisynth_c_plugin_init.
+//           Don't forget to add a new 
+//             avisynth_c_plugin_init2@4 = _avisynth_c_plugin_init2@4
+//           line to your existing .def file on Win32.
+//         New avs_prop_get_int_saturated
+//         New avs_prop_get_float_saturated
+//         Deprecated inline helper functions. 
+//         - avs_get_pitch => avs_get_pitch_p(p, 0)
+//           avs_get_row_size => avs_get_row_size_p(p, 0)
+//           avs_get_height => avs_get_height_p(p, 0)
+//           avs_get_read_ptr => avs_get_read_ptr_p(p, 0)
+//           avs_get_write_ptr => vs_get_write_ptr_p(p, 0)
+//           avs_release_frame => avs_release_video_frame
+//           avs_copy_frame => avs_copy_video_frame
+//         - Use #define AVSC_ALLOW_DEPRECATED if they still need for you, 
+//           but better fix your code: use the recommended replacements.
+//         Add missing AVS_MT_xxxx mode constants to header like c++ header enum MtMode
+//         Add AVS_PROPDATATYPEHINT_xxx for AVSPropDataTypeHint
+//         New avs_prop_get_data_type_hint
+//         New avs_prop_set_data_h
+
+
+// Notes.
+// Choose either method:
+// By loading avisynth.dll/.so/.dylib dinamically, AviSynth versions with different API level can be supported.
+// - Use #define AVSC_NO_DECLSPEC for function pointer definitions only.
+// - Load the library dynamically and get the necessary API functions as needed.
+// - Earlier AviSynth versions may contain fewer API functions.
+//   By detecting the loaded AviSynth/interface version, it's the caller's responsibility 
+//   to call only those API functions which have valid function pointers and are documented to work.
+//   E.g., you should only use frame property-related functions when lib.avs_get_version(clip) >= 9.
+// For linking avisynth.lib/libavisynth directly to your module:
+// - Leave AVSC_NO_DECLSPEC undefined.
+// - Link the provided .lib to your module.
+// - Your plugin/software won't work with older AviSynth instances if it uses newer API functions.
+//   The plugin DLL won't load due to dependency issues. (On Windows: platform returned code 127)
+
+
 #ifndef __AVISYNTH_C__
 #define __AVISYNTH_C__
 
