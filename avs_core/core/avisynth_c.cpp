@@ -1161,6 +1161,11 @@ AVS_Value AVSC_CC avs_invoke(AVS_ScriptEnvironment * p, const char* name, AVS_Va
   AVS_Value v = { 0,0 };
   p->error = 0;
   try {
+    // AVSValue(*(AVSValue*)&args) is deep-copying input array
+    
+    // Invoke has a special InvokePreV11C variant if pre V11 C interface 
+    // detected, which converts a possible 64 bit result to 32 bit one for
+    // compatibility. double->float, long->int. Nothing should be done here.
     AVSValue v0 = p->env->Invoke(name, *(AVSValue*)&args, arg_names);
     new ((AVSValue*)&v) AVSValue(v0);
   }
