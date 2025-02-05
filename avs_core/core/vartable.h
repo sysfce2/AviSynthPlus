@@ -114,7 +114,7 @@ class StringDump {
      cache[{keyStr, keyLen}] = keyStr;
    }
 
-   void ensure_length(int len)
+   void ensure_length(size_t len)
    {
      if (block_pos + len + 1 > block_size) {
        char* new_block = new char[block_size = max(block_size, len + 1 + sizeof(char*))];
@@ -138,15 +138,19 @@ public:
       }
    }
 
-   char* SaveString(const char* s, int len = -1, bool escape = false) {
-     int srclen = (len == -1) ? (int)strlen(s) : len;
+   // SaveString with len==-1 can store more than 'int' sized data
+   // up to size_t theoretically even on 32 bits.
+   // Public interface defines 'len' as int, this can we live with.
+   char* SaveString(const char* s, int _len = -1, bool escape = false) {
+     size_t srclen = (_len == -1) ? strlen(s) : _len >= 0 ? static_cast<size_t>(_len) : 0;
+     size_t len;
 
      std::string ss;
      if (escape) {
        ss.reserve(srclen); // worst case. Note: input string may not be closed by 0x00
        // PF: no need for WideString conversion, utf8 lower 128 ascii characters are freely searchable w/o conversion
        len = 0;
-       for (int i = 0; s[i] && i<srclen; ++i, ++len) {
+       for (size_t i = 0; s[i] && i<srclen; ++i, ++len) {
          if (s[i] == '\\') {
            switch (s[i + 1]) {
            case 'n': ss += '\n'; ++i; continue;
@@ -164,7 +168,7 @@ public:
          }
          ss += s[i];
        }
-       len = (int)ss.size();
+       len = ss.size();
        s = ss.c_str();
      }
      else {
@@ -180,7 +184,7 @@ public:
     char* result = current_block + block_pos;
     memcpy(result, s, len);
     result[len] = 0;
-    block_pos += AlignNumber(len + 1, (int)sizeof(char*)); // Keep word-aligned
+    block_pos += AlignNumber(len + 1, sizeof(char*)); // Keep word-aligned
 
     add_string(result, len); // update cache
 
