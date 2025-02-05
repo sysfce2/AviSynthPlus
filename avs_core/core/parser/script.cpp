@@ -1608,24 +1608,36 @@ AVSValue String(AVSValue args, void*, IScriptEnvironment* env)
   if (args[0].IsString()) return args[0];
   if (args[0].IsBool()) return (args[0].AsBool() ? "true" : "false");
   if (args[0].IsFunction()) return args[0].AsFunction()->ToString(env);
-  if (args[1].Defined()) {	// WE --> a format parameter is present
-    if (args[0].IsFloat()) {	//if it is an Int: IsFloat gives True, also !
-      return  env->Sprintf(args[1].AsString("%f"), args[0].AsFloat());
+  if (args[1].Defined()) {
+    // WE --> when a format parameter is present
+    // order! if it is an Int: IsFloat gives True
+    // If parameter exists, always convert to float
+    if (args[0].IsFloatf() && !args[0].IsInt()) // real 32 bit float
+    {
+      return env->Sprintf(args[1].AsString("%f"), args[0].AsFloatf());
+      // AsFloatf returns 32 bit float
     }
-    return "";	// <--WE
+    else if (args[0].IsFloat()) // 32 or 64 bit integer or double
+    {
+      return env->Sprintf(args[1].AsString("%lf"), args[0].AsFloat());
+      // AsFloat returns double
+    }
+    return "";
   }
-  else {	// standard behaviour
+  else {
+    // standard behaviour
+    if (args[0].IsLong()) {
+      char s[21];
+      sprintf(s, "%" PRId64, args[0].AsLong());
+      return env->SaveString(s);
+    }
     if (args[0].IsInt()) {
-      char s[12];
-#ifdef AVS_WINDOWS
-      return env->SaveString(_itoa(args[0].AsInt(), s, 10));
-#else // copied from AvxSynth
+      char s[12]; // with sign: worst case 11
       sprintf(s, "%d", args[0].AsInt());
       return env->SaveString(s);
-#endif
     }
-    if (args[0].IsFloat()) {
-      char s[30];
+    if (args[0].IsFloat()) { // for double as well.
+      char s[50]; // safe size for double
 #ifdef MSVC
       _locale_t locale = _create_locale(LC_NUMERIC, "C"); // decimal point: dot
       _sprintf_l(s, "%lf", locale, args[0].AsFloat());
@@ -1904,6 +1916,7 @@ AVSValue VersionNumber(AVSValue args, void*, IScriptEnvironment*) {
   // Prior to interface version 11, Avisynth supported only 32-bit floating-point data (float), not 64-bit (double).
   // To maintain compatibility (old plugins get this value as 32 bit float), this return 
   // value must remain a 32-bit float.
+}
 
 AVSValue VersionString(AVSValue args, void*, IScriptEnvironment*) {  return AVS_FULLVERSION; }
 AVSValue IsVersionOrGreater(AVSValue args, void*, IScriptEnvironment* env)
@@ -2016,7 +2029,6 @@ AVSValue HexValue64(AVSValue args, void*, IScriptEnvironment*)
 
 AVSValue AvsMin(AVSValue args, void*, IScriptEnvironment* env)
 {
-  int i;
   bool isInt = true;
   bool isFloat32 = true;
 
