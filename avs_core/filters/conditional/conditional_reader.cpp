@@ -1530,7 +1530,26 @@ PVideoFrame __stdcall ShowProperties::GetFrame(int n, IScriptEnvironment* env)
         ss << "[";
       for (int i = 0; i < propNumElements; ++i) {
         const char* s = env->propGetData(avsmap, propName, i, &error);
-        ss << "\"" << s << "\"";
+        const int type = env->propGetDataTypeHint(avsmap, propName, i, &error);
+        if (type == AVSPropDataTypeHint::PROPDATATYPEHINT_BINARY)
+        {
+          auto len = env->propGetDataSize(avsmap, propName, i, &error);
+          ss << "Data length=" << len << ": [";
+          // print up to 16 comma separated bytes in HEX, ... at the end if there are more.
+          int count = std::min(len, 16);
+          for (int i = 0; i < count; ++i) {
+            if (i > 0) ss << ",";
+            ss << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << (static_cast<unsigned int>(s[i]) & 0xFF);
+          }
+          if (len > 16) ss << "...";
+          ss << "]";
+        }
+        else
+        {
+          // AVSPropDataTypeHint::DATATYPEHINT_UTF8 and AVSPropDataTypeHint::DATATYPEHINT_UNKNOWN
+          // suppose string
+          ss << "\"" << s << "\"";
+        }
         if (i < propNumElements - 1)
           ss << ", ";
       }
