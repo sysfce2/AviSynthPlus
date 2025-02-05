@@ -46,6 +46,7 @@
 //           new: AVSValue::AsLong(int64_t def)
 //           (AsFloat returned double --> no AsDouble needed)
 //           new AVSValue constructors for 64 bit types
+//           Simplify this header, remove internally used IScriptEnvironment_Avs25 from here
 //           Frame property changes backported from VapourSynth API4
 //           - New propGetIntSaturated and propGetFloatSaturated
 //           - New enum: AVSPropDataTypeHint (VSAPI4: VSDataTypeHint)
@@ -408,8 +409,8 @@ struct AVS_Linkage {
 // end class AVSValue
 
 /**********************************************************************/
-  // Reserve pointer space so that we can keep compatibility with Avs "classic" even if it adds functions on its own
-  void    (VideoInfo::*reserved[32])();
+  // Reserve pointer space, once used to keep compatibility with Avs "classic" even if it adds functions on its own
+  void    (VideoInfo::*reserved[27])();
 /**********************************************************************/
   // AviSynth+ additions
   int     (VideoInfo::*NumComponents)() const;
@@ -1716,9 +1717,7 @@ public:
 
 
 
-
-
-
+// Multithreading behaviour. IClip SetCacheHints can return them on CACHE_GET_MTMODE query
 enum MtMode {
   MT_INVALID = 0,
   MT_NICE_FILTER = 1,
@@ -1788,6 +1787,9 @@ public:
 // is exactly identical and there is no limitation to switch interfaces.
 // You can use any interface you like.
 // Note to plugin authors : The interface is not stable, see comments in IScriptEnvironment2
+
+// The order of functions are arbitrary, no need to keep the VMT table compatibility and match 
+// with the strict IScriptEnvironment order.
 class INeoEnv {
 public:
   virtual ~INeoEnv() {}

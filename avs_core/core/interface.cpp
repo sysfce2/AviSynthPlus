@@ -826,7 +826,6 @@ void AVSValue::DESTRUCTOR()
   }
 #endif
   if (IsArray() && array_size>0) {
-    // array_size < 0: marked as C array internally, don't free elements
     delete[] array; // calls AVSValue destructors for all elements
     array = nullptr;
   }

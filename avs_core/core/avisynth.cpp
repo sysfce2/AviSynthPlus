@@ -749,6 +749,8 @@ namespace std
 #include "ScriptEnvironmentTLS.h"
 
 class ThreadScriptEnvironment;
+
+// order is not important, unlike in IScriptEnvironment variants.
 class ScriptEnvironment {
 public:
   ScriptEnvironment();
@@ -4298,14 +4300,18 @@ static void ListArguments(const char *name, const AVSValue& args, int &level, bo
   else {
     if (!args.Defined())
       fprintf(stdout, "Undefined\r\n");
-    else if(args.IsBool())
+    else if (args.IsBool())
       fprintf(stdout, "Bool %s\r\n", args.AsBool() ? "true" : "false");
+    else if (args.IsLong()) // before IsInt() !
+      fprintf(stdout, "Long " PRId64 "\r\n", args.AsLong());
     else if (args.IsInt())
-        fprintf(stdout, "Int %d\r\n", args.AsInt());
+      fprintf(stdout, "Int %d\r\n", args.AsInt());
     else if (args.IsString())
       fprintf(stdout, "String %s\r\n", args.AsString());
-    else if (args.IsFloat())
+    else if (args.IsFloatf()) // before IsFloat() !
       fprintf(stdout, "Float %f\r\n", args.AsFloatf());
+    else if (args.IsFloat())
+      fprintf(stdout, "Float/Double %lf\r\n", args.AsFloat());
     else if (args.IsFunction())
       fprintf(stdout, "Function\r\n");
     else if (args.IsClip())
@@ -4642,7 +4648,7 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
             }
             else if (args[i].Defined() && !args[i].IsArray() && !AVSFunction::SingleTypeMatch(q[1], args[i], false))
             {
-              ThrowError("Script error: the named argument \"%s\" to %s had the wrong type", arg_names[i], name);
+              ThrowError("Script error: the named argument \"%s\" to %s had the wrong type (passed '%c')", arg_names[i], name, args[i].GetType(), q[1]);
             }
             else {
               if (args[i].Defined() && args[i].IsArray()) {
