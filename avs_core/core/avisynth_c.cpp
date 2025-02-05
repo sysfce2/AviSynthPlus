@@ -945,7 +945,7 @@ void AVSC_CC avs_release_value(AVS_Value v)
 {
   if (((AVSValue*)&v)->IsArray()) {
     // signing for destructor: don't free array elements
-    ((AVSValue*)&v)->MarkArrayAsC();
+    ((AVSValue*)&v)->MarkArrayAsNonDeepCopy();
   }
 
   ((AVSValue*)&v)->~AVSValue();

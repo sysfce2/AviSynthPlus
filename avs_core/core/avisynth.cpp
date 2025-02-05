@@ -1738,16 +1738,14 @@ public:
     const AVSValue args, const char* const* arg_names)
   {
     AVSValue result;
-    // MarkArrayAsC: signing for destructor: don't free array elements.
-    // Reason: CPP 2.5 plugins have "baked code" in their avisynth.h and do not know 
-    // about that arrays (used for parameters) are now deep-copied and deep-free'd.
-    // Normally the elements of 'args' parameter array content would be freed up on 
-    // Invoke25's function exit. But the caller would free them up again-> crash.
-    // So we are assume that the free is on the other (cpp 2.5 plugin) side.
     const bool success = core->Invoke_(&result, AVSValue(), name, nullptr, args, arg_names, this, IsRuntime());
 
-    if (args.IsArray())
-      ((AVSValue*)&args)->MarkArrayAsC();
+    ((AVSValue*)&args)->MarkArrayAsNonDeepCopy();
+    // In Avisynth+, arrays are deep-copied and freed. The 'args' array elements are freed upon Invoke25's exit.
+    // But this call comes from a filter using Avisynth 2.5 header, where the caller would free the elements again, causing a crash.
+    // We assume memory freeing is handled by the cpp 2.5 plugin.
+    // If 'args' is an array, we convert its type to 'void' to prevent AVSValue destructor from freeing the array elements.
+    // Unlike Avisynth+, the passed AVSValue is not a smart deep-copied array; it was allocated by the client and filled manually.
 
     if (!success)
       throw NotFound();

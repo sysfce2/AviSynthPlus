@@ -831,11 +831,17 @@ void AVSValue::DESTRUCTOR()
   }
 }
 
-void AVSValue::MarkArrayAsC()
+void AVSValue::MarkArrayAsNonDeepCopy()
 {
-  // negative value signs to destructor
-  if(array_size > 0)
-    array_size = -array_size;
+  // Convert AVSValue content to a neutral 'v' type
+  // to prevent unwanted freeing of array elements
+  // or allocations that were possible done by the client side
+  if (type == 'a' && array_size > 0)
+  {
+    type = 'v';
+    array_size = 0;
+    array = nullptr;
+  }
 }
 
 AVSValue& AVSValue::operator=(const AVSValue& v)         { return OPERATOR_ASSIGN(v); }
