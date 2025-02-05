@@ -42,10 +42,12 @@ Returns the denominator of the number of frames per seconds of the clip
 
 Returns the sample rate of the audio of the clip (type: int).
 
--   AudioLength (clip) (v2.51)
+-   AudioLength (clip) (v2.51, v3.7.4)
 
-Returns the number of samples of the audio of the clip (type: int). Be aware
-of possible overflow on very long clips (2^31 samples limit).
+Returns the number of samples of the audio of the clip.
+(type: int, since 3.7.4 exact 64 bit number).
+On pre-3.7.4 be aware of possible overflow on very
+long clips ( 2^31 samples limit - 32 bit integer).
 
 -   AudioLengthLo (clip [, int]) (v2.60)
 
@@ -62,9 +64,11 @@ Returns the number of samples of the audio of the clip divided by int
 Returns a string formated with the total number of samples of the audio of
 the clip (type: string).
 
--   AudioLengthF (clip) (v2.55)
+-   AudioLengthF (clip) (v2.55, v3.7.4)
 
-Returns the number of samples of the audio of the clip (type: float).
+Returns the number of samples of the audio of the clip.
+(type: float, since 3.7.4 a 64 bit double, still not exact and may overflow, 
+use Audiolength) 
 
 -   AudioDuration (clip) (v2.60)
 
@@ -247,7 +251,7 @@ https://learn.microsoft.com/en-us/windows/win32/api/mmreg/ns-mmreg-waveformatext
 
 Back to :doc:`AviSynth Syntax <syntax_ref>`.
 
-$Date: 2023/03/21 13:56:00 $
+$Date: 2025/02/05 10:55:00 $
 
 .. _rgb: http://avisynth.org/mediawiki/RGB
 .. _rgb24: http://avisynth.org/mediawiki/RGB24
