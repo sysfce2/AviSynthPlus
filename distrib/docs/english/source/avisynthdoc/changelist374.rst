@@ -1,10 +1,5 @@
-
-Changes.
-========
-
-
-Changes from 3.7.3 to 3.7.4
----------------------------
+Changes from 3.7.3 to 3.7.4 (3.8?)
+----------------------------------
 
 Additions, changes
 ~~~~~~~~~~~~~~~~~~
@@ -24,20 +19,99 @@ Additions, changes
 - Posix: Detect additional plugindirs from LD_LIBRARY_PATH environment variable
 - #413 Add ListAutoloadDirs() script function returing a LF delimited string with directory list.
 - SubTitle to accept real LF (``\r``) or CR LF (``\r\n``) control characters for line break.
+- #413 Add 64 bit data types (https://github.com/AviSynth/AviSynthPlus/issues/423)
+  
+  - (technical) Value (AVSValue) types ``i`` and ``f`` are kept and still mean 32 bit integer and float values.
+  - (technical) New value types ``l`` and ``d`` added to mark 64 bit integer and double types.
+  - Integer decimal constants are automatically promoted to long (int64_t) if they do not fit into integer.
+    Integer decimal constants are automatically promoted to 64 bit double if they do not even fit into a 64 bit long.
+    (But values stored as 'only' integers behave as 64 bit long in math operations).
+  - New syntax element ``L`` (or ``l``) suffix for hexadecimal constants for interpreting 64 bit data (``$800000001010L``)
+  - Floating point constants (literals) stored as 64 bit double (formerly only with 32 bit float precision)
+    otherwise the constant remains 32 bit integer. (Compatibility: otherwise color constants 
+    over ``$7FFFFFFF`` (like ``$FFFFFFFF``) would all turn into 64 bit long instead of integer)
+  - ``IsInt()`` returns true for any 32 or 64 bit integer
+  - ``IsLong()`` returns true only if underlying variable is long (64 bit integer)
+  - ``IsFloat()`` returns true for any 32 or 64 bit floating point content (float or double and for any integers - as before)
+  - ``IsFloatF()`` returns true only if value is _not_ double.
+  - ``Float()`` by default casts to double. In case of the integer input is in +/-16777216 range, it casts to 32 bit float.
+    (fits into float without precision loss).
+    If the original value is already a floating point value, its type will remain untouched (no automatic float->double conversion).
+  - New ``Double()`` converts always to 64 bit double
+  - New ``Floatf()`` converts always to 32 bit float
+  - New ``Long()`` converts always to 64 bit long
+  - New ``IntI()`` converts always to 32 bit integer
+  - Function ``Pi`` returns real double precision constant.
+  - ``VersionNumber()`` still returns 32 bit float, but the exact value is adjusted a bit for compatibility reasons, because the script 
+    constant ``2.6`` is stored in double precision which makes troubles if compared to a 32 bit float version of 2.6.
+    E.g. to have 2.6 (double) >= 2.6f (float) in order not to break scripts which contain ``IsAvs26 = VersionNumber() >= 2.6``.
+  - Floating point mathematical functions (``Sin``, etc..) return double precision results.
+  - Floating point arithmetic (addition, subtraction, multiplication, division) uses double precision, except when both operands
+    are 32-bit floats, in which case the result is also a 32-bit float. 
+    (32-bit float / 32-bit float results in a 32-bit float)
+  - Integer mathematical operation operate on 64 bit data. When result is within a 
+    32 bit integer range, it is technically stored as 32 bit integer, which is automatically promoted to 64 bit long if needed.
+  - ``For``-loops are using 64 bit integer for initial value, step and end-value.
+  - ``Animate``: using 64 bit precision inside.
+  - ``Bit-related`` functions now have distinctly named 64-bit integer versions, while the old ones continue to work with plain integers.
+  
+    - ``BitAnd64``, ``BitNot64``, ``BitOr64``, ``BitXor64``,
+    - ``bitshl64``, ``bitsal64``: shift left (providing two versions; though arithmetic and logical is the same)
+    - ``bitshr64``, ``bitsar64``: shift right logical and arithmetic
+    - ``bitrol64``, ``bitror64``: 64 bit rotation left and right
+    - ``BitChg64``, ``BitClr64``, ``BitSet64``, ``BitTst64``, change, clear, set, test
+    - ``bitsetcount64`` counts the set bits (or sum of set bits) of one or more parameter values.
+  - New: ``HexValue64()`` for 64-bit long result. The original ``HexValue()`` keeps returning 32 bit integer 
+    so ``HexValue("FFFFFFFF")`` is still ``-1``, but ``HexValue64("FFFFFFFF")`` will be ``4294967295`` (64 bit number)
+  - Integer and float frame property read and writes work on real 64 bit integers and float.
+  - Formatting functions (``String()``, etc.) to 64 bit data type aware.
+  - ``AudioLength()`` now returns 64 bit integer
+  - ``AudioLengthF()`` returns data to double instead of 32 bit float (though it's now useless and still can lose precision).
+  - Function parameter types (function signature) keep ``i`` and ``f``, but accept 64 bit long and double
+    precision parameters transparently.
+  - String length can exceed the value of a 32 bit int. ``StrLen()`` returns long if int cannot hold the length.
+    ``LeftStr``, ``RightStr``, ``MidStr`` length parameters accept 64 bit long values.
+  - Compatibility: 64 bit parameter values are automatically replaced with 32 bit int and 32 bit float if Avisynth 2.5 or 
+    old (pre-V11, non-64-bit aware) C interface is detected. Such plugins will see the good old 32 bit data.
+  - Backport the frame property changes from VapourSynth API4
 
-Build environment, Intenface
+    - new saturated frame property getters on API returning only 32 bit data: ``propGetIntSaturated`` and ``propGetFloatSaturated``
+    - A frame property with ``data`` type can hold a string or real binary data.
+      To distinguish between the two kinds, a hint can be set with a new API version of ``propSetDataH``, which helps visualizing and later: exporting.
+    - ``propShow`` displays binary buffer instead of string if the internal subtype is set to ``Binary``.
+      The buffer length and the first (up to) 16 bytes are displayed like this: ``Binary data. Length= xx [00,01,DD, ...]``
+      A string content is displayed otherwise.
+    - Since ``propSet`` script function in Avisynth is string-only, it sets the hint to ``DATATYPEHINT_UTF8`` 
+      (utf8 just hinting that this is a string)
+
+Build environment, Interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 - add LOONGARCH support
 - Use system installs of DevIL and SoundTouch on all platforms, remove in-tree binaries/code
 - avisynth.h: add ListAutoloadDirs() to internal interface declarations
 - CMakeList.txt to accept Intel C++ Compiler 2025
+- V11 interface: new 64 bit related AVSValue get and set function in C++ and C interface.
+- V11 interface: C interface supports Avisynth+ deep-copy dynamic arrays.
+- Added optional C plugin init function: to enable full 64 bit data to C plugins, they should implement ``avisynth_c_plugin_init2``.
+- V11 interface: add saturated int (int64->int) and float (double->float) frame property reading function to 
+  IScriptInterface: ``propGetIntSaturated``, ``propGetFloatSaturated``
+  and ``prop_get_int_saturated``, ``prop_get_float_saturated`` to C interface, like in VapourSynth API 4.
+- V11 interface: "hint" to buffer/string frame properties, like in Vapoursynth API 4.
+  IScriptInterface: ``propGetDataTypeHint``, ``propSetDataH``.
+  C interface: ``avs_prop_get_data_type_hint``, ``avs_prop_set_data_h``.
+  Equivalent functions: ``VSAPI4.mapGetDataTypeHint`` = ``Avisynth.propGetDataTypeHint``, 
+  ``VSAPI4.mapSetData`` = ``Avisynth.propSetDataH``,
+  ``VSAPI4.mapSetData3`` = ``Avisynth.propSetData``.
+- V11: New enum in headers: ``AVSPropDataTypeHint`` (VSAPI4: VSDataTypeHint)
+- Background modification: ``env->SaveString`` can store longer strings than ``INT_MAX`` if ``len`` is ``-1`` (autodetect length by null termination).
+  Even on 32 bit systems ``size_t`` can exceed ``INT_MAX``. (nevertheless, the length parameter - when is given - is still int type)
 
 Bugfixes
 ~~~~~~~~
 - Fix "SetLogParams" defaults - mentioned in #391
 - Fix corrupt Turn functions when a planar RGB turn would be followed by a YUV Turn.
   Regression since TurnXXXX supports planar RGB (2016.08.23; probably since r2081 commit dba954e2de0c9c6218d17fc5c4974f4c28b627c3)
-- Fix #386: Interleave to call plugin destructor like StackXXXX (memory leak in case if script errors)
+- Fix #386: Interleave to call plugin destructor like StackXXXX (memory leak in case of script errors)
 - Fix #384: swapped ShowGreen/ShowBlue for planar RGB sources
 - Fix: allow use of "local" in ConditionalSelect string version (fixed wrong function signature)
 - "Info" now can display a line which is only partially visible (instead of not showing it at all)
@@ -71,11 +145,13 @@ Documentation
 - Update Intel 2024 compiler build process
 - Add autoload helper functions to rst docs, update content and bring syntax_plugins.rst to new format
 - update compile_avsplus.rst online docs with Intel C++ Compiler 2025
+- Interface V11 changes: see :ref:`api_v11_whats_new` for more details.
+- Document 64 bit capable functions and changes in old ones in millions of other rst pages.
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2025/01/01 9:42:00 $
+$Date: 2025/02/05 12:07:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
