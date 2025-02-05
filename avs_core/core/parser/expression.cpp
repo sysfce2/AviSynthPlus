@@ -327,11 +327,14 @@ AVSValue ExpEqual::Evaluate(IScriptEnvironment* env)
   if (x.IsBool() && y.IsBool()) {
     return x.AsBool() == y.AsBool();
   }
-  else if (x.IsInt() && y.IsInt()) {
-    return x.AsInt() == y.AsInt();
+  else if (x.IsInt() && y.IsInt()) { // true for any 32/64 bit data
+    return x.AsLong() == y.AsLong(); // work with 64 bits
+  }
+  else if (x.IsFloatf() && y.IsFloatf() && !x.IsInt() && !y.IsInt()) {
+    return x.AsFloatf() == y.AsFloatf();
   }
   else if (x.IsFloat() && y.IsFloat()) {
-    return x.AsFloat() == y.AsFloat();
+    return x.AsFloat() == y.AsFloat(); // AsFloat returns double
   }
   else if (x.IsClip() && y.IsClip()) {
     return x.AsClip() == y.AsClip();
@@ -353,8 +356,11 @@ AVSValue ExpLess::Evaluate(IScriptEnvironment* env)
 {
   AVSValue x = a->Evaluate(env);
   AVSValue y = b->Evaluate(env);
-  if (x.IsInt() && y.IsInt()) {
-    return x.AsInt() < y.AsInt();
+  if (x.IsInt() && y.IsInt()) { // true for any 32/64 bit data
+    return x.AsLong() < y.AsLong(); // work with 64 bits
+  }
+  else if (x.IsFloatf() && y.IsFloatf() && !x.IsInt() && !y.IsInt()) {
+    return x.AsFloatf() < y.AsFloatf();
   }
   else if (x.IsFloat() && y.IsFloat()) {
     return x.AsFloat() < y.AsFloat();
@@ -372,14 +378,21 @@ AVSValue ExpPlus::Evaluate(IScriptEnvironment* env)
 {
   AVSValue x = a->Evaluate(env);
   AVSValue y = b->Evaluate(env);
- if (x.IsClip() && y.IsClip()) {
+  if (x.IsClip() && y.IsClip()) {
     AVSValue arg[3] = { x, y, 0 };
     return env->Invoke("UnalignedSplice", AVSValue(arg, 3));
   }
-  else if (x.IsInt() && y.IsInt())
-    return x.AsInt() + y.AsInt();
+  else if (x.IsInt() && y.IsInt()) { // they are true for any 32/64 bits inside
+    int64_t result = x.AsLong() + y.AsLong();
+    // keep the smaller type
+    if (result >= INT_MIN && result <= INT_MAX)
+      return (int)result;
+    return result;
+  }
+  else if (x.IsFloatf() && y.IsFloatf() && !x.IsInt() && !y.IsInt())
+    return x.AsFloatf() + y.AsFloatf();
   else if (x.IsFloat() && y.IsFloat())
-    return x.AsFloat() + y.AsFloat();
+    return x.AsFloat() + y.AsFloat(); // AsFloat returns double
   else if (x.IsString() && y.IsString())
     return env->Sprintf("%s%s", x.AsString(), y.AsString());
   else {
@@ -408,10 +421,17 @@ AVSValue ExpMinus::Evaluate(IScriptEnvironment* env)
 {
   AVSValue x = a->Evaluate(env);
   AVSValue y = b->Evaluate(env);
-  if (x.IsInt() && y.IsInt())
-    return x.AsInt() - y.AsInt();
+  if (x.IsInt() && y.IsInt()) { // they are true for any 32/64 bits inside
+    int64_t result = x.AsLong() - y.AsLong();
+    // keep the smaller type
+    if (result >= INT_MIN && result <= INT_MAX)
+      return (int)result;
+    return result;
+  }
+  else if (x.IsFloatf() && y.IsFloatf() && !x.IsInt() && !y.IsInt())
+    return x.AsFloatf() - y.AsFloatf();
   else if (x.IsFloat() && y.IsFloat())
-    return x.AsFloat() - y.AsFloat();
+    return x.AsFloat() - y.AsFloat(); // AsFloat returns double
   else {
     env->ThrowError("Evaluate: operands of `-' must be numeric");
     return 0;
@@ -423,10 +443,17 @@ AVSValue ExpMult::Evaluate(IScriptEnvironment* env)
 {
   AVSValue x = a->Evaluate(env);
   AVSValue y = b->Evaluate(env);
-  if (x.IsInt() && y.IsInt())
-    return x.AsInt() * y.AsInt();
+  if (x.IsInt() && y.IsInt()) { // they are true for any 32/64 bits inside
+    int64_t result = x.AsLong() * y.AsLong();
+    // keep the smaller type
+    if (result >= INT_MIN && result <= INT_MAX)
+      return (int)result;
+    return result;
+  }
+  else if (x.IsFloatf() && y.IsFloatf() && !x.IsInt() && !y.IsInt())
+    return x.AsFloatf() * y.AsFloatf();
   else if (x.IsFloat() && y.IsFloat())
-    return x.AsFloat() * y.AsFloat();
+    return x.AsFloat() * y.AsFloat(); // AsFloat returns double
   else {
     env->ThrowError("Evaluate: operands of `*' must be numeric");
     return 0;
@@ -438,13 +465,19 @@ AVSValue ExpDiv::Evaluate(IScriptEnvironment* env)
 {
   AVSValue x = a->Evaluate(env);
   AVSValue y = b->Evaluate(env);
-  if (x.IsInt() && y.IsInt()) {
-    if (y.AsInt() == 0)
+  if (x.IsInt() && y.IsInt()) { // they are true for any 32/64 bits inside
+    if (y.AsLong() == 0)
       env->ThrowError("Evaluate: division by zero");
-    return x.AsInt() / y.AsInt();
+    int64_t result = x.AsLong() / y.AsLong();
+    // keep the smaller type
+    if (result >= INT_MIN && result <= INT_MAX)
+      return (int)result;
+    return result;
   }
+  else if (x.IsFloatf() && y.IsFloatf() && !x.IsInt() && !y.IsInt())
+    return x.AsFloatf() / y.AsFloatf();
   else if (x.IsFloat() && y.IsFloat())
-    return x.AsFloat() / y.AsFloat();
+    return x.AsFloat() / y.AsFloat(); // AsFloat returns double
   else {
     env->ThrowError("Evaluate: operands of `/' must be numeric");
     return 0;
@@ -456,10 +489,14 @@ AVSValue ExpMod::Evaluate(IScriptEnvironment* env)
 {
   AVSValue x = a->Evaluate(env);
   AVSValue y = b->Evaluate(env);
-  if (x.IsInt() && y.IsInt()) {
-    if (y.AsInt() == 0)
+  if (x.IsInt() && y.IsInt()) { // they are true for any 32/64 bits inside
+    if (y.AsLong() == 0)
       env->ThrowError("Evaluate: division by zero");
-    return x.AsInt() % y.AsInt();
+    int64_t result = x.AsLong() % y.AsLong();
+    // keep the smaller type
+    if (result >= INT_MIN && result <= INT_MAX)
+      return (int)result;
+    return result;
   }
   else {
     env->ThrowError("Evaluate: operands of `%%' must be integers");
@@ -471,10 +508,20 @@ AVSValue ExpMod::Evaluate(IScriptEnvironment* env)
 AVSValue ExpNegate::Evaluate(IScriptEnvironment* env)
 {
   AVSValue x = e->Evaluate(env);
-  if (x.IsInt())
-    return -x.AsInt();
+  if (x.IsInt()) { // true for any 32/64 bits inside
+    // Note: In the old 32-bit integer case, the special value -(INT_MIN) resulted in a negative value
+    // instead of a positive number.
+    // This change in version 11 is not 100% compatible with the old behavior.
+    int64_t result = -x.AsLong();
+    // keep the smaller type
+    if (result >= INT_MIN && result <= INT_MAX)
+      return (int)result;
+    return result;
+  }
+  else if (x.IsFloatf())
+    return (float)(-x.AsFloatf());
   else if (x.IsFloat())
-    return -x.AsFloat();
+    return -x.AsFloat(); // AsFloat returns double
   else {
     env->ThrowError("Evaluate: unary minus can only by used with numbers");
     return 0;
