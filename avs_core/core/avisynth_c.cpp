@@ -927,28 +927,102 @@ AVS_Clip * AVSC_CC avs_take_clip(AVS_Value v, AVS_ScriptEnvironment * env)
   return c;
 }
 
+// v11
 extern "C"
-void AVSC_CC avs_set_to_clip(AVS_Value * v, AVS_Clip * c)
-{
-  new(v) AVSValue(c->clip);
-}
+void AVSC_CC avs_set_to_error(AVS_Value* v, const char* v0) { new(v) AVSValue(v0); /*string->error*/ v->type = 'e'; }
+
+// v11
+extern "C"
+void AVSC_CC avs_set_to_bool(AVS_Value* v, int v0) { new(v) AVSValue(v0 == 0); }
+
+// v11
+extern "C"
+void AVSC_CC avs_set_to_int(AVS_Value* v, int v0) { new(v) AVSValue(v0); }
+
+// v11
+extern "C"
+void AVSC_CC avs_set_to_float(AVS_Value* v, float v0) { new(v) AVSValue(v0); }
+
+// v11
+extern "C"
+void AVSC_CC avs_set_to_string(AVS_Value* v, const char* v0) { new(v) AVSValue(v0); }
+
+// v11
+extern "C"
+void AVSC_CC avs_set_to_double(AVS_Value* v, double d) { new(v) AVSValue(d); }
+
+// v11
+extern "C"
+void AVSC_CC avs_set_to_long(AVS_Value* v, int64_t l) { new(v) AVSValue(l); }
+
+// v11
+extern "C"
+void AVSC_CC avs_set_to_array_dyn(AVS_Value* v, AVS_Value* src, int size) { new(v) AVSValue(src, size); }
+
+extern "C"
+void AVSC_CC avs_set_to_clip(AVS_Value* v, AVS_Clip* c) { new(v) AVSValue(c->clip); }
 
 extern "C"
 void AVSC_CC avs_copy_value(AVS_Value * dest, AVS_Value src)
 {
+#if 0
+  // no need to guard multidim arrays. avs_release_value will release properly.
   // true: don't copy array elements recursively
   new(dest) AVSValue(*(const AVSValue*)&src, true);
+#endif
+  new(dest) AVSValue(*(const AVSValue*)&src);
 }
+
+// Releases/free resources contained in an AVS_Value
+// Such types are: 
+// - clip
+// - function (not supported on C interface)
+// - double and long on 32 bit architects, x
+// Since AVS_Value is just a struct, nothing else happens.
+// If AVS_Value has no extra resource to free up, nothing is done.
+// release is mandatory for results of:
+// - avs_invoke 
+// - avs_copy_value 
+// - avs_set_to_double (x86)
+// - avs_set_to_long (x86)
+// - in general: all avs_set_xxx values
 
 extern "C"
 void AVSC_CC avs_release_value(AVS_Value v)
 {
+#if 0
+  // Note for 32 bit Avisynth: 'd' and 'l': properly freed up double/int64_t pointers in the the underlying c++ AVSValue
   if (((AVSValue*)&v)->IsArray()) {
     // signing for destructor: don't free array elements
     ((AVSValue*)&v)->MarkArrayAsNonDeepCopy();
   }
-
+#endif  
   ((AVSValue*)&v)->~AVSValue();
+}
+
+// v11, header still has avs_as_bool as inline
+extern "C"
+int AVSC_CC avs_api_as_bool(AVS_Value v) { return ((AVSValue*)&v)->AsBool() ? 1 : 0; }
+// v11, header still has avs_as_int as inline
+extern "C"
+int AVSC_CC avs_api_as_int(AVS_Value v) { return ((AVSValue*)&v)->AsInt(); }
+// v11, header still has avs_as_long as inline
+extern "C"
+int64_t AVSC_CC avs_api_as_long(AVS_Value v) { return ((AVSValue*)&v)->AsLong(); }
+// v11, header still has avs_as_string as inline
+extern "C"
+const char* AVSC_CC avs_api_as_string(AVS_Value v) { return ((AVSValue*)&v)->AsString(); }
+// v11, header still has avs_as_float as inline
+extern "C"
+double AVSC_CC avs_api_as_float(AVS_Value v) { return ((AVSValue*)&v)->AsFloat(); }
+// v11, header still has avs_as_error as inline
+extern "C"
+const char* AVSC_CC avs_api_as_error(AVS_Value v) {
+  if (v.type == 'e') {
+    v.type = 's'; // 'e'rror is unknown in c++ api
+    return ((AVSValue*)&v)->AsString();
+  }
+  return nullptr;
 }
 
 //////////////////////////////////////////////////////////////////
