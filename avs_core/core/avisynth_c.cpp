@@ -10,6 +10,7 @@
 #include <avisynth.h>
 #include <avisynth_c.h>
 #include "AVSMap.h"
+#include "internal.h"
 
 #ifdef AVS_WINDOWS
 #include <avs/win.h>
@@ -487,11 +488,38 @@ int64_t AVSC_CC avs_prop_get_int(AVS_ScriptEnvironment * p, const AVS_Map * map,
 }
 
 extern "C"
+int AVSC_CC avs_prop_get_int_saturated(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error)
+{
+  p->error = 0;
+  try {
+    return (p->env->propGetIntSaturated((const AVSMap*)map, key, index, error));
+  }
+  catch (const AvisynthError& err) {
+    p->error = err.msg;
+    return 0;
+  }
+}
+
+extern "C"
 double AVSC_CC avs_prop_get_float(AVS_ScriptEnvironment * p, const AVS_Map * map, const char* key, int index, int* error)
 {
   p->error = 0;
   try {
     return (p->env->propGetFloat((const AVSMap*)map, key, index, error));
+  }
+  catch (const AvisynthError& err) {
+    p->error = err.msg;
+    return 0;
+  }
+}
+
+// v11
+extern "C"
+float AVSC_CC avs_prop_get_float_saturated(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error)
+{
+  p->error = 0;
+  try {
+    return (p->env->propGetFloatSaturated((const AVSMap*)map, key, index, error));
   }
   catch (const AvisynthError& err) {
     p->error = err.msg;
@@ -522,6 +550,19 @@ int AVSC_CC avs_prop_get_data_size(AVS_ScriptEnvironment * p, const AVS_Map * ma
   p->error = 0;
   try {
     return (p->env->propGetDataSize((const AVSMap*)map, key, index, error));
+  }
+  catch (const AvisynthError& err) {
+    p->error = err.msg;
+    return 0;
+  }
+}
+
+extern "C"
+int AVSC_CC avs_prop_get_data_type_hint(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error)
+{
+  p->error = 0;
+  try {
+    return (p->env->propGetDataTypeHint((const AVSMap*)map, key, index, error));
   }
   catch (const AvisynthError& err) {
     p->error = err.msg;
@@ -602,10 +643,23 @@ int AVSC_CC avs_prop_set_data(AVS_ScriptEnvironment * p, AVS_Map * map, const ch
 }
 
 extern "C"
-int AVSC_CC avs_prop_set_clip(AVS_ScriptEnvironment * p, AVS_Map * map, const char* key, AVS_Clip * clip, int append)
+int AVSC_CC avs_prop_set_data_h(AVS_ScriptEnvironment* p, AVS_Map* map, const char* key, const char* d, int length, int type, int append)
 {
   // length = -1 -> auto strlen
   p->error = 0;
+  try {
+    return (p->env->propSetDataH((AVSMap*)map, key, d, length, type, append));
+  }
+  catch (const AvisynthError& err) {
+    p->error = err.msg;
+    return 0;
+  }
+}
+
+extern "C"
+int AVSC_CC avs_prop_set_clip(AVS_ScriptEnvironment * p, AVS_Map * map, const char* key, AVS_Clip * clip, int append)
+{
+   p->error = 0;
   try {
     return (p->env->propSetClip((AVSMap*)map, key, *(PClip*)clip, append));
   }
@@ -618,7 +672,6 @@ int AVSC_CC avs_prop_set_clip(AVS_ScriptEnvironment * p, AVS_Map * map, const ch
 extern "C"
 int AVSC_CC avs_prop_set_frame(AVS_ScriptEnvironment * p, AVS_Map * map, const char* key, const AVS_VideoFrame * frame, int append)
 {
-  // length = -1 -> auto strlen
   p->error = 0;
   try {
     return (p->env->propSetFrame((AVSMap*)map, key, *(PVideoFrame*)&frame, append));
@@ -944,7 +997,6 @@ AVSValue __cdecl create_c_video_filter(AVSValue args, void* user_data,
   env.env = e0;
   env.error = NULL;
 
-  //	OutputDebugString("OK");
   AVS_Value res = (d->func)(&env, *(AVS_Value*)&args, d->user_data);
   if (res.type == 'e') {
     throw AvisynthError(res.d.string);

@@ -483,6 +483,14 @@ enum {
   AVS_PROPAPPENDMODE_TOUCH = 2 // n/a
 };
 
+// AVSPropDataTypeHint, used with prop_set_data_h
+enum {
+  AVS_PROPDATATYPEHINT_UNKNOWN = -1, // dtUnknown = -1,
+  AVS_PROPDATATYPEHINT_BINARY = 0, // dtBinary = 0,
+  AVS_PROPDATATYPEHINT_UTF8 = 1 // dtUtf8 = 1
+};
+
+
 // AvsEnvProperty for avs_get_env_property
 enum {
   AVS_AEP_PHYSICAL_CPUS = 1,
@@ -1159,8 +1167,14 @@ AVSC_API(double, avs_prop_get_float)(AVS_ScriptEnvironment* p, const AVS_Map* ma
 // Note: avs_prop_get_data was fixed in interface V9.1
 AVSC_API(const char*, avs_prop_get_data)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
 AVSC_API(int, avs_prop_get_data_size)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
+// V11
+AVSC_API(int, avs_prop_get_data_type_hint)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
 AVSC_API(AVS_Clip*, avs_prop_get_clip)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
 AVSC_API(const AVS_VideoFrame*, avs_prop_get_frame)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
+// V11
+AVSC_API(int, avs_prop_get_int_saturated)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
+// V11
+AVSC_API(float, avs_prop_get_float_saturated)(AVS_ScriptEnvironment* p, const AVS_Map* map, const char* key, int index, int* error);
 
 AVSC_API(int, avs_prop_delete_key)(AVS_ScriptEnvironment* p, AVS_Map* map, const char* key);
 
@@ -1168,6 +1182,9 @@ AVSC_API(int, avs_prop_delete_key)(AVS_ScriptEnvironment* p, AVS_Map* map, const
 AVSC_API(int, avs_prop_set_int)(AVS_ScriptEnvironment* p, AVS_Map* map, const char* key, int64_t i, int append);
 AVSC_API(int, avs_prop_set_float)(AVS_ScriptEnvironment* p, AVS_Map* map, const char* key, double d, int append);
 AVSC_API(int, avs_prop_set_data)(AVS_ScriptEnvironment* p, AVS_Map* map, const char* key, const char* d, int length, int append);
+// v11
+// SEE AVS_PROPDATATYPEHINT_... enums
+AVSC_API(int, avs_prop_set_data_h)(AVS_ScriptEnvironment* p, AVS_Map* map, const char* key, const char* d, int length, int type, int append);
 AVSC_API(int, avs_prop_set_clip)(AVS_ScriptEnvironment* p, AVS_Map* map, const char* key, AVS_Clip* clip, int append);
 AVSC_API(int, avs_prop_set_frame)(AVS_ScriptEnvironment* p, AVS_Map* map, const char* key, const AVS_VideoFrame* frame, int append);
 
@@ -1637,6 +1654,11 @@ avs_bits_per_component    constant 8 (8 bits/component)
   AVSC_LOAD_FUNC(avs_is_channel_mask_known);
   AVSC_LOAD_FUNC(avs_set_channel_mask);
   AVSC_LOAD_FUNC(avs_get_channel_mask);
+  // frame property
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_int_saturated);
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_float_saturated);
+  AVSC_LOAD_FUNC_OPT(avs_prop_get_data_type_hint);
+  AVSC_LOAD_FUNC_OPT(avs_prop_set_data_h);
 
 #undef __AVSC_STRINGIFY
 #undef AVSC_STRINGIFY
