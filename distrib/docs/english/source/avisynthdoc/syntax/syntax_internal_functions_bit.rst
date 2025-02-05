@@ -6,12 +6,19 @@ The functions are *bitwise operators*. They manipulate individual bits within in
 This means that their arguments (being integers) are converted to binary numbers, the operation is 
 performed on their bits, and the resulting binary number is converted back again.
 
+Since Avisynth 3.7.4 the functions have special 64-bit versions. 
+Old functions work and return with the lower 32 bits even if 64-bit data is passed.
+
+64-bit versions work on full 64 bit data.
 
 BitAnd
 ~~~~~~
+BitAnd64
+~~~~~~~~
 ::
 
     BitAnd(int, int)
+    BitAnd64(int, int)
 
 Returns the bitwise AND (sets bit to 1 if both bits are 1 and sets bit to 0 otherwise).
 
@@ -22,9 +29,12 @@ Returns the bitwise AND (sets bit to 1 if both bits are 1 and sets bit to 0 othe
 
 BitNot
 ~~~~~~
+BitNot64
+~~~~~~~~
 ::
 
     BitNot(int)
+    BitNot64(int)
 
 Returns the bit-inversion (sets bit to 1 if bit is 0 and vice-versa).
 
@@ -38,16 +48,19 @@ Returns the bit-inversion (sets bit to 1 if bit is 0 and vice-versa).
 Note: 
 ::
 
-    1111 1111 1111 1111 1111 1111 11111010 = 
+    1111 1111 1111 1111 1111 1111 1111 1010 = 
     (2^32-1)-2^0-2^2 = 2^32-(1+2^0+2^2) = 
     (signed) -(1+2^0+2^2) = 
     -6.
 
 BitOr
 ~~~~~
+BitOr64
+~~~~~~~
 ::
 
     BitOr(int, int)
+    BitOr64(int, int)
 
 Returns the bitwise inclusive OR (sets bit to 1 if one of the bits (or both) 
 is 1 and sets bit to 0 otherwise). 
@@ -61,9 +74,12 @@ is 1 and sets bit to 0 otherwise).
 
 BitXor
 ~~~~~~
+BitXor64
+~~~~~~~~
 ::
 
     BitXor(int, int)
+    BitXor64(int, int)
 
 Returns the bitwise exclusive OR (sets bit to 1 if exactly one of the bits is 
 1 and sets bit to 0 otherwise). 
@@ -76,15 +92,22 @@ Returns the bitwise exclusive OR (sets bit to 1 if exactly one of the bits is
 
 Bit Shift Left (BitLShift, BitShl, BitSal)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Bit Shift Left 64-bit (BitShl64, BitSal64)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ::
 
     BitLShift(int, int)
     BitShl(int, int)
     BitSal(int, int)
+    BitShl64(int, int)
+    BitSal64(int, int)
 
 Shift the bits of a number to the left.
 
-Synonyms. Even more synonyms are: ``BitLShiftL``, ``BitLShiftA``, ``BitLShiftU``, ``BitLShiftS``
+Note: When you shift to the left, both logical and arithmetic shifts behave the same way.
+Nevertheless, multiple names are provided.
+
+Synonyms. Even more synonyms for 32 bit versions are: ``BitLShiftL``, ``BitLShiftA``, ``BitLShiftU``, ``BitLShiftS``
 
 *Examples:*
 
@@ -95,15 +118,18 @@ Shifts the bits of the number 5 two bits to the left:
 
 Bit shift right, signed (BitRShiftA, BitRShiftS, BitSar)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Bit shift right, signed 64-bit (BitSar64)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ::
 
     BitRShiftA(int, int)
     BitRShiftS(int, int)
     BitSar(int, int)
+    BitSar64(int, int)
 
 Shift the bits of an integer to the right. (Arithmetic, Sign bit fill, Right Shift) 
 
-Synonyms.
+All 32 bit versions are synonyms.
 
 *Examples:*
 
@@ -116,15 +142,19 @@ Shifts the bits of the number -42 one bit to the right, treating it as signed:
 
 Bit shift right, unsigned (BitRShiftL, BitRShiftU, BitShr)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Bit shift right, unsigned 64-bit (BitShr64)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 ::
 
     BitRShiftL(int, int)
     BitRShiftU(int, int)
     BitShr(int, int)
+    BitShr64(int, int)
 
 Shift the bits of an unsigned integer to the right. (Logical, zero fill, Right Shift) 
 
-Synonyms.
+All 32 bit versions are synonyms.
 
 *Examples:*
 
@@ -141,12 +171,15 @@ Note:
     -42 = -(1+2^0+2^3+2^5) = (unsigned) (2^32-1)-(2^0+2^3+2^5) =
     1111 1111 1111 1111 1111 1111 1101 0110 
 
-Bit rotate left
-~~~~~~~~~~~~~~~
+Bit rotate left (BitLRotate, BitRol)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Bit rotate left 64-bit (bitrol64)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ::
 
     BitLRotate(int, int)
     BitRol(int, int)
+    BitRol64(int, int)
 
 Rotates the bits of an integer to the left by the number of bits specified in 
 the second operand. For each rotation specified, the high order bit that exits from 
@@ -161,12 +194,15 @@ Rotates the bits of the number -2147483642 one bit to the left:
     # (since 10000000000000000000000000000110 ROL 1
     #      = 00000000000000000000000000001101)
 
-Bit rotate right
-~~~~~~~~~~~~~~~~
+Bit rotate right (BitRRotate, BitRor)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Bit rotate right 64-bit (BitRor64)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ::
 
     BitRRotateL(int, int)
     BitRor(int, int)
+    BitRor64(int, int)
 
 Rotates the bits of an integer to the right by the number of bits specified in 
 the second operand. For each rotation specified, the low order bit that exits from 
@@ -181,12 +217,15 @@ Rotates the bits of the number 13 one bit to the right:
     # (since 00000000000000000000000000001101 ROR 1 
     #      = 10000000000000000000000000000110)
 
-Bit test
-~~~~~~~~
+Bit test (BitTest, BitTst)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+Bit test 64-bit (BitTst64)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 ::
 
     BitTest(int, int)
     BitTst(int, int)
+    BitTst64(int, int)
 
 Tests a single bit (that is, it returns true if its state is one, else it 
 returns false). The second operand denotes the location of the bit which is 
@@ -201,7 +240,7 @@ Check the state of the fourth bit:
     BitTest(19, 4) = True
 
 
-Check the state of the sign bit:
+Check the state of the sign bit on a 32 bit value:
 ::
 
     BitTest(-1, 31) = True
@@ -210,9 +249,12 @@ Check the state of the sign bit:
 
 BitSet
 ~~~~~~
+BitSet64
+~~~~~~~~
 ::
 
     BitSet(int, int)
+    BitSet64(int, int)
 
 Sets a single bit to one (so it sets its state to one). The second operand denotes the 
 location of the bit which is specified as an offset from the low order end of the 
@@ -227,7 +269,7 @@ Set the state of the fourth bit to one:
     BitSet(19, 4) = 19
 
 
-Set the state of the sign bit to one:
+Set the state of the sign bit to one, return a 32 bit data:
 ::
 
     BitSet(-1, 31) = -1
@@ -236,19 +278,25 @@ Set the state of the sign bit to one:
 
 BitSetCount
 ~~~~~~~~~~~
+BitSetCount64
+~~~~~~~~~~~~~
 ::
 
     BitSetCount(int [, int...])
+    BitSetCount64(int [, int...])
 
 Returns the total number of set bits in all supplied integer arguments. 
 
 
-Bit clear
-~~~~~~~~~
+Bit clear (BitClear, BitClr)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Bit clear 64-bit (BitClr64)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ::
 
     BitClear(int, int)
     BitClr(int, int)
+    BitClr64(int, int)
 
 Sets a single bit to zero (so it sets its state to zero). The second operand denotes 
 the location of the bit which is specified as an offset from the low order end of the 
@@ -265,21 +313,28 @@ Clear the bits of the number 5
     BitClear(5, 3) = 5 (fourth bit is already zero)
 
 
-Clear the state of the sign bit:
+Clear the state of the sign bit, returns a 32 bit data:
 ::
 
     BitClear(-1, 31) = 2147483647
 
-Bit change
-~~~~~~~~~~
+Bit change (BitChange, BitChg)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Bit change 64-bit (BitChg64)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ::
 
     BitChange(int, int)
     BitChg(int, int)
+    BitChg64(int, int)
 
 Sets a single bit to its complement (so it changes the state of a single bit; 1 becomes 0 
 and vice versa). The second operand denotes the location of the bit which is specified as 
-an offset from the low order end of the operand (starting at zero). The sign bit is bit 31. 
+an offset from the low order end of the operand (starting at zero). 
+
+The sign bit is bit 31 on the 32-bit version.
+
+The sign bit is bit 63 on the 64-bit version of the function.
 
 *Examples:*
 
@@ -300,28 +355,36 @@ Change the state of the sign bit:
 
 Changelog
 ---------
-+-----------------+-----------------------------------+
-| Version         | Changes                           |
-+=================+===================================+
-| Avisynth 3.7.3  | Fix bitrol/bitror when first      |
-|                 | argument is negative (Avisynth+   |
-|                 | regression)                       |
-+-----------------+-----------------------------------+
-| Avisynth+ r2632 | BitSetCount                       |
-+-----------------+-----------------------------------+
-| Avisynth 2.6    | | BitAnd, BitNot, BitOr, BitXor,  |
-|                 | | BitLShift, BitShl, BitSal,      |
-|                 | | BitRShiftA, BitRShiftS, BitSar, |
-|                 | | BitRShiftL, BitRShiftU, BitShr, |
-|                 | | BitRol, BitRor,                 |
-|                 | | BitTest, BitTst,                |
-|                 | | BitSet, BitClear, BitClr,       |
-|                 | | BitChange, BitChg               |
-+-----------------+-----------------------------------+
++-----------------+-----------------------------------------------------+
+| Version         | Changes                                             |
++=================+=====================================================+
+| Avisynth 3.7.4  || 64-bit versions of the bit functions.              |
+|                 || Add "BitAnd64", "BitNot64", "BitOr64", "BitXor64   |
+|                 || Add "BitShl64", "BitSal64"                         |
+|                 || Add "BitShr64", "BitSar64"                         |
+|                 || Add "BitRol64", "BitRor64"                         |
+|                 || Add "BitChg64", "BitClr64", "BitSet64", "BitTst64" |
+|                 || Add "BitSetCount64"                                |
++-----------------+-----------------------------------------------------+
+| Avisynth 3.7.3  | Fix bitrol/bitror when first                        |
+|                 | argument is negative (Avisynth+                     |
+|                 | regression)                                         |
++-----------------+-----------------------------------------------------+
+| Avisynth+ r2632 | BitSetCount                                         |
++-----------------+-----------------------------------------------------+
+| Avisynth 2.6    | | BitAnd, BitNot, BitOr, BitXor,                    |
+|                 | | BitLShift, BitShl, BitSal,                        |
+|                 | | BitRShiftA, BitRShiftS, BitSar,                   |
+|                 | | BitRShiftL, BitRShiftU, BitShr,                   |
+|                 | | BitRol, BitRor,                                   |
+|                 | | BitTest, BitTst,                                  |
+|                 | | BitSet, BitClear, BitClr,                         |
+|                 | | BitChange, BitChg                                 |
++-----------------+-----------------------------------------------------+
 
 
 --------
 
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
-$Date: 2024/01/15 13:38:34 $
+$Date: 2025/02/05 13:48:34 $
