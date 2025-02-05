@@ -815,6 +815,11 @@ const char* FunctionInstance::ToString(IScriptEnvironment* env)
   }
 }
 
+static bool is_within_int_in_float32_range(int64_t value) {
+  // 2^24
+  return value >= -16777216 && value <= 16777216;
+}
+
 AVSValue FunctionInstance::Execute(const AVSValue& args, IScriptEnvironment* env)
 {
   env->PushContext();
@@ -822,8 +827,15 @@ AVSValue FunctionInstance::Execute(const AVSValue& args, IScriptEnvironment* env
     env->SetVar(pdef->var_names[i], var_data[i]);
   }
   for (int i = 0; i<args.ArraySize(); ++i)
-    env->SetVar(pdef->param_names[i], // Force float args that are actually int to be float
-    (pdef->param_floats[i] && args[i].IsInt()) ? float(args[i].AsInt()) : args[i]);
+    env->SetVar(pdef->param_names[i],
+      // Same as in ScriptFunction::Execute and AVSValue FunctionInstance::Execute
+          
+      // force float args that are actually long/int (int64) to be float/double (depending on the range)
+      // opportunity to fit into the smaller float size
+      (pdef->param_floats[i] && args[i].IsInt()) ?
+      is_within_int_in_float32_range(args[i].AsLong()) ? (float)args[i].AsLong() : (double)args[i].AsLong() :
+      args[i]
+    );
 
   AVSValue result;
   try {
