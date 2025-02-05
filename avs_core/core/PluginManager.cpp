@@ -883,23 +883,28 @@ bool PluginManager::LoadPlugin(PluginFile &plugin, bool throwOnError, AVSValue *
 
   // Try to load various plugin interfaces
   std::string avsexception26_message;
-  if (!TryAsAvs26(plugin, result, avsexception26_message))
+  const int avs26res = TryAsAvs26(plugin, result, avsexception26_message);
+  if (avs26res != 0) // 0: OK, plugin had AvisynthPluginInit3Func
   {
-    if (!TryAsAvsC(plugin, result))
+    if (avs26res != 1) { // 1: AvisynthPluginInit3Func not found 
+      // plugin entry point exists but exception was thrown
+      // Bad plugin, we must report the exception immediately regardless of throwOnError
+      // Message could be from plugin author or, e.g., from env->AddFunction()
+      Env->ThrowError("'%s' plugin loading error:\n%s", plugin.FilePath.c_str(), avsexception26_message.c_str());
+    }
+
+    if (!TryAsAvsC(plugin, result)) // V11: try avisynth_c_plugin_init2, plugin is 64 bit capable
     {
       if (!TryAsAvs25(plugin, result))
       {
         FreeLibrary(plugin.Library);
         plugin.Library = NULL;
 
-        if (throwOnError)
-          if (avsexception26_message.empty())
+          if (throwOnError)
             Env->ThrowError("'%s' cannot be used as a plugin for AviSynth.", plugin.FilePath.c_str());
           else
-            // Message could be from plugin author or, e.g., from env->AddFunction()
-            Env->ThrowError("'%s' plugin loading error:\n%s", plugin.FilePath.c_str(), avsexception26_message.c_str());
-        else
-          return false;
+            return false;
+        }
       }
     }
   }
@@ -1043,7 +1048,11 @@ std::string PluginManager::PluginLoading() const
         return PluginInLoad->BaseName;
 }
 
-bool PluginManager::TryAsAvs26(PluginFile &plugin, AVSValue *result, std::string &avsexception_message)
+// 0: success
+// 1: no AvisynthPluginInit3Func
+// 2: Avisynth exception
+// 3: other exception
+int PluginManager::TryAsAvs26(PluginFile &plugin, AVSValue *result, std::string &avsexception_message)
 {
   extern const AVS_Linkage* const AVS_linkage; // In interface.cpp
 #ifdef AVS_POSIX
@@ -1058,10 +1067,10 @@ bool PluginManager::TryAsAvs26(PluginFile &plugin, AVSValue *result, std::string
     AvisynthPluginInit3 = (AvisynthPluginInit3Func)GetProcAddress(plugin.Library, "_AvisynthPluginInit3@8");
 #endif
 
-  bool success = true;
+  int success = 0; // O.K.
   avsexception_message = "";
   if (AvisynthPluginInit3 == NULL)
-    return false;
+    return 1; // not found
   else
   {
     PluginInLoad = &plugin;
@@ -1071,11 +1080,15 @@ bool PluginManager::TryAsAvs26(PluginFile &plugin, AVSValue *result, std::string
     }
     catch (const AvisynthError& error) {
       avsexception_message = error.msg;
-      success = false;
+      success = 2;
     }
-    catch (...)
-    {
-      success = false;
+    catch (const std::exception& ex) {
+      avsexception_message = ex.what();
+      success = 3;
+    }
+    catch (...) {
+      avsexception_message = "Unknown exception";
+      success = 3;
     }
     PluginInLoad = NULL;
   }
