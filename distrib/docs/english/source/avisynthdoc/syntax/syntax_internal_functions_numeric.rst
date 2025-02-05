@@ -5,6 +5,17 @@ AviSynth Syntax - Numeric functions
 Numeric functions provide common mathematical operations on numeric
 variables.
 
+Note: since 3.7.4 ``int`` and ``float`` means any 32 or 64-bit integer or floating point value, respectively.
+The exact type of value (e.g. if a variable or constant is 32-bit float or 64-bit double) is known.
+('i'nteger - 32-bit integer, 'l'ong - 64-bit integer, 'f'loat - 32-bit foating point, 'd'ouble - 64-bit floating point) 
+
+Integer calculations are done in 64-bit precision. When the result fits into the 32 bit range, it is stored back as 32-bit integer ``i``.
+Otherwise the result is stored into 64-bit long ``l``.
+
+When both operands are 32-bit float, arithmetic is done in 32-bits and the result is a 32-bit float.
+Otherwise the calculation is done in 64-bit double ``d`` precision.
+
+Except ``MulDiv``, ``Rand`` and ``Spline`` the calculations are 64-bit (int or double) compatible.
 
 Max
 ~~~
@@ -13,10 +24,23 @@ Max
     Max(float, float [, ...])
 
 Returns the maximum value of a set of numbers.
-If all the values are of type Int, the result is an Int. If any of the values
-are of type Float, the result is a Float.
-This may cause an unexpected result when an Int value greater than 16777216
-is mixed with Float values.
+
+Version 3.7.4-:
+
+- If all the values are of type Int (any 32 or 64-bit), the result is an Int. 
+- If any of the values are of type 64-bit float (double), the result is a double.
+  This may cause an unexpected result when an Int value greater than 9007199254740992
+  (2^53) is mixed with double values.
+
+- If all values are 32-bit float, the result is a 32-bit float.
+
+Version <3.7.4:
+
+- If all the values are of type Int, the result is an Int. If any of the values
+  are of type Float, the result is a Float.
+  
+- This may cause an unexpected result when an Int value greater than 16777216 (2^24) 
+  is mixed with Float values.
 
 *Examples:*
 ::
@@ -48,6 +72,8 @@ MulDiv
 Multiplies two ints (m, n) and divides the product by a third (d) in a single
 operation, with 64 bit intermediate result. The actual equation used is ``(m
 * n + d / 2) / d``.
+
+Parameters are treated as 32 bits, even from Avisynth 3.7.4.
 
 *Examples:*
 ::
@@ -109,8 +135,8 @@ Int
 
     Int(float)
 
-Converts from single-precision, `floating-point`_ value to int (round towards
-zero).
+Converts from single-precision, `floating-point`_ or any integer value to int (round towards
+zero). If the result fit into 32 bit integer, the result type is integer, else 64 bit long.
 
 *Examples:*
 ::
@@ -120,21 +146,79 @@ zero).
     Int(-1.2) = -1
     Int(-1.6) = -1
 
+IntI
+~~~~
+::
+
+    IntI(float)
+
+Converts from a `floating-point`_ or any integer value to 32 bit int (round towards zero).
+
+Since v3.7.4.
+
+*Examples:*
+::
+
+    Int(1.2) = 1
+    Int(1.6) = 1
+    Int(-1.2) = -1
+    Int(-1.6) = -1
+
+Long
+~~~~
+::
+
+    Long(float)
+
+Converts from a `floating-point`_ or any integer value to 64 bit int (round towards zero).
+
+Since v3.7.4.
+
+*Examples:*
+::
+
+    Long(1.2) = 1
+    Long(1.6) = 1
+    Long(-1.2) = -1
+    Int(-1.6) = -1
+
 Float
 ~~~~~
 ::
 
     Float(int)
 
-Converts int to single-precision, `floating-point`_ value. Integer values
-that require more than 24-bits to be represented will have their lower 8-bits
-truncated yielding unexpected values.
+Converts any int to `floating-point`_ value. 
+
+Since v3.7.4 this means
+
+- Conversion target type is adaptive
+- 32 bit float type if parameter is float, or integer is maximum 24 bits.
+- 64 bit double otherwise
+
+Pre v3.7.4:
+
+- Convert to 32 bit float.
+- Integer values that require more than 24-bits to be represented will have their lower bits
+  truncated yielding unexpected values.
+
 
 *Examples:*
 ::
 
     Float(4) = 4.0
     Float(4) / 3 = 1.333 (while 4 / 3 = 1 , due to integer division)
+
+Floatf
+~~~~~~
+::
+
+    Floatf(int)
+
+Converts int to 32 bit single-precision, `floating-point`_ value. Integer values
+that require more than 24-bits to be represented will have their lower 8-bits
+truncated yielding unexpected values.
+
 
 Fmod
 ~~~~
@@ -354,10 +438,13 @@ original values will be returned, i.e. reduced by the GCD. (GCD = greatest commo
     ContinuedDenominator(355, 113, limit=50) = 7
 
 Changelog
----------
+~~~~~~~~~
 +-----------------+-----------------------------------+
 | Version         | Changes                           |
 +=================+===================================+
+| 3.7.4           | | Changed Float, Int              |
+|                 | | Add IntI, Long, FloatF, Double  |
++-----------------+-----------------------------------+
 | Avisynth 2.6    | Fmod, Log10,                      |
 |                 | ContinuedNumerator,               |
 |                 | ContinuedDenominator              |
