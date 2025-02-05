@@ -226,21 +226,38 @@ void Tokenizer::NextToken() {
       SetToOperator(*pc++);
       break;
 
-    case '$':    // hexadecimal number
-      type = 'i';
-      integer = 0;
+    case '$':
+      // hexadecimal constant $FFFFFFFF remains -1 int;
+      // or suffixed with L for 64 bit data: 0xFFFFFFFFL becomes 0x00000000FFFFFFFF
+    {
+      bool long64bit = false;
+      type = 'l';
+      longlong = 0;
       ++pc;
       do {
         if (*pc >= '0' && *pc <= '9')
-          integer = integer*16 + (*pc - '0');
+          longlong = longlong * 16 + (*pc - '0');
         else if (*pc >= 'a' && *pc <= 'f')
-          integer = integer*16 + (*pc - 'a' + 10);
+          longlong = longlong * 16 + (*pc - 'a' + 10);
         else if (*pc >= 'A' && *pc <= 'F')
-          integer = integer*16 + (*pc - 'A' + 10);
+          longlong = longlong * 16 + (*pc - 'A' + 10);
+        else if (*pc == 'L' || *pc == 'l') {
+          long64bit = true;
+          ++pc;
+          break; // nothing allowed after L cast
+        }
         else
           env->ThrowError("$ must be followed by a hexadecimal number");
       } while (isalnum(*++pc));
-      break;
+      if (!long64bit) {
+        // Default is integer.
+        // Thus we can avoid the color (like $FFFFFFFF) constants
+        // to be casted to 64 bit.
+        type = 'i';
+        integer = (int)longlong;
+      }
+    }
+    break;
 
     default:
       if(*pc == '"' || (*pc == 'e' && pc[1] == '"')) { // string
