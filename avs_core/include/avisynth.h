@@ -1742,6 +1742,7 @@ public:
 
 class IScriptEnvironment2;
 class IScriptEnvironment_Avs25;
+class IScriptEnvironment_AvsPreV11C;
 class Prefetcher;
 typedef AVSValue (*ThreadWorkerFuncPtr)(IScriptEnvironment2* env, void* data);
 
@@ -1757,8 +1758,6 @@ typedef AVSValue (*ThreadWorkerFuncPtr)(IScriptEnvironment2* env, void* data);
 class IScriptEnvironment2 : public IScriptEnvironment{
 public:
   virtual ~IScriptEnvironment2() {}
-
-  // V8: SubframePlanarA, GetEnvProperty, GetVar versions, Allocate, Free, no-throw Invoke moved to IScriptEnvironment
 
   // Plugin functions
   virtual bool __stdcall LoadPlugin(const char* filePath, bool throwOnError, AVSValue *result) = 0;
@@ -1806,6 +1805,8 @@ public:
   virtual IScriptEnvironment2* __stdcall GetEnv2() = 0;
   // Get compatibility interface for AVS CPP 2.5 plugins
   virtual IScriptEnvironment_Avs25* __stdcall GetEnv25() = 0;
+  // Get compatibility interface for older AVS C plugins
+  virtual IScriptEnvironment_AvsPreV11C* __stdcall GetEnvPreV11C() = 0;
 
   // Generic system to ask for various properties
   virtual size_t  __stdcall GetEnvProperty(AvsEnvProperty prop) = 0;
@@ -1988,9 +1989,11 @@ struct PNeoEnv {
 #ifdef BUILDING_AVSCORE
   inline operator IScriptEnvironment2*();
   inline operator IScriptEnvironment_Avs25* ();
+  inline operator IScriptEnvironment_AvsPreV11C* ();
 #else
   operator IScriptEnvironment2*() { return p->GetEnv2(); }
   operator IScriptEnvironment_Avs25* () { return p->GetEnv25(); }
+  operator IScriptEnvironment_AvsPreV11C* () { return p->GetEnvPreV11C(); }
 #endif
 };
 

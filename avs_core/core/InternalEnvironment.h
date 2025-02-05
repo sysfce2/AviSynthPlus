@@ -83,6 +83,7 @@ public:
 class InternalEnvironment :
   public IScriptEnvironment2,
   public IScriptEnvironment_Avs25,
+  public IScriptEnvironment_AvsPreV11C,
   public INeoEnv {
 protected:
   virtual ~InternalEnvironment() {}
@@ -276,6 +277,7 @@ public:
   // interface conversions
   virtual IScriptEnvironment2* __stdcall GetEnv2() final { return static_cast<IScriptEnvironment2*>(this); }
   virtual IScriptEnvironment_Avs25* __stdcall GetEnv25() final { return static_cast<IScriptEnvironment_Avs25*>(this);; }
+  virtual IScriptEnvironment_AvsPreV11C* __stdcall GetEnvPreV11C() final { return static_cast<IScriptEnvironment_AvsPreV11C*>(this);; }
 
   virtual void __stdcall SetGraphAnalysis(bool enable) = 0;
 

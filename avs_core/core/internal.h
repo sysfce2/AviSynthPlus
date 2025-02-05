@@ -82,6 +82,7 @@ enum MANAGE_CACHE_KEYS
 	MC_UnRegisterGraphNode,
 
   MC_QueryAvs25        = (int)0xFFFF0200,
+  MC_QueryAvsPreV11C   = (int)0xFFFF0201,
 };
 
 #include <avisynth.h>

@@ -50,6 +50,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <exception>
 
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
@@ -758,6 +759,7 @@ public:
   int GetCPUFlags();
   void AddFunction(const char* name, const char* params, INeoEnv::ApplyFunc apply, void* user_data = 0);
   void AddFunction25(const char* name, const char* params, INeoEnv::ApplyFunc apply, void* user_data = 0);
+  void AddFunctionPreV11C(const char* name, const char* params, INeoEnv::ApplyFunc apply, void* user_data = 0);
   bool FunctionExists(const char* name);
   PVideoFrame NewVideoFrameOnDevice(const VideoInfo& vi, int align, Device* device);
   PVideoFrame NewVideoFrameOnDevice(int row_size, int height, int align, int pixel_type, Device* device);
@@ -1700,6 +1702,11 @@ public:
     core->AddFunction25(name, params, apply, user_data);
   }
 
+  void __stdcall AddFunctionPreV11C(const char* name, const char* params, ApplyFunc apply, void* user_data = 0)
+  {
+    core->AddFunctionPreV11C(name, params, apply, user_data);
+  }
+
   bool __stdcall FunctionExists(const char* name)
   {
     return core->FunctionExists(name);
@@ -1750,9 +1757,43 @@ public:
     if (!success)
       throw NotFound();
 
+    // 2.5 plugins don't know about long and double types.
+    if (result.IsLong()) // real 64 bit integer
+      result = result.AsInt();
+    else if (result.IsFloat() && !result.IsFloatf()) // real 64 bit double
+      result = result.AsFloatf();
+
     return result;
   }
 
+  // thrower Invoke, IScriptEnvironment_AvsPreV11C
+  AVSValue __stdcall InvokePreV11C(const char* name,
+    const AVSValue args, const char* const* arg_names)
+  {
+    AVSValue result;
+
+    const bool success = core->Invoke_(&result, AVSValue(), name, nullptr, args, arg_names, this, IsRuntime());
+
+    if (!success)
+      throw NotFound();
+
+    // PreV11C plugins don't know about 'l'ong and 'd'ouble basic types.
+    // Convert them to 'i'nt and 'f'loat respectively.
+    // A preV11C interface plugin (no avisynth_c_plugin_init2) can call avs_invoke
+    // which would (if unchanged) result in a 64 bit type, like Pi() returns double.
+    // Example call: 
+    // AVS_Value ver = avs_invoke(Env, "Pi", avs_new_value_array(NULL, 0), NULL);
+    // We convert only basic types, and not handling array type return values here,
+    // to look into whether it contains 64 bit elements accidentally.
+    // Neither is an old C plugin expected to handle array return values.
+    // Anyway, proper dyn array support comes only from v11 on C API.
+    if (result.IsLong()) // real 64 bit integer
+      result = result.AsInt(); // to 32 bit integer
+    else if (result.IsFloat() && !result.IsFloatf()) // real 64 bit double
+      result = result.AsFloatf(); // to 32 bit float
+
+    return result;
+  }
 
   //  no-throw Invoke, IScriptEnvironment, Ex-IS2
   bool __stdcall InvokeTry(AVSValue* result,
@@ -1843,7 +1884,10 @@ public:
 
   void* __stdcall ManageCache(int key, void* data)
   {
-    if ((MANAGE_CACHE_KEYS)key == MC_QueryAvs25)
+    if (
+      (MANAGE_CACHE_KEYS)key == MC_QueryAvs25 ||
+      (MANAGE_CACHE_KEYS)key == MC_QueryAvsPreV11C
+      )
       return (intptr_t*)0;
     return core->ManageCache(key, data);
   }
@@ -1854,6 +1898,15 @@ public:
     // env ptr is v2.5 even if casted to IScriptEnvironment 
     if ((MANAGE_CACHE_KEYS)key == MC_QueryAvs25)
       return (intptr_t *)1;
+    return ManageCache(key, data);
+  }
+
+  void* __stdcall ManageCachePreV11C(int key, void* data)
+  {
+    // We use a preV11C-special ManageCache call with special key to query if
+    // env ptr is preV11C even if casted to IScriptEnvironment 
+    if ((MANAGE_CACHE_KEYS)key == MC_QueryAvsPreV11C)
+      return (intptr_t*)1;
     return ManageCache(key, data);
   }
 
@@ -3128,12 +3181,18 @@ void ScriptEnvironment::AddFunction(const char* name, const char* params, ApplyF
 // called from IScriptEnvironment_Avs25
 void ScriptEnvironment::AddFunction25(const char* name, const char* params, ApplyFunc apply, void* user_data) {
   std::unique_lock<std::recursive_mutex> env_lock(plugin_mutex);
-  plugin_manager->AddFunction(name, params, apply, user_data, NULL, true);
+  plugin_manager->AddFunction(name, params, apply, user_data, NULL, true, false);
+}
+
+// called from IScriptEnvironment_AvsPreV11C
+void ScriptEnvironment::AddFunctionPreV11C(const char* name, const char* params, ApplyFunc apply, void* user_data) {
+  std::unique_lock<std::recursive_mutex> env_lock(plugin_mutex);
+  plugin_manager->AddFunction(name, params, apply, user_data, NULL, false, true);
 }
 
 void ScriptEnvironment::AddFunction(const char* name, const char* params, ApplyFunc apply, void* user_data, const char *exportVar) {
   std::unique_lock<std::recursive_mutex> env_lock(plugin_mutex);
-  plugin_manager->AddFunction(name, params, apply, user_data, exportVar, false);
+  plugin_manager->AddFunction(name, params, apply, user_data, exportVar, false, false);
 }
 
 VideoFrame* ScriptEnvironment::AllocateFrame(size_t vfb_size, size_t margin, Device* device)
@@ -4149,6 +4208,7 @@ void* ScriptEnvironment::ManageCache(int key, void* data) {
     break;
   }
   case MC_QueryAvs25:
+  case MC_QueryAvsPreV11C:
   {
     break; // not cache related
   }
@@ -4691,10 +4751,12 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
     // Invoked by a thread or GetFrame
     AVSValue funcArgs(args3.data(), (int)args3.size());
 
-    if(f->isAvs25) // like GRunT's AverageLuma wrapper
-      *result = f->apply(funcArgs, f->user_data, (IScriptEnvironment *)((IScriptEnvironment_Avs25 *)env_thread));
+    if (f->isPluginAvs25) // like GRunT's AverageLuma wrapper
+      *result = f->apply(funcArgs, f->user_data, (IScriptEnvironment*)((IScriptEnvironment_Avs25*)env_thread));
+    else if (f->isPluginPreV11C)
+      *result = f->apply(funcArgs, f->user_data, (IScriptEnvironment*)((IScriptEnvironment_AvsPreV11C*)env_thread));
     else
-    *result = f->apply(funcArgs, f->user_data, env_thread);
+      *result = f->apply(funcArgs, f->user_data, env_thread);
     return true;
   }
 
@@ -4751,11 +4813,12 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
   }
   bool isSourceFilter = !foundClipArgument;
 
-  auto call_env = f->isAvs25 ? nullptr : threadEnv.get();
-  auto call_env25 = f->isAvs25 ? threadEnv.get()->GetEnv25() : nullptr;
+  auto call_env = f->isPluginAvs25 || f->isPluginPreV11C ? nullptr : threadEnv.get();
+  auto call_env25 = f->isPluginAvs25 ? threadEnv.get()->GetEnv25() : nullptr;
+  auto call_envPreV11C = f->isPluginPreV11C ? threadEnv.get()->GetEnvPreV11C() : nullptr;
   // ... and we're finally ready to make the call
   std::unique_ptr<const FilterConstructor> funcCtor =
-    std::make_unique<const FilterConstructor>(call_env, call_env25 , f, &args2, &args3);
+    std::make_unique<const FilterConstructor>(call_env, call_env25, call_envPreV11C, f, &args2, &args3);
   _RPT1(0, "ScriptEnvironment::Invoke after funcCtor make unique %s\r\n", name);
 
   // args2 and args3 are not valid after this point anymore
@@ -5651,7 +5714,8 @@ AVSC_API(IScriptEnvironment*, CreateScriptEnvironment)(int version) {
   return CreateScriptEnvironment2(version);
 }
 
-AVSC_API(IScriptEnvironment2*, CreateScriptEnvironment2)(int version)
+// Can be called from C interface create_script_environment with specially marking the C interface source
+IScriptEnvironment2* CreateScriptEnvironment2_internal(int version, bool fromAvs25, bool fromC)
 {
   /* Some plugins use OpenMP. But OMP threads do not exit immediately
   * after all work is exhausted, and keep spinning for a small amount
@@ -5670,10 +5734,16 @@ AVSC_API(IScriptEnvironment2*, CreateScriptEnvironment2)(int version)
 #endif
 
   // When a CPP plugin explicitely requests avs2.5 interface
-  if (version <= AVISYNTH_CLASSIC_INTERFACE_VERSION_25) {
+  if (fromAvs25) {
     auto IEnv25 = (new ScriptEnvironment())->GetMainThreadEnv()->GetEnv25();
     // return a disguised IScriptEnvironment_Avs25
-    return reinterpret_cast<IScriptEnvironment2 *>(IEnv25);
+    return reinterpret_cast<IScriptEnvironment2*>(IEnv25);
+  }
+  else if (fromC && version < 11) {
+    // V11 supports 64 bit data types; no difference in IScriptEnvironment
+    auto IEnvPreV11C = (new ScriptEnvironment())->GetMainThreadEnv()->GetEnvPreV11C();
+    // return a disguised IScriptEnvironment_AvsC
+    return reinterpret_cast<IScriptEnvironment2*>(IEnvPreV11C);
   }
   else if (version <= AVISYNTH_INTERFACE_VERSION)
     return (new ScriptEnvironment())->GetMainThreadEnv();
@@ -5681,7 +5751,16 @@ AVSC_API(IScriptEnvironment2*, CreateScriptEnvironment2)(int version)
     return NULL;
 }
 
+AVSC_API(IScriptEnvironment2*, CreateScriptEnvironment2)(int version)
+{
+  if (version <= AVISYNTH_CLASSIC_INTERFACE_VERSION_25)
+    return CreateScriptEnvironment2_internal(version, true, false); // avs 2.5, non-C
+  else if (version <= AVISYNTH_INTERFACE_VERSION)
+    return CreateScriptEnvironment2_internal(version, false, false); // modern avs, non-C
 
+  return nullptr;
+
+}
 
 ///////////////
 

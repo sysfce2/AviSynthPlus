@@ -206,23 +206,25 @@ static bool IsValidParameterString(const char* p) {
 */
 
 AVSFunction::AVSFunction(void*) :
-    AVSFunction(NULL, NULL, NULL, NULL, NULL, NULL, false)
+    AVSFunction(NULL, NULL, NULL, NULL, NULL, NULL, false, false)
 {}
 
 AVSFunction::AVSFunction(const char* _name, const char* _plugin_basename, const char* _param_types, apply_func_t _apply) :
-    AVSFunction(_name, _plugin_basename, _param_types, _apply, NULL, NULL, false)
+    AVSFunction(_name, _plugin_basename, _param_types, _apply, NULL, NULL, false, false)
 {}
 
 AVSFunction::AVSFunction(const char* _name, const char* _plugin_basename, const char* _param_types, apply_func_t _apply, void *_user_data) :
-    AVSFunction(_name, _plugin_basename, _param_types, _apply, _user_data, NULL, false)
+    AVSFunction(_name, _plugin_basename, _param_types, _apply, _user_data, NULL, false, false)
 {}
 
-AVSFunction::AVSFunction(const char* _name, const char* _plugin_basename, const char* _param_types, apply_func_t _apply, void *_user_data, const char* _dll_path, bool _isAvs25) :
+AVSFunction::AVSFunction(const char* _name, const char* _plugin_basename, const char* _param_types, apply_func_t _apply, void *_user_data, const char* _dll_path, 
+  bool _isPluginAvs25, bool _isPluginPreV11C) :
     Function()
 {
   apply = _apply;
   user_data = _user_data;
-  isAvs25 = _isAvs25;
+  isPluginAvs25 = _isPluginAvs25;
+  isPluginPreV11C = _isPluginPreV11C;
 
     if (NULL != _dll_path)
     {
@@ -491,13 +493,16 @@ struct PluginFile
   std::string FilePath;             // Fully qualified, canonical file path
   std::string BaseName;             // Only file name, without extension
   HMODULE Library;                  // LoadLibrary handle
-  bool isAvs25;
+  bool isPluginAvs25;
+  bool isPluginPreV11C;
+  bool isPluginC; // we register it, but it won't be used
 
   PluginFile(const std::string &filePath);
 };
 
 PluginFile::PluginFile(const std::string &filePath) :
-  FilePath(GetFullPathNameWrap(filePath)), BaseName(), Library(NULL), isAvs25(false)
+  FilePath(GetFullPathNameWrap(filePath)), BaseName(), Library(NULL),
+  isPluginAvs25(false), isPluginPreV11C(false), isPluginC(false)
 {
   // Turn all '\' into '/'
   replace(FilePath, '\\', '/');
@@ -849,7 +854,9 @@ bool PluginManager::LoadPlugin(PluginFile &plugin, bool throwOnError, AVSValue *
     }
   }
 
-  plugin.isAvs25 = false;
+  plugin.isPluginAvs25 = false;
+  plugin.isPluginPreV11C = false;
+  plugin.isPluginC = false;
 
 #ifdef AVS_WINDOWS
   // Search for dependent DLLs in the plugin's directory too
@@ -901,10 +908,12 @@ bool PluginManager::LoadPlugin(PluginFile &plugin, bool throwOnError, AVSValue *
 
     if (!TryAsAvsC(plugin, result)) // V11: try avisynth_c_plugin_init2, plugin is 64 bit capable
     {
-      if (!TryAsAvs25(plugin, result))
+      if (!TryAsAvsPreV11C(plugin, result))  // try avisynth_c_plugin_init, plugin is not 64 bit capable, 64 bit data will be casted down to int/float
       {
-        FreeLibrary(plugin.Library);
-        plugin.Library = NULL;
+        if (!TryAsAvs25(plugin, result))
+        {
+          FreeLibrary(plugin.Library);
+          plugin.Library = NULL;
 
           if (throwOnError)
             Env->ThrowError("'%s' cannot be used as a plugin for AviSynth.", plugin.FilePath.c_str());
@@ -988,7 +997,9 @@ static bool FunctionListHasDll(const FunctionList &list, const char *dll_path)
     return false;
 }
 
-void PluginManager::AddFunction(const char* name, const char* params, IScriptEnvironment::ApplyFunc apply, void* user_data, const char *exportVar, bool isAvs25)
+void PluginManager::AddFunction(const char* name, const char* params, IScriptEnvironment::ApplyFunc apply, void* user_data, const char *exportVar,
+  bool isCalledFromAvs25Interface,
+  bool isCalledFromPreV11CInterface)
 {
   if (!IsValidParameterString(params))
     Env->ThrowError("%s has an invalid parameter string (bug in filter)", name);
@@ -999,21 +1010,40 @@ void PluginManager::AddFunction(const char* name, const char* params, IScriptEnv
   if (PluginInLoad != NULL)
   {
     // either called using IScriptEnvironment_Avs25 or we are inside of a CPPv2.5 plugin load
-    const bool isAvs25like = isAvs25 || PluginInLoad->isAvs25;
-    newFunc = new AVSFunction(name, PluginInLoad->BaseName.c_str(), params, apply, user_data, PluginInLoad->FilePath.c_str(), isAvs25like);
+    const bool isAvs25like = isCalledFromAvs25Interface || PluginInLoad->isPluginAvs25;
+    
+    // During function instantiation the new V11 64 bit 'l'ong/'d'ouble
+    // parameters must be converted to int/float instead.
+    // If 64->32-bit conversion is not done, the pre-V11 C plugin does not detect 
+    // AVS_Value type properly, since the type check is not performed through interface calls.
+    // The 'baked code' in avisynth_c.h does not know about 'l'ong or 'd'ouble type: 
+    // IsInt() / IsFloat() or avs_is_int() / avs_is_float() would return false on the new 64 bit types.
+
+    // How Avisynth detects that a C plugin 'knows' about 64 bit types?
+    // - the plugin is 64 bit aware plugin, works with regular IScriptEnvironment
+    //   - When avisynth_c_plugin_init2 is available (PluginInLoad->isPluginC is set)
+    //   - When C client called avs_create_script_environment(ver) with ver>=11.
+    // - the plugin is pre-V11 C plugin and we pass IScriptEnvironment_AvsPreV11C
+    //   - when the plugin responded only to avisynth_c_plugin_init;
+    //     (PluginInLoad->isPluginPerV11C is true)
+    //   - C client called avs_create_script_environment(ver) with ver<11
+    //     (isCalledFromPreV11CInterface is true)
+
+    const bool isPrev11Clike = isCalledFromPreV11CInterface || PluginInLoad->isPluginPreV11C;
+    newFunc = new AVSFunction(name, PluginInLoad->BaseName.c_str(), params, apply, user_data, PluginInLoad->FilePath.c_str(),
+      isAvs25like, isPrev11Clike);
   }
   else
   {
-    // isAvs25: called using an IScriptEnvironment_Avs25->AddFunction
-    newFunc = new AVSFunction(name, NULL, params, apply, user_data, NULL, isAvs25);
-      /*
-         // Comment out but kept for reference.
-         // This assert is false when AddFunction is called from a cpp non-plugin.
-         // e.g. a "master" that directly loads avisynth
-         // The extemption could handle only situations when function was loaded by C interface avs_add_function.
-      if(apply != &create_c_video_filter)
-        assert(AVSFunction::IsScriptFunction(newFunc));
-      */
+    // Not plugin load case.
+    // AddFunction or avs_add_function was called by a client
+    // (a C client which directly loads avisynth)
+    // or when called from a cpp v2.5 level script environtment. 
+    // isCalledFromAvs25Interface: IScriptEnvironment_Avs25->AddFunction
+    newFunc = new AVSFunction(name, NULL, params, apply, user_data, NULL, 
+      isCalledFromAvs25Interface, 
+      isCalledFromPreV11CInterface
+    );
   }
 
   // Warn user if a function with the same name is already registered by another plugin
@@ -1127,8 +1157,10 @@ bool PluginManager::TryAsAvs25(PluginFile &plugin, AVSValue *result)
       // Pass the 2.5 variant IScriptEnvironment, which has different Invoke
       // and AddFunction method to avoid array copy/free problems.
       // (NEW_AVSVALUE compatibility: "baked code" strikes back)
+
+      // set before AddFunction callbacks happen from the AvisynthPluginInit2 called below
+      plugin.isPluginAvs25 = true;
       *result = AvisynthPluginInit2(Env->GetEnv25());
-      plugin.isAvs25 = true;
     }
     catch (...)
     {
@@ -1140,7 +1172,7 @@ bool PluginManager::TryAsAvs25(PluginFile &plugin, AVSValue *result)
   return success;
 }
 
-bool PluginManager::TryAsAvsC(PluginFile &plugin, AVSValue *result)
+bool PluginManager::TryAsAvsPreV11C(PluginFile& plugin, AVSValue* result)
 {
 #ifdef AVS_POSIX
   AvisynthCPluginInitFunc AvisynthCPluginInit = (AvisynthCPluginInitFunc)dlsym(plugin.Library, "avisynth_c_plugin_init");
@@ -1163,54 +1195,56 @@ bool PluginManager::TryAsAvsC(PluginFile &plugin, AVSValue *result)
   else
   {
     PluginInLoad = &plugin;
+    // set before AddFunction callbacks happen from the AvisynthCPluginInit called below
+    plugin.isPluginPreV11C = true; // no array deep copy/free when NEW_AVSVALUE
     {
-        AVS_ScriptEnvironment e;
-        e.env = Env;
-        AVS_ScriptEnvironment *pe;
-        pe = &e;
-        const char *s = NULL;
+      AVS_ScriptEnvironment e;
+      e.env = Env;
+      AVS_ScriptEnvironment* pe;
+      pe = &e;
+      const char* s = NULL;
 #if defined(X86_32) && defined(MSVC)
-        int callok = 1; // (stdcall)
-        __asm // Tritical - Jan 2006
-        {
-            push eax
-            push edx
+      int callok = 1; // (stdcall)
+      __asm // Tritical - Jan 2006
+      {
+        push eax
+        push edx
 
-            push 0x12345678		// Stash a known value
+        push 0x12345678		// Stash a known value
 
-            mov eax, pe			// Env pointer
-            push eax			// Arg1
-            call AvisynthCPluginInit			// avisynth_c_plugin_init
+        mov eax, pe			// Env pointer
+        push eax			// Arg1
+        call AvisynthCPluginInit			// avisynth_c_plugin_init
 
-            lea edx, s			// return value is in eax
-            mov DWORD PTR[edx], eax
+        lea edx, s			// return value is in eax
+        mov DWORD PTR[edx], eax
 
-            pop eax				// Get top of stack
-            cmp eax, 0x12345678	// Was it our known value?
-            je end				// Yes! Stack was cleaned up, was a stdcall
+        pop eax				// Get top of stack
+        cmp eax, 0x12345678	// Was it our known value?
+        je end				// Yes! Stack was cleaned up, was a stdcall
 
-            lea edx, callok
-            mov BYTE PTR[edx], 0 // Set callok to 0 (_cdecl)
+        lea edx, callok
+        mov BYTE PTR[edx], 0 // Set callok to 0 (_cdecl)
 
-            pop eax				// Get 2nd top of stack
-            cmp eax, 0x12345678	// Was this our known value?
-            je end				// Yes! Stack is now correctly cleaned up, was a _cdecl
+        pop eax				// Get 2nd top of stack
+        cmp eax, 0x12345678	// Was this our known value?
+        je end				// Yes! Stack is now correctly cleaned up, was a _cdecl
 
-            mov BYTE PTR[edx], 2 // Set callok to 2 (bad stack)
-    end:
-            pop edx
-            pop eax
-        }
-      switch(callok)
+        mov BYTE PTR[edx], 2 // Set callok to 2 (bad stack)
+        end:
+        pop edx
+          pop eax
+      }
+      switch (callok)
       {
       case 0:   // cdecl
 #ifdef AVSC_USE_STDCALL
-            Env->ThrowError("Avisynth 2 C Plugin '%s' has wrong calling convention! Must be _stdcall.", plugin.BaseName.c_str());
+        Env->ThrowError("Avisynth 2 C Plugin '%s' has wrong calling convention! Must be _stdcall.", plugin.BaseName.c_str());
 #endif
         break;
       case 1:   // stdcall
 #ifndef AVSC_USE_STDCALL
-            Env->ThrowError("Avisynth 2 C Plugin '%s' has wrong calling convention! Must be _cdecl.", plugin.BaseName.c_str());
+        Env->ThrowError("Avisynth 2 C Plugin '%s' has wrong calling convention! Must be _cdecl.", plugin.BaseName.c_str());
 #endif
         break;
       case 2:
@@ -1219,11 +1253,102 @@ bool PluginManager::TryAsAvsC(PluginFile &plugin, AVSValue *result)
 #else
       s = AvisynthCPluginInit(pe);
 #endif
-//	    if (s == 0)
-    //	    Env->ThrowError("Avisynth 2 C Plugin '%s' returned a NULL pointer.", plugin.BaseName.c_str());
+      //  if (s == 0)
+      //    Env->ThrowError("Avisynth 2 C Plugin '%s' returned a NULL pointer.", plugin.BaseName.c_str());
 
       *result = AVSValue(s);
-      plugin.isAvs25 = true; // no array deep copy/free when NEW_AVSVALUE
+    }
+    PluginInLoad = NULL;
+  }
+
+  return true;
+}
+
+
+// v11 capable: C plugin implements avisynth_c_plugin_init2!
+bool PluginManager::TryAsAvsC(PluginFile& plugin, AVSValue* result)
+{
+#ifdef AVS_POSIX
+  AvisynthCPluginInitFunc AvisynthCPluginInit = (AvisynthCPluginInitFunc)dlsym(plugin.Library, "avisynth_c_plugin_init2");
+#else
+#ifdef _WIN64
+  AvisynthCPluginInitFunc AvisynthCPluginInit = (AvisynthCPluginInitFunc)GetProcAddress(plugin.Library, "avisynth_c_plugin_init2");
+  if (!AvisynthCPluginInit)
+    AvisynthCPluginInit = (AvisynthCPluginInitFunc)GetProcAddress(plugin.Library, "_avisynth_c_plugin_init2@4");
+#else // _WIN32
+  AvisynthCPluginInitFunc AvisynthCPluginInit = (AvisynthCPluginInitFunc)GetProcAddress(plugin.Library, "_avisynth_c_plugin_init2@4");
+  if (!AvisynthCPluginInit)
+    AvisynthCPluginInit = (AvisynthCPluginInitFunc)GetProcAddress(plugin.Library, "avisynth_c_plugin_init2@4");
+  if (!AvisynthCPluginInit)
+    AvisynthCPluginInit = (AvisynthCPluginInitFunc)GetProcAddress(plugin.Library, "avisynth_c_plugin_init2");
+#endif
+#endif // AVS_POSIX
+
+  if (AvisynthCPluginInit == NULL)
+    return false;
+  else
+  {
+    PluginInLoad = &plugin;
+    // set before AddFunction callbacks happen from the AvisynthCPluginInit called below
+    plugin.isPluginC = true; // no array deep copy/free when NEW_AVSVALUE, but 64 bit data capable
+    {
+      AVS_ScriptEnvironment e;
+      e.env = Env;
+      AVS_ScriptEnvironment* pe;
+      pe = &e;
+      const char* s = NULL;
+#if defined(X86_32) && defined(MSVC)
+      int callok = 1; // (stdcall)
+      __asm // Tritical - Jan 2006
+      {
+        push eax
+        push edx
+
+        push 0x12345678		// Stash a known value
+
+        mov eax, pe			// Env pointer
+        push eax			// Arg1
+        call AvisynthCPluginInit			// avisynth_c_plugin_init
+
+        lea edx, s			// return value is in eax
+        mov DWORD PTR[edx], eax
+
+        pop eax				// Get top of stack
+        cmp eax, 0x12345678	// Was it our known value?
+        je end				// Yes! Stack was cleaned up, was a stdcall
+
+        lea edx, callok
+        mov BYTE PTR[edx], 0 // Set callok to 0 (_cdecl)
+
+        pop eax				// Get 2nd top of stack
+        cmp eax, 0x12345678	// Was this our known value?
+        je end				// Yes! Stack is now correctly cleaned up, was a _cdecl
+
+        mov BYTE PTR[edx], 2 // Set callok to 2 (bad stack)
+        end:
+        pop edx
+          pop eax
+      }
+      switch (callok)
+      {
+      case 0:   // cdecl
+#ifdef AVSC_USE_STDCALL
+        Env->ThrowError("Avisynth C Plugin '%s' has wrong calling convention! Must be _stdcall.", plugin.BaseName.c_str());
+#endif
+        break;
+      case 1:   // stdcall
+#ifndef AVSC_USE_STDCALL
+        Env->ThrowError("Avisynth C Plugin '%s' has wrong calling convention! Must be _cdecl.", plugin.BaseName.c_str());
+#endif
+        break;
+      case 2:
+        Env->ThrowError("Avisynth C Plugin '%s' has corrupted the stack.", plugin.BaseName.c_str());
+      }
+#else
+      s = AvisynthCPluginInit(pe);
+#endif
+
+      * result = AVSValue(s);
     }
     PluginInLoad = NULL;
   }
