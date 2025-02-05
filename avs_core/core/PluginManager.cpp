@@ -116,9 +116,12 @@ static std::string GetFullPathNameWrap(const std::string &f)
   return fs::absolute(fs::path(f).lexically_normal()).generic_string();
 }
 
+// see also: AVSFunction::TypeMatch
 static bool IsParameterTypeSpecifier(char c) {
   switch (c) {
   case 'b': case 'i': case 'f': case 's': case 'c': case '.':
+    // case 'd': case 'l':
+    // from v11 f and i will accept 64 bit data as well
   case 'n':
   case 'a': // Arrays as function parameters
       return true;
@@ -286,8 +289,8 @@ bool AVSFunction::SingleTypeMatch(char type, const AVSValue& arg, bool strict) {
   switch (type) {
     case '.': return true;
     case 'b': return arg.IsBool();
-    case 'i': return arg.IsInt();
-    case 'f': return arg.IsFloat() && (!strict || !arg.IsInt());
+    case 'i': return arg.IsInt(); // IsInt is true for long (int64) parameters as well, worst case they will be AsInt-ed, or can use AsLong
+    case 'f': return arg.IsFloat() && (!strict || !arg.IsInt()); // IsFloat is true for 'double' as well
     case 's': return arg.IsString();
     case 'c': return arg.IsClip();
     case 'n': return arg.IsFunction();
@@ -359,8 +362,11 @@ bool AVSFunction::TypeMatch(const char* param_types, const AVSValue* args, size_
       ++param_types;
     }
 
+    // see also: IsParameterTypeSpecifier
     switch (*param_types) {
       case 'b': case 'i': case 'f': case 's': case 'c':
+      // case 'd': case 'l':
+      // from v11 f and i will accept 64 bit data as well
       case 'n':
       case 'a':
         // PF 2016: 'a' is special letter for script arrays, but if possible we are using .* and .+ (legacy Avisynth style) instead
