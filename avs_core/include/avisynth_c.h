@@ -822,50 +822,20 @@ AVSC_API(int, avs_video_frame_get_pixel_type)(const AVS_VideoFrame* p);
 // V10
 AVSC_API(void, avs_video_frame_amend_pixel_type)(AVS_VideoFrame* p, int new_pixel_type);
 
-// no API for these, inline helper functions
 #ifndef AVSC_NO_DECLSPEC
-// this inline function is calling an API function
-AVSC_INLINE int avs_get_pitch(const AVS_VideoFrame * p) {
-  return avs_get_pitch_p(p, 0);
-}
+#ifdef AVSC_ALLOW_DEPRECATED
+// Old inline helper functions which are named differently but eventually call API.
+// Deprecated. If possible, do not use them any more
+// Get data for plane AVS_DEFAULT_PLANE (Y or packed rgb):
+AVSC_INLINE int avs_get_pitch(const AVS_VideoFrame * p) { return avs_get_pitch_p(p, AVS_DEFAULT_PLANE); }
+AVSC_INLINE int avs_get_row_size(const AVS_VideoFrame * p) { return avs_get_row_size_p(p, AVS_DEFAULT_PLANE); }
+AVSC_INLINE int avs_get_height(const AVS_VideoFrame * p) { return avs_get_height_p(p, AVS_DEFAULT_PLANE); }
+AVSC_INLINE const BYTE* avs_get_read_ptr(const AVS_VideoFrame * p) { return avs_get_read_ptr_p(p, AVS_DEFAULT_PLANE); }
+AVSC_INLINE BYTE* avs_get_write_ptr(const AVS_VideoFrame * p) { return avs_get_write_ptr_p(p, AVS_DEFAULT_PLANE); }
+// named alternatively:
+AVSC_INLINE void avs_release_frame(AVS_VideoFrame* f) { avs_release_video_frame(f); }
+AVSC_INLINE AVS_VideoFrame* avs_copy_frame(AVS_VideoFrame* f) { return avs_copy_video_frame(f); }
 #endif
-
-#ifndef AVSC_NO_DECLSPEC
-// this inline function is calling an API function
-AVSC_INLINE int avs_get_row_size(const AVS_VideoFrame * p) {
-        return avs_get_row_size_p(p, 0); }
-#endif
-
-
-#ifndef AVSC_NO_DECLSPEC
-// this inline function is calling an API function
-AVSC_INLINE int avs_get_height(const AVS_VideoFrame * p) {
-  return avs_get_height_p(p, 0);
-}
-#endif
-
-#ifndef AVSC_NO_DECLSPEC
-// this inline function is calling an API function
-AVSC_INLINE const BYTE* avs_get_read_ptr(const AVS_VideoFrame * p) {
-        return avs_get_read_ptr_p(p, 0);}
-#endif
-
-#ifndef AVSC_NO_DECLSPEC
-// this inline function is calling an API function
-AVSC_INLINE BYTE* avs_get_write_ptr(const AVS_VideoFrame * p) {
-        return avs_get_write_ptr_p(p, 0);}
-#endif
-
-#ifndef AVSC_NO_DECLSPEC
-// this inline function is calling an API function
-AVSC_INLINE void avs_release_frame(AVS_VideoFrame * f)
-  {avs_release_video_frame(f);}
-#endif
-
-#ifndef AVSC_NO_DECLSPEC
-// this inline function is calling an API function
-AVSC_INLINE AVS_VideoFrame * avs_copy_frame(AVS_VideoFrame * f)
-  {return avs_copy_video_frame(f);}
 #endif
 
 // Interface V8: frame properties
