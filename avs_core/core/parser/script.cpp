@@ -1794,7 +1794,43 @@ const char* GetAVSTypeName(AVSValue value) {
 AVSValue TypeName(AVSValue args, void*, IScriptEnvironment*) { return GetAVSTypeName(args[0]); }
 
 AVSValue Default(AVSValue args, void*, IScriptEnvironment*) {  return args[0].Defined() ? args[0] : args[1]; }
-AVSValue VersionNumber(AVSValue args, void*, IScriptEnvironment*) {  return AVS_CLASSIC_VERSION; }
+
+static float find_next_valid_float(const double version) {
+  float version_f = static_cast<float>(version);
+  const float initial_value = version_f;
+  // float epsilon = std::nextafterf(version_f, INFINITY) - version_f;
+  int steps = 0;
+
+  while (version_f < version) {
+    version_f = std::nextafterf(version_f, INFINITY);
+    steps++;
+
+    // Safety check to prevent infinite loops
+    if (steps > 1000000) {
+      // std::cout << "Too many steps required, possible overflow\n";
+      version_f = initial_value;
+      break;
+    }
+  }
+  return version_f;
+}
+
+AVSValue VersionNumber(AVSValue args, void*, IScriptEnvironment*) {
+  const double VersionToReturn = AVS_CLASSIC_VERSION; // consider upgrading
+  float VersionToReturnf = find_next_valid_float(VersionToReturn);
+  return VersionToReturnf;
+  // A typical transition, when - even in Avisynth+ - we return 2.6f here.
+  // From 3.7.4 script constants are of 64-bit double precision, and 
+  // the very popular IsAvs26 = VersionNumber() >= 2.6 will fail, since
+  // 2.6f < 2.6, (double)(float)2.6 is 2.5999999046. Arrrgh.
+  // 2.6 cannot be exactly specified as a floating point number and has
+  // differently rounded values in float and in double.
+  // Thus we start increasing the float value with the smallest available steps, 
+  // until the comparison will be fine.
+  // Prior to interface version 11, Avisynth supported only 32-bit floating-point data (float), not 64-bit (double).
+  // To maintain compatibility (old plugins get this value as 32 bit float), this return 
+  // value must remain a 32-bit float.
+
 AVSValue VersionString(AVSValue args, void*, IScriptEnvironment*) {  return AVS_FULLVERSION; }
 AVSValue IsVersionOrGreater(AVSValue args, void*, IScriptEnvironment* env)
 {
