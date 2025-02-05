@@ -118,8 +118,32 @@ EXPORTS
   avs_get_var_long = _avs_get_var_long@16
   avs_is_property_writable = _avs_is_property_writable@4
   avs_make_property_writable = _avs_make_property_writable@8
+
   avs_video_frame_get_pixel_type = _avs_video_frame_get_pixel_type@4
   avs_video_frame_amend_pixel_type = _avs_video_frame_amend_pixel_type@8
+
   avs_is_channel_mask_known = _avs_is_channel_mask_known@4
   avs_set_channel_mask = _avs_set_channel_mask@12
   avs_get_channel_mask = _avs_get_channel_mask@4
+
+  avs_set_to_error = _avs_set_to_error@8
+  avs_set_to_bool = _avs_set_to_bool@8
+  avs_set_to_int = _avs_set_to_int@8
+  avs_set_to_string = _avs_set_to_string@8
+  avs_set_to_float = _avs_set_to_float@8
+  avs_set_to_double = _avs_set_to_double@12
+  avs_set_to_long = _avs_set_to_long@12
+  avs_set_to_array_dyn = _avs_set_to_array_dyn@12
+
+  avs_api_as_bool = _avs_api_as_bool@8
+  avs_api_as_int = _avs_api_as_int@8
+  avs_api_as_long = _avs_api_as_long@8
+  avs_api_as_string = _avs_api_as_string@8
+  avs_api_as_float = _avs_api_as_float@8
+  avs_api_as_error = _avs_api_as_error@8
+
+  avs_prop_get_int_saturated = _avs_prop_get_int_saturated@20
+  avs_prop_get_float_saturated = _avs_prop_get_float_saturated@20
+  avs_prop_get_data_type_hint = _avs_prop_get_data_type_hint@20
+  avs_prop_set_data_h = _avs_prop_set_data_h@28
+
