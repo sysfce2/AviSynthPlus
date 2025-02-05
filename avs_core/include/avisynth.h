@@ -89,8 +89,8 @@
 // graphical user interfaces.
 
 
-#ifndef __AVISYNTH_10_H__
-#define __AVISYNTH_10_H__
+#ifndef __AVISYNTH_11_H__
+#define __AVISYNTH_11_H__
 
 #include "avs/config.h"
 #include "avs/capi.h"
@@ -123,7 +123,7 @@ enum AvsVersion {
   AVISYNTH_CLASSIC_INTERFACE_VERSION_25 = 3,
   AVISYNTH_CLASSIC_INTERFACE_VERSION_26BETA = 5,
   AVISYNTH_CLASSIC_INTERFACE_VERSION = 6,
-  AVISYNTH_INTERFACE_VERSION = 10,
+  AVISYNTH_INTERFACE_VERSION = 11,
   AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 0 // reset to zero whenever the normal interface version bumps
 };
 
@@ -2025,4 +2025,4 @@ AVSC_API(IScriptEnvironment2*, CreateScriptEnvironment2)(int version = AVISYNTH_
 
 #pragma pack(pop)
 
-#endif //__AVISYNTH_10_H__
+#endif //__AVISYNTH_11_H__
