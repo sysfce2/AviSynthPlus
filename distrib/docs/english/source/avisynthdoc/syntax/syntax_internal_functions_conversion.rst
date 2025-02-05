@@ -3,8 +3,11 @@ AviSynth Syntax - Type conversion functions
 ===========================================
 
 Conversion functions convert between different types. There are also some
-:doc:`numeric functions <syntax_internal_functions_numeric>` that can be classified in this category, namely: ``Ceil,
-Floor, Float, Int`` and ``Round``.
+:doc:`numeric functions <syntax_internal_functions_numeric>` that can be classified in this 
+category, namely: ``Ceil``, ``Floor``, ``Float``, ``Int``, ``IntI``, ``Long``, ``FloatF``,
+``Double`` and ``Round``.
+
+See :doc:`AviSynth Syntax - Numeric functions <syntax_internal_functions_numeric>`.
 
 Value
 ~~~~~
@@ -22,11 +25,19 @@ Converts a decimal string to its associated numeric value.
 
 HexValue
 ~~~~~~~~
+HexValue64
+~~~~~~~~~~
 ::
 
     HexValue(string[, int "pos"])
+    HexValue64(string[, int "pos"])
 
-Converts a hexadecimal string to its associated numeric value (integer)
+Converts a hexadecimal string to its associated numeric value.
+
+HexValue returns 32 bit integer.
+
+HexValue64 returns 64 bit long. (since v3.7.4)
+
 Conversion will cease at the first non legal number base digit, without 
 producing an error.
 
@@ -42,6 +53,10 @@ Function returns 0 if ``pos`` is erroenus: ie less than 1 or greater than string
 
     HexValue ("FF00") # 65280
     HexValue ("FFA0", 3) # 160
+    HexValue ("FFFFFFFF") # -1
+    HexValue64 ("FF00") # 65280
+    HexValue64 ("FFFFFFFF") # 4294967295
+
 
 Hex
 ~~~
@@ -82,7 +97,7 @@ Converts a variable to a string.
 - numbers are formatted as described below; 
 - other variable types (clip, val) are converted to the empty string. 
 
-If the variable is float or integer, it
+If the variable is float or integer and ``format_string`` exists, it
 first converts it to a float and then uses format_string to convert the float
 to a string. The syntax of ``format_string`` is as follows:
 
@@ -141,11 +156,15 @@ You can also put arbitrary text around the format_string as defined above, simil
     Subtitle( "Value of x is " + String(x, "%.3f") + " after AR calc") )
     # same as above
 
+
 Changelog
 ---------
 +-----------------+----------------------------------+
 | Version         | Changes                          |
 +=================+==================================+
+| 3.7.4           | | Add HexValue64                 |
+|                 | | Add IntI, Long, FloatF, Double |
++-----------------+----------------------------------+
 | Avisynth+ r2632 | | Hex: added "width"             |
 |                 | | Hexvalue: added "pos"          |
 +-----------------+----------------------------------+
