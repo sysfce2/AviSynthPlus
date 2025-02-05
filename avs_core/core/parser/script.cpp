@@ -175,7 +175,7 @@ extern const AVSFunction Script_functions[] = {
   { "frameratenumerator",   BUILTIN_FUNC_PREFIX, "c", FrameRateNumerator },
   { "frameratedenominator", BUILTIN_FUNC_PREFIX, "c", FrameRateDenominator },
   { "audiorate",     BUILTIN_FUNC_PREFIX, "c", AudioRate },
-  { "audiolength",   BUILTIN_FUNC_PREFIX, "c", AudioLength },  // Fixme: Add int64 to script
+  { "audiolength",   BUILTIN_FUNC_PREFIX, "c", AudioLength },  // v11: returns real int64
   { "audiolengthlo", BUILTIN_FUNC_PREFIX, "c[]i", AudioLengthLo }, // audiolength%i
   { "audiolengthhi", BUILTIN_FUNC_PREFIX, "c[]i", AudioLengthHi }, // audiolength/i
   { "audiolengths",  BUILTIN_FUNC_PREFIX, "c", AudioLengthS }, // as a string
@@ -1372,7 +1372,7 @@ AVSValue FrameRate(AVSValue args, void*, IScriptEnvironment*) { const VideoInfo&
 AVSValue FrameRateNumerator(AVSValue args, void*, IScriptEnvironment*) { return (int)VI(args[0]).fps_numerator; } // unsigned int truncated to int
 AVSValue FrameRateDenominator(AVSValue args, void*, IScriptEnvironment*) { return (int)VI(args[0]).fps_denominator; } // unsigned int truncated to int
 AVSValue AudioRate(AVSValue args, void*, IScriptEnvironment*) { return VI(args[0]).audio_samples_per_second; }
-AVSValue AudioLength(AVSValue args, void*, IScriptEnvironment*) { return (int)VI(args[0]).num_audio_samples; }  // Truncated to int
+AVSValue AudioLength(AVSValue args, void*, IScriptEnvironment*) { return VI(args[0]).num_audio_samples; }  // since v11 not truncated to int
 AVSValue AudioLengthLo(AVSValue args, void*, IScriptEnvironment*) { return (int)(VI(args[0]).num_audio_samples % (unsigned)args[1].AsInt(1000000000)); }
 AVSValue AudioLengthHi(AVSValue args, void*, IScriptEnvironment*) { return (int)(VI(args[0]).num_audio_samples / (unsigned)args[1].AsInt(1000000000)); }
 AVSValue AudioLengthS(AVSValue args, void*, IScriptEnvironment* env) {
@@ -1384,7 +1384,10 @@ AVSValue AudioLengthS(AVSValue args, void*, IScriptEnvironment* env) {
     return env->SaveString(s);
 #endif
 }
-AVSValue AudioLengthF(AVSValue args, void*, IScriptEnvironment*) { return (float)VI(args[0]).num_audio_samples; } // at least this will give an order of the size
+AVSValue AudioLengthF(AVSValue args, void*, IScriptEnvironment*) { return static_cast<double>(VI(args[0]).num_audio_samples); } // at least this will give an order of the size. 
+// Since v11 it has of little use: AudioLength now can return int64, 
+// anyway, cast to double instead of float
+
 AVSValue AudioDuration(AVSValue args, void*, IScriptEnvironment*) {
   const VideoInfo& vi = VI(args[0]);
   return (double)vi.num_audio_samples / vi.audio_samples_per_second;
