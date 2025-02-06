@@ -668,6 +668,7 @@ int CacheGuard::GetOrDefault(int cachehints, int frame_range, int def)
 PVideoFrame __stdcall CacheGuard::GetFrame(int n, IScriptEnvironment* env)
 {
   InternalEnvironment* IEnv;
+  // same in CacheGuard::GetFrame/GetAudio, Prefetcher::GetFrame/GetAudio
   // When GetFrame is called from an Avs Cpp 2.5 or PreV11C plugin constructor (xx_Create),
   // 'env' is a disguised IScriptEnvironment_Avs25/AvsPreV11C which we cannot
   // static cast to InternalEnvironment directly.
@@ -692,6 +693,7 @@ PVideoFrame __stdcall CacheGuard::GetFrame(int n, IScriptEnvironment* env)
 
 void __stdcall CacheGuard::GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env)
 {
+  // same in CacheGuard::GetFrame/GetAudio, Prefetcher::GetFrame/GetAudio
   InternalEnvironment* IEnv;
   // see Avs2.5/AvsPreV11C comments on CacheGuard::GetFrame
   if (env->ManageCache((int)MC_QueryAvs25, nullptr) == (intptr_t*)1) {
