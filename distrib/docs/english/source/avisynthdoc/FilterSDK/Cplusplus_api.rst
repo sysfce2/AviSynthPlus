@@ -1302,11 +1302,27 @@ Possible error codes defined in Avisynth.h:
 ::
 
   enum AVSGetPropErrors {
+    GETPROPERROR_SUCCESS = 0,
     GETPROPERROR_UNSET = 1, // peUnset
     GETPROPERROR_TYPE = 2, // peType
+    GETPROPERROR_ERROR = 3, // map has error state set
     GETPROPERROR_INDEX = 4 // peIndex
   };
 
+.. _cplusplus_propgetintsaturated:
+
+propGetIntSaturated, v11
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+::
+
+    virtual int __stdcall propGetIntSaturated(const AVSMap* map, const char* key, int index, int* error) = 0;
+
+get property value as integer (and _not_ int64).
+
+The same as propGetInt, but clamps the underlying int64 values to valid integer ranges.
+
+Backported from VapourSynth API 4.
 
 
 .. _cplusplus_propgetfloat:
@@ -1319,7 +1335,24 @@ propGetFloat, v8
     virtual double __stdcall propGetFloat(const AVSMap* map, const char* key, int index, int* error) = 0;
 
 Get property value as float (double).
-No special 32 bit float is handled for frame properties, only 64 bit double.
+No special 32 bit float is handled for frame properties, only 64 bit double,
+but from v11 the value can be requested in float, see propGetFloatSaturated.
+
+
+.. _cplusplus_propgetfloatsaturated:
+
+propGetFloatSaturated, v11
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+::
+
+    virtual float __stdcall propGetFloatSaturated(const AVSMap* map, const char* key, int index, int* error) = 0;
+
+Get property value as float (and _not_ double).
+
+The same as propGetFloat, but clamps the underlying double value to valid 32 bit float range.
+
+Backported from VapourSynth API 4.
 
 
 .. _cplusplus_propgetdata:
@@ -1348,6 +1381,20 @@ propGetDataSize, v8
 get string/data buffer size.
 String length is without the terminating 0.
 
+.. _cplusplus_propgetdatatypehint:
+
+propGetDataTypeHint, v11
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+::
+
+    virtual int __stdcall propGetDataTypeHint(const AVSMap* map, const char* key, int index, int* error) = 0;
+
+get string/data type, given by a hint earlier.
+
+The result is one of AVSPropDataTypeHint enums: unknown, binary or string data.
+
+Backported from VapourSynth API4: VSDataTypeHint
 
 .. _cplusplus_propgetclip:
 
@@ -1430,6 +1477,32 @@ propSetData, v8
 
 sets string (byte buffer) frame property.
 
+Use propSetDataH instead, available from v11 (3.7.4). 
+
+
+.. _cplusplus_propsetdatah:
+
+propSetDataH, v11
+^^^^^^^^^^^^^^^^^
+
+::
+
+    virtual int __stdcall propSetDataH(AVSMap* map, const char* key, const char* d, 
+                                       int length, int type, int append) = 0;
+
+sets string (byte buffer) frame property along with a type hint: binary or string. 
+Hint is then used as display (propShow) or serialization (to json) helper.
+
+For type hints see AvsPropDataTypeHint enum:
+::
+
+  enum AVSPropDataTypeHint {
+    PROPDATATYPEHINT_UNKNOWN = -1, // dtUnknown = -1,
+    PROPDATATYPEHINT_BINARY = 0, // dtBinary = 0,
+    PROPDATATYPEHINT_UTF8 = 1 // dtUtf8 = 1
+  };
+
+Backported from VapourSynth API4: ``mapSetData`` (their API however defines the hintless version as ``mapSetData3``)
 
 .. _cplusplus_propsetclip:
 
@@ -1801,7 +1874,6 @@ See also
 - :ref:`getFramePropsRW <cplusplus_getframepropsrw>`.
 
 
-
 .. _cplusplus_pvideoframe:
 
 PVideoFrame
@@ -2152,6 +2224,11 @@ all IsXXX functions to establish the exact type.
 
 Note that although 'l'ong and 'd'ouble are defined, 64 bit data is not
 (and in 32 bit Avisynth will never be) supported.
+
+From v11 interface version (3.7.4) 64 bit 'l'ong and 'd'ouble data 
+types are supported even on 32-bit systems,
+despite the rather pessimistic "never be supported" note.
+
 (Unlike frame properties, which support them by design).
 
 ::
@@ -2230,6 +2307,7 @@ The following constants are defined in avisynth.h:
 ::
 
     enum CachePolicyHint {
+      CACHE_25_NOTHING_26_UNUSED_0 = 0,
       // Values 0 to 5 are reserved for old 2.5 plugins
       // do not use them in new plugins
 
@@ -2359,4 +2437,4 @@ ____
 
 Back to :doc:`FilterSDK`
 
-$Date: 2015/01/13 00:24:50 $
+$Date: 2025/02/06 07:38:50 $

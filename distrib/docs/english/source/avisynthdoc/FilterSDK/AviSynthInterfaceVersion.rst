@@ -33,6 +33,8 @@ plugin.
   requirement for IClip::SetCacheHints of version 5 plugins to return
   an int. All version 6 and later plugins are expected to honour this
   requirement.
+- Version 8 and up is Avisynth+.
+  See :doc:`C++ API <Cplusplus_api>`
 
 When using the raw IClip interface it is the authors responsibility to
 declare the level of support the plugin provides. The
@@ -60,4 +62,4 @@ ____
 
 Back to :doc:`FilterSDK`
 
-$Date: 2015/01/13 00:24:50 $
+$Date: 2025/02/06 07:37:50 $
