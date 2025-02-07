@@ -6,8 +6,12 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
-20250205 3.7.3 post ??
-----------------------
+20250207 3.7.3 r4176
+--------------------
+- Fix 20240417 regression: RevStr, UCase, LCase went wrong at string cache introduction
+
+20250206 3.7.3 r4173
+-------------------------
 - API v11: 64 bit long and double
 - 64 bit related changes in script syntax
 - Saturated int and float frame property readers, data type hint (VS API 4 backport)
