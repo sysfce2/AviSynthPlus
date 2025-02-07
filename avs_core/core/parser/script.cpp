@@ -67,6 +67,7 @@
 #include <inttypes.h>
 #include <algorithm>
 #include <cstring>
+#include <cctype>
 
 #ifndef MINGW_HAS_SECURE_API
 #define sprintf_s sprintf
@@ -886,8 +887,42 @@ AVSValue BitSetCount64(AVSValue args, void*, IScriptEnvironment*) {
   return count;
 }
 
-AVSValue UCase(AVSValue args, void*, IScriptEnvironment* env) { return _strupr(env->SaveString(args[0].AsString())); }
-AVSValue LCase(AVSValue args, void*, IScriptEnvironment* env) { return _strlwr(env->SaveString(args[0].AsString())); }
+static const char* toUpperCase(const char* string) {
+  // Make a temporary copy of the string
+  char* tmp = strdup(string);
+  if (tmp == nullptr) {
+    return nullptr;
+  }
+  // Convert the copy to uppercase
+  _strupr(tmp);
+  return tmp;
+}
+AVSValue UCase(AVSValue args, void*, IScriptEnvironment* env) { 
+  const char *res = toUpperCase(args[0].AsString());
+  if(res == nullptr)
+    env->ThrowError("UCase: memory allocation error");
+  AVSValue result = env->SaveString(res);
+  free((void*)res);
+  return result;
+}
+static const char* toLowerCase(const char* string) {
+  // Make a temporary copy of the string
+  char* tmp = strdup(string);
+  if (tmp == nullptr) {
+    return nullptr;
+  }
+  // Convert the copy to lowercase
+  _strlwr(tmp);
+  return tmp;
+}
+AVSValue LCase(AVSValue args, void*, IScriptEnvironment* env) {
+  const char* res = toUpperCase(args[0].AsString());
+  if (res == nullptr)
+    env->ThrowError("LCase: memory allocation error");
+  AVSValue result = env->SaveString(res);
+  free((void*)res);
+  return result;
+}
 
 AVSValue StrLen(AVSValue args, void*, IScriptEnvironment* ) { 
   size_t len = strlen(args[0].AsString());
@@ -896,7 +931,25 @@ AVSValue StrLen(AVSValue args, void*, IScriptEnvironment* ) {
   else
     return static_cast<int>(len);
 }
-AVSValue RevStr(AVSValue args, void*, IScriptEnvironment* env) { return _strrev(env->SaveString(args[0].AsString())); }
+static const char* toReversed(const char* string) {
+  // Make a temporary copy of the string
+  char* tmp = strdup(string);
+  if (tmp == nullptr) {
+    return nullptr;
+  }
+  // reverse the copy
+  _strrev(tmp);
+  return tmp;
+}
+
+AVSValue RevStr(AVSValue args, void*, IScriptEnvironment* env) { 
+  const char* res = toReversed(args[0].AsString());
+  if (res == nullptr)
+    env->ThrowError("RevStr: memory allocation error");
+  AVSValue result = env->SaveString(res);
+  free((void*)res);
+  return result;
+}
 
 AVSValue LeftStr(AVSValue args, void*, IScriptEnvironment* env)
 {
