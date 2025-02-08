@@ -916,7 +916,7 @@ static const char* toLowerCase(const char* string) {
   return tmp;
 }
 AVSValue LCase(AVSValue args, void*, IScriptEnvironment* env) {
-  const char* res = toUpperCase(args[0].AsString());
+  const char* res = toLowerCase(args[0].AsString());
   if (res == nullptr)
     env->ThrowError("LCase: memory allocation error");
   AVSValue result = env->SaveString(res);
