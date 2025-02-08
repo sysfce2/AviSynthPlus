@@ -1037,7 +1037,6 @@ AVSC_INLINE const AVS_Value * avs_as_array(AVS_Value v)
 /***********************************************************
 * AVS_Value getters - using API v11
 ***********************************************************/
-#ifndef AVSC_NO_DECLSPEC
 // API versions of the above.
 AVSC_API(int, avs_api_as_bool)(AVS_Value v);
 AVSC_API(int, avs_api_as_int)(AVS_Value v);
@@ -1046,7 +1045,6 @@ AVSC_API(const char*, avs_api_as_string)(AVS_Value v);
 AVSC_API(double, avs_api_as_float)(AVS_Value v);
 AVSC_API(const char*, avs_api_as_error)(AVS_Value v);
 // for AVS_Clip, use avs_take_clip
-#endif
 
 AVSC_INLINE int avs_array_size(AVS_Value v)
         { return avs_is_array(v) ? v.array_size : 1; }
@@ -1596,8 +1594,8 @@ struct AVS_Library {
   // frame props
   AVSC_DECLARE_FUNC(avs_prop_get_int_saturated);
   AVSC_DECLARE_FUNC(avs_prop_get_float_saturated);
-  AVSC_DECLARE_FUNC(avs_prop_get_data_type);
-  AVSC_DECLARE_FUNC(avs_prop_get_data_h);
+  AVSC_DECLARE_FUNC(avs_prop_get_data_type_hint);
+  AVSC_DECLARE_FUNC(avs_prop_set_data_h);
 
 };
 
