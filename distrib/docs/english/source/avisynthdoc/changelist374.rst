@@ -12,13 +12,18 @@ Additions, changes
 - Fix #368 Make proper vertical alignment for multiline text in Subtitle and Text 
   when vertical alignment is set to bottom or center.
 - Studio RGB (narrow, limited) range will now be recognized (through _ColorRange=1)
-  and utilized in conversions from RGB, such as in GreyScale, ConvertToY, ConvertToYUVxxx
+  and utilized in conversions to and from RGB, such as in GreyScale, ConvertToY, ConvertToYUVxxx,
+  or ConvertToRGB32 with PC.xxx matrix which now keeps the limited/narrow-rangeness of the source. 
+  See also BugFix section.
 - #392 "break" and "continue" in for-next and while loops
 - Add "ArraySort" for sorting simple bool, numeric or string arrays
 - SoundTouch: Increased the max number of channels to 32ch from the old limit of 16ch.
 - Posix: Detect additional plugindirs from LD_LIBRARY_PATH environment variable
 - #413 Add ListAutoloadDirs() script function returing a LF delimited string with directory list.
 - SubTitle to accept real LF (``\r``) or CR LF (``\r\n``) control characters for line break.
+- #422 Give meaningful and stopping error message when a bad C++ plugin is throwing exception 
+  during autoload (e.g. wrong function signatures, crash because of using unsupported interface calls). 
+  This kind of loading error is treated similarly fatal like mixing 32 and 64 bit plugins.
 - #413 Add 64 bit data types (https://github.com/AviSynth/AviSynthPlus/issues/423)
   
   - (technical) Value (AVSValue) types ``i`` and ``f`` are kept and still mean 32 bit integer and float values.
@@ -121,6 +126,12 @@ Bugfixes
   Regression in 3.7.3 reintroduced audio cache.
 - Fix #370: array size assert error in ConvertToYUY2 when internally ConvertToYUV422 is called
 - Leave _ColorRange frame property as-is, when using matrix names "PC.709" or "PC.601", for example in ConvertToRGB32.
+  This, along with narrow-range RGB support, also fixes an old glitch, when a limited range YUV Source 
+  (like ColorBarsHD) would be converted to a full-range RGB (RGBs were assumed full range).
+- Narrow-range RGB support fixes the minor +/-1 bit error in YUV to RGB (and back) matrix conversions 
+  for such RGB sources and targets. This error would accumulate if conversions were applied consecutively 
+  or mixed with other external conversions.
+
 - Fix FadeIn, which behaved like FadeIn2
 - Fix #418: ShowSMTPE/ShowTime alignment - NO_WIN_GDI case (e.g. Posix)
 - Fix #421: add safety checks to SuperEQ to match SSRC
