@@ -2372,12 +2372,12 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
           s_parity = vii.IsBFF() ? t_ABFF : t_BFF;
         }
       }
-      int vLenInMsecs = (int)(1000.0 * (double)vii.num_frames * (double)vii.fps_denominator / (double)vii.fps_numerator);
-      int cPosInMsecs = (int)(1000.0 * (double)n * (double)vii.fps_denominator / (double)vii.fps_numerator);
+      uint64_t vLenInMsecs = (uint64_t)(1000.0 * (double)vii.num_frames * (double)vii.fps_denominator / (double)vii.fps_numerator);
+      uint64_t cPosInMsecs = (uint64_t)(1000.0 * (double)n * (double)vii.fps_denominator / (double)vii.fps_numerator);
 
       tlen = snprintf(text, sizeof(text),
         "Frame: %8u of %-8u\n"                                //  28
-        "Time: %02d:%02d:%02d.%03d of %02d:%02d:%02d.%03d\n"  //  35
+        "Time: %02" PRIu64 ":%02d:%02d.%03d of %02" PRIu64 ":%02d:%02d.%03d\n"  //  35
         "ColorSpace: %s, BitsPerComponent: %u\n"              //  18=13+5
 //        "Bits per component: %2u\n"                           //  22
         "Width:%4u pixels, Height:%4u pixels\n"              //  39
@@ -2388,8 +2388,8 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
         "Has Audio: %s\n"                                     //  15=12+3
 //        "123456789012345678901234567890123456789012345678901234567890\n"         // test
 , n, vii.num_frames
-, (cPosInMsecs / (60 * 60 * 1000)), (cPosInMsecs / (60 * 1000)) % 60, (cPosInMsecs / 1000) % 60, cPosInMsecs % 1000,
-(vLenInMsecs / (60 * 60 * 1000)), (vLenInMsecs / (60 * 1000)) % 60, (vLenInMsecs / 1000) % 60, vLenInMsecs % 1000
+, (cPosInMsecs / (60 * 60 * 1000)), (int)((cPosInMsecs / (60 * 1000)) % 60), (int)((cPosInMsecs / 1000) % 60), (int)(cPosInMsecs % 1000),
+(vLenInMsecs / (60 * 60 * 1000)), (int)((vLenInMsecs / (60 * 1000)) % 60), (int)((vLenInMsecs / 1000) % 60), (int)(vLenInMsecs % 1000)
 , c_space
 , vii.BitsPerComponent()
 , vii.width, vii.height
@@ -2416,17 +2416,17 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
       else if (vii.SampleType() == SAMPLE_INT32) s_type = t_INT32;
       else if (vii.SampleType() == SAMPLE_FLOAT) s_type = t_FLOAT32;
 
-      int aLenInMsecs = (int)(1000.0 * (double)vii.num_audio_samples / (double)vii.audio_samples_per_second);
+      uint64_t aLenInMsecs = static_cast<uint64_t>(1000.0 * (double)vii.num_audio_samples / (double)vii.audio_samples_per_second);
       tlen += snprintf(text + tlen, sizeof(text) - tlen,
         "Audio Channels: %-8u\n"                              //  25
         "Sample Type: %s\n"                                   //  28=14+14
         "Samples Per Second: %5d\n"                           //  26
-        "Audio length: %" PRIu64 " samples. %02d:%02d:%02d.%03d\n"  //  57=37+20
+        "Audio length: %" PRIu64 " samples. %02" PRIu64 ":%02d:%02d.%03d\n"  //  57=37+20
         , vii.AudioChannels()
         , s_type
         , vii.audio_samples_per_second
         , vii.num_audio_samples,
-        (aLenInMsecs / (60 * 60 * 1000)), (aLenInMsecs / (60 * 1000)) % 60, (aLenInMsecs / 1000) % 60, aLenInMsecs % 1000
+        (aLenInMsecs / (60 * 60 * 1000)), (int)((aLenInMsecs / (60 * 1000)) % 60), (int)((aLenInMsecs / 1000) % 60), (int)(aLenInMsecs % 1000)
       );
       if (vi.IsChannelMaskKnown()) {
         chn_layout_str = channel_layout_to_str(vi.GetChannelMask());
