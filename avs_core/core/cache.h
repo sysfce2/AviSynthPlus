@@ -52,7 +52,7 @@ private:
   Device* device;
   std::mutex& CacheGuardMutex; // just reference!
 
-  void FillAudioZeros(void* buf, int start_offset, int count);
+  void FillAudioZeros(void* buf, size_t start_offset, size_t count);
 
 public:
 #ifdef _DEBUG

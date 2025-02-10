@@ -293,7 +293,7 @@ PVideoFrame __stdcall Cache::GetFrame(int n, IScriptEnvironment* env_)
   return result;
 }
 
-void Cache::FillAudioZeros(void* buf, int start_offset, int count) {
+void Cache::FillAudioZeros(void* buf, size_t start_offset, size_t count) {
     const int bps = _pimpl->vi.BytesPerAudioSample();
     unsigned char* byte_buf = (unsigned char*)buf;
     memset(byte_buf + start_offset * bps, 0, count * bps);
@@ -303,6 +303,8 @@ void __stdcall Cache::GetAudio(void* buf, int64_t start, int64_t count, IScriptE
 {
   if (count <= 0)
     return;
+  if (count > 0 && static_cast<uint64_t>(count) > std::numeric_limits<size_t>::max())
+    env->ThrowError("GetAudio error: Count exceeds platform maximum buffer size limit.");
 
   // -----------------------------------------------------------
   //          Enforce audio bounds
@@ -312,20 +314,20 @@ void __stdcall Cache::GetAudio(void* buf, int64_t start, int64_t count, IScriptE
 
   if ((!vi->HasAudio()) || (start + count <= 0) || (start >= vi->num_audio_samples)) {
     // Completely skip.
-    FillAudioZeros(buf, 0, (int)count);
+    FillAudioZeros(buf, 0, (size_t)count);
     count = 0;
     return;
   }
 
   if (start < 0) {  // Partial initial skip
-    FillAudioZeros(buf, 0, (int)-start);  // Fill all samples before 0 with silence.
+    FillAudioZeros(buf, 0, static_cast<size_t>(-start));  // Fill all samples before 0 with silence.
     count += start;  // Subtract start bytes from count.
-    buf = ((BYTE*)buf) - (int)(start*vi->BytesPerAudioSample());
+    buf = ((BYTE*)buf) - start * vi->BytesPerAudioSample();
     start = 0;
   }
 
   if (start + count > vi->num_audio_samples) {  // Partial ending skip
-    FillAudioZeros(buf, (int)(vi->num_audio_samples - start), (int)(count - (vi->num_audio_samples - start)));  // Fill end samples
+    FillAudioZeros(buf, (size_t)(vi->num_audio_samples - start), (size_t)(count - (vi->num_audio_samples - start)));  // Fill end samples
     count = (vi->num_audio_samples - start);
   }
 
@@ -348,10 +350,11 @@ void __stdcall Cache::GetAudio(void* buf, int64_t start, int64_t count, IScriptE
 
   // Change from AUTO_OFF to AUTO_ON
   if (_pimpl->AudioPolicy == CACHE_AUDIO_AUTO_START_OFF && _pimpl->ac_currentscore <= 0) {
-    int new_size = (int)(_pimpl->vi.BytesFromAudioSamples(count) + 8191) & -8192;
-    new_size = min(4096 * 1024, new_size);
-    _RPT2(0, "CA:%x: Automatically adding %d byte audiocache!\n", this, new_size);
-    SetCacheHints(CACHE_AUDIO_AUTO_START_ON, new_size);
+    // align size to 8192 byte boundary
+    int64_t new_size = (_pimpl->vi.BytesFromAudioSamples(count) + 8191) & -8192;
+    new_size = min((int64_t)4096 * 1024, new_size);
+    _RPT2(0, "CA:%x: Automatically adding %d byte audiocache!\n", this, (int)new_size);
+    SetCacheHints(CACHE_AUDIO_AUTO_START_ON, (int)new_size);
   }
 
   // Change from AUTO_ON to AUTO_OFF
@@ -377,10 +380,10 @@ void __stdcall Cache::GetAudio(void* buf, int64_t start, int64_t count, IScriptE
 
     if (_pimpl->ac_too_small_count > 2 && _pimpl->MaxSampleCount < _pimpl->vi.AudioSamplesFromBytes(8192 * 1024)) {  // Max size = 8MB!
       //automatically upsize cache!
-      int new_size = (int)(_pimpl->vi.BytesFromAudioSamples(std::max(count, _pimpl->AudioCacheStart + _pimpl->CacheCount - start)) + 8192) & -8192; // Yes +1 to +8192 bytes
-      new_size = std::min(8192 * 1024, new_size);
-      _RPT2(0, "CA:%x: Autoupsizing buffer to %d bytes!\n", this, new_size);
-      SetCacheHints(_pimpl->AudioPolicy, new_size); // updates maxsamplecount!!
+      int64_t new_size = (_pimpl->vi.BytesFromAudioSamples(std::max(count, _pimpl->AudioCacheStart + _pimpl->CacheCount - start)) + 8192) & -8192; // Yes +1 to +8192 bytes
+      new_size = std::min((int64_t)8192 * 1024, new_size);
+      _RPT2(0, "CA:%x: Autoupsizing buffer to %d bytes!\n", this, (int)new_size);
+      SetCacheHints(_pimpl->AudioPolicy, (int)new_size); // updates maxsamplecount!!
       _pimpl->ac_too_small_count = 0;
     }
     else {
