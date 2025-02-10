@@ -6,6 +6,24 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
+For changes see:
+https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist374.html
+and
+https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html#what-s-new-in-the-api-v11
+
+20250210
+
+- Fix: audio cache would overflow over int sized count and position differences
+- Fix: "Info" overflowed and displayed negative hours/minutes/audio length at longer clips, use int64
+
+20250208 3.7.3 r4178
+--------------------
+- LCase: another fix as needed after 4176 changes
+
+20250207 3.7.3 r4177
+--------------------
+- C header API fix after the recent big changes
+
 20250207 3.7.3 r4176
 --------------------
 - Fix 20240417 regression: RevStr, UCase, LCase went wrong at string cache introduction
