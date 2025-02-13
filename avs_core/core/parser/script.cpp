@@ -889,7 +889,7 @@ AVSValue BitSetCount64(AVSValue args, void*, IScriptEnvironment*) {
 
 static const char* toUpperCase(const char* string) {
   // Make a temporary copy of the string
-  char* tmp = strdup(string);
+  char* tmp = _strdup(string);
   if (tmp == nullptr) {
     return nullptr;
   }
@@ -907,7 +907,7 @@ AVSValue UCase(AVSValue args, void*, IScriptEnvironment* env) {
 }
 static const char* toLowerCase(const char* string) {
   // Make a temporary copy of the string
-  char* tmp = strdup(string);
+  char* tmp = _strdup(string);
   if (tmp == nullptr) {
     return nullptr;
   }
@@ -933,7 +933,7 @@ AVSValue StrLen(AVSValue args, void*, IScriptEnvironment* ) {
 }
 static const char* toReversed(const char* string) {
   // Make a temporary copy of the string
-  char* tmp = strdup(string);
+  char* tmp = _strdup(string);
   if (tmp == nullptr) {
     return nullptr;
   }
