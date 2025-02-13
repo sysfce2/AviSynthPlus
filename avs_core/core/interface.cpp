@@ -777,22 +777,20 @@ void AVSValue::CONSTRUCTOR8(const AVSValue* a, int size)
 {
   type = 'a';
   array_size = (short)size;
-  if (a == nullptr || size == 0) {
-    array = nullptr;
-  }
-  else {
-    array = new AVSValue[size];
-    for (int i = 0; i < size; i++) {
-      const_cast<AVSValue *>(array)[i].Assign(&a[i], true); // init from source
-    }
+  if (a == nullptr)
+    size = 0;
+  array = new AVSValue[size]; // even for size = 0 a valid ptr is given
+  for (int i = 0; i < size; i++) {
+    const_cast<AVSValue*>(array)[i].Assign(&a[i], true); // init from source
   }
 }
 
 AVSValue::AVSValue(const AVSValue& v)                    { CONSTRUCTOR9(v); }
 void AVSValue::CONSTRUCTOR9(const AVSValue& v)           { Assign(&v, true); }
 
-AVSValue::AVSValue(const AVSValue& v, bool c_arrays) { CONSTRUCTOR10(v, c_arrays); }
-void AVSValue::CONSTRUCTOR10(const AVSValue& v, bool c_arrays)  { Assign2(&v, true, c_arrays); }
+// from compatibility interface
+AVSValue::AVSValue(const AVSValue& v, bool no_deep_arrays) { CONSTRUCTOR10(v, no_deep_arrays); }
+void AVSValue::CONSTRUCTOR10(const AVSValue& v, bool no_deep_arrays)  { Assign2(&v, true, no_deep_arrays); }
 
 AVSValue::AVSValue(const PFunction& n) { CONSTRUCTOR11(n); }
 void AVSValue::CONSTRUCTOR11(const PFunction& n) { type = 'n'; array_size = 0; function = n.GetPointerWithAddRef(); }
@@ -825,7 +823,7 @@ void AVSValue::DESTRUCTOR()
     double_pt_ptr = nullptr;
   }
 #endif
-  if (IsArray() && array_size>0) {
+  if (IsArray() && array) {
     delete[] array; // calls AVSValue destructors for all elements
     array = nullptr;
   }
@@ -834,9 +832,10 @@ void AVSValue::DESTRUCTOR()
 void AVSValue::MarkArrayAsNonDeepCopy()
 {
   // Convert AVSValue content to a neutral 'v' type
-  // to prevent unwanted freeing of array elements
-  // or allocations that were possible done by the client side
-  if (type == 'a' && array_size > 0)
+  // to prevent destructor from freeing up the allocated array 
+  // and its elements.
+  // Set just before releasing AVSValue.
+  if (type == 'a')
   {
     type = 'v';
     array_size = 0;
@@ -976,124 +975,73 @@ const AVSValue& AVSValue::OPERATOR_INDEX(int index) const {
   return (IsArray() && index>=0 && index<array_size) ? array[index] : *this;
 }
 
-// this Assign copies array elements for new AVSVALUE handling
-// For C interface, we use Assign2 through CONSTRUCTOR10
+// This Assign can deep-copy array elements
+// For compatibility interface, we use Assign2 through CONSTRUCTOR10
 void AVSValue::Assign(const AVSValue* src, bool init) {
   Assign2(src, init, false);
 }
 
-void AVSValue::Assign2(const AVSValue* src, bool init, bool c_arrays) {
+void AVSValue::Assign2(const AVSValue* src, bool init, bool no_deep_arrays) {
   if (src->IsClip() && src->clip)
     src->clip->AddRef();
   if (src->IsFunction() && src->function)
     src->function->AddRef();
 
-  // "this" (left side of the assignment) will be overwritten by src, 
-  // thus it should be released/freed up if needed
-  bool shouldReleaseClip = !init && IsClip() && clip;
-  bool shouldReleaseFunction = !init && IsFunction() && function;
+  // The left side of the assignment ("this") will be overwritten by "src",
+  // so it should be released or freed if necessary.
+  // The relevant properties must be released/dereferenced at the end:
+  // clip, array, function, double_pt_ptr and longlong_ptr
+  // Since they share the same pointer, saving (void*)clip would do it;
+  const bool shouldReleaseClip = !init && IsClip() && clip;
+  const bool shouldReleaseFunction = !init && IsFunction() && function;
+  const bool shouldReleaseArray = !init && IsArray() && array && !no_deep_arrays;
 #ifndef X86_64
-  bool shouldReleaseDouble = !init && type == 'd' && double_pt_ptr;
-  bool shouldReleaseLong = !init && type == 'l' && longlong_ptr;
+  const bool shouldReleaseDouble = !init && type == 'd' && double_pt_ptr;
+  const bool shouldReleaseLong = !init && type == 'l' && longlong_ptr;
 #endif
-  // release at the end, shares the same pointer: function, clip, double_pt_ptr and longlong_ptr
-  void* prev_pointer_to_release = (void*)clip;
+  const void* prev_pointer_to_release = (void*)clip;
 
-  if (c_arrays) {
-    // don't free array members!
+  // common fields
+  this->type = src->type;
+  this->array_size = src->array_size;
 
-    this->type = src->type;
-    this->array_size = src->array_size;
-#ifndef X86_64
-    if (this->type == 'l') {
-      uint64_t l = *src->longlong_ptr;
-      this->longlong_ptr = new int64_t;
-      *this->longlong_ptr = l;
-    } 
-    else if (this->type == 'd') {
-      double d = *src->double_pt_ptr;
-      this->double_pt_ptr = new double;
-      *this->double_pt_ptr = d;
-    }
-    else
-#endif
-    {
-      this->clip = src->clip; // "clip" is the largest member of the union, making sure we copy everything
-    }
-  }
-  else
+  // no_deep_arrays: compatibility for AVS2.5: don't free or deep copy array elements!
+  if (src->IsArray() && !no_deep_arrays)
   {
-
-    bool prevIsArray = IsArray();
-    bool nextIsArray = src->IsArray();
-
-    AVSValue* tmp;
-
-    // save existing
-    short tmp_type = src->type;
-    short tmp_array_size = src->array_size;
-    IClip* tmp_pointer = (IClip*)((void*)src->clip);
-    // covers whole union: value or pointer
-
-    bool needtmpcopy = nextIsArray && tmp_array_size > 0;
-    // make backup, avoid args = args[0] case
-    if (needtmpcopy)
-    {
-      tmp = new AVSValue[tmp_array_size];
-      for (int i = 0; i < tmp_array_size; i++) {
-        tmp[i].Assign(&src->array[i], true); // init from source
-      }
-    }
-
-    // remove existing
-    if (prevIsArray && !init)
-    {
-      // same as in destructor
-      if (array_size > 0) {
-        delete[] array; // calls destructor of AVSValue elements
-        array = nullptr;
-      }
-    }
-
-    if (nextIsArray) {
-      // copy backup source array
-      if (needtmpcopy)
-        array = tmp; // tmp already allocated and filled
-      else
-        array = nullptr;
-      this->type = tmp_type;
-      this->array_size = tmp_array_size;
-    }
-    else {
-      // using tmp_pointer, because if there were array before, that got free'd before
-      // value = value[x] case where source value[x] is not array
-      this->type = tmp_type;
-      this->array_size = tmp_array_size; // n/a
-      // if former this->type would have been a to-be-freed/released 
-      // type, there is prev_pointer_to_release
-#ifndef X86_64
-    // 32 bit Avisynth: new 64 bit types are specially treated
-      if (this->type == 'l') {
-        const uint64_t l = *src->longlong_ptr;
-        this->longlong_ptr = new int64_t;
-        *this->longlong_ptr = l;
-      }
-      else if (this->type == 'd') {
-        const double d = *src->double_pt_ptr;
-        this->double_pt_ptr = new double;
-        *this->double_pt_ptr = d;
-      }
-      else
-#endif
-      {
-        this->clip = tmp_pointer; // "clip" is the largest member of the union, making sure we copy everything
-      }
-    }
+    // Delay releasing the previous array to avoid the args = args[0] case.
+    // If an existing array were freed before this point, it would break the
+    // value = value[x] case where the source value[x] is not an array.
+    // Even for size == 0, this returns a valid pointer.
+    AVSValue* tmp = new AVSValue[array_size];
+    for (int i = 0; i < array_size; i++)
+      tmp[i].Assign(&src->array[i], true); // init from source
+    array = tmp;
   }
+#ifndef X86_64
+  // 32 bit Avisynth: new 64 bit types are specially treated
+  else if (this->type == 'l') {
+    const uint64_t l = *src->longlong_ptr;
+    this->longlong_ptr = new int64_t;
+    *this->longlong_ptr = l;
+  }
+  else if (this->type == 'd') {
+    const double d = *src->double_pt_ptr;
+    this->double_pt_ptr = new double;
+    *this->double_pt_ptr = d;
+  }
+#endif
+  else {
+    this->clip = (IClip*)((void*)src->clip);
+    // "clip" is the largest member of the union, making sure we copy everything
+  }
+
   if (shouldReleaseClip)
-    ((IClip *)prev_pointer_to_release)->Release();
+    ((IClip*)prev_pointer_to_release)->Release();
   if (shouldReleaseFunction)
-    ((IFunction *)prev_pointer_to_release)->Release();
+    ((IFunction*)prev_pointer_to_release)->Release();
+  if (shouldReleaseArray)
+    delete[](AVSValue*)(prev_pointer_to_release);
+  // deallocates former array memory + calls destructor of AVSValue elements
 #ifndef X86_64
   if (shouldReleaseDouble || shouldReleaseLong)
     delete prev_pointer_to_release;

@@ -1450,9 +1450,9 @@ public:
   int64_t         AsLong2(int64_t def) const; // v11
 
   void            MarkArrayAsNonDeepCopy(); // for Avs25 compatibility interface, no deep-copy and deep-free
-  void            CONSTRUCTOR10(const AVSValue& v, bool c_arrays);
-  AVSValue(const AVSValue& v, bool c_arrays);
-  void            Assign2(const AVSValue* src, bool init, bool c_arrays);
+  void            CONSTRUCTOR10(const AVSValue& v, bool no_deep_arrays);
+  AVSValue(const AVSValue& v, bool no_deep_arrays);
+  void            Assign2(const AVSValue* src, bool init, bool no_deep_arrays);
 
 #endif
 }; // end class AVSValue
