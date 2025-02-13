@@ -920,7 +920,10 @@ AVSValue MinMaxPlane::MinMax(AVSValue clip, void* , double threshold, int offset
 }
 
 
-AVSValue GetProperty::Create(AVSValue args, void* user_data, IScriptEnvironment* env) {
+AVSValue GetProperty::Create(AVSValue args, void* user_data, IScriptEnvironment* env_) {
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
   AVSValue clip = args[0];
   if (!clip.IsClip())
     env->ThrowError("propGetxxxxx: No clip supplied!");
@@ -1011,8 +1014,11 @@ AVSValue GetProperty::Create(AVSValue args, void* user_data, IScriptEnvironment*
   return AVSValue();
 }
 
-AVSValue GetPropertyAsArray::Create(AVSValue args, void* , IScriptEnvironment* env)
+AVSValue GetPropertyAsArray::Create(AVSValue args, void* , IScriptEnvironment* env_)
 {
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
   AVSValue clip = args[0];
   if (!clip.IsClip())
     env->ThrowError("propGetAsArray: No clip supplied!");
@@ -1104,8 +1110,11 @@ AVSValue GetPropertyAsArray::Create(AVSValue args, void* , IScriptEnvironment* e
 // each array element is a two dimensional array [key, value]
 // value can be an array as well, depending on the property
 // only int, float and string data extracted
-AVSValue GetAllProperties::Create(AVSValue args, void*, IScriptEnvironment* env)
+AVSValue GetAllProperties::Create(AVSValue args, void*, IScriptEnvironment* env_)
 {
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
   AVSValue clip = args[0];
   if (!clip.IsClip())
     env->ThrowError("propGetAll: No clip supplied!");
@@ -1195,7 +1204,10 @@ AVSValue GetAllProperties::Create(AVSValue args, void*, IScriptEnvironment* env)
 }
 
 // e.g. string length
-AVSValue GetPropertyDataSize::Create(AVSValue args, void* , IScriptEnvironment* env) {
+AVSValue GetPropertyDataSize::Create(AVSValue args, void* , IScriptEnvironment* env_) {
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
   AVSValue clip = args[0];
   if (!clip.IsClip())
     env->ThrowError("propGetDataSize: No clip supplied!");
@@ -1240,7 +1252,10 @@ AVSValue GetPropertyDataSize::Create(AVSValue args, void* , IScriptEnvironment* 
 }
 
 // array size of a given property, (by setProp append mode arrays can be constructed)
-AVSValue GetPropertyNumElements::Create(AVSValue args, void*, IScriptEnvironment* env) {
+AVSValue GetPropertyNumElements::Create(AVSValue args, void*, IScriptEnvironment* env_) {
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
   AVSValue clip = args[0];
   if (!clip.IsClip())
     env->ThrowError("propNumElements: No clip supplied!");
@@ -1273,7 +1288,10 @@ AVSValue GetPropertyNumElements::Create(AVSValue args, void*, IScriptEnvironment
 }
 
 // returns integer enums instead of char (string)
-AVSValue GetPropertyType::Create(AVSValue args, void*, IScriptEnvironment* env) {
+AVSValue GetPropertyType::Create(AVSValue args, void*, IScriptEnvironment* env_) {
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
   AVSValue clip = args[0];
   if (!clip.IsClip())
     env->ThrowError("propGetType: No clip supplied!");
@@ -1318,7 +1336,10 @@ AVSValue GetPropertyType::Create(AVSValue args, void*, IScriptEnvironment* env) 
 
 
 // Number of properties (keys) for a frame
-AVSValue GetPropertyNumKeys::Create(AVSValue args, void*, IScriptEnvironment* env) {
+AVSValue GetPropertyNumKeys::Create(AVSValue args, void*, IScriptEnvironment* env_) {
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
   AVSValue clip = args[0];
   if (!clip.IsClip())
     env->ThrowError("propNumKeys: No clip supplied!");
@@ -1349,7 +1370,10 @@ AVSValue GetPropertyNumKeys::Create(AVSValue args, void*, IScriptEnvironment* en
 }
 
 // Get the name (key) of the Nth frame property
-AVSValue GetPropertyKeyByIndex::Create(AVSValue args, void*, IScriptEnvironment* env) {
+AVSValue GetPropertyKeyByIndex::Create(AVSValue args, void*, IScriptEnvironment* env_) {
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
   AVSValue clip = args[0];
   if (!clip.IsClip())
     env->ThrowError("propNumKeys: No clip supplied!");

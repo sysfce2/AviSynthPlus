@@ -544,11 +544,12 @@ void ConditionalReader::ThrowLine(const char* err, int line, IScriptEnvironment*
 }
 
 
-PVideoFrame __stdcall ConditionalReader::GetFrame(int n, IScriptEnvironment* env)
+PVideoFrame __stdcall ConditionalReader::GetFrame(int n, IScriptEnvironment* env_)
 {
   AVSValue v = GetFrameValue(n);
 
-  InternalEnvironment* envI = static_cast<InternalEnvironment*>(env);
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
 
   std::unique_ptr<GlobalVarFrame> var_frame;
 
@@ -559,7 +560,7 @@ PVideoFrame __stdcall ConditionalReader::GetFrame(int n, IScriptEnvironment* env
   }
   else {
     // Neo's default, correct but incompatible with previous Avisynth versions
-    var_frame = std::unique_ptr<GlobalVarFrame>(new GlobalVarFrame(envI)); // allocate new frame
+    var_frame = std::unique_ptr<GlobalVarFrame>(new GlobalVarFrame(IEnv)); // allocate new frame
     env->SetGlobalVar(variableNameFixed, v);
   }
 
@@ -604,9 +605,12 @@ static const char AplusT[] = "a+t";
 static const char WplusT[] = "w+t";
 
 
-Write::Write(PClip _child, const char* _filename, AVSValue args, int _linecheck, bool _append, bool _flush, bool _local, IScriptEnvironment* env) :
+Write::Write(PClip _child, const char* _filename, AVSValue args, int _linecheck, bool _append, bool _flush, bool _local, IScriptEnvironment* env_) :
   GenericVideoFilter(_child), linecheck(_linecheck), flush(_flush), append(_append), local(_local), arglist(0)
 {
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
 #ifdef AVS_WINDOWS
   _fullpath(filename, _filename, _MAX_PATH);
 #else
@@ -630,8 +634,6 @@ Write::Write(PClip _child, const char* _filename, AVSValue args, int _linecheck,
   if (linecheck != -1 && linecheck != -2)
     return;
 
-  InternalEnvironment* envI = static_cast<InternalEnvironment*>(env);
-
   AVSValue prev_last;
   AVSValue prev_current_frame;
   std::unique_ptr<GlobalVarFrame> var_frame;
@@ -646,7 +648,7 @@ Write::Write(PClip _child, const char* _filename, AVSValue args, int _linecheck,
   }
   else {
     // Neo's default, correct but incompatible with previous Avisynth versions
-    var_frame = std::unique_ptr<GlobalVarFrame>(new GlobalVarFrame(envI)); // allocate new frame
+    var_frame = std::unique_ptr<GlobalVarFrame>(new GlobalVarFrame(IEnv)); // allocate new frame
     env->SetGlobalVar("last", child_val);       // Set explicit last
     env->SetGlobalVar("current_frame", (AVSValue)linecheck);  // special -1 or -2
   }
@@ -663,16 +665,16 @@ Write::Write(PClip _child, const char* _filename, AVSValue args, int _linecheck,
   }
 }
 
-PVideoFrame __stdcall Write::GetFrame(int n, IScriptEnvironment* env) {
+PVideoFrame __stdcall Write::GetFrame(int n, IScriptEnvironment* env_) {
 
   //changed to call write AFTER the child->GetFrame
 
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
 
   PVideoFrame tmpframe = child->GetFrame(n, env);
 
   if (linecheck < 0) return tmpframe;	//do nothing here when writing only start or end
-
-  InternalEnvironment* envI = static_cast<InternalEnvironment*>(env);
 
   AVSValue prev_last;
   AVSValue prev_current_frame;
@@ -688,7 +690,7 @@ PVideoFrame __stdcall Write::GetFrame(int n, IScriptEnvironment* env) {
   }
   else {
     // Neo's default, correct but incompatible with previous Avisynth versions
-    var_frame = std::unique_ptr<GlobalVarFrame>(new GlobalVarFrame(envI)); // allocate new frame
+    var_frame = std::unique_ptr<GlobalVarFrame>(new GlobalVarFrame(IEnv)); // allocate new frame
     env->SetGlobalVar("last", child_val);       // Set implicit last (to avoid recursive stack calls?)
     env->SetGlobalVar("current_frame", (AVSValue)n);  // Set frame to be tested by the conditional filters.
   }
@@ -849,9 +851,12 @@ UseVar::UseVar(PClip _child, AVSValue vars, IScriptEnvironment* env)
 
 UseVar::~UseVar() { }
 
-PVideoFrame __stdcall UseVar::GetFrame(int n, IScriptEnvironment* env)
+PVideoFrame __stdcall UseVar::GetFrame(int n, IScriptEnvironment* env_)
 {
-   GlobalVarFrame var_frame(static_cast<InternalEnvironment*>(env)); // allocate new frame
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
+  GlobalVarFrame var_frame(IEnv); // allocate new frame
 
    // set variables
    for (int i = 0; i < (int)vars_.size(); ++i) {

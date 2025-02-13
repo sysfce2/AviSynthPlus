@@ -157,9 +157,10 @@ int __stdcall ConditionalSelect::SetCacheHints(int cachehints, int frame_range)
   return 0;  // We do not pass cache requests upwards.
 }
 
-PVideoFrame __stdcall ConditionalSelect::GetFrame(int n, IScriptEnvironment* env)
+PVideoFrame __stdcall ConditionalSelect::GetFrame(int n, IScriptEnvironment* env_)
 {
-  InternalEnvironment* envI = static_cast<InternalEnvironment*>(env);
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
 
   AVSValue prev_last;
   AVSValue prev_current_frame;
@@ -175,7 +176,7 @@ PVideoFrame __stdcall ConditionalSelect::GetFrame(int n, IScriptEnvironment* env
   }
   else {
     // Neo's default, correct but incompatible with previous Avisynth versions
-    var_frame = std::unique_ptr<GlobalVarFrame>(new GlobalVarFrame(envI)); // allocate new frame
+    var_frame = std::unique_ptr<GlobalVarFrame>(new GlobalVarFrame(IEnv)); // allocate new frame
     env->SetGlobalVar("last", child_val);       // Set explicit last
     env->SetGlobalVar("current_frame", (AVSValue)n);  // Set frame to be tested by the conditional filters.
   }
@@ -192,7 +193,7 @@ PVideoFrame __stdcall ConditionalSelect::GetFrame(int n, IScriptEnvironment* env
       //auto& func = script.AsFunction(); // c++ strict conformance: cannot Convert PFunction to PFunction&
       const PFunction& func = script.AsFunction();
       const AVSValue empty_args_array = AVSValue(nullptr, 0); // Invoke_ parameter is const AVSValue&, don't do it inline.
-      if (!envI->Invoke_(&result, child_val,
+      if (!IEnv->Invoke_(&result, child_val,
         func->GetLegacyName(), func->GetDefinition(), empty_args_array, 0))
       {
         env->ThrowError(
@@ -357,9 +358,10 @@ int __stdcall ConditionalFilter::SetCacheHints(int cachehints, int frame_range)
   return 0;  // We do not pass cache requests upwards.
 }
 
-PVideoFrame __stdcall ConditionalFilter::GetFrame(int n, IScriptEnvironment* env)
+PVideoFrame __stdcall ConditionalFilter::GetFrame(int n, IScriptEnvironment* env_)
 {
-  InternalEnvironment* envI = static_cast<InternalEnvironment*>(env);
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
 
   AVSValue prev_last;
   AVSValue prev_current_frame;
@@ -375,7 +377,7 @@ PVideoFrame __stdcall ConditionalFilter::GetFrame(int n, IScriptEnvironment* env
   }
   else {
     // Neo's default, correct but incompatible with previous Avisynth versions
-    var_frame = std::unique_ptr<GlobalVarFrame>(new GlobalVarFrame(envI)); // allocate new frame
+    var_frame = std::unique_ptr<GlobalVarFrame>(new GlobalVarFrame(IEnv)); // allocate new frame
     env->SetGlobalVar("last", child_val);       // Set explicit last
     env->SetGlobalVar("current_frame", (AVSValue)n);  // Set frame to be tested by the conditional filters.
   }
@@ -399,7 +401,7 @@ PVideoFrame __stdcall ConditionalFilter::GetFrame(int n, IScriptEnvironment* env
       //auto& func = eval1.AsFunction(); // c++ strict conformance: cannot Convert PFunction to PFunction&
       const PFunction& func = eval1.AsFunction();
       const AVSValue empty_args_array = AVSValue(nullptr, 0); // Invoke_ parameter is const AVSValue&, don't do it inline.
-      if (!envI->Invoke_(&e1_result, child_val,
+      if (!IEnv->Invoke_(&e1_result, child_val,
         func->GetLegacyName(), func->GetDefinition(), empty_args_array, 0))
       {
         env->ThrowError(
@@ -585,9 +587,11 @@ int __stdcall ScriptClip::SetCacheHints(int cachehints, int frame_range)
   return 0;  // We do not pass cache requests upwards.
 }
 
-PVideoFrame __stdcall ScriptClip::GetFrame(int n, IScriptEnvironment* env)
+PVideoFrame __stdcall ScriptClip::GetFrame(int n, IScriptEnvironment* env_)
 {
-  InternalEnvironment* envI = static_cast<InternalEnvironment*>(env);
+
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
 
   AVSValue prev_last;
   AVSValue prev_current_frame;
@@ -603,7 +607,7 @@ PVideoFrame __stdcall ScriptClip::GetFrame(int n, IScriptEnvironment* env)
   }
   else {
     // Neo's default, correct but incompatible with previous Avisynth versions
-    var_frame = std::unique_ptr<GlobalVarFrame>(new GlobalVarFrame(envI)); // allocate new frame
+    var_frame = std::unique_ptr<GlobalVarFrame>(new GlobalVarFrame(IEnv)); // allocate new frame
     env->SetGlobalVar("last", child_val);       // Set explicit last
     env->SetGlobalVar("current_frame", (AVSValue)n);  // Set frame to be tested by the conditional filters.
   }
@@ -635,7 +639,7 @@ PVideoFrame __stdcall ScriptClip::GetFrame(int n, IScriptEnvironment* env)
       const PFunction& func = script.AsFunction();
       const AVSValue empty_args_array = AVSValue(nullptr, 0); // Invoke_ parameter is const AVSValue&, don't do it inline.
       const Function* fd = func->GetDefinition();
-      if (!envI->Invoke_(&result, child_val,
+      if (!IEnv->Invoke_(&result, child_val,
         func->GetLegacyName(),fd , empty_args_array, 0))
       {
         /* fd is nullptr:
