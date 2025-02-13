@@ -37,9 +37,9 @@ AVSValue FilterConstructor::InstantiateFilter() const
   if (Func->isPluginAvs25 || Func->isPluginPreV11C) {
     std::vector<AVSValue> funcArgs_temp(CtorArgs.size(), AVSValue());
     for (auto i = 0; i < (int)CtorArgs.size(); i++) {
-      if (CtorArgs[i].IsLong()) // long int64 -> 32 bit int
+      if (CtorArgs[i].GetType() == AvsValueType::VALUE_TYPE_LONG) // long int64 -> 32 bit int
         funcArgs_temp[i] = CtorArgs[i].AsInt();
-      else if (CtorArgs[i].IsFloat() && !CtorArgs[i].IsFloatf()) // double -> float
+      else if (CtorArgs[i].GetType() == AvsValueType::VALUE_TYPE_DOUBLE) // double -> float
         funcArgs_temp[i] = CtorArgs[i].AsFloatf();
       else
         funcArgs_temp[i] = CtorArgs[i];

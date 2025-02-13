@@ -1758,9 +1758,9 @@ public:
       throw NotFound();
 
     // 2.5 plugins don't know about long and double types.
-    if (result.IsLong()) // real 64 bit integer
+    if (result.GetType() == AvsValueType::VALUE_TYPE_LONG) // real 64 bit integer
       result = result.AsInt();
-    else if (result.IsFloat() && !result.IsFloatf()) // real 64 bit double
+    else if (result.GetType() == AvsValueType::VALUE_TYPE_DOUBLE) // real 64 bit double
       result = result.AsFloatf();
 
     return result;
@@ -1787,9 +1787,9 @@ public:
     // to look into whether it contains 64 bit elements accidentally.
     // Neither is an old C plugin expected to handle array return values.
     // Anyway, proper dyn array support comes only from v11 on C API.
-    if (result.IsLong()) // real 64 bit integer
+    if (result.GetType() == AvsValueType::VALUE_TYPE_LONG) // real 64 bit integer
       result = result.AsInt(); // to 32 bit integer
-    else if (result.IsFloat() && !result.IsFloatf()) // real 64 bit double
+    else if (result.GetType() == AvsValueType::VALUE_TYPE_DOUBLE) // real 64 bit double
       result = result.AsFloatf(); // to 32 bit float
 
     return result;
@@ -4360,13 +4360,13 @@ static void ListArguments(const char *name, const AVSValue& args, int &level, bo
       fprintf(stdout, "Undefined\r\n");
     else if (args.IsBool())
       fprintf(stdout, "Bool %s\r\n", args.AsBool() ? "true" : "false");
-    else if (args.IsLong()) // before IsInt() !
+    else if (args.GetType() == AvsValueType::VALUE_TYPE_LONG) // before IsInt() !
       fprintf(stdout, "Long " PRId64 "\r\n", args.AsLong());
     else if (args.IsInt())
       fprintf(stdout, "Int %d\r\n", args.AsInt());
     else if (args.IsString())
       fprintf(stdout, "String %s\r\n", args.AsString());
-    else if (args.IsFloatf()) // before IsFloat() !
+    else if (args.GetType() == AvsValueType::VALUE_TYPE_FLOAT) // before IsFloat() !
       fprintf(stdout, "Float %f\r\n", args.AsFloatf());
     else if (args.IsFloat())
       fprintf(stdout, "Float/Double %lf\r\n", args.AsFloat());

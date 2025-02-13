@@ -1665,7 +1665,7 @@ AVSValue String(AVSValue args, void*, IScriptEnvironment* env)
     // WE --> when a format parameter is present
     // order! if it is an Int: IsFloat gives True
     // If parameter exists, always convert to float
-    if (args[0].IsFloatf() && !args[0].IsInt()) // real 32 bit float
+    if (args[0].GetType() == AvsValueType::VALUE_TYPE_FLOAT) // real 32 bit float
     {
       return env->Sprintf(args[1].AsString("%f"), args[0].AsFloatf());
       // AsFloatf returns 32 bit float
