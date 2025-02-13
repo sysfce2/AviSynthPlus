@@ -970,6 +970,8 @@ void AVSC_CC avs_copy_value(AVS_Value * dest, AVS_Value src)
   // true: don't copy array elements recursively
   new(dest) AVSValue(*(const AVSValue*)&src, true);
 #endif
+  // CONSTRUCTOR9-->Assign(&v, init=true) ensures that the original content
+  // is simply overwritten and will not be freed.
   new(dest) AVSValue(*(const AVSValue*)&src);
 }
 
@@ -977,21 +979,35 @@ void AVSC_CC avs_copy_value(AVS_Value * dest, AVS_Value src)
 // Such types are: 
 // - clip
 // - function (not supported on C interface)
-// - double and long on 32 bit architects, x
-// Since AVS_Value is just a struct, nothing else happens.
+// - double and long on 32 bit architects
+// - Avisynth+ arrays
+// Since AVS_Value is just a struct passed by value, nothing else happens.
 // If AVS_Value has no extra resource to free up, nothing is done.
 // release is mandatory for results of:
 // - avs_invoke 
 // - avs_copy_value 
 // - avs_set_to_double (x86)
 // - avs_set_to_long (x86)
+// - avs_set_to_array_dyn
 // - in general: all avs_set_xxx values
+
+// Note:
+// Unlike dynamic arrays, which have a full create-copy-modify-release cycle,
+// C plugins/clients can use in-source arrays, typically for assembling function
+// parameters ("args"). Do not call avs_release_value on such arrays, as it causes
+// a crash since the array itself and the elements are not maintained by the 
+// Avisynth core.However, it is good practice to release the array content
+// with avs_release_value one-by-one for the resource-allocated types mentioned above.
 
 extern "C"
 void AVSC_CC avs_release_value(AVS_Value v)
 {
 #if 0
-  // Note for 32 bit Avisynth: 'd' and 'l': properly freed up double/int64_t pointers in the the underlying c++ AVSValue
+  // This would prevent crashes when a C client calls it for an array.
+  // However, since Avisynth+ arrays can be returned by avs_invoke, avs_copy_value,
+  // and avs_set_to_array_dyn, this exemption is no longer valid.
+  // This rule was not explicitly written earlier and must be enforced in clients/plugins,
+  // see the Python wrapper issue in AvsPmod, which was fixed.
   if (((AVSValue*)&v)->IsArray()) {
     // signing for destructor: don't free array elements
     ((AVSValue*)&v)->MarkArrayAsNonDeepCopy();
@@ -1037,7 +1053,7 @@ AVS_Clip * AVSC_CC avs_new_c_filter(AVS_ScriptEnvironment * e,
 {
   C_VideoFilter* f = new C_VideoFilter();
   AVS_Clip* ff = new AVS_Clip();
-  ff->clip = f;
+  ff->clip = f; // IClip descendant
   ff->env = e->env;
   f->env.env = e->env;
   f->d.env = &f->env;
@@ -1048,6 +1064,10 @@ AVS_Clip * AVSC_CC avs_new_c_filter(AVS_ScriptEnvironment * e,
     f->d.child = &f->child;
   }
   *fi = &f->d;
+  // (*fi)->free_filter will be set later by the plugin.
+  // It is used in ~C_VideoFilter, which is called when the clip's 
+  // reference count reaches zero and it is released. This serves 
+  // as the filter destructor in C.
   if (child.type == 'c')
     f->d.vi = *(const AVS_VideoInfo*)(&((IClip*)child.d.clip)->GetVideoInfo());
   return ff;
