@@ -77,6 +77,10 @@ public:
 	}
 };
 
+// Interface fransformation hack
+class InternalEnvironment; // forward
+InternalEnvironment* GetAndRevealCamouflagedEnv(IScriptEnvironment* env);
+
 // Strictly for Avisynth core only.
 // Neither host applications nor plugins should use
 // these interfaces.
