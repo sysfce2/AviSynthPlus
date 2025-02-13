@@ -1439,7 +1439,7 @@ ConvertToPlanarGeneric::ConvertToPlanarGeneric(
     Usource = new SeparateFields(new AssumeParity(new SwapUVToY(child, SwapUVToY::UToY8, env), true), env); // also works for Y16/Y32
     Vsource = new SeparateFields(new AssumeParity(new SwapUVToY(child, SwapUVToY::VToY8, env), true), env); // also works for Y16/Y32
 
-    std::vector<PClip> tbUsource(2);
+    std::vector<PClip> tbUsource(2); // Interleave() will take ownership of these
     std::vector<PClip> tbVsource(2);
 
     tbUsource[0] = FilteredResize::CreateResize(new SelectEvery(Usource, 2, 0, env), uv_width, uv_height, tUsubSampling, filter, env);
@@ -1447,8 +1447,8 @@ ConvertToPlanarGeneric::ConvertToPlanarGeneric(
     tbVsource[0] = FilteredResize::CreateResize(new SelectEvery(Vsource, 2, 0, env), uv_width, uv_height, tVsubSampling, filter, env);
     tbVsource[1] = FilteredResize::CreateResize(new SelectEvery(Vsource, 2, 1, env), uv_width, uv_height, bVsubSampling, filter, env);
 
-    Usource = new SelectEvery(new DoubleWeaveFields(new Interleave(tbUsource, env)), 2, 0, env);
-    Vsource = new SelectEvery(new DoubleWeaveFields(new Interleave(tbVsource, env)), 2, 0, env);
+    Usource = new SelectEvery(new DoubleWeaveFields(new Interleave(std::move(tbUsource), env)), 2, 0, env);
+    Vsource = new SelectEvery(new DoubleWeaveFields(new Interleave(std::move(tbVsource), env)), 2, 0, env);
   }
   else {
     AVSValue UsubSampling[4] = { ChrOffset(xsIn, xdInU, xsOut, xdOutU), ChrOffset(ysIn, ydInU, ysOut, ydOutU), AVSValue(), AVSValue() };

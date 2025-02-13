@@ -721,8 +721,8 @@ AVSValue __cdecl SeparateFields::Create(AVSValue args, void*, IScriptEnvironment
  *******   Interleave   *******
  ******************************/
 
-Interleave::Interleave(const std::vector<PClip>& _child_array, IScriptEnvironment* env)
-  : num_children((int)_child_array.size()), child_array(_child_array)
+Interleave::Interleave(const std::vector<PClip>&& _child_array, IScriptEnvironment* env)
+  : num_children((int)_child_array.size()), child_array(std::move(_child_array))
 {
   vi = child_array[0]->GetVideoInfo();
   vi.MulDivFPS(num_children, 1);
@@ -775,7 +775,7 @@ AVSValue __cdecl Interleave::Create(AVSValue args, void*, IScriptEnvironment* en
   for (int i = 0; i < (int)children.size(); ++i)
     children[i] = args[i].AsClip();
 
-  return new Interleave(children, env);
+  return new Interleave(std::move(children), env);
 }
 
 
@@ -810,7 +810,7 @@ AVSValue __cdecl SelectEvery::Create(AVSValue args, void*, IScriptEnvironment* e
     for (int i = 0; i < (int)children.size(); ++i)
       children[i] = new SelectEvery(args[0].AsClip(), args[1].AsInt(), args[2][i].AsInt(), env);
 
-    return new Interleave(children, env);
+    return new Interleave(std::move(children), env);
   }
 }
 
@@ -1014,7 +1014,7 @@ static AVSValue __cdecl Create_Pulldown(AVSValue args, void*, IScriptEnvironment
   std::vector<PClip> children(2);
   children[0] = new SelectEvery(clip, 5, args[1].AsInt() % 5, env);
   children[1] = new SelectEvery(clip, 5, args[2].AsInt() % 5, env);
-  return new AssumeFrameBased(new Interleave(children, env));
+  return new AssumeFrameBased(new Interleave(std::move(children), env));
 }
 
 

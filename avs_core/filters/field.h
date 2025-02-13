@@ -327,27 +327,27 @@ class Interleave : public IClip
     **/
 {
 public:
-  Interleave(const std::vector<PClip>& _child_array, IScriptEnvironment* env);
+  Interleave(const std::vector<PClip>&& _child_array, IScriptEnvironment* env);
 
-  inline const VideoInfo& __stdcall GetVideoInfo() {
+  const VideoInfo& __stdcall GetVideoInfo() override {
     return vi;
   }
 
-  inline PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) {
-	return child_array[congmod(n, num_children)]->GetFrame(n / num_children, env);
+  PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override {
+  return child_array[congmod(n, num_children)]->GetFrame(n / num_children, env);
   }
 
-  inline void __stdcall GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env) {
+  void __stdcall GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env) override {
     child_array[0]->GetAudio(buf, start, count, env);
   }
 
-  inline bool __stdcall GetParity(int n) {
+  bool __stdcall GetParity(int n) override {
     return child_array[n % num_children]->GetParity(n / num_children);
   }
 
   static AVSValue __cdecl Create(AVSValue args, void*, IScriptEnvironment* env);
 
-  int __stdcall SetCacheHints(int cachehints, int frame_range);
+  int __stdcall SetCacheHints(int cachehints, int frame_range) override;
 
 private:
   const int num_children;
@@ -376,11 +376,11 @@ public:
   static AVSValue __cdecl Create(AVSValue args, void*, IScriptEnvironment* env);
 
   inline static AVSValue __cdecl Create_SelectEven(AVSValue args, void*, IScriptEnvironment* env) {
-	  return new SelectEvery(args[0].AsClip(), 2, 0, env);
+    return new SelectEvery(args[0].AsClip(), 2, 0, env);
   }
 
   inline static AVSValue __cdecl Create_SelectOdd(AVSValue args, void*, IScriptEnvironment* env) {
-	  return new SelectEvery(args[0].AsClip(), 2, 1, env);
+    return new SelectEvery(args[0].AsClip(), 2, 1, env);
   }
 
 private:
