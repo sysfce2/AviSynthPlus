@@ -79,9 +79,11 @@ struct ScopedGraphNode {
   }
 };
 
-PVideoFrame __stdcall FilterGraphNode::GetFrame(int n, IScriptEnvironment* env)
+PVideoFrame __stdcall FilterGraphNode::GetFrame(int n, IScriptEnvironment* env_)
 {
-  ScopedGraphNode scope(static_cast<InternalEnvironment*>(env)->GetCurrentGraphNode(), this);
+  InternalEnvironment* env = GetAndRevealCamouflagedEnv(env_);
+
+  ScopedGraphNode scope(env->GetCurrentGraphNode(), this);
   return child->GetFrame(n, env);
 }
 
@@ -531,8 +533,9 @@ static AVSValue DumpFilterGraph(AVSValue args, void* user_data, IScriptEnvironme
   return clip;
 }
 
-static AVSValue __cdecl SetGraphAnalysis(AVSValue args, void* user_data, IScriptEnvironment* env) {
-  static_cast<InternalEnvironment*>(env)->SetGraphAnalysis(args[0].AsBool());
+static AVSValue __cdecl SetGraphAnalysis(AVSValue args, void* user_data, IScriptEnvironment* env_) {
+  InternalEnvironment* env = GetAndRevealCamouflagedEnv(env_);
+  env->SetGraphAnalysis(args[0].AsBool());
   return AVSValue();
 }
 

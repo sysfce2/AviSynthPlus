@@ -140,7 +140,7 @@ void MTGuard::EnableMT(size_t nThreads)
   //FilterCtor.reset();
 }
 
-PVideoFrame __stdcall MTGuard::GetFrame(int n, IScriptEnvironment* env)
+PVideoFrame __stdcall MTGuard::GetFrame(int n, IScriptEnvironment* env_)
 {
   assert(nThreads > 0);
   /*
@@ -151,7 +151,9 @@ PVideoFrame __stdcall MTGuard::GetFrame(int n, IScriptEnvironment* env)
   if (nThreads == 1)
     return ChildFilters[0].filter->GetFrame(n, env);
   */
-  InternalEnvironment* envI = static_cast<InternalEnvironment*>(env);
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
   PVideoFrame frame = NULL;
 
   switch (MTMode)
@@ -176,11 +178,11 @@ PVideoFrame __stdcall MTGuard::GetFrame(int n, IScriptEnvironment* env)
     //   to a instance count of 3 (nThread=3) the mapping is uneven (modulo example): [0,3,6]->[0] [1,4,7]->[1] [2,5]->[2]
     // Resolution: do not use OLD_PREFETCH source part (kept just for knowledge)
 #ifdef OLD_PREFETCH
-    auto myThreadID = envI->GetThreadId();
+    auto myThreadID = IEnv->GetThreadId();
     assert((nThreads & (nThreads - 1)) == 0); // must be 2^n
     size_t clipIndex = myThreadID & (nThreads - 1);
 #else
-    size_t clipIndex = envI->GetThreadId() % nThreads;
+    size_t clipIndex = IEnv->GetThreadId() % nThreads;
 #endif
     auto& child = ChildFilters[clipIndex];
     std::lock_guard<std::mutex> lock(child.mutex);
@@ -219,7 +221,7 @@ PVideoFrame __stdcall MTGuard::GetFrame(int n, IScriptEnvironment* env)
   default:
   {
     assert(0);
-    envI->ThrowError("Invalid Avisynth logic.");
+    env->ThrowError("Invalid Avisynth logic.");
     break;
   }
   } // switch
@@ -231,7 +233,7 @@ PVideoFrame __stdcall MTGuard::GetFrame(int n, IScriptEnvironment* env)
   return frame;
 }
 
-void __stdcall MTGuard::GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env)
+void __stdcall MTGuard::GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env_)
 {
   assert(nThreads > 0);
 
@@ -242,7 +244,9 @@ void __stdcall MTGuard::GetAudio(void* buf, int64_t start, int64_t count, IScrip
     return;
   }
   */
-  InternalEnvironment *envI = static_cast<InternalEnvironment*>(env);
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
 
   switch (MTMode)
   {
@@ -258,7 +262,7 @@ void __stdcall MTGuard::GetAudio(void* buf, int64_t start, int64_t count, IScrip
       assert((nThreads & (nThreads - 1)) == 0); // must be 2^n
       size_t clipIndex = myThreadID & (nThreads - 1);
 #else
-      size_t clipIndex = envI->GetThreadId() % nThreads;
+      size_t clipIndex = IEnv->GetThreadId() % nThreads;
 #endif
       auto& child = ChildFilters[clipIndex];
       std::lock_guard<std::mutex> lock(child.mutex);
@@ -274,7 +278,7 @@ void __stdcall MTGuard::GetAudio(void* buf, int64_t start, int64_t count, IScrip
   default:
     {
       assert(0);
-      envI->ThrowError("Invalid Avisynth logic.");
+      env->ThrowError("Invalid Avisynth logic.");
       break;
     }
   } // switch

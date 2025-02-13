@@ -1203,7 +1203,7 @@ public:
 
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env_)
   {
-    InternalEnvironment* env = static_cast<InternalEnvironment*>(env_);
+    InternalEnvironment* env = GetAndRevealCamouflagedEnv(env_);
     Device* downstreamDevice = env->SetCurrentDevice(upstreamDevice);
 
     if (downstreamDevice == nullptr) {
@@ -1224,7 +1224,7 @@ public:
 
   void __stdcall GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env_)
   {
-    InternalEnvironment* env = static_cast<InternalEnvironment*>(env_);
+    InternalEnvironment* env = GetAndRevealCamouflagedEnv(env_);
     Device* downstreamDevice = env->SetCurrentDevice(upstreamDevice);
     try {
       child->GetAudio(buf, start, count, env);

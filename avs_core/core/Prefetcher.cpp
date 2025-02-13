@@ -202,30 +202,14 @@ int __stdcall Prefetcher::SchedulePrefetch(int current_n, int prefetch_start, In
   return n;
 }
 
-PVideoFrame __stdcall Prefetcher::GetFrame(int n, IScriptEnvironment* env)
+PVideoFrame __stdcall Prefetcher::GetFrame(int n, IScriptEnvironment* env_)
 {
-  InternalEnvironment* IEnv;
-  // same in CacheGuard::GetFrame/GetAudio, Prefetcher::GetFrame/GetAudio
-
-  // When GetFrame is called from an Avs Cpp 2.5 or PreV11C avs_get_frame (e.g. x265 client),
-  // 'env' is a disguised IScriptEnvironment_Avs25/AvsPreV11C which we cannot
-  // static cast to InternalEnvironment directly.
-  // We have to figure out whether the environment is v2.5/PreV11C and act upon.
-  if (env->ManageCache((int)MC_QueryAvs25, nullptr) == (intptr_t*)1) {
-    IEnv = static_cast<InternalEnvironment*>(reinterpret_cast<IScriptEnvironment_Avs25*>(env));
-  }
-  else if (env->ManageCache((int)MC_QueryAvsPreV11C, nullptr) == (intptr_t*)1) {
-    IEnv = static_cast<InternalEnvironment*>(reinterpret_cast<IScriptEnvironment_AvsPreV11C*>(env));
-  }
-  else {
-    IEnv = static_cast<InternalEnvironment*>(env);
-  }
-
-  IScriptEnvironment* env_real = static_cast<IScriptEnvironment*>(IEnv);
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
 
   if (IEnv->GetSuppressThreadCount() > 0) {
     // do not use thread when invoke running
-    return _pimpl->child->GetFrame(n, env_real);
+    return _pimpl->child->GetFrame(n, env);
   }
 
   int pattern = n - _pimpl->LastRequestedFrame;
@@ -307,9 +291,9 @@ PVideoFrame __stdcall Prefetcher::GetFrame(int n, IScriptEnvironment* env)
     {
       try
       {
-        result = _pimpl->child->GetFrame(n, env_real); // P.F. fill result before Commit!
+        result = _pimpl->child->GetFrame(n, env); // P.F. fill result before Commit!
         cache_handle.first->value = result;
-        // cache_handle.first->value = _pimpl->child->GetFrame(n, env_real); // P.F. before Commit!
+        // cache_handle.first->value = _pimpl->child->GetFrame(n, env); // P.F. before Commit!
 #ifdef INTEL_INTRINSICS
   #ifdef X86_32
         _mm_empty();
@@ -331,7 +315,7 @@ PVideoFrame __stdcall Prefetcher::GetFrame(int n, IScriptEnvironment* env)
     }
   case LRU_LOOKUP_NO_CACHE:
     {
-      result = _pimpl->child->GetFrame(n, env_real);
+      result = _pimpl->child->GetFrame(n, env);
       break;
     }
   case LRU_LOOKUP_FOUND_BUT_NOTAVAIL:    // Fall-through intentional
@@ -353,28 +337,12 @@ bool __stdcall Prefetcher::GetParity(int n)
   return _pimpl->child->GetParity(n);
 }
 
-void __stdcall Prefetcher::GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env)
+void __stdcall Prefetcher::GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env_)
 {
-  InternalEnvironment* IEnv;
-  // same in CacheGuard::GetFrame/GetAudio, Prefetcher::GetFrame/GetAudio
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
 
-  // When GetFrame is called from an Avs Cpp 2.5 or PreV11C avs_get_frame (e.g. x265 client),
-  // 'env' is a disguised IScriptEnvironment_Avs25/AvsPreV11C which we cannot
-  // static cast to InternalEnvironment directly.
-  // We have to figure out whether the environment is v2.5/PreV11C and act upon.
-  if (env->ManageCache((int)MC_QueryAvs25, nullptr) == (intptr_t*)1) {
-    IEnv = static_cast<InternalEnvironment*>(reinterpret_cast<IScriptEnvironment_Avs25*>(env));
-  }
-  else if (env->ManageCache((int)MC_QueryAvsPreV11C, nullptr) == (intptr_t*)1) {
-    IEnv = static_cast<InternalEnvironment*>(reinterpret_cast<IScriptEnvironment_AvsPreV11C*>(env));
-  }
-  else {
-    IEnv = static_cast<InternalEnvironment*>(env);
-  }
-
-  IScriptEnvironment* env_real = static_cast<IScriptEnvironment*>(IEnv);
-
-  _pimpl->child->GetAudio(buf, start, count, env_real);
+  _pimpl->child->GetAudio(buf, start, count, env);
 }
 
 int __stdcall Prefetcher::SetCacheHints(int cachehints, int frame_range)
@@ -400,11 +368,11 @@ AVSValue Prefetcher::Create(AVSValue args, void*, IScriptEnvironment* env)
   PClip child = args[0].AsClip();
 
   int PrefetchThreads = args[1].AsInt((int)envi->GetEnvProperty(AEP_PHYSICAL_CPUS)+1);
-	int PrefetchFrames = args[2].AsInt(PrefetchThreads * 2);
+  int PrefetchFrames = args[2].AsInt(PrefetchThreads * 2);
 
   if (PrefetchThreads > 0 && PrefetchFrames > 0)
   {
-		return new Prefetcher(child, PrefetchThreads, PrefetchFrames, env);
+    return new Prefetcher(child, PrefetchThreads, PrefetchFrames, env);
   }
   else
     return child;

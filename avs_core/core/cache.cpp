@@ -164,7 +164,7 @@ PVideoFrame __stdcall Cache::GetFrame(int n, IScriptEnvironment* env_)
   std::unique_ptr<char[]> buf(new char[BUFSIZE+1]);
 
 #endif
-  InternalEnvironment *env = static_cast<InternalEnvironment*>(env_);
+  InternalEnvironment* env = GetAndRevealCamouflagedEnv(env_);
 
   // Protect plugins that cannot handle out-of-bounds frame indices
   n = clamp(n, 0, GetVideoInfo().num_frames-1);
@@ -625,7 +625,7 @@ PClip CacheGuard::GetCache(IScriptEnvironment* env_)
 {
   std::unique_lock<std::mutex> global_lock(mutex);
 
-  InternalEnvironment* env = static_cast<InternalEnvironment*>(env_);
+  InternalEnvironment* env = GetAndRevealCamouflagedEnv(env_);
 
   Device* device = env->GetCurrentDevice();
 
@@ -668,49 +668,26 @@ int CacheGuard::GetOrDefault(int cachehints, int frame_range, int def)
   return def;
 }
 
-PVideoFrame __stdcall CacheGuard::GetFrame(int n, IScriptEnvironment* env)
+PVideoFrame __stdcall CacheGuard::GetFrame(int n, IScriptEnvironment* env_)
 {
-  InternalEnvironment* IEnv;
-  // same in CacheGuard::GetFrame/GetAudio, Prefetcher::GetFrame/GetAudio
-  // When GetFrame is called from an Avs Cpp 2.5 or PreV11C plugin constructor (xx_Create),
-  // 'env' is a disguised IScriptEnvironment_Avs25/AvsPreV11C which we cannot
-  // static cast to InternalEnvironment directly.
-  // We have to figure out whether the environment is v2.5/PreV11C and act upon.
-  if (env->ManageCache((int)MC_QueryAvs25, nullptr) == (intptr_t*)1) {
-    IEnv = static_cast<InternalEnvironment*>(reinterpret_cast<IScriptEnvironment_Avs25*>(env));
-  }
-  else if (env->ManageCache((int)MC_QueryAvsPreV11C, nullptr) == (intptr_t*)1) {
-    IEnv = static_cast<InternalEnvironment*>(reinterpret_cast<IScriptEnvironment_AvsPreV11C*>(env));
-  }
-  else {
-    IEnv = static_cast<InternalEnvironment*>(env);
-  }
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
   ScopedCounter getframe_counter(IEnv->GetFrameRecursiveCount());
-  IScriptEnvironment* env_real = static_cast<IScriptEnvironment*>(IEnv);
   /*
   if (!name.empty())
     _RPT2(0, "CacheGuard::GetFrame call further GetFrame: %s %d\n", name.c_str(), n);
   */
-  return GetCache(env_real)->GetFrame(n, env_real);
+  return GetCache(env)->GetFrame(n, env);
 }
 
-void __stdcall CacheGuard::GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env)
+void __stdcall CacheGuard::GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env_)
 {
-  // same in CacheGuard::GetFrame/GetAudio, Prefetcher::GetFrame/GetAudio
-  InternalEnvironment* IEnv;
-  // see Avs2.5/AvsPreV11C comments on CacheGuard::GetFrame
-  if (env->ManageCache((int)MC_QueryAvs25, nullptr) == (intptr_t*)1) {
-    IEnv = static_cast<InternalEnvironment*>(reinterpret_cast<IScriptEnvironment_Avs25*>(env));
-  }
-  else if (env->ManageCache((int)MC_QueryAvsPreV11C, nullptr) == (intptr_t*)1) {
-    IEnv = static_cast<InternalEnvironment*>(reinterpret_cast<IScriptEnvironment_AvsPreV11C*>(env));
-  }
-  else {
-    IEnv = static_cast<InternalEnvironment*>(env);
-  }
+  InternalEnvironment* IEnv = GetAndRevealCamouflagedEnv(env_);
+  IScriptEnvironment* env = static_cast<IScriptEnvironment*>(IEnv);
+
   ScopedCounter getframe_counter(IEnv->GetFrameRecursiveCount());
-  IScriptEnvironment* env_real = static_cast<IScriptEnvironment*>(IEnv);
-  return GetCache(env_real)->GetAudio(buf, start, count, env_real);
+  return GetCache(env)->GetAudio(buf, start, count, env);
 }
 
 const VideoInfo& __stdcall CacheGuard::GetVideoInfo()
