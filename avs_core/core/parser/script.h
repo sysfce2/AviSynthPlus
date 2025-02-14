@@ -163,9 +163,9 @@ AVSValue FormatString(AVSValue args, void*, IScriptEnvironment* env);
 
 AVSValue IsBool(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue IsInt(AVSValue args, void*, IScriptEnvironment* env);
-AVSValue IsLong(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue IsLongStrict(AVSValue args, void*, IScriptEnvironment* env); // v11
 AVSValue IsFloat(AVSValue args, void*, IScriptEnvironment* env);
-AVSValue IsFloatf(AVSValue args, void*, IScriptEnvironment* env); // v11
+AVSValue IsFloatfStrict(AVSValue args, void*, IScriptEnvironment* env); // v11
 AVSValue IsString(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue IsClip(AVSValue args, void*, IScriptEnvironment* env);
 AVSValue IsFunction(AVSValue args, void*, IScriptEnvironment* env);

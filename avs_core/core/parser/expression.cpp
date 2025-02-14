@@ -330,7 +330,7 @@ AVSValue ExpEqual::Evaluate(IScriptEnvironment* env)
   else if (x.IsInt() && y.IsInt()) { // true for any 32/64 bit data
     return x.AsLong() == y.AsLong(); // work with 64 bits
   }
-  else if (x.IsFloatf() && y.IsFloatf() && !x.IsInt() && !y.IsInt()) {
+  else if (x.IsFloatfStrict() && y.IsFloatfStrict()) {
     return x.AsFloatf() == y.AsFloatf();
   }
   else if (x.IsFloat() && y.IsFloat()) {
@@ -359,7 +359,7 @@ AVSValue ExpLess::Evaluate(IScriptEnvironment* env)
   if (x.IsInt() && y.IsInt()) { // true for any 32/64 bit data
     return x.AsLong() < y.AsLong(); // work with 64 bits
   }
-  else if (x.IsFloatf() && y.IsFloatf() && !x.IsInt() && !y.IsInt()) {
+  else if (x.IsFloatfStrict() && y.IsFloatfStrict()) {
     return x.AsFloatf() < y.AsFloatf();
   }
   else if (x.IsFloat() && y.IsFloat()) {
@@ -389,7 +389,7 @@ AVSValue ExpPlus::Evaluate(IScriptEnvironment* env)
       return (int)result;
     return result;
   }
-  else if (x.IsFloatf() && y.IsFloatf() && !x.IsInt() && !y.IsInt())
+  else if (x.IsFloatfStrict() && y.IsFloatfStrict())
     return x.AsFloatf() + y.AsFloatf();
   else if (x.IsFloat() && y.IsFloat())
     return x.AsFloat() + y.AsFloat(); // AsFloat returns double
@@ -428,7 +428,7 @@ AVSValue ExpMinus::Evaluate(IScriptEnvironment* env)
       return (int)result;
     return result;
   }
-  else if (x.IsFloatf() && y.IsFloatf() && !x.IsInt() && !y.IsInt())
+  else if (x.IsFloatfStrict() && y.IsFloatfStrict())
     return x.AsFloatf() - y.AsFloatf();
   else if (x.IsFloat() && y.IsFloat())
     return x.AsFloat() - y.AsFloat(); // AsFloat returns double
@@ -450,7 +450,7 @@ AVSValue ExpMult::Evaluate(IScriptEnvironment* env)
       return (int)result;
     return result;
   }
-  else if (x.IsFloatf() && y.IsFloatf() && !x.IsInt() && !y.IsInt())
+  else if (x.IsFloatfStrict() && y.IsFloatfStrict())
     return x.AsFloatf() * y.AsFloatf();
   else if (x.IsFloat() && y.IsFloat())
     return x.AsFloat() * y.AsFloat(); // AsFloat returns double
@@ -474,7 +474,7 @@ AVSValue ExpDiv::Evaluate(IScriptEnvironment* env)
       return (int)result;
     return result;
   }
-  else if (x.IsFloatf() && y.IsFloatf() && !x.IsInt() && !y.IsInt())
+  else if (x.IsFloatfStrict() && y.IsFloatfStrict())
     return x.AsFloatf() / y.AsFloatf();
   else if (x.IsFloat() && y.IsFloat())
     return x.AsFloat() / y.AsFloat(); // AsFloat returns double
@@ -518,8 +518,8 @@ AVSValue ExpNegate::Evaluate(IScriptEnvironment* env)
       return (int)result;
     return result;
   }
-  else if (x.IsFloatf())
-    return (float)(-x.AsFloatf());
+  else if (x.IsFloatfStrict())
+    return -x.AsFloatf();
   else if (x.IsFloat())
     return -x.AsFloat(); // AsFloat returns double
   else {

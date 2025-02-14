@@ -339,8 +339,8 @@ What's new in the API V11
         
           - changed: ``AVSValue::IsFloat`` true for any 32/64 bit floating point or integer types
           - changed: ``AVSValue::IsInt`` true for any 32/64 bit integer types
-          - new: ``AVSValue::IsFloatf`` : true is AVSValue is 32 bit float or 32/64 bit integer type; same as former IsFloat
-          - new: ``AVSValue::IsLong`` : returns true only if AVSValue is stricly 64 bit integer
+          - new: ``AVSValue::IsFloatfStrict`` : returns true only if AVSValue is stricly 32 bit float
+          - new: ``AVSValue::IsLongStrict`` : returns true only if AVSValue is stricly 64 bit integer
           - new: ``AVSValue::AsLong`` : returns int64_t
           - new: ``AVSValue::AsLong(int64_t def)``
           - No change: since AsFloat return type was double --> no change, it retrieves double values as well
@@ -359,6 +359,10 @@ What's new in the API V11
             * ``avs_is_int``, ``avs_is_float``
             * ``avs_as_int``, ``avs_as_float``
           
+          - New INLINE type check helpers:
+            
+            * ``avs_is_long_strict``, ``avs_is_floatf_strict``
+
           - New INLINE getter helpers for 64-bit data (prefer using API calls):
 
             * ``avs_as_long``, ``avs_as_float``

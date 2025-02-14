@@ -95,6 +95,8 @@
 //         Modified INLINE typecheck and getter helpers for 64-bit data type awareness:
 //         - avs_is_int, avs_is_float
 //         - avs_as_int, avs_as_float
+//         Strict type checkers
+//         - avs_is_long_strict, avs_is_floatf_strict
 //         New INLINE getter helpers for 64-bit data (prefer using API calls):
 //         - avs_as_long
 //         New setter API calls: 
@@ -985,11 +987,11 @@ AVSC_INLINE int avs_is_bool(AVS_Value v) { return v.type == 'b'; }
 // v11: changed: for 32-bit 'int' or 64-bit 'long' as well
 AVSC_INLINE int avs_is_int(AVS_Value v) { return v.type == 'i' || v.type == 'l'; }
 // v11: new: for strict 64-bit 'long' content only
-AVSC_INLINE int avs_is_long(AVS_Value v) { return v.type == 'l'; }
+AVSC_INLINE int avs_is_long_strict(AVS_Value v) { return v.type == 'l'; }
 // v11: changed: for 'double' and 'l'ong along with 'float' and 'int'
 AVSC_INLINE int avs_is_float(AVS_Value v) { return v.type == 'd' || v.type == 'f' || v.type == 'i' || v.type == 'l'; }
-// v11: new: for 'float' or any integer content (no 'd'ouble).
-AVSC_INLINE int avs_is_floatf(AVS_Value v) { return v.type == 'f' || v.type == 'i' || v.type == 'l'; }
+// v11: new: for strict 64-bit 'long' content only
+AVSC_INLINE int avs_is_floatf_strict(AVS_Value v) { return v.type == 'f'; }
 AVSC_INLINE int avs_is_string(AVS_Value v) { return v.type == 's'; }
 AVSC_INLINE int avs_is_array(AVS_Value v) { return v.type == 'a'; }
 AVSC_INLINE int avs_is_error(AVS_Value v) { return v.type == 'e'; }

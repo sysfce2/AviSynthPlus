@@ -234,9 +234,9 @@ extern const AVSFunction Script_functions[] = {
 
   { "IsBool",   BUILTIN_FUNC_PREFIX, ".", IsBool },
   { "IsInt",    BUILTIN_FUNC_PREFIX, ".", IsInt },
-  { "IsLong",   BUILTIN_FUNC_PREFIX, ".", IsLong }, // v11
+  { "IsLongStrict",   BUILTIN_FUNC_PREFIX, ".", IsLongStrict }, // v11
   { "IsFloat",  BUILTIN_FUNC_PREFIX, ".", IsFloat },
-  { "IsFloatF", BUILTIN_FUNC_PREFIX, ".", IsFloatf }, // v11
+  { "IsFloatFStrict", BUILTIN_FUNC_PREFIX, ".", IsFloatfStrict }, // v11
   { "IsString", BUILTIN_FUNC_PREFIX, ".", IsString },
   { "IsClip",   BUILTIN_FUNC_PREFIX, ".", IsClip },
   { "IsFunction", BUILTIN_FUNC_PREFIX, ".", IsFunction },
@@ -1679,7 +1679,7 @@ AVSValue String(AVSValue args, void*, IScriptEnvironment* env)
   }
   else {
     // standard behaviour
-    if (args[0].IsLong()) {
+    if (args[0].IsLongStrict()) {
       char s[21];
       sprintf(s, "%" PRId64, args[0].AsLong());
       return env->SaveString(s);
@@ -1897,9 +1897,9 @@ AVSValue Func(AVSValue args, void*, IScriptEnvironment*) { return args[0]; }
 
 AVSValue IsBool(AVSValue args, void*, IScriptEnvironment*) {  return args[0].IsBool(); }
 AVSValue IsInt(AVSValue args, void*, IScriptEnvironment*) {  return args[0].IsInt(); }
-AVSValue IsLong(AVSValue args, void*, IScriptEnvironment*) { return args[0].IsLong(); }
+AVSValue IsLongStrict(AVSValue args, void*, IScriptEnvironment*) { return args[0].IsLongStrict(); }
 AVSValue IsFloat(AVSValue args, void*, IScriptEnvironment*) {  return args[0].IsFloat(); }
-AVSValue IsFloatf(AVSValue args, void*, IScriptEnvironment*) { return args[0].IsFloatf(); }
+AVSValue IsFloatfStrict(AVSValue args, void*, IScriptEnvironment*) { return args[0].IsFloatfStrict(); }
 AVSValue IsString(AVSValue args, void*, IScriptEnvironment*) {  return args[0].IsString(); }
 AVSValue IsClip(AVSValue args, void*, IScriptEnvironment*) {  return args[0].IsClip(); }
 AVSValue IsFunction(AVSValue args, void*, IScriptEnvironment*) { return args[0].IsFunction(); }
@@ -1910,11 +1910,11 @@ const char* GetAVSTypeName(AVSValue value) {
     return "clip";
   else if (value.IsBool())
     return "bool";
-  else if (value.IsLong()) // must be before IsInt
+  else if (value.IsLongStrict()) // must be before IsInt
     return "long";
   else if (value.IsInt())
     return "int";
-  else if (value.IsFloatf())
+  else if (value.IsFloatfStrict()) // before IsFloat
     return "float";
   else if (value.IsFloat())
     return "double";
@@ -1996,7 +1996,7 @@ AVSValue Frac(AVSValue args, void*, IScriptEnvironment*) {
 }
 
 AVSValue Int(AVSValue args, void*, IScriptEnvironment*) {  
-  if (args[0].IsLong()) return args[0].AsLong();
+  if (args[0].IsLongStrict()) return args[0].AsLong();
   if (args[0].IsInt()) return args[0].AsInt();
   
   int64_t result = int64_t(args[0].AsFloat());
@@ -2019,17 +2019,10 @@ AVSValue Long(AVSValue args, void*, IScriptEnvironment*) {
   return result;
 }
 
-// casting an int/int64 to float will result in double if the float would not hold the integer losslessly.
 AVSValue Float(AVSValue args, void*, IScriptEnvironment*) {
-  if (args[0].IsInt()) {
-    int64_t param = args[0].AsLong();
-    // if integer range allows, use real float
-    // +/-16,777,216 would fit into float32
-    if (param >= -16777216 && param <= 16777216)
-      return (float)param;
-    return double(param);
-  };
-  if(args[0].IsFloatf())
+  if (args[0].IsInt())
+    return (double)args[0].AsLong();
+  if(args[0].IsFloatfStrict())
     return args[0].AsFloatf();
   return args[0].AsFloat();
 }
@@ -2097,7 +2090,7 @@ AVSValue AvsMin(AVSValue args, void*, IScriptEnvironment* env)
 
   // v11: If all numbers are 32 bit floats return real float instead of double
   for (int i = 0; i < n; i++)
-    if (!args[0][i].IsFloatf()) {
+    if (!args[0][i].IsFloatfStrict()) {
       isFloat32 = false;
       break;
     }
@@ -2138,7 +2131,7 @@ AVSValue AvsMax(AVSValue args, void*, IScriptEnvironment* env)
 
   // v11: If all numbers are 32 bit floats return real float instead of double
   for (int i = 0; i < n; i++)
-    if (!args[0][i].IsFloatf()) {
+    if (!args[0][i].IsFloatfStrict()) {
       isFloat32 = false;
       break;
     }

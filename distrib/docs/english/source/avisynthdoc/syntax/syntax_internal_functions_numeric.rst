@@ -192,9 +192,10 @@ Converts any int to `floating-point`_ value.
 
 Since v3.7.4 this means
 
-- Conversion target type is adaptive
-- 32 bit float type if parameter is float, or integer is maximum 24 bits.
-- 64 bit double otherwise
+- Integer input is converted to 64 bit double:
+  Integer values that require more than 53-bits to be represented will have their lower bits
+  truncated yielding unexpected values.
+- if input is already a floating point type, it's kept as-is, 32 bit float is not converted to double.
 
 Pre v3.7.4:
 

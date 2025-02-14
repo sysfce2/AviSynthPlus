@@ -62,7 +62,7 @@ the :doc:`AviSynth Syntax <syntax>`.
 As a workaround for the issue noted above, you may use the following user function: 
 ::
 
-    ## return true for floats only
+    ## return true for floating point numbers only
     function IsReallyFloat(val v)
     {
         return (IsInt(v)==false) && IsFloat(v)
@@ -71,16 +71,16 @@ As a workaround for the issue noted above, you may use the following user functi
     ## return true for 64 bit doubles only
     function IsReallyDouble(val v)
     {
-        return !IsFloatF(v) # IsFloatF covers integers and 32 bit float
+        return (IsInt(v)==false) && IsFloat(v) && !IsFloatfStrict(v)
     }
 
-IsFloatF
---------
+IsFloatfStrict
+--------------
 ::
 
-    IsFloatF(var)
+    IsFloatfStrict(var)
 
-Tests if *var* is of the 32 bit float type or any integer. *var* can be any expression allowed by
+Tests if *var* is of the exact 32 bit float type. *var* can be any expression allowed by
 the :doc:`AviSynth Syntax <syntax>`.
 
 Since Avisynth 3.7.4.
@@ -89,21 +89,11 @@ Since Avisynth 3.7.4.
 ::
 
     f = Sqrt(2.0)
-    IsFloatf(f) = false # arithmetic is 64 bit precision since 3.7.4
-    IsFloat(true) = false
-    IsFloat("42.") = false # string :)
-    IsFloat(2) = true   # ints (either 32 or 64 bits) are considered to be floats by this function
-    IsReallyFloatf(2) = false # see below
-
-As a workaround for the issue noted above, you may use the following user function: 
-::
-
-    ## return true for floats only
-    function IsReallyFloatf(val v)
-    {
-        return (IsInt(v)==false) && IsFloatf(v)
-    }
-
+    IsFloatfStrict(f) = false # arithmetic is 64 bit precision since 3.7.4
+    IsFloatfStrict(true) = false
+    IsFloatfStrict("42.") = false # string :)
+    IsFloatfStrict(2) = false
+    IsFloatfStrict((Floatf(2)) = true # direct type cast
 
 IsInt
 -----
@@ -124,11 +114,11 @@ Since 3.7.4 we have 64 bit longs, IsInt returns true for any 32 or 64-bit intege
     IsInt(2.1) = false
     IsInt(true) = false
 
-IsLong
-------
+IsLongStrict
+------------
 ::
 
-    IsLong(var)
+    IsLongStrict(var)
 
 Tests if *var* is of the 64-bit int type 'long'. *var* can be any expression allowed by the
 :doc:`AviSynth Syntax <syntax>`.
@@ -138,10 +128,10 @@ Since Avisynth 3.7.4.
 *Examples:*
 ::
 
-    IsLong(2) = false # literals if fit into 32 bit, keep 32 bit integer type
-    IsLong($FFL) = true # forced 64 bit hexadecimal literal
-    IsLong(9007199254740992) = true # big number, 2^53 is stored as 64 bit integer
-    IsLong(2.1) = false
+    IsLongStrict(2) = false # numeric literals if fit into 32 bit, keep 32 bit integer type
+    IsLongStrict($FFL) = true # forced 64 bit hexadecimal literal
+    IsLongStrict(9007199254740992) = true # big number, 2^53 is stored as 64 bit integer
+    IsLongStrict(2.1) = false
 
 IsString
 --------
@@ -253,17 +243,17 @@ Note: if variable exists, it returns true regardless of the "defined" state of t
 
 Changelog
 ---------
-+----------------+----------------------------------+
-| Version        | Changes                          |
-+================+==================================+
-| 3.7.4          | | Changed "IsFloat", "IsInt"     |
-|                | | Added "IsFloatF", "IsLong"     |
-+----------------+----------------------------------+
-| Avisynth+      | | Added "IsFunction"             |
-|                | | Added "FunctionExists"         |
-|                | | Added "InternalFunctionExists" |
-|                | | Added "VarExist"               |
-+----------------+----------------------------------+
++----------------+---------------------------------------------+
+| Version        | Changes                                     |
++================+=============================================+
+| 3.7.4          | | Changed "IsFloat", "IsInt"                |
+|                | | Added "IsFloatfStrict", "IsLongStrict     |
++----------------+---------------------------------------------+
+| Avisynth+      | | Added "IsFunction"                        |
+|                | | Added "FunctionExists"                    |
+|                | | Added "InternalFunctionExists"            |
+|                | | Added "VarExist"                          |
++----------------+---------------------------------------------+
 
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 

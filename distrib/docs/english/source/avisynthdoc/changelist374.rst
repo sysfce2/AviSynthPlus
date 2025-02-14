@@ -36,12 +36,11 @@ Additions, changes
     otherwise the constant remains 32 bit integer. (Compatibility: otherwise color constants 
     over ``$7FFFFFFF`` (like ``$FFFFFFFF``) would all turn into 64 bit long instead of integer)
   - ``IsInt()`` returns true for any 32 or 64 bit integer
-  - ``IsLong()`` returns true only if underlying variable is long (64 bit integer)
+  - ``IsLongStrict()`` returns true only if underlying variable is long (64 bit integer)
   - ``IsFloat()`` returns true for any 32 or 64 bit floating point content (float or double and for any integers - as before)
-  - ``IsFloatF()`` returns true only if value is _not_ double.
-  - ``Float()`` by default casts to double. In case of the integer input is in +/-16777216 range, it casts to 32 bit float.
-    (fits into float without precision loss).
-    If the original value is already a floating point value, its type will remain untouched (no automatic float->double conversion).
+  - ``IsFloatFStrict()`` returns true only if value is exactly a 32 bit type float.
+  - ``Float()`` by default casts to double. 32 bit floating point numbers are kept in 32 bit float format 
+    (no automatic float->double conversion)
   - New ``Double()`` converts always to 64 bit double
   - New ``Floatf()`` converts always to 32 bit float
   - New ``Long()`` converts always to 64 bit long

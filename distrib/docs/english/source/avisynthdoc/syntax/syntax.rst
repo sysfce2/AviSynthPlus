@@ -689,9 +689,9 @@ Test functions
 
 | ``IsBool(var)``
 | ``IsInt(var)``
-| ``IsLong(var)``
+| ``IsLongStrict(var)``
 | ``IsFloat(var)``
-| ``IsFloatf(var)``
+| ``IsFloatfStrict(var)``
 | ``IsString(var)``
 | ``IsClip(var)``
 
@@ -1118,7 +1118,7 @@ Changelog
 | Avisynth 3.7.4 | | Added 64-bit types, integer long, floating point double  |
 |                | | Add "L" suffixed hexadecimal notation                    |
 |                | | Add HexValue64 function                                  |
-|                | | Add IsFloatF() and IsLong()                              |
+|                | | Add IsFloatfStrict() and IsLongStrict()                  |
 |                | | Add Double(), FloatF(), Long(), IntI() type casts        |
 |                | | AudioLength returns 64 bit integer (exact size)          |
 |                | | AudioLengthF returns 64 bit double                       |

@@ -849,20 +849,22 @@ AVSValue& AVSValue::OPERATOR_ASSIGN(const AVSValue& v)   { Assign(&v, false); re
 // pre-v11: Transparently allow 'int' to be treated as 'float'.
 // No int<->bool conversions.
 // v11 64 bit value changes:
-// 'long' is int64_t.
-// IsInt returns true for both 'long' and 'int' 
-// IsLong returns true only for exact 64-bit integer type
-// Transparently allow 'long' and 'int' to be treated as 'float' or 'double'
-// IsFloat returns true for both 'float' and 'double' (old IsFloat + 'double').
-// IsFloatf returns true for only real floats (including int and long): the old IsFloat.
+// - 'long' is int64_t.
+// - IsInt returns true for both 'long' and 'int' 
+// - IsLong returns true only for exact 64-bit integer type
+// - Transparently allow 'long' and 'int' to be treated as 'float' or 'double'
+// - IsFloat returns true for both 'float' and 'double' (old IsFloat + 'double').
+// - new IsFloatfStrict returns true only for 32-bit floating-point numbers.
+// - new IsLongStrict returns true only for exact 64-bit integer types.
 
+// Note: Exact type check is available GetType() with returns AvsValueType enum
 bool AVSValue::Defined() const { return type != 'v'; }
 bool AVSValue::IsClip() const { return type == 'c'; }
 bool AVSValue::IsBool() const { return type == 'b'; }
 bool AVSValue::IsInt() const { return type == 'i' || type == 'l'; }
-bool AVSValue::IsLong() const { return type == 'l'; }
+bool AVSValue::IsLongStrict() const { return type == 'l'; }
 bool AVSValue::IsFloat() const { return type == 'd' || type == 'f' || type == 'i' || type == 'l'; }
-bool AVSValue::IsFloatf() const { return type == 'f' || type == 'i' || type == 'l'; }
+bool AVSValue::IsFloatfStrict() const { return type == 'f'; }
 bool AVSValue::IsString() const { return type == 's'; }
 bool AVSValue::IsArray() const { return type == 'a'; }
 bool AVSValue::IsFunction() const { return type == 'n'; }
@@ -1230,8 +1232,8 @@ static const AVS_Linkage avs_linkage = {    // struct AVS_Linkage {
   &AVSValue::AsFloat2,                      //   double          (AVSValue::*AsFloat2)(float def) const;
   &AVSValue::AsString2,                     //   const char*     (AVSValue::*AsString2)(const char* def) const;
   &AVSValue::ArraySize,                     //   int             (AVSValue::*ArraySize)() const;
-  &AVSValue::IsLong,                        //   bool            (AVSValue::*IsLong)() const; // v11
-  &AVSValue::IsFloatf,                      //   bool            (AVSValue::*IsFloatf() const; // v11
+  &AVSValue::IsLongStrict,                  //   bool            (AVSValue::*IsLongStrict)() const; // v11
+  &AVSValue::IsFloatfStrict,                //   bool            (AVSValue::*IsFloatfStrict() const; // v11
   &AVSValue::AsLong1,                       //   int64_t         (AVSValue::*AsLong1)() const; // v11
   &AVSValue::AsLong2,                       //   int64_t         (AVSValue::*AsLong2)(int64_t def) const; // v11
   &AVSValue::CONSTRUCTOR12,                 //   void            (AVSValue::*AVSValue_CONSTRUCTOR12)(int64_ l); // v11
