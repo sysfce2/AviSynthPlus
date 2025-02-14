@@ -2,12 +2,54 @@
 C API
 =====
 
-The header, avisynth_c.h, declares all the classes, structures and
-miscellaneous constants that you might need when writing a plugin. All
+The header, avisynth_c.h and some of its helpers in avs/ folder, declares all the classes, structures and
+miscellaneous constants that you might need when writing a plugin or a client. All
 external plugins should #include it:
 ::
 
     #include "avisynth_c.h"
+
+or if proper paths are set to the installed package and SDK include files:
+
+    #include <avisynth_c.h>
+
+
+Note from 2025: until this part is updated properly, check these excellent
+examples for using C API as a client or in a plugin:
+
+- ffmpeg (client)
+
+  https://github.com/FFmpeg/FFmpeg/blob/release/7.1/libavformat/avisynth.c
+
+- x265mod (client)
+
+  https://github.com/Patman86/x265-Mod-by-Patman/blob/master/source/input/avs.cpp
+
+- x264 (client)
+
+  https://code.videolan.org/videolan/x264/-/blob/master/input/avs.c?ref_type=heads
+  
+- avs2yuv (client)
+
+  https://github.com/DJATOM/avs2yuv
+  
+- Many-many plugins from Asd-g:
+
+  https://github.com/Asd-g/
+  
+- AvsInPaint plugin
+
+  https://github.com/pinterf/AvsInpaint
+  
+- AssRender plugin
+
+  https://github.com/pinterf/assrender
+
+
+Historical content
+------------------
+
+* to be checked and updated *
 
 source: http://forum.doom9.org/showthread.php?p=1464911#post1464911
 

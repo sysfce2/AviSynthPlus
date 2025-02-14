@@ -2,8 +2,7 @@
 AviSynth FilterSDK
 ==================
 
-Note: this documentation was not maintained since AviSynth 2.6, update was started again
-      in 2020 April (AviSynth+ 3.5.1 era).
+Note: May not fully up-to-date
 
 AviSynth external Filter SDK is a package for developers to create your own
 filters (plugins and console applications) for AviSynth.
@@ -82,9 +81,10 @@ responsible for the compatibility, functions which did not exist in classic Avis
 (such as BitsPerComponent() for VideoInfo) return a compatible value (8 in this
 case since Avisynth 2.6 handled only 8 bit videos)
 
-Beginning with the v8 interface - frame property support - dual interfaces became important
-again. Plugins have to be able to detect the availability of v8 interface and behave
-accordingly.
+Beginning with the v8 (v8.1 for C interface due to early bugs) interface - frame property 
+support - dual interfaces became important again. Plugins have to be able to detect the 
+availability of v8 interface and behave accordingly.
+
 (todo: They are described :doc:`here <DualPlugins>`).
 
 Writing console applications that access AviSynth
@@ -105,6 +105,9 @@ avisynth.dll via loadlibrary() and getprocaddress(). Then creating a
 scriptenvironment and importing a script using invoke(). At that point
 you will have a clip from which you can call getframe() to access the
 video and getaudio() to access the audio.
+
+For C api clients see the examples (ffmpeg, x265, x264, avs2yuv) here:
+:doc:`Introducing to C API <C_api>`.
 
 Below are some examples that have a script as input and raw video or
 audio as output:
@@ -157,6 +160,7 @@ Development Kit) describes how to create plugins using both interfaces.
 Although not included in AviSynth itself, several people wrote other
 language interfaces in Delphi, Purebasic, NET and Java. They can be
 found `here <http://forum.doom9.org/showthread.php?p=566904#post566904>`__.
+(comment from 2025: update needed)
 
 ...
 
