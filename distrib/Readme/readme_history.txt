@@ -11,8 +11,13 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist374.html
 and
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html#what-s-new-in-the-api-v11
 
-20250210
+20250214 3.7.3 r4193
+--------------------
 
+- Fix: ScriptClip and other runtime functions / frame prop read would crash if called from C or 
+  Avs2.5 plugin's IScriptEnvironment, which would happen is there is a C plugin within ScriptClip 
+  (Emulgator-RIFE script, thx)
+- Interleave: internal clips - code reorg, I think nothing is affected, but maybe yes (see #386 as well)
 - Fix: audio cache would overflow over int sized count and position differences
 - Fix: "Info" overflowed and displayed negative hours/minutes/audio length at longer clips, use int64
 
@@ -22,7 +27,7 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.ht
 
 20250207 3.7.3 r4177
 --------------------
-- C header API fix after the recent big changes
+- C header API header fix after the recent big changes
 
 20250207 3.7.3 r4176
 --------------------

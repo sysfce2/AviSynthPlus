@@ -112,10 +112,16 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix: ScriptClip and other runtime functions / frame prop read would crash if called from Avs2.5 or Pre-v11 C 
+  IScriptEnvironment, which would happen is there is an old C plugin within ScriptClip
+  The C part was an intermediate development issue, but for Avs 2.5 plugins probably it always crashed.
+- Fix: audio cache would overflow over int sized count and position differences
+- Fix: "Info" overflowed and displayed negative hours/minutes/audio length at longer clips, use int64
 - Fix "SetLogParams" defaults - mentioned in #391
 - Fix corrupt Turn functions when a planar RGB turn would be followed by a YUV Turn.
   Regression since TurnXXXX supports planar RGB (2016.08.23; probably since r2081 commit dba954e2de0c9c6218d17fc5c4974f4c28b627c3)
 - Fix #386: Interleave to call plugin destructor like StackXXXX (memory leak in case of script errors)
+  additional code reorg in r4192
 - Fix #384: swapped ShowGreen/ShowBlue for planar RGB sources
 - Fix: allow use of "local" in ConditionalSelect string version (fixed wrong function signature)
 - "Info" now can display a line which is only partially visible (instead of not showing it at all)
