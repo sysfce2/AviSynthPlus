@@ -4314,8 +4314,12 @@ const Function* ScriptEnvironment::Lookup(const char* search_name, const AVSValu
 
   const Function *result = NULL;
 
+  auto orig_args_names_count = args_names_count;
+
   size_t oanc;
   do {
+    // if args_names_count>0 then a 2x2 loop, strict yes/no, with or without args name matching
+    // if =0, 2x loop strict yes/no,without args name matching
     for (int strict = 1; strict >= 0; --strict) {
       pstrict = strict & 1;
       // first, look in loaded plugins or user defined functions
@@ -4345,6 +4349,7 @@ const Function* ScriptEnvironment::Lookup(const char* search_name, const AVSValu
   if (!plugin_manager->HasAutoloadExecuted())
   {
     plugin_manager->AutoloadPlugins();
+    args_names_count = orig_args_names_count;
     return Lookup(search_name, args, num_args, pstrict, args_names_count, arg_names, ctx);
   }
 
@@ -4388,7 +4393,7 @@ static void ListArguments(const char *name, const AVSValue& args, int &level, bo
     else if (args.IsBool())
       fprintf(stdout, "Bool %s\r\n", args.AsBool() ? "true" : "false");
     else if (args.GetType() == AvsValueType::VALUE_TYPE_LONG) // before IsInt() !
-      fprintf(stdout, "Long " PRId64 "\r\n", args.AsLong());
+      fprintf(stdout, "Long %" PRId64 "\r\n", args.AsLong());
     else if (args.IsInt())
       fprintf(stdout, "Int %d\r\n", args.AsInt());
     else if (args.IsString())
@@ -4492,7 +4497,7 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
   // Problem: Animate has parameter signature both "iis.*" and "ciis.*"
   //   ColorBars()
   //   Animate(0, 100, "blur", 0.1, 1.5)
-  // Here we find "iis.*" but it turnes out that its given function parameter "Blur" requires a clip
+  // Here we find "iis.*" but it turns out that its given function parameter "Blur" requires a clip
   // Thus we got an exception later during the filter instantiation (really it is "Blur" who throws the exception)
   // (see comment Issue20200818 later).
   // Expression evaluator would catch NotFound and reissue _Invoke with a forced implicit_last in args.

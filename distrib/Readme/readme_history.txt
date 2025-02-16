@@ -11,6 +11,19 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist374.html
 and
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html#what-s-new-in-the-api-v11
 
+20250216 ---
+--------------------
+- Fix #426: TimeStretch named parameter rate not found in a simple
+
+    a=last
+    TimeStretch(a, rate=1.11)
+
+  The erroneous message would be displayed in any function under the following conditions:
+  - The function is autoloaded (with direct LoadPlugin("TimeStretch.DLL") it worked).
+  - Multiple parameter versions exist.
+  - A named argument is provided.
+  - Unnamed parameters are also provided.
+
 20250214 3.7.3 r4193
 --------------------
 

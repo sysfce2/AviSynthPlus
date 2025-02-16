@@ -143,6 +143,8 @@ Bugfixes
 - Fix FadeIn, which behaved like FadeIn2
 - Fix #418: ShowSMTPE/ShowTime alignment - NO_WIN_GDI case (e.g. Posix)
 - Fix #421: add safety checks to SuperEQ to match SSRC
+- Fix #426: An autoloaded function with multiple parameter versions would produce a named parameter error 
+  if unnamed parameters were given before the named parameter. For example: TimeStretch(a_clip, rate=100.1)
 
 Optimizations
 ~~~~~~~~~~~~~
