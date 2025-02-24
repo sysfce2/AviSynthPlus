@@ -11,8 +11,13 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist374.html
 and
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html#what-s-new-in-the-api-v11
 
-20250216 ---
+20250224 3.7.3 r4197
 --------------------
+
+- C Interface: Add avs_add_function_r as an alternative to avs_add_function, allowing the callback to 
+  return the result via a by-reference AVS_Value parameter instead of returning the AVS_Value as a struct. 
+  (Use case from Python)
+
 - Fix #426: TimeStretch named parameter rate not found in a simple
 
     a=last
