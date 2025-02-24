@@ -147,5 +147,5 @@ EXPORTS
   avs_prop_get_data_type_hint = _avs_prop_get_data_type_hint@20
   avs_prop_set_data_h = _avs_prop_set_data_h@28
 
-  avs_add_function_r = _avs_add_function_r@24
+  avs_add_function_r = _avs_add_function_r@20
 
