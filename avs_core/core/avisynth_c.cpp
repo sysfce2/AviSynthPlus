@@ -1081,6 +1081,7 @@ AVS_Clip * AVSC_CC avs_new_c_filter(AVS_ScriptEnvironment * e,
 struct C_VideoFilter_UserData {
   void* user_data;
   AVS_ApplyFunc func;
+  AVS_ApplyFuncR func_r;
 };
 
 AVSValue __cdecl create_c_video_filter(AVSValue args, void* user_data,
@@ -1091,7 +1092,11 @@ AVSValue __cdecl create_c_video_filter(AVSValue args, void* user_data,
   env.env = e0;
   env.error = NULL;
 
-  AVS_Value res = (d->func)(&env, *(AVS_Value*)&args, d->user_data);
+  AVS_Value res;
+  if(d->func)
+    res = (d->func)(&env, *(AVS_Value*)&args, d->user_data);
+  else
+    (d->func_r)(&env, (AVS_Value*)&res, *(AVS_Value*)&args, d->user_data); // new in v11: byref
   if (res.type == 'e') {
     throw AvisynthError(res.d.string);
   }
@@ -1110,7 +1115,31 @@ avs_add_function(AVS_ScriptEnvironment * p, const char* name, const char* params
 {
   C_VideoFilter_UserData* dd, * d = new C_VideoFilter_UserData;
   p->error = 0;
-  d->func = applyf;
+  d->func = applyf; // return value struct
+  d->func_r = nullptr;
+  d->user_data = user_data;
+  dd = (C_VideoFilter_UserData*)p->env->SaveString((const char*)d, sizeof(C_VideoFilter_UserData));
+  delete d;
+  try {
+    p->env->AddFunction(name, params, create_c_video_filter, dd);
+  }
+  catch (AvisynthError& err) {
+    p->error = err.msg;
+    return -1;
+  }
+  return 0;
+}
+
+// v11
+extern "C"
+int AVSC_CC
+avs_add_function_r(AVS_ScriptEnvironment* p, const char* name, const char* params,
+  AVS_ApplyFuncR applyf, void* user_data)
+{
+  C_VideoFilter_UserData* dd, * d = new C_VideoFilter_UserData;
+  p->error = 0;
+  d->func = nullptr;
+  d->func_r = applyf;  // return value among parameters byref struct (Python cref callbacks like it better)
   d->user_data = user_data;
   dd = (C_VideoFilter_UserData*)p->env->SaveString((const char*)d, sizeof(C_VideoFilter_UserData));
   delete d;

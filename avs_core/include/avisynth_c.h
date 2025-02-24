@@ -116,11 +116,11 @@
 //         New avs_prop_get_int_saturated
 //         New avs_prop_get_float_saturated
 //         Deprecated inline helper functions. 
-//         - avs_get_pitch => avs_get_pitch_p(p, 0)
-//           avs_get_row_size => avs_get_row_size_p(p, 0)
-//           avs_get_height => avs_get_height_p(p, 0)
-//           avs_get_read_ptr => avs_get_read_ptr_p(p, 0)
-//           avs_get_write_ptr => vs_get_write_ptr_p(p, 0)
+//         - avs_get_pitch => avs_get_pitch_p(p, AVS_DEFAULT_PLANE)
+//           avs_get_row_size => avs_get_row_size_p(p, AVS_DEFAULT_PLANE)
+//           avs_get_height => avs_get_height_p(p, AVS_DEFAULT_PLANE)
+//           avs_get_read_ptr => avs_get_read_ptr_p(p, AVS_DEFAULT_PLANE)
+//           avs_get_write_ptr => vs_get_write_ptr_p(p, AVS_DEFAULT_PLANE)
 //           avs_release_frame => avs_release_video_frame
 //           avs_copy_frame => avs_copy_video_frame
 //         - Use #define AVSC_ALLOW_DEPRECATED if they still need for you, 
@@ -129,6 +129,8 @@
 //         Add AVS_PROPDATATYPEHINT_xxx for AVSPropDataTypeHint
 //         New avs_prop_get_data_type_hint
 //         New avs_prop_set_data_h
+//         New avs_add_func_r: alternative avs_add_func which returns the result in a byref parameter
+//         New AVS_ApplyFuncR type
 
 
 // Notes.
@@ -1149,6 +1151,11 @@ AVSC_API(int, avs_set_cache_hints)(AVS_Clip *,
 typedef AVS_Value (AVSC_CC * AVS_ApplyFunc)
                         (AVS_ScriptEnvironment *, AVS_Value args, void * user_data);
 
+// v11 alternative of avs_add_function with return value by reference
+// This is the callback type used by avs_add_function_r
+typedef void(AVSC_CC* AVS_ApplyFuncR)
+(AVS_ScriptEnvironment*, AVS_Value* ret, AVS_Value args, void* user_data);
+
 typedef struct AVS_FilterInfo AVS_FilterInfo;
 struct AVS_FilterInfo
 {
@@ -1237,9 +1244,15 @@ AVSC_API(char *, avs_sprintf)(AVS_ScriptEnvironment *, const char * fmt, ...);
 
 AVSC_API(char *, avs_vsprintf)(AVS_ScriptEnvironment *, const char * fmt, va_list val);
 
+// avs_add_function, the callback (apply) returns result as return value (AVS_Value)
 AVSC_API(int, avs_add_function)(AVS_ScriptEnvironment *,
                                 const char * name, const char * params,
                                 AVS_ApplyFunc apply, void * user_data);
+
+// v11 avs_add_function_r, the callback (apply) returns result in byref parameter (AVS_Value *)
+AVSC_API(int, avs_add_function_r)(AVS_ScriptEnvironment*,
+  const char* name, const char* params,
+  AVS_ApplyFuncR apply, void* user_data);
 
 AVSC_API(int, avs_function_exists)(AVS_ScriptEnvironment *, const char * name);
 
@@ -1598,6 +1611,9 @@ struct AVS_Library {
   AVSC_DECLARE_FUNC(avs_prop_get_float_saturated);
   AVSC_DECLARE_FUNC(avs_prop_get_data_type_hint);
   AVSC_DECLARE_FUNC(avs_prop_set_data_h);
+  // alternative add_function returning data in byref AVS_Value
+  AVSC_DECLARE_FUNC(avs_add_function_r);
+
 
 };
 
@@ -1870,6 +1886,8 @@ avs_bits_per_component    constant 8 (8 bits/component)
   AVSC_LOAD_FUNC_OPT(avs_prop_get_float_saturated);
   AVSC_LOAD_FUNC_OPT(avs_prop_get_data_type_hint);
   AVSC_LOAD_FUNC_OPT(avs_prop_set_data_h);
+  // alternative add_function
+  AVSC_LOAD_FUNC_OPT(avs_add_function_r);
 
 #undef __AVSC_STRINGIFY
 #undef AVSC_STRINGIFY

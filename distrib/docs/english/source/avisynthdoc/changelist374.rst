@@ -100,6 +100,9 @@ Build environment, Interface
 - V11 interface: new 64 bit related AVSValue get and set function in C++ and C interface.
 - V11 interface: C interface supports Avisynth+ deep-copy dynamic arrays.
 - Added optional C plugin init function: to enable full 64 bit data to C plugins, they should implement ``avisynth_c_plugin_init2``.
+- V11: C interface add ``avs_add_function_r`` as an alternative to ``avs_add_function``, allowing the callback 
+  to return the result via a by-reference AVS_Value parameter instead of returning the AVS_Value as a struct. (Use case from Python)
+  See :ref:`c_avs_add_function_r`
 - V11 interface: add saturated int (int64->int) and float (double->float) frame property reading function to 
   IScriptInterface: ``propGetIntSaturated``, ``propGetFloatSaturated``
   and ``prop_get_int_saturated``, ``prop_get_float_saturated`` to C interface, like in VapourSynth API 4.
@@ -110,6 +113,7 @@ Build environment, Interface
   ``VSAPI4.mapSetData`` = ``Avisynth.propSetDataH``,
   ``VSAPI4.mapSetData3`` = ``Avisynth.propSetData``.
 - V11: New enum in headers: ``AVSPropDataTypeHint`` (VSAPI4: VSDataTypeHint)
+
 - Background modification: ``env->SaveString`` can store longer strings than ``INT_MAX`` if ``len`` is ``-1`` (autodetect length by null termination).
   Even on 32 bit systems ``size_t`` can exceed ``INT_MAX``. (nevertheless, the length parameter - when is given - is still int type)
 
@@ -172,7 +176,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2025/02/05 12:07:00 $
+$Date: 2025/02/24 13:53:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

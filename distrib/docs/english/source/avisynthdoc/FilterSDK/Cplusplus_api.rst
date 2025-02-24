@@ -675,6 +675,8 @@ function:
     // String literals are read only and at constant address and so need not be saved.
     }
 
+see also :ref:`c_avs_add_function` and :ref:`c_avs_add_function_r` in C API
+
 
 .. _cplusplus_makewritable:
 
@@ -2437,4 +2439,4 @@ ____
 
 Back to :doc:`FilterSDK`
 
-$Date: 2025/02/06 07:38:50 $
+$Date: 2025/02/24 13:53:00 $
