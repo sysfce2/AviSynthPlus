@@ -1,7 +1,7 @@
 // Avisynth v2.5.  Copyright 2002, 2005 Ben Rudiak-Gould et al.
 // Avisynth v2.6.  Copyright 2006 Klaus Post.
 // Avisynth v2.6.  Copyright 2009 Ian Brabham.
-// http://www.avisynth.org
+// http://avisynth.nl
 
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
