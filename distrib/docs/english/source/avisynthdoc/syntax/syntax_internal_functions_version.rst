@@ -34,7 +34,6 @@ command).
 *Examples:*
 ::
 
-    VersionString() ## "AviSynth 2.08 (avisynth.org) 22 nov. 2002"
     VersionString ## returns "AviSynth 2.60, build:Mar 31 2015 [16:38:54]"
     VersionString ## returns "AviSynth 2.61, build:May 17 2016 [16:06:18] VC2008Exp"
     VersionString ## returns "AviSynth+ 0.1, (r2508, MT, x86_64)"

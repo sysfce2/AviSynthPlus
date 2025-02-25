@@ -4,7 +4,7 @@ Avisynth Frequently Asked Questions
 
 **Remark**: a more recent version can be found
 `here <faq_sections.rst>`_ and at
-`<http://www.avisynth.org>`__
+`<http://avisynth.nl/index.php/Main_Page>`__
 
 The faq is divided into four sections: a general section, one related to
 frameserving, one related to filters and plugins, and one related to
@@ -141,9 +141,12 @@ A: The latest versions:
 | v2.05: `Loop <corefilters/loop.rst>`__ doesn't work when loading a clip without sound.
 | v2.07/v2.50: `SegmentedAviSource <corefilters/segmentedsource.rst>`__ doesn't load the avi's if the last empty segment isn't deleted.
 
-| v2.50 beta; `AviSynthTwoFiveZeroBugs <http://www.avisynth.org/index.php?page=AviSynthTwoFiveZeroBugs>`__.
-| v2.51 beta; `AviSynthTwoFiveOneBugs <http://www.avisynth.org/index.php?page=AviSynthTwoFiveOneBugs>`__.
-| v2.52; `AviSynthTwoFiveTwoBugs <http://www.avisynth.org/index.php?page=AviSynthTwoFiveTwoBugs>`__.
+| v2.50 beta
+| v2.51 beta
+| v2.52
+
+| v2.58: `Known Issues 2.58 <http://avisynth.nl/index.php/Known_Issues_v2.58>`__.
+| v2.6: `Known Issues 2.6 <http://avisynth.nl/index.php/Known_Issues>`__.
 
 other bugs can be found in the documentation on the project page, see `Q1.5 <#q1-5-where-can-i-find-documentation-about-avisynth>`__.
 
@@ -151,7 +154,7 @@ Q1.5: Where can I find documentation about AviSynth?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A: Documentation about the filters of AviSynth can be found on this
-site `<http://www.avisynth.org/>`__, and also
+site `<http://avisynth.nl/index.php/Main_Page>`__, and also
 on the `filters <corefilters.rst>`__ page. For a tutorial on avisynth
 scripting, have a look at `this page <syntax.rst>`__. **You should read
 these documents before posting to the forum** (but it's OK to post if
@@ -353,11 +356,10 @@ A: Several nice tools are available:
   - AVS Editor (Hotkey Ctrl+E): Just open your AVS and under tools select
     "script editor". Change something and press F5 to preview the video.
 
-- `AvisynthEditor <http://www.avisynth.org/index.php?page=AvisynthEditor>`__,
-  an advanced AviSynth script editor featuring syntax highlighting,
+- `AvisynthEditor, an advanced AviSynth script editor featuring syntax highlighting,
   auto-complete code and per versions plugin definitions files. Here is a
-  `screenshot <http://www.lalternative.org/img/AvisynthEditor.gif>`__.  It
-  can be found `here <http://www.lalternative.org/>`__.  Discussion can be
+  `screenshot <http://web.archive.org/web/20100617104422/http://www.lalternative.org/img/AvisynthEditor.gif>`__.  It
+  can be found `here <http://web.archive.org/web/20100810100731/http://www.lalternative.org/>`__.  Discussion can be
   found on `Doom9.org
   forum <http://forum.doom9.org/showthread.php?s=&threadid=49487>`__.
 
@@ -555,7 +557,7 @@ of TMPGEnc)?*
 -  Add "`ConvertToRGB24 <corefilters/convert.rst>`__\ ()" at the end of
    your AVS-file
 -  Install
-   `Huffyuv <http://shelob.mordor.net/dgraft/www.math.berkeley.edu/benrg/index.html>`__/`DivX5 <http://www.avisynth.org/index.php?page=DivX>`__
+   `Huffyuv <http://avisynth.nl/index.php/Huffyuv>`__/`DivX5 <http://avisynth.nl/index.php/DivX>`__
    codec so that it can do the decompression for you when loading an AVI
    in TMPGEnc.
 -  Install the
@@ -571,7 +573,7 @@ of TMPGEnc)?*
 -  If you're frameserving with AviSynth v2.5x the ResampleAudio trick
    doesn't work anymore because it doesn't add a silent audio stream to
    your video clip.  Instead make a script (called "addaudio.avsi") as
-   described `here <http://www.avisynth.org/index.php?page=AddAudio>`__,
+   described `here <http://avisynth.nl/index.php/AddAudio>`__,
    and put it in your plugin dir.
 
 *Encoders/players (like CCE SP v2.62/v2.64) will not read AVS-files ?*
@@ -965,7 +967,7 @@ missing, please feel free to add it to the list using the "Edit this
 document" link to the left. Most of these plugins work in YUY2. If you
 can't find the plugin (the attachments are still disabled), you can
 download the plugins at
-[`WarpEnterprises <http://www.avisynth.org/warpenterprises/>`__]
+[`WarpEnterprises <http://www.avisynth.nl/users/warpenterprises/>`__]
 homepage.
 
 | **Deinterlacing & Pulldown Removal:**
@@ -1003,11 +1005,11 @@ homepage.
 #. `"IT" (by
    thejam79) <http://members.tripod.co.jp/thejam79/IT_0051.zip>`__:
    Inverse telecine plugin. `Translation of
-   README <http://www.avisynth.org/index.php?page=IT.txt.en>`__
+   README <http://avisynth.nl/index.php/IT>`__
 #. `"AntiComb" (by
    ?) <http://www.geocities.co.jp/SiliconValley-Sunnyvale/3109/acomb05.zip>`__:
    This filter remove combing (interlace artifacts). `Translation of
-   README <http://www.avisynth.org/index.php?page=AntiComb>`__
+   README <https://web.archive.org/web/20050317011825/http://www.avisynth.org/index.php?page=AntiComb>`__
 #. See also Auto24FPS and AutoDeint in the
    `MiscPlugins <#MiscellaneousPlugins>`__ section below.
 
@@ -1188,7 +1190,7 @@ homepage.
 **MPA Decoder (source) Plugins:**
 
 #. `MPASource (by
-   Warpenterprises) <http://www.avisynth.org/warpenterprises>`__: A
+   Warpenterprises): A
    mp1/mp2/mp3 audio decoder plugin,
    `discussion <http://forum.doom9.org/showthread.php?s=&threadid=41435>`__.
 
@@ -1304,7 +1306,7 @@ missing, please feel free to add it to the list using the "Edit this
 document" link to the left. Most of these plugins work in YUY2. If you
 can't find the plugin (the attachments are still disable), you can
 download the plugins at
-[`WarpEnterprises <http://www.avisynth.org/users/warpenterprises/>`__\ ]
+[`WarpEnterprises <http://www.avisynth.nl/users/warpenterprises/>`__\ ]
 homepage.
 
 | **Deinterlacing & Pulldown Removal:**
@@ -1380,7 +1382,7 @@ homepage.
 #. `"IT" (by thejam79, recompiled by Donald
    Graft) <http://forum.doom9.org/showthread.php?s=&threadid=44872>`__:
    Inverse telecine plugin. `Translation of
-   README <http://www.avisynth.org/index.php?page=IT.txt.en>`__.\ *[YUY2]*
+   README <http://avisynth.nl/index.php/IT>`__.\ *[YUY2]*
 #. `GreedyHMA (by Tom
    Barry) <http://mywebpages.comcast.net/trbarry/downloads.rst>`__:
    DScaler's Greedy/HM algorithm code to perform pulldown matching,
@@ -1871,7 +1873,7 @@ Q4.1: Where can I download the latest version of scripts which import filters fr
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A: The AviSynth scripts are on the
-`ShareFunctions <http://www.avisynth.org/index.php?page=ShareFunctions>`__
+`Shared_functions <http://www.avisynth.nl/index.php/Shared_functions>`__
 page, or you can download a package called vdub\_filtersv15.zip from
 `<http://forum.doom9.org/showthread.php?s=&threadid=23804>`__
 or `<http://neuron2.net/hosted.html>`__
@@ -1945,4 +1947,4 @@ Example script which uses the function VD_SmartBob:
     VD_SmartBob(1, 0, 10, 1)
     ConvertBackToYUY2 # only when necessary
 
-$Date: 2008/07/09 19:35:37 $
+$Date: 2025-02-21 18:02:36-05:00 $

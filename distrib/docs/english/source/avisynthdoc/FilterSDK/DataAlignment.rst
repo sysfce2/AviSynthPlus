@@ -62,6 +62,6 @@ MM0`` ``...`` ``MOV EAX, [foo]`` ``MOV EDX, [foo+4]``
 
 Back to :doc:`AssemblerOptimizing <AssemblerOptimizing>`
 
-$Date: 2006/11/24 18:21:26 $
+$Date: 2025-02-24 21:32:57-05:00 $
 
-.. _DataAlignment: http://www.avisynth.org/DataAlignment
+.. _DataAlignment: http://avisynth.nl/index.php/Filter_SDK/Data_alignment

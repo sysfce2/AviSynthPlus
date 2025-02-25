@@ -10,7 +10,7 @@ License terms of AviSynth external filter SDK distribution
 
 AviSynth External Filter SDK package (compilation)
 is Copyright (c)2003-2006 Avisynth rev.2 Developers Team,
-http://sourceforge.net/projects/avisynth2, http://www.avisynth.org.
+http://sourceforge.net/projects/avisynth2, http://avisynth.nl/index.php/Main_Page.
 It is released with NO WARRANTY and freely usable/distributable
 under terms of GNU General Public License (GPL) version 2 or later.
 See full text of the license in `gpl.txt <../License/gpl.txt>`_ file.
@@ -24,7 +24,7 @@ Here are specific license terms of some parts of this package
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The header file 'avisynth.h' is a part of current release of Avisynth
-Copyright (c)2002 Ben Rudiak-Gould et al. http://www.avisynth.org.
+Copyright (c)2002 Ben Rudiak-Gould et al. http://avisynth.nl/index.php/Main_Page.
 It is distributed under terms of GNU General Public License (GPL)
 and contains license exceptions giving you additional permissions
 besides those granted in the GNU GPL.
@@ -91,10 +91,10 @@ Appeal to plugin authors
           With best personal regards,
           Avisynth rev.2 Developers Team
           http://sourceforge.net/projects/avisynth2,
-          http://www.avisynth.org
+          http://avisynth.nl/index.php/Main_Page
 
 ----
 
 Back to :doc:`FilterSDK <FilterSDK>`
 
-$Date: 2014/10/27 22:04:54 $
+$Date: 2025-02-21 17:28:23-05:00 $

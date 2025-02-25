@@ -19,6 +19,6 @@ assembler writing. This will mostly cover information on :doc:`MMX <MMX>` and
 
 Back to :doc:`FilterSDK <FilterSDK>`
 
-$Date: 2014/10/27 22:04:54 $
+$Date: 2025-02-24 21:13:22-05:00 $
 
-.. _AssemblerOptimizing: http://www.avisynth.org/AssemblerOptimizing
+.. _AssemblerOptimizing: http://avisynth.nl/index.php/Filter_SDK/Assembler_optimizing

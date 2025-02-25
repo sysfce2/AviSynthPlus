@@ -362,8 +362,8 @@ Changelog
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
 
-$Date: 2024/01/06 14:13:14 $
+$Date: 2025-02-25 15:25:59-05:00 $
 
-.. _planar: http://avisynth.org/mediawiki/Planar
+.. _planar: http://avisynth.nl/index.php/Planar
 .. _memory alignment used in the AVIFile output emulation (not yet written):
-    http://avisynth.org/mediawiki/index.php?title=AVIFile_output_emulation
+    http://avisynth.nl/index.php/AVIFile_output_emulation

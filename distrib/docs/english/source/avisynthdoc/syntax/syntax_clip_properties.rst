@@ -251,16 +251,16 @@ https://learn.microsoft.com/en-us/windows/win32/api/mmreg/ns-mmreg-waveformatext
 
 Back to :doc:`AviSynth Syntax <syntax_ref>`.
 
-$Date: 2025/02/05 10:55:00 $
+$Date: 2025-02-25 17:08:52-05:00 $
 
-.. _rgb: http://avisynth.org/mediawiki/RGB
-.. _rgb24: http://avisynth.org/mediawiki/RGB24
-.. _rgb32: http://avisynth.org/mediawiki/RGB32
-.. _yuv: http://avisynth.org/mediawiki/YUV
-.. _y8: http://avisynth.org/mediawiki/Y8
-.. _yuy2: http://avisynth.org/mediawiki/YUY2
-.. _yv12: http://avisynth.org/mediawiki/YV12
-.. _yv16: http://avisynth.org/mediawiki/YV16
-.. _yv24: http://avisynth.org/mediawiki/YV24
-.. _yv411: http://avisynth.org/mediawiki/YV411
-.. _planar: http://avisynth.org/mediawiki/Planar
+.. _rgb: http://avisynth.nl/index.php/RGB
+.. _rgb24: http://avisynth.nl/index.php/RGB24
+.. _rgb32: http://avisynth.nl/index.php/RGB32
+.. _yuv: http://avisynth.nl/index.php/YUV
+.. _y8: http://avisynth.nl/index.php/Y8
+.. _yuy2: http://avisynth.nl/index.php/YUY2
+.. _yv12: http://avisynth.nl/index.php/YV12
+.. _yv16: http://avisynth.nl/index.php/YV16
+.. _yv24: http://avisynth.nl/index.php/YV24
+.. _yv411: http://avisynth.nl/index.php/YV411
+.. _planar: http://avisynth.nl/index.php/Planar

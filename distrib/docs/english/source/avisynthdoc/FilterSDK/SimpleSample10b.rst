@@ -119,7 +119,7 @@ Here is the code:-
         const int dst_pitch = dst->GetPitch();
       // Requests pitch (length of a line) of the destination image.
       // For more information on pitch see:
-      // http://www.avisynth.org/index.php?page=WorkingWithImages
+      // http://avisynth.nl/index.php/Filter_SDK/Working_with_images
 
         const int dst_width = dst->GetRowSize();
       // Requests rowsize (number of used bytes in a line.
@@ -180,6 +180,6 @@ Here is the code:-
     }
 
 
-$Date: 2006/10/28 20:18:14 $
+$Date: 2025-02-24 21:05:09-05:00 $
 
-.. _SimpleSample 1.0b: http://www.avisynth.org/SimpleSample+1.0b
+.. _SimpleSample 1.0b: http://avisynth.nl/index.php/Filter_SDK/Simple_sample_1.0b

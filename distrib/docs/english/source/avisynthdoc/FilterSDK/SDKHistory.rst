@@ -14,7 +14,7 @@ creator).
 
 Preliminary version of AviSynth 2.0-2.5 FilterSDK documentation has been
 created at 2003 as a section of AviSynth online (wiki) documentation at the
-official AviSynth site `<http://www.avisynth.org>`_ (maintained by Richard Berg).
+official AviSynth site `<http://avisynth.nl/index.php/Main_Page>`_.
 
 Developers:
 
@@ -58,4 +58,4 @@ sometimes :)
 
 Back to :doc:`FilterSDK <FilterSDK>`
 
-$Date: 2014/10/27 22:04:54 $
+$Date: 2025-02-21 17:26:22-05:00 $

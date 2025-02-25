@@ -13,7 +13,7 @@ AviSynth License
 ----------------
 
 AviSynth v2.5 Copyright (C) 2002-2006  Ben Rudiak-Gould et al.
-`<http://www.avisynth.org>`_
+`<http://avisynth.nl/index.php/Main_Page>`_
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -72,7 +72,7 @@ Starting from 5 August 2007 the following documentation is released under the
 `CreativeCommons Attribution-ShareAlike 3.0 License`_ (abbreviated by "CC BY-
 SA 3.0", see also `full license terms`_):
 
--   All content of the AviSynth Wiki at avisynth.org, except the AviSynth
+-   All content of the AviSynth Wiki at avisynth.nl, except the AviSynth
     Filter SDK.
 -   The off-line documentation which is distributed with AviSynth itself,
     except any external plugin documentation which is copyright corresponding
@@ -94,14 +94,14 @@ and the off-line documentation provided that:
     This implies that if you distribute parts of the documentation (such as
     articles or scripts) your should refer to "AviSynth documentation Wiki"
     (or "AviSynth documentation") with link to these pages or to the main
-    site: avisynth.org. You must also keep attributions for the parts
+    site: avisynth.nl. You must also keep attributions for the parts
     attributed to other resources or authors.
 
 Besides above two requirements, you also agree that:
 
 -   attribution of your contributions will (or may) be given to AviSynth
     project in a form "AviSynth documentation" or "AviSynth documentation
-    Wiki" (avisynth.org).
+    Wiki" (avisynth.nl).
 -   your contribution (and main Wiki content) may be relicensed by the
     AviSynth developers team under a compatible license.
 -   you are also promising us that you wrote the contributions yourself,
@@ -136,7 +136,7 @@ project by anonymous sh0dan's friend.
 
 Permission to use and/or modify these logos is granted provided that your
 materials are related to AviSynth and you give an attribution to
-avisynth.org.
+avisynth.nl.
 
 
 Avisynth uses codes from following projects:
@@ -279,7 +279,7 @@ FFT part of SuperRQ and SSRC is based on General Purpose FFT package
 
 :doc:`Thanks also to everyone else contributing to the AviSynth project! <changelist>`
 
-$Date: 2007/08/16 05:09:08 $
+$Date: 2025-02-21 18:17:53-05:00 $
 
 .. _CreativeCommons Attribution-ShareAlike 3.0 License:
     http://creativecommons.org/licenses/by-sa/3.0/

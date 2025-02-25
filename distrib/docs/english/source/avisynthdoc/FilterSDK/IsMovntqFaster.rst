@@ -89,6 +89,6 @@ modules are involved, such as in an Avisynth filter graph.
 
 Back to :doc:`AssemblerOptimizing <AssemblerOptimizing>`
 
-$Date: 2006/11/24 18:21:26 $
+$Date: 2025-02-24 21:31:01-05:00 $
 
-.. _IsMovntqFaster: http://www.avisynth.org/IsMovntqFaster
+.. _IsMovntqFaster: http://avisynth.nl/index.php/Filter_SDK/Is_movntq_faster

@@ -283,7 +283,7 @@ AviSynth doesn't have a full fledged gui, but several tools are available:
 
 | :doc:`Main Page <faq_sections>` | **General Info** | :doc:`Loading Clips <faq_loading_clips>` | :doc:`Loading Scripts <faq_frameserving>` | :doc:`Common Error Messages <faq_common_errors>` | :doc:`Processing Different Content <faq_different_types_content>` | :doc:`Dealing with YV12 <faq_yv12>` | :doc:`Processing with Virtualdub Plugins <faq_using_virtualdub_plugins>` |
 
-$Date: 2008/10/26 14:18:53 $
+$Date: 2025-02-25 17:11:30-05:00 $
 
 .. _Lukes homepage: http://neuron2.net/LVG/avisynth.html
 .. _mirror of his homepage:
@@ -292,9 +292,9 @@ $Date: 2008/10/26 14:18:53 $
 .. _on Sourceforge: http://sourceforge.net/project/showfiles.php?group_id=57023
 .. _AviSynth project page:
     http://sourceforge.net/tracker/?atid=482673&group_id=57023
-.. _AviSynth's website: http://avisynth.org/mediawiki/Main_Page
-.. _AviSynth v3: http://avisynth.org/mediawiki/AviSynth_v3
-.. _LoadOldPlugins: http://avisynth.org/mediawiki/LoadOldPlugins
+.. _AviSynth's website: http://avisynth.nl/index.php/Main_Page
+.. _AviSynth v3: http://avisynth.nl/index.php/AviSynth_v3
+.. _LoadOldPlugins: http://avisynth.nl/index.php/LoadOldPlugins
 .. _on lalternative: http://www.lalternative.org
 .. _in this thread: http://forum.doom9.org/showthread.php?s=&threadid=45181
 .. _Prime95: http://www.mersenne.org/freesoft.htm
@@ -303,7 +303,7 @@ $Date: 2008/10/26 14:18:53 $
 .. _xvid_encraw: http://forum.doom9.org/showthread.php?t=98469
 .. _mp4box: http://kurtnoise.free.fr/index.php?dir=mp4tools/
 .. _YAMB: http://forum.doom9.org/showthread.php?t=115459
-.. _VirtualDubMod: http://avisynth.org/mediawiki/VirtualDubMod
+.. _VirtualDubMod: http://avisynth.nl/index.php/VirtualDubMod
 .. _Here is a screenshot:
     http://www.lalternative.org/img/AvisynthEditor.gif
 .. _Doom9.org forum:
@@ -313,5 +313,5 @@ $Date: 2008/10/26 14:18:53 $
 .. _SwiftAVS (by Snollygoster):
     http://sourceforge.net/project/showfiles.php?group_id=74272
 .. _discussion: http://forum.doom9.org/showthread.php?s=&threadid=48326
-.. _AvsP: http://avisynth.org/qwerpoi/Download.html
+.. _AvsP: http://avisynth.nl/users/qwerpoi/
 .. _here: http://forum.doom9.org/showthread.php?t=129385

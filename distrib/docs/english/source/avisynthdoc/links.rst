@@ -2,7 +2,7 @@
 AviSynth Internet Links
 =======================
 
-`Official AviSynth site www.avisynth.org (maintained by Richard Berg)`_
+`Official AviSynth site avisynth.nl/index.php/Main_Page`_
 
 `Official AviSynth project at sourceforge (source codes and binaries
 download)`_
@@ -31,8 +31,8 @@ guide)
 
 $Date: 2006/12/17 10:28:23 $
 
-.. _Official AviSynth site www.avisynth.org (maintained by Richard Berg):
-    http://www.avisynth.org
+.. _Official AviSynth site avisynth.nl/index.php/Main_Page:
+    http://avisynth.nl/index.php/Main_Page
 .. _Official AviSynth project at sourceforge (source codes and binaries
     download): http://sourceforge.net/projects/avisynth2/
 .. _AviSynth Usage forum at doom9 site:
@@ -44,9 +44,9 @@ $Date: 2006/12/17 10:28:23 $
     http://sourceforge.net/projects/virtualdubmod/
 .. _AVSEdit Editor description:
     http://www.geocities.com/wilbertdijkhof/guides/avsedit/AVSEdit.htm
-.. _AvsP Editor homepage (by qwerpoi): http://www.avisynth.org/qwerpoi
+.. _AvsP Editor homepage (by qwerpoi): http://avisynth.nl/users/qwerpoi/
 .. _AviSynth filter collection, some utilities too (maintained by
-    WarpEnterprises): http://www.avisynth.org/warpenterprises
+    WarpEnterprises): http://avisynth.nl/users/warpenterprises
 .. _Command-line and batch utilities for AviSynth:
     http://forum.doom9.org/showthread.php?t=96451
 .. _New plugins and utilities for AviSynth:

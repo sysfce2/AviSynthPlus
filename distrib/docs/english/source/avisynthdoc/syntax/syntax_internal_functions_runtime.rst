@@ -217,7 +217,7 @@ Changelog
 | AviSynth 2.61  | added offset parameters                                    |
 +----------------+------------------------------------------------------------+
 
-$Date: 2024/01/12 15:32:00 $
+$Date: 2025-02-25 17:10:48-05:00 $
 
-.. _YV12: http://avisynth.org/mediawiki/YV12
-.. _colorspace: http://avisynth.org/mediawiki/Color_spaces
+.. _YV12: http://avisynth.nl/index.php/YV12
+.. _colorspace: http://avisynth.nl/index.php/Color_spaces

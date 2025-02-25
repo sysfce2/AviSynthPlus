@@ -251,10 +251,10 @@ A very good place to get help is the `Doom9 Forums`_. Be sure to search the
 forum before asking questions. Many topics have been covered there! - Then
 enter into the discussion.
 
-$Date: 2009/09/12 20:57:20 $
+$Date: 2025-02-25 14:12:56-05:00 $
 
-.. _Huffyuv: http://www.avisynth.org/mediawiki/wiki/huffyuv.htm
+.. _Huffyuv: http://avisynth.nl/index.php/Huffyuv
 .. _Doom9 Forums: http://forum.doom9.org/forumdisplay.php?s=&forumid=33
-.. _Virtualdub: http://www.avisynth.org/mediawiki/wiki/virtualdub.htm
-.. _VirtualDubMod: http://www.avisynth.org/mediawiki/wiki/virtualdubmod.htm
+.. _Virtualdub: http://avisynth.nl/index.php/VirtualDub
+.. _VirtualDubMod: http://avisynth.nl/index.php/VirtualDubMod
 .. _SourceForge Project page: http://sourceforge.net/projects/avisynth2

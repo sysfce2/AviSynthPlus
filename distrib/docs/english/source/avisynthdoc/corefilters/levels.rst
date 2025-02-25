@@ -223,7 +223,7 @@ Changelog
     | AviSynth 2.5.3  | Added ``coring`` parameter.                                    |
     +-----------------+----------------------------------------------------------------+
 
-$Date: 2022/04/17 08:19:32 $
+$Date: 2025-02-25 17:40:16-05:00 $
 
 .. _AvsPmod:
     https://forum.doom9.org/showthread.php?t=175823
@@ -236,6 +236,6 @@ $Date: 2022/04/17 08:19:32 $
 .. _always use coring=false:
     https://web.archive.org/web/20160825211112/http://forum.doom9.org/showthread.php?p=1722885#post1722885
 .. _ordered dithering:
-    http://avisynth.org/mediawiki/Ordered_dithering
+    http://avisynth.nl/index.php/Ordered_dithering
 .. _banding:
     https://en.wikipedia.org/wiki/Colour_banding

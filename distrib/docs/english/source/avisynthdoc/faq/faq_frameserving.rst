@@ -247,7 +247,7 @@ AviSynth (`discussion here`_).
 
 | :doc:`Main Page <faq_sections>` | :doc:`General Info <faq_general_info>` | :doc:`Loading Clips <faq_loading_clips>` | **Loading Scripts** | :doc:`Common Error Messages <faq_common_errors>` | :doc:`Processing Different Content <faq_different_types_content>` | :doc:`Dealing with YV12 <faq_yv12>` | :doc:`Processing with Virtualdub Plugins <faq_using_virtualdub_plugins>` |
 
-$Date: 2009/09/12 20:57:20 $
+$Date: 2025-02-25 17:18:34-05:00 $
 
 .. _Lukes homepage: http:///neuron2.net/lvg/frameserving.html
 .. _Bens site: http://math.berkeley.edu/~benrg/avisynth-premiere.html
@@ -264,12 +264,12 @@ $Date: 2009/09/12 20:57:20 $
 .. _FFDShow: http://sourceforge.net/project/showfiles.php?group_id=173941
 .. _Proxy-codec AVS2AVI: http://hmd.c58.ru/files.html
 .. _Avs2YUV: http://akuvian.org/src/avisynth/avs2yuv/
-.. _Huffyuv: http://avisynth.org/mediawiki/Huffyuv
-.. _DivX: http://avisynth.org/mediawiki/DivX
+.. _Huffyuv: http://avisynth.nl/index.php/Huffyuv
+.. _DivX: http://avisynth.nl/index.php/DivX
 .. _ReadAVS plugin: http://www.math.berkeley.edu/~benrg/avisynth/tmpgenc-readavs.zip
-.. _AddAudio: http://avisynth.org/mediawiki/AddAudio
-.. _vfapi: http://avisynth.org/mediawiki/Vfapi
-.. _makeAVIS: http://avisynth.org/mediawiki/MakeAVIS
+.. _AddAudio: http://avisynth.nl/index.php/AddAudio
+.. _vfapi: http://avisynth.nl/index.php/Vfapi
+.. _makeAVIS: http://avisynth.nl/index.php/MakeAVIS
 .. _colorspace conversion errors:
     http://forum.doom9.org/showthread.php?s=&threadid=27932
 .. _updated WMCmd.vbs script: http://www.citizeninsomniac.com/WMV/#WMCmd

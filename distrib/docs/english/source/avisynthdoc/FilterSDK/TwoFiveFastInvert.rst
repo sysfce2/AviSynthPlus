@@ -85,6 +85,6 @@ very well. However this is not the case when using :doc:`MMX <MMX>` or :doc:`Int
 
 Back to :doc:`AviSynthTwoFiveSDK <AviSynthTwoFiveSDK>`
 
-$Date: 2013/04/22 07:18:44 $
+$Date: 2025-02-24 21:10:18-05:00 $
 
-.. _TwoFiveFastInvert: http://www.avisynth.org/TwoFiveFastInvert
+.. _TwoFiveFastInvert: http://avisynth.nl/index.php/Filter_SDK/Two-Five_fast_Invert

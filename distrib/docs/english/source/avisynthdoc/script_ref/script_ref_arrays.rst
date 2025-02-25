@@ -529,9 +529,9 @@ of the AVSLib documentation.
 
 Back to :doc:`scripting reference <script_ref>`.
 
-$Date: 2024/01/11 14:40:00 $
+$Date: 2025-02-25 17:26:15-05:00 $
 
 .. _AVSLib: http://avslib.sourceforge.net/
 .. _Download: http://sourceforge.net/projects/avslib/
-.. _Dissolve: http://avisynth.org/mediawiki/Dissolve
+.. _Dissolve: http://avisynth.nl/index.php/Dissolve
 .. _examples section: http://avslib.sourceforge.net/examples/index.html

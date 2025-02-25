@@ -81,6 +81,6 @@
 
 Back to :doc:`AviSynthTwoFiveSDK <AviSynthTwoFiveSDK>`
 
-$Date: 2006/11/24 18:21:26 $
+$Date: 2025-02-24 20:59:36-05:00 $
 
-.. _TwoFiveInvert: http://www.avisynth.org/TwoFiveInvert
+.. _TwoFiveInvert: http://avisynth.nl/index.php/Filter_SDK/Two-Five_Invert

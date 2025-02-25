@@ -285,7 +285,7 @@ MMX is always the best way.
 
 Back to :doc:`AssemblerOptimizing <AssemblerOptimizing>`
 
-$Date: 2006/11/24 18:21:26 $
+$Date: 2025-02-24 21:03:21-05:00 $
 
 .. _IntermediateMmxOptimization:
-    http://www.avisynth.org/IntermediateMmxOptimization
+    http://avisynth.nl/index.php/Filter_SDK/Intermediate_MMX_optimization

@@ -204,9 +204,9 @@ stream's framerate). I never used it, so I'm not sure how good this is. Look
 
 | :doc:`Main Page <faq_sections>` | :doc:`General Info <faq_general_info>` | :doc:`Loading Clips <faq_loading_clips>` | :doc:`Loading Scripts <faq_frameserving>` | :doc:`Common Error Messages <faq_common_errors>` | **Processing Different Content** | :doc:`Dealing with YV12 <faq_yv12>` | :doc:`Processing with Virtualdub Plugins <faq_using_virtualdub_plugins>` |
 
-$Date: 2008/07/02 18:57:42 $
+$Date: 2025-02-25 17:15:45-05:00 $
 
-.. _DirectShowSource: http://avisynth.org/mediawiki/DirectShowSource
+.. _DirectShowSource: http://avisynth.nl/index.php/DirectShowSource
 .. _Analog Capture Guide: http://www.doom9.org/index.html?/capture/introduction.html
 .. _Force Film, IVTC, and Deinterlacing: http://www.doom9.org/ivtc-tut.htm
 .. _in these guides:

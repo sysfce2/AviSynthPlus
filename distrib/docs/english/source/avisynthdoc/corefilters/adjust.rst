@@ -77,6 +77,6 @@ Thus alpha pixels values become a=(255-a)
 | v2.60      | Added dither.                  |
 +------------+--------------------------------+
 
-$Date: 2011/12/04 15:28:44 $
+$Date: 2025-02-25 17:40:49-05:00 $
 
-.. _ordered dithering: http://avisynth.org/mediawiki/Ordered_dithering
+.. _ordered dithering: http://avisynth.nl/index.php/Ordered_dithering

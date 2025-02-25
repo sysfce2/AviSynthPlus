@@ -155,7 +155,7 @@ corresponding documentation if necessary.
 
 | :doc:`Main Page <faq_sections>` | :doc:`General Info <faq_general_info>` | :doc:`Loading Clips <faq_loading_clips>` | :doc:`Loading Scripts <faq_frameserving>` | **Common Error Messages** | :doc:`Processing Different Content <faq_different_types_content>` | :doc:`Dealing with YV12 <faq_yv12>` | :doc:`Processing with Virtualdub Plugins <faq_using_virtualdub_plugins>` |
 
-$Date: 2010/11/28 18:47:26 $
+$Date: 2025-02-25 17:17:18-05:00 $
 
 .. _XviD: http://www.xvid.org/
 .. _XviD builds of Koepi: http://www.xvid.org/
@@ -170,7 +170,7 @@ $Date: 2010/11/28 18:47:26 $
 .. _ffdshow: http://ffdshow-tryout.sourceforge.net/
 .. _Cedocida codec: http://forum.doom9.org/showthread.php?t=94458
 .. _in this thread: http://forum.doom9.org/showthread.php?t=131687
-.. _GraphEdit: http://avisynth.org/mediawiki/GraphEdit
+.. _GraphEdit: http://avisynth.nl/index.php/GraphEdit
 .. _8 bit character ANSI text: http://en.wikipedia.org/wiki/ASCII
 .. _[4]: http://forum.doom9.org/showthread.php?t=110467
 .. _[5]: http://forum.doom9.org/showthread.php?t=131419

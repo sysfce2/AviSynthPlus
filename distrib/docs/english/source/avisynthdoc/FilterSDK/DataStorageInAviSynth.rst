@@ -169,9 +169,9 @@ This page is a edited summary of `[this thread at Doom9's forum]`_
 
 Back to :doc:`FilterSDK`
 
-$Date: 2014/10/27 22:04:54 $
+$Date: 2025-02-24 21:29:46-05:00 $
 
 .. _DataStorageInAviSynth:
-    http://avisynth.org/mediawiki/Filter_SDK/Data_storage
+    http://avisynth.nl/index.php/Filter_SDK/Data_storage
 .. _[this thread at Doom9's forum]:
     http://forum.doom9.org/showthread.php?s=&threadid=40413&highlight=YV12

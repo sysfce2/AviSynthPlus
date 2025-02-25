@@ -87,7 +87,7 @@ A general introduction to :doc:`WorkingWithImages <WorkingWithImages>`.
 
 Back to :doc:`AviSynthTwoFiveSDK <AviSynthTwoFiveSDK>`
 
-$Date: 2006/11/08 20:40:17 $
+$Date: 2025-02-24 21:11:35-05:00 $
 
 .. _WorkingWithPlanarImages:
-    http://www.avisynth.org/WorkingWithPlanarImages
+    http://avisynth.nl/index.php/Filter_SDK/Working_with_Planar_Images

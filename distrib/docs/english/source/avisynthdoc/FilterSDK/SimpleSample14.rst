@@ -133,7 +133,7 @@
         const int dst_pitch = dst->GetPitch();
       // Requests pitch (length of a line) of the destination image.
       // For more information on pitch see:
-      // http://www.avisynth.org/index.php?page=WorkingWithImages
+      // http://avisynth.nl/index.php/Filter_SDK/Working_with_images
         // (short version - pitch is always equal to or greater than width to allow for seriously fast assembly code)
 
         const int dst_width = dst->GetRowSize();
@@ -268,6 +268,6 @@
 
 Back to :doc:`SimpleSample <SimpleSample>`
 
-$Date: 2006/10/28 20:18:15 $
+$Date: 2025-02-24 21:06:05-05:00 $
 
-.. _SimpleSample 1.4: http://www.avisynth.org/SimpleSample+1.4
+.. _SimpleSample 1.4: http://avisynth.nl/index.php/Filter_SDK/Simple_sample_1.4

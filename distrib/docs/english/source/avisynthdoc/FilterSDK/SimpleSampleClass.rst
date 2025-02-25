@@ -311,6 +311,6 @@
 
 Back to :doc:`SimpleSample <SimpleSample>`
 
-$Date: 2010/03/13 14:52:05 $
+$Date: 2025-02-24 21:02:41-05:00 $
 
-.. _SimpleSampleClass : http://www.avisynth.org/SimpleSample
+.. _SimpleSampleClass : http://avisynth.nl/index.php/Filter_SDK/SimpleSample

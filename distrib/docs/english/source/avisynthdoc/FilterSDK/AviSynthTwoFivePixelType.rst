@@ -45,7 +45,7 @@ See also :doc:`WorkingWithImages <WorkingWithImages>`.
 
 Back to :doc:`AviSynthTwoFiveSDK <AviSynthTwoFiveSDK>`
 
-$Date: 2006/11/24 18:21:25 $
+$Date: 2025-02-24 21:25:59-05:00 $
 
 .. _AviSynthTwoFivePixelType:
-    http://www.avisynth.org/AviSynthTwoFivePixelType
+    http://avisynth.nl/index.php/Filter_SDK/Two-Five_pixel_type

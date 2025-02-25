@@ -47,11 +47,11 @@ Note that black RGB=$000000 will be converted to Y=16, U=V=128 if the
 colorformat of the input clip is YUV, since the default color conversion RGB
 [0,255] -> YUV [16,235] is used.
 
-$Date: 2010/02/27 14:44:45 $
+$Date: 2025-02-25 17:09:47-05:00 $
 
-.. _BlankClip: http://avisynth.org/mediawiki/BlankClip
-.. _Letterbox: http://avisynth.org/mediawiki/Letterbox
-.. _AddBorders: http://avisynth.org/mediawiki/AddBorders
-.. _FadeXXX: http://avisynth.org/mediawiki/Fade
-.. _RGB: http://avisynth.org/mediawiki/RGB
-.. _YUV: http://avisynth.org/mediawiki/YUV
+.. _BlankClip: http://avisynth.nl/index.php/BlankClip
+.. _Letterbox: http://avisynth.nl/index.php/Letterbox
+.. _AddBorders: http://avisynth.nl/index.php/AddBorders
+.. _FadeXXX: http://avisynth.nl/index.php/Fade
+.. _RGB: http://avisynth.nl/index.php/RGB
+.. _YUV: http://avisynth.nl/index.php/YUV

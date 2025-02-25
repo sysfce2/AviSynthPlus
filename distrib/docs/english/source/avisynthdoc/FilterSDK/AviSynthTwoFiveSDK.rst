@@ -17,6 +17,6 @@ are listed here, but the new methods can be found in the new avisynth.h.
 
 Back to :doc:`FilterSDK <FilterSDK>`
 
-$Date: 2006/11/24 18:21:25 $
+$Date: 2025-02-24 20:58:32-05:00 $
 
-.. _AviSynthTwoFiveSDK: http://www.avisynth.org/AviSynthTwoFiveSDK
+.. _AviSynthTwoFiveSDK: http://avisynth.nl/index.php/Filter_SDK/Two-Five_SDK

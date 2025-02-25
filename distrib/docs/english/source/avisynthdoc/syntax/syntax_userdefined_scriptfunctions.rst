@@ -131,17 +131,14 @@ Related Links
 -   `Shared functions`_. An ever growing collection of shared script
     functions created by the members of the AviSynth community.
 
-{TEMP: http://www.avisynth.org/ShareFunctions}
-
--   `Conditional filters and script functions`_. A collection of highly
+-   :doc:`Conditional filters and script functions <../corefilters/conditionalfilter>`. A collection of highly
     useful conditional filters implemented as user defined script functions.
 
 | {TEMP:
-| http://www.avisynth.org/ExportingSingleImage,
-| http://www.avisynth.org/HowToApplyFilterToManySingleFrames,
+| https://web.archive.org/web/20090129025123/http://www.avisynth.org/ExportingSingleImage,
+| https://web.archive.org/web/20090129091050/http://www.avisynth.org/HowToApplyFilterToManySingleFrames,
 | Perhaps make decent functions from the last two?}
 
-$Date: 2013/03/19 18:10:27 $
+$Date: 2025-02-25 17:06:49-05:00 $
 
-.. _Shared functions: http://avisynth.org/mediawiki/Shared_functions
-.. _Conditional filters and script functions: http://avisynth.org/mediawiki/index.php?title=Shared_functions/Conditional&action=edit
+.. _Shared functions: http://avisynth.nl/index.php/Shared_functions

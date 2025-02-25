@@ -5,7 +5,7 @@ Colorimetry
 When playing back video content, several issues might go wrong. The levels
 could be wrong, resulting in washed out colors (black is displayed as dark
 gray and white is displayed as light gray). This is described in more detail
-`here <http://avisynth.org/mediawiki/Luminance_levels>`_. The other issue is
+`here <http://avisynth.nl/index.php/Luminance_levels>`_. The other issue is
 a slight distortion in color (which often looks like a small change in
 brightness) and this will be described here.
 
@@ -323,7 +323,7 @@ References
 -   `<http://forum.doom9.org/showthread.php?p=1089979>`_
 -   `<http://forum.doom9.org/showthread.php?t=133982#post1090068>`_
 
-$Date: 2010/04/04 16:46:38 $
+$Date: 2025-02-25 17:29:24-05:00 $
 
 .. _thread: http://forum.doom9.org/showthread.php?t=82217&page=24
 .. _Haali Media Splitter: http://haali.cs.msu.ru/mkv/

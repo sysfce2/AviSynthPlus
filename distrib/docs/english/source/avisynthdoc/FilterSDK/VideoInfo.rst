@@ -939,5 +939,5 @@ Back to :doc:`FilterSDK`
 
 $Date: 2023/02/15 12:28:50 $
 
-.. _RGB: http://avisynth.org/mediawiki/RGB
+.. _RGB: http://avisynth.nl/index.php/RGB
 .. _BMP frame: http://en.wikipedia.org/wiki/BMP_file_format

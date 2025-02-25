@@ -194,14 +194,14 @@ although it can be used when possible. It is made in such a way, that new
 APIs can be added to the core, like ffmpeg and gstreamer. Also here many new
 colorformats will be added: YV24, RGB45 and YV45 which are 15 bits depth
 versions of RGB24 and YV24. Direct streaming will be supported, and many
-other new things. The progress can be found `on avisynth.org`_. The
+other new things. The progress can be found `on avisynth.nl`_. The
 discussion takes place at irc.freenode.org#avisynth and `on Doom9`_.
 
-$Date: 2008/12/22 01:26:05 $
+$Date: 2025-02-25 17:47:02-05:00 $
 
-.. _there: http://avisynth.org/mediawiki/Changelist
+.. _there: http://avisynth.nl/index.php/Changelist
 .. _sourceforge:
     http://sourceforge.net/tracker/?atid=482673&group_id=57023&func=browse
 .. _in this thread: http://forum.doom9.org/showthread.php?t=98585
-.. _on avisynth.org: http://www.avisynth.org/AviSynth30
+.. _on avisynth.nl: http://avisynth.nl/index.php/AviSynth_v3
 .. _on Doom9: http://forum.doom9.org/showthread.php?p=721468

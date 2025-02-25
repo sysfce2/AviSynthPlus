@@ -230,7 +230,7 @@ encoding to cfr - 120 fps
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 For this you'll need `TIVTC and avi_tc`_. Start by creating a
-`decimated avi with timecodes.txt <http://www.avisynth.org/VariableFrameRateVideo>`_,
+`decimated avi with timecodes.txt <http://avisynth.nl/index.php/VFR>`_,
 but skip the muxing. Then open tc-gui's tc2cfr tab and add your files or
 use this command line:
 
@@ -258,7 +258,7 @@ and required timecode file. An example is given below using the
 in the `TIVTC`_ package. See their respective documentations to learn more
 about tweaking them.
 
-The `DeDup <http://avisynth.org/warpenterprises/>`_ plugin removes duplicate frames but does not change the
+The `DeDup <https://web.archive.org/web/20230116225249/http://avisynth.nl/users/warpenterprises/>`_ plugin removes duplicate frames but does not change the
 framerate (leaving jerky video if not decimated first), so it won't be
 included. It can still be used after either method by using their timecodes
 as input to DeDup.

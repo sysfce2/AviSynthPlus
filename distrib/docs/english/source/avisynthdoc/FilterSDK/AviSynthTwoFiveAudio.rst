@@ -60,7 +60,7 @@ For more info, refer to the new audio.cpp and avisynth.h
 
 Back to :doc:`AviSynthTwoFiveSDK <AviSynthTwoFiveSDK>`
 
-$Date: 2006/11/24 18:21:25 $
+$Date: 2025-02-24 21:30:24-05:00 $
 
 .. _AviSynthTwoFiveAudio:
-    http://www.avisynth.org/AviSynthTwoFiveAudio
+    http://avisynth.nl/index.php/Filter_SDK/Two-Five_Audio

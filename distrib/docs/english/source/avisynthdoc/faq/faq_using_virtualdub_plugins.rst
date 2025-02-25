@@ -104,8 +104,8 @@ use the following script:
 
 | :doc:`Main Page <faq_sections>` | :doc:`General Info <faq_general_info>` | :doc:`Loading Clips <faq_loading_clips>` | :doc:`Loading Scripts <faq_frameserving>` | :doc:`Common Error Messages <faq_common_errors>` | :doc:`Processing Different Content <faq_different_types_content>` | :doc:`Dealing with YV12 <faq_yv12>` | **Processing with Virtualdub Plugins** |
 
-$Date: 2009/09/12 20:57:20 $
+$Date: 2025-02-25 14:12:56-05:00 $
 
-.. _Shared_functions: http://avisynth.org/mediawiki/Shared_functions
+.. _Shared_functions: http://avisynth.nl/index.php/Shared_functions
 .. _[1]: http://neuron2.net/hosted.html (http://neuron2.net/hosted.html)
 .. _Donald's homepage: http://neuron2.net/bob.html

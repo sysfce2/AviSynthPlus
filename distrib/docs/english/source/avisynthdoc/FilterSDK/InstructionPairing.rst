@@ -232,7 +232,7 @@ false dependency on the source register on PIII and Athlon.)
 
 Back to :doc:`AssemblerOptimizing <AssemblerOptimizing>`
 
-$Date: 2006/11/24 18:21:26 $
+$Date: 2025-02-24 21:07:58-05:00 $
 
-.. _InstructionPairing: http://www.avisynth.org/InstructionPairing
+.. _InstructionPairing: http://avisynth.nl/index.php/Filter_SDK/Instruction_pairing
 .. _[Agner Fog's optimization tome]: http://www.agner.org/assem/

@@ -799,7 +799,7 @@ TODO...
 References
 ----------
 
-[1] `<http://www.avisynth.org/stickboy/ternary_eval.html>`_
+[1] `<http://avisynth.nl/users/stickboy/ternary_eval.html>`_
 
 [2] `<http://forum.doom9.org/showthread.php?t=102929>`_
 
@@ -809,7 +809,7 @@ References
 
 Back to :doc:`scripting reference <script_ref>`.
 
-$Date: 2023/10/18 14:44:00 $
+$Date: 2025-02-25 17:28:13-05:00 $
 
 .. _GScript: http://forum.doom9.org/showthread.php?t=147846
 .. _StrReplace():
