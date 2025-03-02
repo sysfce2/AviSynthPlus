@@ -98,6 +98,7 @@ Build environment, Interface
 - avisynth.h: add ListAutoloadDirs() to internal interface declarations
 - CMakeList.txt to accept Intel C++ Compiler 2025
 - V11 interface: new 64 bit related AVSValue get and set function in C++ and C interface.
+- V11 interface: C Interface: implement API for all getter/setter/typecheck for AVS_Value
 - V11 interface: C interface supports Avisynth+ deep-copy dynamic arrays.
 - Added optional C plugin init function: to enable full 64 bit data to C plugins, they should implement ``avisynth_c_plugin_init2``.
 - V11: C interface add ``avs_add_function_r`` as an alternative to ``avs_add_function``, allowing the callback 
@@ -119,6 +120,7 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix #429 CPU-CUDA transfer would copy less bytes than vfb data_size
 - Fix: ScriptClip and other runtime functions / frame prop read would crash if called from Avs2.5 or Pre-v11 C 
   IScriptEnvironment, which would happen is there is an old C plugin within ScriptClip
   The C part was an intermediate development issue, but for Avs 2.5 plugins probably it always crashed.
@@ -172,6 +174,7 @@ Documentation
 - update compile_avsplus.rst online docs with Intel C++ Compiler 2025
 - Interface V11 changes: see :ref:`api_v11_whats_new` for more details.
 - Document 64 bit capable functions and changes in old ones in millions of other rst pages.
+- Document C interface (in progress)
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_

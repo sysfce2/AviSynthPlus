@@ -11,9 +11,129 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist374.html
 and
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html#what-s-new-in-the-api-v11
 
-20250224 3.7.3 r4197
+20250302 3.7.3 r----
 --------------------
+- Change all references to avisynth.org to avisynth.nl (source and doc)
+- Remove the duplicated and outdated FilterSDK htmls from source tree. We have them in rst source.
+- Fix #429 CPU-CUDA transfer would copy less bytes than vfb data_size
+  (Builds with CUDA device support are not official, mainly experimental)
+- C Interface: implement API for all getter/setter/typecheck for AVS_Value
+  Setters are all accept AVS_Value by reference, like avs_set_to_clip did so far. (unlike avs_new_xxx inline helpers, which returns AVS_Value directly)
+  
+  avs_val_defined = avs_defined
+  avs_val_is_xxx = avs_is_xxx
+  avs_set_to_xxx ~ avs_new_value_xxx
+  avs_set_to_void = AVS_void constant direct assignment
+  avs_get_as_xxx = avs_as_xxx
+  avs_get_array_size = avs_array_size
+  avs_get_array_elt = avs_array_elt
+  
+  Example usage:
+  
+      AVS_Value x;
 
+      bool val_b, val_b2;
+      avs_set_to_void(&x);
+      val_b = avs_val_defined(x);
+      printf("defined test. defined (no) = %d\n", val_b);
+      avs_set_to_double(&x, 1.0);
+      val_b = avs_val_defined(x);
+      printf("defined test. defined (yes) = %d\n", val_b);
+
+      bool expected_b = true;
+      avs_set_to_bool(&x, expected_b); val_b = avs_val_is_bool(x);
+      printf("bool test. is_bool = %d, val (%d) = %d\n", val_b, expected_b, avs_get_as_bool(x));
+
+      int expected_i = -12;
+      avs_set_to_int(&x, expected_i); val_b = avs_val_is_int(x);
+      printf("int test. is_int = %d, val (%d) = %d\n", val_b, expected_i, avs_get_as_int(x));
+
+      int64_t expected_l = 0x80000000ULL; // if int: negative
+      avs_set_to_long(&x, expected_l); val_b = avs_val_is_int(x); val_b2 = avs_val_is_long_strict(x);
+      printf("long test. is_int = %d, is_long_strict = %d, val (%"PRId64") = %"PRId64"\n", val_b, val_b2, expected_l, avs_get_as_long(x));
+      avs_release_value(x); // necessary for int64_t (32 bit systems)
+
+      float expected_f = 3.141592653589793f;
+      avs_set_to_float(&x, expected_f); val_b = avs_val_is_float(x); val_b2 = avs_val_is_floatf_strict(x);
+      printf("float test. is_float = %d, is_floatf_strict = %d, val (%.16f) = %.16f\n", val_b, val_b2, expected_f, avs_get_as_float(x));
+
+      double expected_d = 3.141592653589793;
+      avs_set_to_double(&x, expected_d); val_b = avs_val_is_float(x); val_b2 = avs_val_is_floatf_strict(x);
+      printf("double test. is_float = %d, is_floatf_strict = %d, val (%.16f) = %.16f\n", val_b, val_b2, expected_d, avs_get_as_float(x));
+      avs_release_value(x); // necessary for double (32 bit systems)
+
+      const char *expected_s = "Hello";
+      avs_set_to_string(&x, expected_s); val_b = avs_val_is_string(x); val_b2 = avs_val_is_error(x);
+      printf("string test. is_string = %d, is_error = %d, val (%s) = %s\n", val_b, val_b2, expected_s, avs_get_as_string(x));
+
+      AVS_Clip *dstclip2;
+      dstclip2 = avs_copy_clip(DestClip);
+      avs_set_to_clip(&x, dstclip2);
+      val_b = avs_val_is_clip(x); val_b2 = avs_val_is_error(x);
+      printf("clip test. is_clip = %d, is_error = %d\n", val_b, val_b2);
+      AVS_Clip *clipback = avs_get_as_clip(x, Env);
+      avs_release_clip(clipback);
+      printf("released clipback\n");
+      avs_release_value(x);
+      printf("released clip-type AVS_Value\n");
+      avs_release_clip(dstclip2);
+      printf("released dstclip2\n");
+
+      AVS_Value tmp[2]; avs_set_to_int(&tmp[0], 111); avs_set_to_double(&tmp[1], 3.141592653589793);
+
+      // C array
+      AVS_Value args = avs_new_value_array(tmp, 2);
+      // no release, args links directly to C allocated tmp
+      printf("len = %d, [0] = %"PRId64", [1] = %lf\n", avs_get_array_size(args), avs_get_as_long(avs_get_array_elt(args, 0)), avs_get_as_float(avs_get_array_elt(args, 1)));
+      // Avisynth array, array is allocated, elements of tmp are copied
+      AVS_Value args_newarray;
+      avs_set_to_array(&args_newarray, tmp, 2);
+      printf("newarr len = %d, [0] = %"PRId64", [1] = %lf\n", avs_get_array_size(args_newarray), avs_get_as_long(avs_get_array_elt(args_newarray, 0)), avs_get_as_float(avs_get_array_elt(args_newarray, 1)));
+
+      avs_release_value(tmp[0]);
+      avs_release_value(tmp[1]);
+
+      AVS_Value argscopy;
+      avs_copy_value(&argscopy, args_newarray);
+
+      avs_release_value(args_newarray); // necessary for Avisynth allocated arrays
+      printf("args_newarray released\n");
+
+      printf("argscopy len = %d, [0] = %"PRId64", [1] = %lf\n", avs_get_array_size(argscopy), avs_get_as_long(avs_get_array_elt(argscopy, 0)), avs_get_as_float(avs_get_array_elt(argscopy, 1)));
+
+      avs_release_value(argscopy);
+      printf("argscopy released\n");
+
+      avs_release_value(args_newarray);
+      printf("args_newarray released again (crash!)\n");
+
+      avs_release_value(args);
+      printf("C array args released (crash!)\n");
+
+  Output
+  
+    defined test. defined (no) = 0
+    defined test. defined (yes) = 1
+    bool test. is_bool = 1, val (1) = 1
+    int test. is_int = 1, val (-12) = -12
+    long test. is_int = 1, is_long_strict = 1, val (2147483648) = 2147483648
+    float test. is_float = 1, is_floatf_strict = 1, val (3.1415927410125732) = 3.1415927410125732
+    double test. is_float = 1, is_floatf_strict = 0, val (3.1415926535897931) = 3.1415926535897931
+    string test. is_string = 1, is_error = 0, val (Hello) = Hello
+    clip test. is_clip = 1, is_error = 0
+    released clipback
+    released clip-type AVS_Value
+    released dstclip2
+    len = 2, [0] = 111, [1] = 3.141593
+    newarr len = 2, [0] = 111, [1] = 3.141593
+    args_newarray released
+    argscopy len = 2, [0] = 111, [1] = 3.141593
+    argscopy released
+    (crash) and (crash)
+
+
+20250224 3.7.3 r4198
+--------------------
 - C Interface: Add avs_add_function_r as an alternative to avs_add_function, allowing the callback to 
   return the result via a by-reference AVS_Value parameter instead of returning the AVS_Value as a struct. 
   (Use case from Python)
