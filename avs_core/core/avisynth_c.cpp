@@ -1,5 +1,5 @@
-// Avisynth C Interface Version 0.20 stdcall
-// Copyright 2003 Kevin Atkinson
+// Avisynth C Interface
+// Based on Copyright 2003 Kevin Atkinson
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -927,38 +927,49 @@ AVS_Clip * AVSC_CC avs_take_clip(AVS_Value v, AVS_ScriptEnvironment * env)
   return c;
 }
 
-// v11
+// v11 API AVS_Value type checkers.
+extern "C"
+int AVSC_CC avs_val_defined(AVS_Value v) { return ((const AVSValue*)(&v))->Defined() ? 1 : 0; }
+extern "C"
+int AVSC_CC avs_val_is_clip(AVS_Value v) { return ((const AVSValue*)(&v))->IsClip() ? 1 : 0; }
+extern "C"
+int AVSC_CC avs_val_is_bool(AVS_Value v) { return ((const AVSValue*)(&v))->IsBool() ? 1 : 0; }
+extern "C"
+int AVSC_CC avs_val_is_int(AVS_Value v) { return ((const AVSValue*)(&v))->IsInt() ? 1 : 0; }
+extern "C"
+int AVSC_CC avs_val_is_long_strict(AVS_Value v) { return ((const AVSValue*)(&v))->IsLongStrict() ? 1 : 0; }
+extern "C"
+int AVSC_CC avs_val_is_float(AVS_Value v) { return ((const AVSValue*)(&v))->IsFloat() ? 1 : 0; }
+extern "C"
+int AVSC_CC avs_val_is_floatf_strict(AVS_Value v) { return ((const AVSValue*)(&v))->IsFloatfStrict() ? 1 : 0; }
+extern "C"
+int AVSC_CC avs_val_is_string(AVS_Value v) { return ((const AVSValue*)(&v))->IsString() ? 1 : 0; }
+extern "C"
+int AVSC_CC avs_val_is_array(AVS_Value v) { return ((const AVSValue*)(&v))->IsArray() ? 1 : 0; }
+extern "C"
+int AVSC_CC avs_val_is_error(AVS_Value v) { return v.type == 'e' ? 1 : 0; }
+
+
+// v11 API AVS_Value setters
 extern "C"
 void AVSC_CC avs_set_to_error(AVS_Value* v, const char* v0) { new(v) AVSValue(v0); /*string->error*/ v->type = 'e'; }
-
-// v11
 extern "C"
-void AVSC_CC avs_set_to_bool(AVS_Value* v, int v0) { new(v) AVSValue(v0 == 0); }
-
-// v11
+void AVSC_CC avs_set_to_bool(AVS_Value* v, int v0) { new(v) AVSValue(v0 != 0); }
 extern "C"
 void AVSC_CC avs_set_to_int(AVS_Value* v, int v0) { new(v) AVSValue(v0); }
-
-// v11
 extern "C"
 void AVSC_CC avs_set_to_float(AVS_Value* v, float v0) { new(v) AVSValue(v0); }
-
-// v11
 extern "C"
 void AVSC_CC avs_set_to_string(AVS_Value* v, const char* v0) { new(v) AVSValue(v0); }
-
-// v11
 extern "C"
 void AVSC_CC avs_set_to_double(AVS_Value* v, double d) { new(v) AVSValue(d); }
-
-// v11
 extern "C"
 void AVSC_CC avs_set_to_long(AVS_Value* v, int64_t l) { new(v) AVSValue(l); }
-
-// v11
 extern "C"
-void AVSC_CC avs_set_to_array_dyn(AVS_Value* v, AVS_Value* src, int size) { new(v) AVSValue(src, size); }
-
+void AVSC_CC avs_set_to_array(AVS_Value* v, AVS_Value* src, int size) { new(v) AVSValue((AVSValue *)src, size); }
+extern "C"
+void AVSC_CC avs_set_to_void(AVS_Value* v) { new(v) AVSValue(); }
+// existed pre V11
 extern "C"
 void AVSC_CC avs_set_to_clip(AVS_Value* v, AVS_Clip* c) { new(v) AVSValue(c->clip); }
 
@@ -988,7 +999,7 @@ void AVSC_CC avs_copy_value(AVS_Value * dest, AVS_Value src)
 // - avs_copy_value 
 // - avs_set_to_double (x86)
 // - avs_set_to_long (x86)
-// - avs_set_to_array_dyn
+// - avs_set_to_array, avs_set_to_clip
 // - in general: all avs_set_xxx values
 
 // Note:
@@ -1005,7 +1016,7 @@ void AVSC_CC avs_release_value(AVS_Value v)
 #if 0
   // This would prevent crashes when a C client calls it for an array.
   // However, since Avisynth+ arrays can be returned by avs_invoke, avs_copy_value,
-  // and avs_set_to_array_dyn, this exemption is no longer valid.
+  // and avs_set_to_array, this exemption is no longer valid.
   // This rule was not explicitly written earlier and must be enforced in clients/plugins,
   // see the Python wrapper issue in AvsPmod, which was fixed.
   if (((AVSValue*)&v)->IsArray()) {
@@ -1016,30 +1027,45 @@ void AVSC_CC avs_release_value(AVS_Value v)
   ((AVSValue*)&v)->~AVSValue();
 }
 
-// v11, header still has avs_as_bool as inline
+// API AVS_Value getters, like INLINE versions
 extern "C"
-int AVSC_CC avs_api_as_bool(AVS_Value v) { return ((AVSValue*)&v)->AsBool() ? 1 : 0; }
-// v11, header still has avs_as_int as inline
+int AVSC_CC avs_get_as_bool(AVS_Value v) { return ((AVSValue*)&v)->AsBool() ? 1 : 0; }
+
 extern "C"
-int AVSC_CC avs_api_as_int(AVS_Value v) { return ((AVSValue*)&v)->AsInt(); }
-// v11, header still has avs_as_long as inline
+AVS_Clip* AVSC_CC avs_get_as_clip(AVS_Value v, AVS_ScriptEnvironment* env) {
+  // like the existing avs_take_clip, to fit in the avs_get_as_xxxx line
+  AVS_Clip* c = new AVS_Clip;
+  c->env = env->env;
+  c->clip = (IClip*)(v.d.clip);
+  return c;
+}
+
 extern "C"
-int64_t AVSC_CC avs_api_as_long(AVS_Value v) { return ((AVSValue*)&v)->AsLong(); }
-// v11, header still has avs_as_string as inline
+int AVSC_CC avs_get_as_int(AVS_Value v) { return ((AVSValue*)&v)->AsInt(); }
 extern "C"
-const char* AVSC_CC avs_api_as_string(AVS_Value v) { return ((AVSValue*)&v)->AsString(); }
-// v11, header still has avs_as_float as inline
+int64_t AVSC_CC avs_get_as_long(AVS_Value v) { return ((AVSValue*)&v)->AsLong(); }
 extern "C"
-double AVSC_CC avs_api_as_float(AVS_Value v) { return ((AVSValue*)&v)->AsFloat(); }
-// v11, header still has avs_as_error as inline
+const char* AVSC_CC avs_get_as_string(AVS_Value v) { return ((AVSValue*)&v)->AsString(); }
 extern "C"
-const char* AVSC_CC avs_api_as_error(AVS_Value v) {
+double AVSC_CC avs_get_as_float(AVS_Value v) { return ((AVSValue*)&v)->AsFloat(); }
+extern "C"
+const char* AVSC_CC avs_get_as_error(AVS_Value v) {
   if (v.type == 'e') {
     v.type = 's'; // 'e'rror is unknown in c++ api
     return ((AVSValue*)&v)->AsString();
   }
   return nullptr;
 }
+extern "C"
+const AVS_Value * AVSC_CC avs_get_as_array(AVS_Value v) { return v.d.array; }
+extern "C"
+AVS_Value AVSC_CC avs_get_array_elt(AVS_Value v, int index) 
+{ // just a dumb data copy, no ref counting, no resource handling
+  return avs_is_array(v) ? v.d.array[index] : v;
+}
+extern "C"
+int AVSC_CC avs_get_array_size(AVS_Value v) { return ((AVSValue*)&v)->ArraySize(); }
+
 
 //////////////////////////////////////////////////////////////////
 //
@@ -1205,13 +1231,13 @@ int AVSC_CC avs_function_exists(AVS_ScriptEnvironment * p, const char* name)
 }
 
 extern "C"
-AVS_Value AVSC_CC avs_invoke(AVS_ScriptEnvironment * p, const char* name, AVS_Value args, const char** arg_names)
+AVS_Value AVSC_CC avs_invoke(AVS_ScriptEnvironment* p, const char* name, AVS_Value args, const char** arg_names)
 {
   AVS_Value v = { 0,0 };
   p->error = 0;
   try {
     // AVSValue(*(AVSValue*)&args) is deep-copying input array
-    
+
     // Invoke has a special InvokePreV11C variant if pre V11 C interface 
     // detected, which converts a possible 64 bit result to 32 bit one for
     // compatibility. double->float, long->int. Nothing should be done here.

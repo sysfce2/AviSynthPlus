@@ -133,14 +133,19 @@ EXPORTS
   avs_set_to_float = _avs_set_to_float@8
   avs_set_to_double = _avs_set_to_double@12
   avs_set_to_long = _avs_set_to_long@12
-  avs_set_to_array_dyn = _avs_set_to_array_dyn@12
+  avs_set_to_array = _avs_set_to_array@12
+  avs_set_to_void = _avs_set_to_void@4
 
-  avs_api_as_bool = _avs_api_as_bool@8
-  avs_api_as_int = _avs_api_as_int@8
-  avs_api_as_long = _avs_api_as_long@8
-  avs_api_as_string = _avs_api_as_string@8
-  avs_api_as_float = _avs_api_as_float@8
-  avs_api_as_error = _avs_api_as_error@8
+  avs_get_as_bool = _avs_get_as_bool@8
+  avs_get_as_clip = _avs_get_as_clip@12
+  avs_get_as_int = _avs_get_as_int@8
+  avs_get_as_long = _avs_get_as_long@8
+  avs_get_as_string = _avs_get_as_string@8
+  avs_get_as_float = _avs_get_as_float@8
+  avs_get_as_error = _avs_get_as_error@8
+  avs_get_as_array = _avs_get_as_array@8
+  avs_get_array_elt = _avs_get_array_elt@12
+  avs_get_array_size = _avs_get_array_size@8
 
   avs_prop_get_int_saturated = _avs_prop_get_int_saturated@20
   avs_prop_get_float_saturated = _avs_prop_get_float_saturated@20
@@ -148,4 +153,15 @@ EXPORTS
   avs_prop_set_data_h = _avs_prop_set_data_h@28
 
   avs_add_function_r = _avs_add_function_r@20
+
+  avs_val_defined = _avs_val_defined@8
+  avs_val_is_clip = _avs_val_is_clip@8
+  avs_val_is_bool = _avs_val_is_bool@8
+  avs_val_is_int = _avs_val_is_int@8
+  avs_val_is_long_strict = _avs_val_is_long_strict@8
+  avs_val_is_float = _avs_val_is_float@8
+  avs_val_is_floatf_strict = _avs_val_is_floatf_strict@8
+  avs_val_is_string = _avs_val_is_string@8
+  avs_val_is_array = _avs_val_is_array@8
+  avs_val_is_error = _avs_val_is_error@8
 
