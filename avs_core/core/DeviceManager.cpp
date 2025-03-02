@@ -137,7 +137,7 @@ size_t GetFrameTail(const PVideoFrame& vf)
   if (vf->GetPitch(PLANAR_A)) {
     tail = max(tail, vf->GetOffset(PLANAR_A) + vf->GetPitch(PLANAR_A) * vf->GetHeight(PLANAR_A));
   }
-  return min(tail, vf->GetFrameBuffer()->GetDataSize());
+  return min(tail, vf->GetFrameBuffer()->GetDataSize() + (int)GetFrameHead(vf));
 }
 
 class CPUDevice : public Device {
@@ -451,8 +451,8 @@ public:
 
   virtual void GetAlignmentRequirement(int* memoryAlignment, int* pitchAlignment)
   {
-    *memoryAlignment = prop.textureAlignment;
-    *pitchAlignment = prop.texturePitchAlignment;
+    *memoryAlignment = (int)prop.textureAlignment;
+    *pitchAlignment = (int)prop.texturePitchAlignment;
   }
 };
 #endif
