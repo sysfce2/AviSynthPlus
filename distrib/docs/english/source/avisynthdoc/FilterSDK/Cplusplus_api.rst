@@ -484,11 +484,17 @@ has a buffer set aside for storing strings, which is expanded as
 needed. The strings are not deleted until the ScriptEnvironment
 instance goes away (when the script file is closed, usually). This is
 usually all the permanence that is needed, since all related filter
-instances will already be gone by then. The returned pointer is not
-const-qualified, and you're welcome to write to it, as long as you
-don't stray beyond the bounds of the string.
+instances will already be gone by then.
 
-Example usage (converting a string to upper case):
+Though the returned pointer is not const-qualified, don't overwrite the buffer,
+due to the string cacheing introduced after Avisynth 3.7.3. 
+
+Until Avisynth 3.7.3 you could safely do this, the documentation said:
+"you're welcome to write to it, as long as you don't stray beyond the 
+bounds of the string."
+
+This (formerly valid) example usage is no longer safe (converting a string to upper case)
+and was replaced in Avisynth core:
 ::
 
     AVSValue UCase(AVSValue args, void*, IScriptEnvironment* env) {
@@ -1128,7 +1134,8 @@ DeleteScriptEnvironment, v5
 
 
 Provides a method to delete the ScriptEnvironment which is created with
-CreateScriptEnvironment.
+CreateScriptEnvironment. End of the world, end of everything. AtExit procedures are 
+called during the destroy as a side effect.
 
 
 .. _cplusplus_applymessage:
@@ -1947,11 +1954,19 @@ GetVersion
     virtual int __stdcall GetVersion() { return AVISYNTH_INTERFACE_VERSION; }
 
 
-GetVersion returns the interface version of the loaded avisynth.dll:
+GetVersion returns the interface version of the Clip instance, but
+it would show, against which avisynth.h version was the filter built.
 
 AVISYNTH_INTERFACE_VERSION = 1 (v1.0-v2.0.8), 2 (v2.5.0-v2.5.5), 3
 (v2.5.6-v2.5.8), 5 (v2.6.0a1-v2.6.0a5), 6 (v2.6.0), 8 (Avisynth+ from a specific build on) [version 4 doesn't exist].
-2021 note: this returns the interface version of how the plugin was built against actual avisynth header.
+
+This only returns the interface version of how the plugin was built against 
+an actual avisynth header.
+
+Since in Avisynth the closest (pseudo) clip is Avisynth's internal MT or cache-guard clip,
+it usually returns the real Avisynth version, but for non-cached, non-MT  filters it may 
+show the filter's avisynth header version.
+
 In interface V9 (working version 8.1) use GetEnvProperty(AEP_INTERFACE_VERSION) and GetEnvProperty(AEP_INTERFACE_BUGFIX) for this task.
 
 
@@ -2031,19 +2046,15 @@ SetCacheHints
 
 ::
 
-    void __stdcall SetCacheHints(int cachehints, int frame_range) = 0 ;
+    int __stdcall SetCacheHints(int cachehints, int frame_range) = 0 ;
     // We do not pass cache requests upwards, only to the next filter.
-
-    // int __stdcall SetCacheHints(int cachehints, int frame_range) = 0 ;
-    // We do not pass cache requests upwards, only to the next filter.
-
 
 Avisynth+: frame cacheing was completely rewritten compared to Avisynth 5 or 6.
-Specifying cache ranges are not relevant.
+Specifying cache ranges are no longer relevant.
 
-Avisynth classic up to v6:
+Historical part, up to Avisynth 2.6:
 
-SetCacheHints should be used in filters that request multiple frames
+SetCacheHints could be used in filters that request multiple frames
 from any single PClip source per input GetFrame call. frame_range is
 maximal 21.
 
@@ -2097,10 +2108,6 @@ MT_MULTI_INSTANCE and MT_SERIALIZED (not MT friendly) can be returned.
       MT_SPECIAL_MT = 4, // do not use, test only
       MT_MODE_COUNT = 5
     }; 
-
-| // TODO - describe input and output for v5 //
-| http://forum.doom9.org/showthread.php?p=1595750#post1595750
-
 
 .. _cplusplus_getvideoinfo:
 
