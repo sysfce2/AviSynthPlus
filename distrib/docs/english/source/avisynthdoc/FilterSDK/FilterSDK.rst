@@ -355,9 +355,11 @@ What's new in the API V11
           
         - C interface
 
-          - New getter API calls: ``avs_api_as_long``, ``avs_api_as_int``, ``avs_api_as_float``
-            and the rest: ``avs_api_as_bool``, ``avs_api_as_string``, ``avs_api_as_error``
-
+          - New getter API calls: ``avs_get_as_long``, ``avs_get_as_int``, ``avs_get_as_float``
+            and the rest: ``avs_get_as_bool``, ``avs_get_as_string``, ``avs_get_as_error``, ``avs_get_as_array``
+          
+          - New API call for array size query: ``avs_get_array_size``
+          - New API call for array (or array-like value) content: ``avs_get_array_elt``
           - Modified INLINE typecheck and getter helpers for 64-bit data type awareness:
             
             * ``avs_is_int``, ``avs_is_float``
@@ -373,11 +375,21 @@ What's new in the API V11
           - New setter API calls: 
             
             * ``avs_set_to_double``, ``avs_set_to_long``
-            * ``avs_set_to_array_dyn`` (deep arrays, deep copy, like in AviSynth+)
+            * ``avs_set_to_array`` (deep arrays, deep copy, standard in AviSynth+)
               (Note: avs_release_value and avs_copy_value are required for destruct or copy arrays)
           - API version of existing INLINE value setters (``new_value_xxx``) for the rest value types, to make the world round:
             
             * ``avs_set_to_error``, ``avs_set_to_bool``, ``avs_set_to_int``, ``avs_set_to_float``, ``avs_set_to_string``
+            
+          - new API function for assign a 'v'oid undefined value to AVS_Value
+          
+            * ``avs_set_to_void``
+            
+          - API version of existing INLINE type checks
+          
+            * ``avs_val_defined``, ``avs_val_is_error``, ``avs_val_is_bool``, ``avs_val_is_int``, ``avs_val_is_string``,
+              ``avs_val_is_float``, ``avs_val_is_floatf_strict``, ``avs_val_is_long_strict``, ``avs_val_is_array``
+           
           - New optional plugin entry point: ``avisynth_c_plugin_init2``
             
             * A C plugin signals to AviSynth that it is V11 interface (64-bit data) ready by implementing ``avisynth_c_plugin_init2`` as well.
@@ -394,6 +406,9 @@ What's new in the API V11
           - New ``avs_prop_get_int_saturated`` and ``avs_prop_get_float_saturated``
           - New ``avs_prop_get_data_type_hint`` and ``avs_prop_set_data_h``
           - New constants AVS_PROPDATATYPEHINT_UNKNOWN, AVS_PROPDATATYPEHINT_BINARY and AVS_PROPDATATYPEHINT_UTF8
+          
+          - New alternative avs_add_function_r and APPLYFUNCR functions for cases where the callback cannot return 
+            AVS_Value struct (functions/filters written Python / ctypes)
 
           - Deprecated inline helper functions. 
             
