@@ -38,6 +38,7 @@
 #include <string>
 #include <cstring>
 #include "../convert/convert_helper.h"
+#include <regex>
 
 
 /*****************************************************************************
@@ -1161,8 +1162,38 @@ static bool PropNamesToArray(const char* filtername, AVSValue& _propNames, std::
   for (int i = 0; i < size; i++) {
     const char* name = _propNames[i].AsString();
     if (name == nullptr || !*name)
-      env->ThrowError("%s error: list contains empty name", filtername);
-    propNames[i] = name;
+      env->ThrowError("%s error: list contains empty name.", filtername);
+
+    // Recognize 
+    // - wildcards: "Myprops_*" or "ab*cd"
+    // - regex with ^ $ delimiters
+
+    std::string nameStr(name);
+
+    // Check if it's already a regex
+    if (nameStr.front() == '^' && nameStr.back() == '$') {
+      try {
+        std::regex re(nameStr);
+      }
+      catch (const std::regex_error&) {
+        env->ThrowError("%s error: invalid regex string.", filtername);
+      }
+    }
+    else {
+      // Convert wildcard to regex
+      if (nameStr.find('*') != std::string::npos) {
+        nameStr = std::regex_replace(nameStr, std::regex("\\*"), ".*");
+        // Add regex delimiters
+        nameStr = "^" + nameStr + "$";
+      }
+      try {
+        std::regex re(nameStr);
+      }
+      catch (const std::regex_error&) {
+        env->ThrowError("%s error: invalid regex string while converting * wildcard.", filtername);
+      }
+    }
+    propNames[i] = nameStr;
   }
   return true;
 }
@@ -1205,9 +1236,24 @@ PVideoFrame __stdcall DeleteProperty::GetFrame(int n, IScriptEnvironment* env)
   }
   */
   // delete selected names
-  for (auto &s : propNames) {
+  // positive list
+  for (auto& s : propNames) {
     const char* key = s.c_str();
-    env->propDeleteKey(avsmap, key); // 0 is success, ignored
+    if (s.front() == '^' && s.back() == '$') {
+      // positive regex list 
+      const int numKeys = env->propNumKeys(avsmap);
+      int index = 0;
+      for (int i = 0; i < numKeys; i++) {
+        const char* key = env->propGetKey(avsmap, index);
+        if (std::regex_match(key, std::regex(s)))
+          env->propDeleteKey(avsmap, key); // 0 is success, ignored, index does not change
+        else
+          index++; 
+      }
+    }
+    else {
+      env->propDeleteKey(avsmap, key); // 0 is success, ignored
+    }
   }
 
   return frame;
@@ -1384,7 +1430,20 @@ PVideoFrame __stdcall CopyProperties::GetFrame(int n, IScriptEnvironment* env)
         // positive list
         for (auto& s : propNames) {
           const char* key = s.c_str();
-          CopyOneFrameProp(key, mapv, avsmap_from, env);
+          if (s.front() == '^' && s.back() == '$') {
+            // positive regex list 
+            const int numKeys = env->propNumKeys(avsmap_from);
+            for (int i = 0; i < numKeys; i++) {
+              const char* key = env->propGetKey(avsmap_from, i);
+              if (std::regex_match(key, std::regex(s))) {
+                // regex match -> copy
+                CopyOneFrameProp(key, mapv, avsmap_from, env);
+              }
+            }
+          }
+          else {
+            CopyOneFrameProp(key, mapv, avsmap_from, env);
+          }
         }
       }
       else {
@@ -1392,7 +1451,21 @@ PVideoFrame __stdcall CopyProperties::GetFrame(int n, IScriptEnvironment* env)
         const int numKeys = env->propNumKeys(avsmap_from);
         for (int i = 0; i < numKeys; i++) {
           const char* key = env->propGetKey(avsmap_from, i);
-          if (std::find(propNames.begin(), propNames.end(), key) == propNames.end()) {
+          bool matchFound = false;
+          for (auto& s : propNames) {
+            if (s.front() == '^' && s.back() == '$') {
+              // negative regex list
+              if (std::regex_match(key, std::regex(s))) {
+                matchFound = true;
+                break;
+              }
+            }
+            else if (s == key) {
+              matchFound = true;
+              break;
+            }
+          }
+          if (!matchFound) {
             // not in negative list -> copy
             CopyOneFrameProp(key, mapv, avsmap_from, env);
           }
@@ -1410,14 +1483,29 @@ PVideoFrame __stdcall CopyProperties::GetFrame(int n, IScriptEnvironment* env)
   for (int i = 0; i < numKeys; i++) {
     const char* key = env->propGetKey(avsmap_from, i);
     // merge if no list specified or name is in the list
-    bool need_copy;
+
+    bool need_copy = true;
+
     if (propNames_defined) {
-      need_copy = std::find(propNames.begin(), propNames.end(), key) != propNames.end();
-      if (exclude)
+      need_copy = false;
+      for (const auto& s : propNames) {
+        if (s.front() == '^' && s.back() == '$') {
+          // regex match
+          if (std::regex_match(key, std::regex(s))) {
+            need_copy = true;
+            break;
+          }
+        }
+        else if (s == key) {
+          // plain string match
+          need_copy = true;
+          break;
+        }
+      }
+      if (exclude) {
         need_copy = !need_copy;
+      }
     }
-    else
-      need_copy = true;
 
     if(need_copy) {
       env->propDeleteKey(mapv, key); // delete if existed
@@ -1433,11 +1521,13 @@ PVideoFrame __stdcall CopyProperties::GetFrame(int n, IScriptEnvironment* env)
 
 ShowProperties::ShowProperties(PClip _child, int size, bool showtype, 
   const char *_font, int _text_color, int _halo_color, bool _bold,
-  int _x, int _y, int _align, IScriptEnvironment* env)
+  int _x, int _y, int _align, AVSValue _propNames, IScriptEnvironment* env)
   : GenericVideoFilter(_child), size(size), showtype(showtype),
   fontname(_font), textcolor(_text_color), halocolor(_halo_color), bold(_bold),
   x(_x), y(_y), align(_align)
-{ }
+{
+  propNames_defined = PropNamesToArray("propShow", _propNames, propNames, env);
+}
 
 ShowProperties::~ShowProperties() { }
 
@@ -1453,48 +1543,70 @@ PVideoFrame __stdcall ShowProperties::GetFrame(int n, IScriptEnvironment* env)
     return frame;
 
   std::stringstream ss;
-  ss << "Number of keys = " << std::to_string(propNum) << std::endl;
+  if (!propNames_defined) // no header displayed if filter is given
+    ss << "Number of keys = " << std::to_string(propNum) << std::endl;
 
   for (int index = 0; index < propNum; index++) {
     const char* propName = env->propGetKey(avsmap, index);
-    std::string propName_s = propName;
 
-    const char propType = env->propGetType(avsmap, propName);
-    ss << propName;
-    if (showtype)
-      ss << " (" << propType << ")";
-    ss << " = ";
-
-    const int propNumElements = env->propNumElements(avsmap, propName);
-
-    int error;
-
-    if (propType == 'u') {
-      // unSet: undefined value
-      ss << "<unset!>";
-    }
-    else if (propType == 'i') {
-      if (propNumElements > 1)
-        ss << "[";
-      const int64_t* arr = env->propGetIntArray(avsmap, propName, &error);
-      for (int i = 0; i < propNumElements; ++i) {
-        ss << std::to_string(arr[i]);
-        if (i < propNumElements - 1)
-          ss << ", ";
-      }
-      if (propNumElements > 1)
-        ss << "]";
-
-      if (propName_s == "_ColorRange") {
-        ss << " = ";
-        switch (arr[0]) {
-        case ColorRange_e::AVS_RANGE_LIMITED: ss << "limited"; break;
-        case ColorRange_e::AVS_RANGE_FULL: ss << "full"; break;
+    bool display = true;
+    if (propNames_defined) {
+      display = false;
+      for (const auto& s : propNames) {
+        if (s.front() == '^' && s.back() == '$') {
+          // regex match
+          if (std::regex_match(propName, std::regex(s))) {
+            display = true;
+            break;
+          }
+        }
+        else if (s == propName) {
+          // plain string match
+          display = true;
+          break;
         }
       }
-      else if (propName_s == "_Matrix") {
-        ss << " = ";
-        switch (arr[0]) {
+    }
+
+    if (display) {
+      std::string propName_s = propName;
+
+      const char propType = env->propGetType(avsmap, propName);
+      ss << propName;
+      if (showtype)
+        ss << " (" << propType << ")";
+      ss << " = ";
+
+      const int propNumElements = env->propNumElements(avsmap, propName);
+
+      int error;
+
+      if (propType == 'u') {
+        // unSet: undefined value
+        ss << "<unset!>";
+      }
+      else if (propType == 'i') {
+        if (propNumElements > 1)
+          ss << "[";
+        const int64_t* arr = env->propGetIntArray(avsmap, propName, &error);
+        for (int i = 0; i < propNumElements; ++i) {
+          ss << std::to_string(arr[i]);
+          if (i < propNumElements - 1)
+            ss << ", ";
+        }
+        if (propNumElements > 1)
+          ss << "]";
+
+        if (propName_s == "_ColorRange") {
+          ss << " = ";
+          switch (arr[0]) {
+          case ColorRange_e::AVS_RANGE_LIMITED: ss << "limited"; break;
+          case ColorRange_e::AVS_RANGE_FULL: ss << "full"; break;
+          }
+        }
+        else if (propName_s == "_Matrix") {
+          ss << " = ";
+          switch (arr[0]) {
           case Matrix_e::AVS_MATRIX_RGB: ss << "rgb"; break;
           case Matrix_e::AVS_MATRIX_BT709: ss << "709"; break;
           case Matrix_e::AVS_MATRIX_UNSPECIFIED: ss << "unspec"; break;
@@ -1509,68 +1621,69 @@ PVideoFrame __stdcall ShowProperties::GetFrame(int n, IScriptEnvironment* env)
           case Matrix_e::AVS_MATRIX_CHROMATICITY_DERIVED_NCL: ss << "chromancl"; break;
           case Matrix_e::AVS_MATRIX_ICTCP: ss << "ictcp"; break;
           case Matrix_e::AVS_MATRIX_AVERAGE: ss << "AVERAGE-Legacy Avisynth"; break;
-        }
-      }
-      else if (propName_s == "_ChromaLocation") {
-        ss << " = ";
-        switch (arr[0]) {
-        case ChromaLocation_e::AVS_CHROMA_LEFT: ss << "left (mpeg2)"; break;
-        case ChromaLocation_e::AVS_CHROMA_CENTER: ss << "center (mpeg1, jpeg)"; break;
-        case ChromaLocation_e::AVS_CHROMA_TOP_LEFT: ss << "top_left"; break;
-        case ChromaLocation_e::AVS_CHROMA_TOP: ss << "top"; break;
-        case ChromaLocation_e::AVS_CHROMA_BOTTOM_LEFT: ss << "bottom_left"; break;
-        case ChromaLocation_e::AVS_CHROMA_BOTTOM: ss << "bottom"; break;
-        case ChromaLocation_e::AVS_CHROMA_DV: ss << "dv-Legacy Avisynth"; break;
-        }
-      }
-    }
-    else if (propType == 'f') {
-      if (propNumElements > 1)
-        ss << "[";
-      const double* arr = env->propGetFloatArray(avsmap, propName, &error);
-      for (int i = 0; i < propNumElements; ++i) {
-        ss << std::to_string(arr[i]);
-        if (i < propNumElements - 1)
-          ss << ", ";
-      }
-      if (propNumElements > 1)
-        ss << "]";
-    }
-    else if (propType == 's') {
-      if (propNumElements > 1)
-        ss << "[";
-      for (int i = 0; i < propNumElements; ++i) {
-        const char* s = env->propGetData(avsmap, propName, i, &error);
-        const int type = env->propGetDataTypeHint(avsmap, propName, i, &error);
-        if (type == AVSPropDataTypeHint::PROPDATATYPEHINT_BINARY)
-        {
-          auto len = env->propGetDataSize(avsmap, propName, i, &error);
-          ss << "Data length=" << len << ": [";
-          // print up to 16 comma separated bytes in HEX, ... at the end if there are more.
-          int count = std::min(len, 16);
-          for (int i = 0; i < count; ++i) {
-            if (i > 0) ss << ",";
-            ss << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << (static_cast<unsigned int>(s[i]) & 0xFF);
           }
-          if (len > 16) ss << "...";
-          ss << "]";
         }
-        else
-        {
-          // AVSPropDataTypeHint::DATATYPEHINT_UTF8 and AVSPropDataTypeHint::DATATYPEHINT_UNKNOWN
-          // suppose string
-          ss << "\"" << s << "\"";
+        else if (propName_s == "_ChromaLocation") {
+          ss << " = ";
+          switch (arr[0]) {
+          case ChromaLocation_e::AVS_CHROMA_LEFT: ss << "left (mpeg2)"; break;
+          case ChromaLocation_e::AVS_CHROMA_CENTER: ss << "center (mpeg1, jpeg)"; break;
+          case ChromaLocation_e::AVS_CHROMA_TOP_LEFT: ss << "top_left"; break;
+          case ChromaLocation_e::AVS_CHROMA_TOP: ss << "top"; break;
+          case ChromaLocation_e::AVS_CHROMA_BOTTOM_LEFT: ss << "bottom_left"; break;
+          case ChromaLocation_e::AVS_CHROMA_BOTTOM: ss << "bottom"; break;
+          case ChromaLocation_e::AVS_CHROMA_DV: ss << "dv-Legacy Avisynth"; break;
+          }
         }
-        if (i < propNumElements - 1)
-          ss << ", ";
       }
-      if (propNumElements > 1)
-        ss << "]";
+      else if (propType == 'f') {
+        if (propNumElements > 1)
+          ss << "[";
+        const double* arr = env->propGetFloatArray(avsmap, propName, &error);
+        for (int i = 0; i < propNumElements; ++i) {
+          ss << std::to_string(arr[i]);
+          if (i < propNumElements - 1)
+            ss << ", ";
+        }
+        if (propNumElements > 1)
+          ss << "]";
+      }
+      else if (propType == 's') {
+        if (propNumElements > 1)
+          ss << "[";
+        for (int i = 0; i < propNumElements; ++i) {
+          const char* s = env->propGetData(avsmap, propName, i, &error);
+          const int type = env->propGetDataTypeHint(avsmap, propName, i, &error);
+          if (type == AVSPropDataTypeHint::PROPDATATYPEHINT_BINARY)
+          {
+            auto len = env->propGetDataSize(avsmap, propName, i, &error);
+            ss << "Data length=" << len << ": [";
+            // print up to 16 comma separated bytes in HEX, ... at the end if there are more.
+            int count = std::min(len, 16);
+            for (int i = 0; i < count; ++i) {
+              if (i > 0) ss << ",";
+              ss << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << (static_cast<unsigned int>(s[i]) & 0xFF);
+            }
+            if (len > 16) ss << "...";
+            ss << "]";
+          }
+          else
+          {
+            // AVSPropDataTypeHint::DATATYPEHINT_UTF8 and AVSPropDataTypeHint::DATATYPEHINT_UNKNOWN
+            // suppose string
+            ss << "\"" << s << "\"";
+          }
+          if (i < propNumElements - 1)
+            ss << ", ";
+        }
+        if (propNumElements > 1)
+          ss << "]";
+      }
+      else {
+        ss << "<cannot display!>";
+      }
+      ss << std::endl;
     }
-    else {
-      ss << "<cannot display!>";
-    }
-    ss << std::endl;
   }
 
   std::string t = ss.str();
@@ -1596,8 +1709,8 @@ int __stdcall ShowProperties::SetCacheHints(int cachehints, int frame_range)
 
 AVSValue __cdecl ShowProperties::Create(AVSValue args, void*, IScriptEnvironment* env)
 {
-  // 0   1        2       3         4             5        6     7   8     9
-  // c[size]i[showtype]b[font]s[text_color]i[halo_color]i[bold]b[x]f[y]f[align]i
+  // 0   1        2       3         4             5        6     7   8     9       10
+  // c[size]i[showtype]b[font]s[text_color]i[halo_color]i[bold]b[x]f[y]f[align]i[props]s+
 
   PClip clip = args[0].AsClip();
 
@@ -1653,5 +1766,5 @@ AVSValue __cdecl ShowProperties::Create(AVSValue args, void*, IScriptEnvironment
   if ((align < 1) || (align > 9))
     env->ThrowError("propShow: Align values are 1 - 9 mapped to your numeric pad");
 
-  return new ShowProperties(clip, size, showtype, font, text_color, halo_color, bold, x, y, align, env);
+  return new ShowProperties(clip, size, showtype, font, text_color, halo_color, bold, x, y, align, args[10], env);
 }

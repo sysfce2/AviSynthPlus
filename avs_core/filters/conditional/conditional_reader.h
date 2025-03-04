@@ -204,9 +204,11 @@ private:
   const bool bold;
   int x, y;
   int align;
+  bool propNames_defined;
+  std::vector<std::string> propNames;
 
 public:
-  ShowProperties(PClip _child, int size, bool showtype, const char* _font, int _text_color, int _halo_color, bool _bold, int _x, int _y, int _align, IScriptEnvironment* env);
+  ShowProperties(PClip _child, int size, bool showtype, const char* _font, int _text_color, int _halo_color, bool _bold, int _x, int _y, int _align, AVSValue _propNames, IScriptEnvironment* env);
   ~ShowProperties();
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
   int __stdcall SetCacheHints(int cachehints, int frame_range);

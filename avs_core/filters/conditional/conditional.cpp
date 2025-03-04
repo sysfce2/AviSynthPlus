@@ -90,7 +90,7 @@ extern const AVSFunction Conditional_filters[] = {
   { "propDelete", BUILTIN_FUNC_PREFIX, "cs+", DeleteProperty::Create },
   { "propClearAll", BUILTIN_FUNC_PREFIX, "c", ClearProperties::Create },
 
-  { "propShow", BUILTIN_FUNC_PREFIX, "c[size]i[showtype]b[font]s[text_color]i[halo_color]i[bold]b[x]f[y]f[align]i", ShowProperties::Create },
+  { "propShow", BUILTIN_FUNC_PREFIX, "c[size]i[showtype]b[font]s[text_color]i[halo_color]i[bold]b[x]f[y]f[align]i[props]s+", ShowProperties::Create },
 
   { "propCopy", BUILTIN_FUNC_PREFIX, "cc[merge]b[props]s+[exclude]b", CopyProperties::Create},
 
