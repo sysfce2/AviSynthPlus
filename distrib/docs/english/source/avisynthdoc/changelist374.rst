@@ -5,8 +5,14 @@ Additions, changes
 ~~~~~~~~~~~~~~~~~~
 - Bump year to 2025
 - DirectShowSource new parameter ``utf8`` for utf8 filename support
-- "propShow" ``font``, ``text_color``, ``halo_color``, ``bold`` new parameters for custom style
-- "propShow" (#366): ``x``, ``y``, ``align`` new parameters for custom positioning
+- "propShow" ``font``, ``text_color``, ``halo_color``, ``bold`` new parameters for custom style.
+- "propShow" (#366): ``x``, ``y``, ``align`` new parameters for custom positioning.
+- "propShow" ``props`` new parameter for filtering the name of property list with wildcard and regex support.
+
+  See :doc:`propShow <corefilters/propShow>`.
+- "propDelete" and "propCopy": ``props`` accepts wildcard and regex for filtering the name of property list.
+
+  See :doc:`Internal functions: frame properties <syntax/syntax_internal_functions_frame_properties>`.
 - "Info": ``cpu`` new parameter to disable showing CPU capabilities
 - "Info" (#366): ``x``, ``y``, ``align`` new parameters for custom positioning
 - Fix #368 Make proper vertical alignment for multiline text in Subtitle and Text 
@@ -175,6 +181,7 @@ Documentation
 - Interface V11 changes: see :ref:`api_v11_whats_new` for more details.
 - Document 64 bit capable functions and changes in old ones in millions of other rst pages.
 - Document C interface (in progress)
+- and so on...
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_

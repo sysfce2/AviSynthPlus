@@ -11,7 +11,24 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist374.html
 and
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html#what-s-new-in-the-api-v11
 
-20250302 3.7.3 r----
+20250304 3.7.3 r????
+--------------------
+- New: frame property copy/delete/show name filtering: add wildcard and regex support
+
+  propDelete and propCopy: allow "*" wildcard or even regex (start with "^", end with "$") in property name list
+  propShow: new parameter: "props" string or array of string. If given, no "Number of keys" header is shown.
+
+  propShow() # display all properties, with header
+  propShow(props="*", align=2) # display all properties, no header, bottom center
+  propShow(props="_*", align=8) # display properties starting with "_", top center
+  propShow(props="^[^_].*$", align=9) # display properties NOT starting with "_", , top right corner
+
+  PropDelete("_*") # deletes all properties starting with "_"
+  b=b.PropCopy(a, merge=true, props=["*1","*2"]) # merge props from 2nd clip to 1st, frame props ending with 1 or 2
+
+  https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/syntax/syntax_internal_functions_frame_properties.html
+
+20250302 3.7.3 r4206
 --------------------
 - Change all references to avisynth.org to avisynth.nl (source and doc)
 - Remove the duplicated and outdated FilterSDK htmls from source tree. We have them in rst source.
