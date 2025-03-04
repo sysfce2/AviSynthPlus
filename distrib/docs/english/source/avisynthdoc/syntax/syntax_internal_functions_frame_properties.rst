@@ -59,6 +59,9 @@ Each video frame can contain such a list, which can even be different from frame
   * 64 bit integer (32 bit integer when converted to AVSValue inside Avisynth+, AVSValue limitation)
   * 64 bit double (32 bit float when converted to AVSValue inside Avisynth+, AVSValue limitation)
   * string (or byte data) with given length. Strings are null terminated.
+    The content whether it is string or binary data can be given as a hint; from Avisynth scripting 
+    only strings allowed.
+
   * frame reference (PVideoFrame)
   * clip reference (PClip)
 
@@ -72,7 +75,7 @@ Property setting has 3 modes: 0-replace 1-append 2-touch.
 
 * 1 - property is appended (make arrays by calling with mode=1 consecutively)
 
-* 2 - touch 
+* 2 - touch (deprecated, just creates the key)
 
 Reserved frame property names
 -----------------------------
@@ -338,7 +341,9 @@ propGetFloat
 
     propGetFloat(clip, string key_name[, integer "index", integer "offset"])
 
-returns only if value is float, throws an error otherwise (note: unlike Avisynth float frame properties internally use 64 bit doubles) 
+If the content is not of floating point type, it throws an error. Until version 3.7.3, 
+the internal representation of floating point numbers was 32-bit float. Starting from 
+Avisynth 3.7.4, float frame properties are read as real 64-bit doubles.
 
 propGetString
 ~~~~~~~~~~~~~
@@ -539,7 +544,7 @@ By default frame property values are read from frame#0 which index can be overri
 Deleting properties
 -------------------
 
-Deletes one specific property or all property entries 
+Deletes specific properties or all property entries 
 
 propDelete
 ~~~~~~~~~~
@@ -550,13 +555,18 @@ propDelete
 Deletes a property by name. If property does not exist, do nothing.
 
 * clip (required) specifies clip.
-* string (required) key_name (case sensitive) specifies the name of the parameter to delete 
+* string (required) or string array: key_name (case sensitive) specifies the 
+  
+  - name of the parameter to delete 
+  - a regex expression, starts with "^", ends with "$"
+  - a wildcard name specifier (contains ``*``)
 
 *Example:*
 
 ::
 
     ScriptClip("""propDelete("my_spec_prop")""")
+    propDelete("_*") # deletes all properties starting with "_"
 
 propClearAll
 ~~~~~~~~~~~~
@@ -574,10 +584,10 @@ Other property functions
 propShow
 ~~~~~~~~
 
-    This debug filter lists all frame properties on screen. 
-    Listing appears as a name = value list.
+    This debug filter lists frame properties on screen. 
+    Listing appears as a name = value list and can be filtered
     
-    See here: <todo link>
+    See here: :doc:`propShow <../corefilters/propShow>`.
 
 propGetDataSize
 ~~~~~~~~~~~~~~~
@@ -630,29 +640,64 @@ propCopy
 ~~~~~~~~
 ::
 
-    propCopy(clip, clip [,bool "merge"])   AVS+(v3.7.1) 
+    propCopy(clip, clip [,bool "merge"], [,string[] "props"], [,bool "exclude"]
 
 Copies the frame properties of the second clip to the first.
 
 Parameter ``merge`` (default false): 
 
 * when false: exact copy (original target properties will be lost)
-* when true: keeps original properties, appends all parameters from source but 
+* when true: keeps original properties, appends relevant properties from source but 
   overwrite if a parameter with the same name already exists. 
 
+Parameter ``props`` 
+  a string or string array:
+
+  - name of the parameter to copy
+  - a regex expression, starts with "^", ends with "$"
+  - a wildcard name specifier (contains ``*``)
+  
+Parameter ``exclude``
+
+  - when true specify that the property list is a negative list.
+
+*Example:*
+
+::
+
+    PropCopy(a) # make all properties the same with of clip a
+    PropCopy(a, merge=true) # Adds new properties from clip a, overwrites if already exists
+    
+    # Add properties from clip "a" which end with "1" or "2" 
+    b.PropCopy(a, merge=true, props=["*2","*1"])
+    
+    # Add properties from clip "a" where not started with "_"
+    b.PropCopy(a, merge=true, props="_*", exclude = True)
+    
+    # same with regex
+    b.PropCopy(a, merge=true, props="^[^_].*$")
+    
+    # erase all, then copy all, except listed ones
+    propCopy(org,props=["_Matrix", "_ColorRange"], exclude = true)
 
 Changelog
 ---------
-+----------------+----------------------------------+
-| Version        | Changes                          |
-+================+==================================+
-| AviSynth 3.7.1 | | allow propGetXXX called outside|
-|                |   runtime functions              |
-|                | | add propCopy                   |
-+----------------+----------------------------------+
-| AviSynth 3.7.0 | add propGetType                  |
-+----------------+----------------------------------+
++----------------+--------------------------------------------------+
+| Version        | Changes                                          |
++================+==================================================+
+| 3.7.4          | | wildcard and regex support in props parameter  |
+|                |   for propDelete, propShow, propCopy             |
+|                | | add "props" parameter to propShow as well      |
++----------------+--------------------------------------------------+
+| 3.7.2          | | exclude parameter for negative list            |
++----------------+--------------------------------------------------+
+| AviSynth 3.7.1 | | allow propGetXXX called outside                |
+|                |   runtime functions                              |
+|                | | add propCopy                                   |
++----------------+--------------------------------------------------+
+| AviSynth 3.7.0 | add propGetType                                  |
++----------------+--------------------------------------------------+
 
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
-$Date: 2024/01/05 15:57:00 $
+$Date: 2025/03/04 12:20:00 $
