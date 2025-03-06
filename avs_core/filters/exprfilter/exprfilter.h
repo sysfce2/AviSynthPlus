@@ -7,6 +7,8 @@
 #include <sys/mman.h>
 #endif
 
+#define MAX_C_VECT 16 // C Expr part: 16*float has still have benefit, less interpreter overhead.
+
 #define MAX_EXPR_INPUTS 26
 #define INTERNAL_VARIABLES 6
 #define MAX_FRAMEPROP_VARIABLES 64
@@ -170,6 +172,7 @@ private:
   const bool optAvx2; // disable avx2 path
   const bool optSingleMode; // generate asm code using only one XMM/YMM register set instead of two
   const bool optSSE2; // disable simd path
+  const bool optVectorC; // if non-SIMD C path, then this goes to a vectorization friendly implementation
 
   // scale_inputs related settings
   const std::string scale_inputs;
@@ -187,7 +190,7 @@ private:
   void calculate_lut(IScriptEnvironment *env);
 public:
   Exprfilter(const std::vector<PClip>& _child_array, const std::vector<std::string>& _expr_array, const char *_newformat, const bool _optAvx2,
-    const bool _optSingleMode2, const bool _optSSE2, const std::string _scale_inputs, const int _clamp_float, const int _lutmode, IScriptEnvironment *env);
+    const bool _optSingleMode2, const bool _optSSE2, const bool _optVectorC, const std::string _scale_inputs, const int _clamp_float, const int _lutmode, IScriptEnvironment *env);
   void processFrame(int plane, int w, int h, int pixels_per_iter, float framecount, float relative_time, int numInputs,
     uint8_t*& dstp, int dst_stride,
     std::vector<const uint8_t*>& srcp, std::vector<int>& src_stride, std::vector<intptr_t>& ptroffsets, std::vector<const uint8_t*>& srcp_orig);

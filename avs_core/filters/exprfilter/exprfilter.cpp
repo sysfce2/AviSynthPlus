@@ -102,6 +102,10 @@
 #include "../../convert/convert_helper.h"
 #include "avs/alignment.h"
 
+#if defined(_MSC_VER) || (defined(__clang__) && defined(_MSC_VER)) || defined(__MINGW32__) || defined(__MINGW64__)
+#include <malloc.h>  // For _aligned_malloc and _aligned_free
+#endif
+
 #if (defined(_WIN64) && (defined(_M_AMD64) || defined(_M_X64))) || defined(__x86_64__)
 #define JITASM64
 #endif
@@ -2222,7 +2226,7 @@ struct ExprEval : public jitasm::function<void, ExprEval, uint8_t *, const intpt
       }
       else if (iter.op == opFmod) {
         if (processSingle) {
-          auto t1 = stack1.back();
+          auto t1 = stack1.back(); // despite the Intel compiler warnings, this is intentionally a copy and not a reference (valid for all such messages as well)
           stack1.pop_back();
           auto &t2 = stack1.back();
           FMOD_PS(t2, t1)
@@ -3852,7 +3856,7 @@ generated epilog example (new):
 ********************************************************************/
 
 extern const AVSFunction Exprfilter_filters[] = {
-  { "Expr", BUILTIN_FUNC_PREFIX, "c+s+[format]s[optAvx2]b[optSingleMode]b[optSSE2]b[scale_inputs]s[clamp_float]b[clamp_float_UV]b[lut]i", Exprfilter::Create },
+  { "Expr", BUILTIN_FUNC_PREFIX, "c+s+[format]s[optAvx2]b[optSingleMode]b[optSSE2]b[scale_inputs]s[clamp_float]b[clamp_float_UV]b[lut]i[optVectorC]b", Exprfilter::Create },
   { 0 }
 };
 
@@ -3978,9 +3982,705 @@ AVSValue __cdecl Exprfilter::Create(AVSValue args, void* , IScriptEnvironment* e
     clamp_float_i = 0;
 
   const int lutmode = args[next_paramindex].AsInt(0); // 0, 1, 2
+  next_paramindex++;
 
-  return new Exprfilter(children, expressions, newformat, optAvx2, optSingleMode, optSSE2, scale_inputs, clamp_float_i, lutmode, env);
+  const bool optVectorC = args[next_paramindex].AsBool(true);
 
+  return new Exprfilter(children, expressions, newformat, optAvx2, optSingleMode, optSSE2, optVectorC, scale_inputs, clamp_float_i, lutmode, env);
+
+}
+
+// Base SIMD Processor interface
+class ISIMDProcessor {
+public:
+  virtual void processVector(
+    std::vector<const uint8_t*>&srcp,
+    uint8_t*& dstp,
+    int x, int y) = 0;
+  virtual ~ISIMDProcessor() = default;
+};
+
+/**
+ * Custom aligned memory allocator for STL containers like std::vector
+ *
+ * This allocator ensures that the underlying data pointer returned by container.data()
+ * is aligned to the specified alignment boundary, which is critical for:
+ *   - SIMD vector operations that require aligned memory access
+ *   - Cache-friendly data structures
+ *   - Hardware-specific memory alignment requirements
+ *
+ * Platform-specific implementation:
+ *   - Windows (MSVC, ClangCL): Uses _aligned_malloc/_aligned_free
+ *   - MinGW: Uses _aligned_malloc/_aligned_free
+ *   - POSIX systems (Linux, Unix, macOS): Uses aligned_alloc/free
+ *   - C++17 fallback: Uses std::aligned_alloc/free
+ *
+ * Usage:
+ *   std::vector<float, aligned_allocator<float, 32>> aligned_vector;
+ */
+template <typename T, size_t Alignment>
+struct aligned_allocator {
+  // Standard allocator typedefs
+  typedef T value_type;
+  typedef T* pointer;
+  typedef const T* const_pointer;
+  typedef T& reference;
+  typedef const T& const_reference;
+  typedef std::size_t size_type;
+  typedef std::ptrdiff_t difference_type;
+  // Rebind allocator to type U
+  template <typename U>
+  struct rebind {
+    typedef aligned_allocator<U, Alignment> other;
+  };
+  aligned_allocator() noexcept {}
+  template <typename U>
+  aligned_allocator(const aligned_allocator<U, Alignment>&) noexcept {}
+  T* allocate(std::size_t n) {
+#if defined(_MSC_VER) || (defined(__clang__) && defined(_MSC_VER))
+    // Both MSVC and ClangCL should use _aligned_malloc
+    void* ptr = _aligned_malloc(n * sizeof(T), Alignment);
+    if (!ptr) throw std::bad_alloc();
+#elif defined(__MINGW32__) || defined(__MINGW64__)
+    // MinGW/MinGW-w64 specific
+    void* ptr = _aligned_malloc(n * sizeof(T), Alignment);
+    if (!ptr) throw std::bad_alloc();
+#elif defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER) || defined(__APPLE__) || (defined(__GNUC__) && !defined(_WIN32) && !defined(__CYGWIN__))
+    // POSIX-compliant systems: Intel compilers, macOS, GCC on non-Windows
+    // aligned_alloc requires size to be a multiple of alignment
+    size_t size = n * sizeof(T);
+    if (size % Alignment != 0) {
+      size = (size / Alignment + 1) * Alignment;
+    }
+    void* ptr = aligned_alloc(Alignment, size);
+    if (!ptr) throw std::bad_alloc();
+#else
+    // Generic fallback for C++17 and later
+    // std::aligned_alloc requires size to be a multiple of alignment
+    size_t size = n * sizeof(T);
+    if (size % Alignment != 0) {
+      size = (size / Alignment + 1) * Alignment;
+    }
+    void* ptr = std::aligned_alloc(Alignment, size);
+    if (!ptr) throw std::bad_alloc();
+#endif
+    return static_cast<T*>(ptr);
+  }
+  void deallocate(T* p, std::size_t) noexcept {
+#if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__) || (defined(__clang__) && defined(_MSC_VER))
+    _aligned_free(p);
+#else
+    free(p);
+#endif
+  }
+};
+
+// convenient type def
+using aligned_float_vector = std::vector<float, aligned_allocator<float, 32>>;
+
+template<int VectorSize>
+class SIMDProcessor : public ISIMDProcessor {
+  int w, h;
+  size_t maxStackSize;
+
+  // Define the aligned stack with custom allocator
+  std::vector<aligned_float_vector> stack;
+
+  aligned_float_vector& variable_area;
+  std::vector<float>& internal_vars;
+  std::vector<int>& src_stride;
+  std::vector<const uint8_t*>& srcp_orig;
+  const ExprOp* vops;
+public:
+  SIMDProcessor(int _w, int _h, size_t _maxStackSize, 
+    aligned_float_vector& var_area,
+    std::vector<float>& int_vars, std::vector<int>& src_str, std::vector<const uint8_t*>& src_orig, const ExprOp* vops)
+    : w(_w), h(_h), maxStackSize(_maxStackSize), 
+    stack(_maxStackSize, aligned_float_vector(VectorSize)), 
+    variable_area(var_area), internal_vars(int_vars), src_stride(src_str), srcp_orig(src_orig), vops(vops) {
+  }
+
+  int stackIndex = 0;
+  alignas(32) float stacktop[VectorSize] = {};
+
+  // Broadcast a single value across the vector
+  inline void push_and_broadcast(float val) {
+    auto& current_stack = stack[stackIndex];
+
+    // First loop: copy stacktop to stack - help vectorization pattern
+    for (int i = 0; i < VectorSize; ++i)
+      current_stack[i] = stacktop[i];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = val;
+    stackIndex++;
+  }
+
+  inline void broadcast(float val) {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = val;
+  }
+
+  // Load spatial X coordinate
+  inline void loadSpatialX(int x) {
+    // Push current stacktop and fills x, x+1, x+2, x+3, ...
+    auto& current_stack = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      current_stack[i] = stacktop[i];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = static_cast<float>(x + i);
+    stackIndex++;
+  }
+
+  // Load vector from source from x
+  template<typename T>
+  inline void loadSource(const T* src, int x) {
+    auto& current_stack = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      current_stack[i] = stacktop[i];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = static_cast<float>(src[x + i]);
+    stackIndex++;
+  }
+
+  // Load from source with relative offset
+  template<typename T>
+  void loadRelSource(const T* src, int x, int dx, int dy, int width, int height, int stride) {
+    auto& current_stack = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      current_stack[i] = stacktop[i];
+    // At edges: repeat, no mirror
+    int newY = std::max(0, std::min(dy, height - 1));
+    for (int i = 0; i < VectorSize; ++i) {
+      int newX = std::max(0, std::min(x + dx + i, width - 1));
+      stacktop[i] = static_cast<float>(reinterpret_cast<const T*>((uint8_t*)&src[newY * stride])[newX]);
+    }
+    stackIndex++;
+  }
+
+  // Load from user variable area
+  inline void loadVar(int index) {
+    auto& current_stack = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      current_stack[i] = stacktop[i];
+    // Push current stacktop and broadcast x
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = variable_area[index * MAX_C_VECT + i];
+    stackIndex++;
+  }
+
+  // Vectorized duplicate
+  inline void dup(int offset) {
+    auto& current_stack = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      current_stack[i] = stacktop[i];
+    auto& prev = stack[stackIndex - offset];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = prev[i];
+    stackIndex++;
+  }
+
+  // Vectorized swap
+  inline void swap(int offset) {
+    auto& prev = stack[stackIndex - offset];
+    for (int i = 0; i < VectorSize; ++i)
+      std::swap(stacktop[i], prev[i]);
+  }
+
+  // Vectorized addition
+  inline void add() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] += prev[i];
+  }
+
+  // Vectorized subtract
+  inline void sub() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = prev[i] - stacktop[i];
+  }
+
+  // Vectorized multiplication
+  inline void multiply() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] *= prev[i];
+  }
+
+  inline void divide() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = prev[i] / stacktop[i];
+  }
+
+  void fmod() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::fmod(prev[i], stacktop[i]);
+  }
+
+  inline void max() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::max(prev[i], stacktop[i]);
+  }
+
+  inline void min() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::min(prev[i], stacktop[i]);
+  }
+
+  void exp() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::exp(stacktop[i]);
+  }
+
+  void log() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::log(stacktop[i]);
+  }
+
+  void pow() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::pow(prev[i], stacktop[i]);
+  }
+
+  // Vectorized clip
+  inline void clip() {
+    stackIndex -= 2;
+    auto& prev = stack[stackIndex];
+    auto& prev1 = stack[stackIndex + 1];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::max(std::min(prev[i], stacktop[i]), prev1[i]);
+  }
+
+  // Vectorized round
+  inline void round() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::round(stacktop[i]);
+  }
+
+  // Vectorized floor
+  inline void floor() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::floor(stacktop[i]);
+  }
+
+  // Vectorized ceil
+  void ceil() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::ceil(stacktop[i]);
+  }
+
+  // Vectorized trunc
+  inline void trunc() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::trunc(stacktop[i]);
+  }
+
+  // Vectorized sqrt
+  void sqrt() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::sqrt(stacktop[i]);
+  }
+
+  // Vectorized abs
+  inline void abs() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::abs(stacktop[i]);
+  }
+
+  // Vectorized sgn
+  inline void sgn() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = stacktop[i] < 0 ? -1.0f : stacktop[i] > 0 ? 1.0f : 0.0f;
+  }
+
+  // Vectorized sin
+  void sin() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::sin(stacktop[i]);
+  }
+
+  // Vectorized cos
+  void cos() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::cos(stacktop[i]);
+  }
+
+  // Vectorized tan
+  void tan() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::tan(stacktop[i]);
+  }
+
+  // Vectorized asin
+  void asin() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::asin(stacktop[i]);
+  }
+
+  // Vectorized acos
+  void acos() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::acos(stacktop[i]);
+  }
+
+  // Vectorized atan
+  void atan() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::atan(stacktop[i]);
+  }
+
+  // Vectorized atan2
+  void atan2() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = std::atan2(prev[i], stacktop[i]); // y, x -> -Pi..+Pi
+  }
+
+  // Vectorized greater than
+  inline void gt() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = (prev[i] > stacktop[i]) ? 1.0f : 0.0f;
+  }
+
+  // Vectorized less than
+  inline void lt() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = (prev[i] < stacktop[i]) ? 1.0f : 0.0f;
+  }
+
+  // Vectorized equal
+  inline void eq() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = (prev[i] == stacktop[i]) ? 1.0f : 0.0f; // consider with not 100% match, use epsilon
+  }
+
+  // Vectorized not equal
+  inline void notEq() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = (prev[i] != stacktop[i]) ? 1.0f : 0.0f; // consider with not 100% match, use epsilon
+  }
+
+  // Vectorized less than or equal
+  inline void le() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = (prev[i] <= stacktop[i]) ? 1.0f : 0.0f;
+  }
+
+  // Vectorized greater than or equal
+  inline void ge() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = (prev[i] >= stacktop[i]) ? 1.0f : 0.0f;
+  }
+
+  // Vectorized ternary
+  inline void ternary() {
+    stackIndex -= 2;
+    auto& prev = stack[stackIndex];
+    auto& prev1 = stack[stackIndex + 1];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = (prev[i] > 0) ? prev1[i] : stacktop[i];
+  }
+
+  // Vectorized logical AND
+  inline void logicalAnd() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = (stacktop[i] > 0 && prev[i] > 0) ? 1.0f : 0.0f;
+  }
+
+  // Vectorized logical OR
+  inline void logicalOr() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = (stacktop[i] > 0 || prev[i] > 0) ? 1.0f : 0.0f;
+  }
+
+  // Vectorized logical XOR
+  inline  void logicalXor() {
+    stackIndex--;
+    auto& prev = stack[stackIndex];
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = ((stacktop[i] > 0) != (prev[i] > 0)) ? 1.0f : 0.0f;
+  }
+
+  // Vectorized logical NOT
+  inline void logicalNot() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = (stacktop[i] > 0) ? 0.0f : 1.0f;
+  }
+
+  // Vectorized negation
+  inline void negSign() {
+    for (int i = 0; i < VectorSize; ++i)
+      stacktop[i] = -stacktop[i];
+  }
+
+  // Templatized store function
+  template<typename T, int MaxValue>
+  inline void store(T* dst, int x) {
+    for (int i = 0; i < VectorSize; ++i)
+      dst[x + i] = static_cast<T>(std::max(0.0f, std::min(stacktop[i], static_cast<float>(MaxValue))) + 0.5f);
+  }
+
+  // Specialized store function for float
+  inline void store(float* dst, int x) {
+    for (int i = 0; i < VectorSize; ++i)
+      dst[x + i] = stacktop[i];
+  }
+
+  // Store variable
+  inline void storeVar(int index) {
+    for (int i = 0; i < VectorSize; ++i)
+      variable_area[index * MAX_C_VECT + i] = stacktop[i];
+  }
+
+  // Store variable and drop one element from the stack
+  inline void storeVarAndDrop1(int index) {
+    for (int i = 0; i < VectorSize; ++i)
+      variable_area[index * MAX_C_VECT + i] = stacktop[i];
+    stackIndex--;
+    if (stackIndex >= 0) {
+      auto& prev = stack[stackIndex];
+      for (int i = 0; i < VectorSize; ++i)
+        stacktop[i] = prev[i];
+    }
+  }
+
+  // Process a sequence of operations
+  void processVector(std::vector<const uint8_t*>& srcp, uint8_t*& dstp, int x, int y) override {
+
+    // Reset stack
+    stackIndex = 0;
+    broadcast(0); // stacktop = 0
+
+    const ExprOp* vops_current = vops; // reset instruction pointer
+
+    while (true) {
+      // Process instruction sequence
+      switch (vops_current->op) {
+      case opLoadSrc8:
+        loadSource<uint8_t>(reinterpret_cast<const uint8_t*>(srcp[vops_current->e.ival]), x);
+        break;
+      case opLoadSrc16:
+        loadSource<uint16_t>(reinterpret_cast<const uint16_t*>(srcp[vops_current->e.ival]), x);
+        break;
+      case opLoadSrcF32:
+        loadSource<float>(reinterpret_cast<const float*>(srcp[vops_current->e.ival]), x);
+        break;
+      case opLoadRelSrc8:
+        loadRelSource<uint8_t>(reinterpret_cast<const uint8_t*>(srcp[vops_current->e.ival]), x, vops_current->dx, vops_current->dy, w, h, src_stride[vops_current->e.ival]);
+        break;
+      case opLoadRelSrc16:
+        loadRelSource<uint16_t>(reinterpret_cast<const uint16_t*>(srcp[vops_current->e.ival]), x, vops_current->dx, vops_current->dy, w, h, src_stride[vops_current->e.ival]);
+        break;
+      case opLoadRelSrcF32:
+        loadRelSource<float>(reinterpret_cast<const float*>(srcp[vops_current->e.ival]), x, vops_current->dx, vops_current->dy, w, h, src_stride[vops_current->e.ival]);
+        break;
+      case opLoadConst:
+        push_and_broadcast(vops_current->e.fval);
+        break;
+      case opLoadSpatialX:
+        loadSpatialX(x);
+        break;
+      case opLoadSpatialY:
+        push_and_broadcast(static_cast<float>(y));
+        break;
+      case opLoadInternalVar:
+        push_and_broadcast(internal_vars[vops_current->e.ival]);
+        break;
+      case opStore8:
+        store<uint8_t, 255>(reinterpret_cast<uint8_t*>(dstp), x);
+        goto loopend;
+      case opStore10:
+        store<uint16_t, 1023>(reinterpret_cast<uint16_t*>(dstp), x);
+        goto loopend;
+      case opStore12:
+        store<uint16_t, 4095>(reinterpret_cast<uint16_t*>(dstp), x);
+        goto loopend;
+      case opStore14:
+        store<uint16_t, 16383>(reinterpret_cast<uint16_t*>(dstp), x);
+        goto loopend;
+      case opStore16:
+        store<uint16_t, 65535>(reinterpret_cast<uint16_t*>(dstp), x);
+        goto loopend;
+      case opStoreF32:
+        store(reinterpret_cast<float*>(dstp), x);
+        goto loopend;
+
+      case opDup: dup(vops_current->e.ival); break;
+      case opSwap: swap(vops_current->e.ival); break;
+      case opAdd: add(); break;
+      case opSub: sub(); break;
+      case opMul: multiply(); break;
+      case opDiv: divide(); break;
+      case opMax: max(); break;
+      case opMin: min(); break;
+      case opSqrt: sqrt(); break;
+      case opAbs: abs(); break;
+      case opSgn: sgn(); break;
+      case opFmod: fmod(); break;
+      case opGt: gt(); break;
+      case opLt: lt(); break;
+      case opEq: eq(); break;
+      case opNotEq: notEq(); break;
+      case opLE: le(); break;
+      case opGE: ge(); break;
+      case opTernary: ternary(); break;
+      case opAnd: logicalAnd(); break;
+      case opOr: logicalOr(); break;
+      case opXor: logicalXor(); break;
+      case opNeg: logicalNot(); break;
+      case opNegSign: negSign(); break;
+      case opExp: exp(); break;
+      case opLog: log(); break;
+      case opPow: pow(); break;
+      case opSin: sin(); break;
+      case opCos: cos(); break;
+      case opTan: tan(); break;
+      case opAsin: asin(); break;
+      case opAcos: acos(); break;
+      case opAtan: atan(); break;
+      case opAtan2: atan2(); break;
+      case opClip: clip(); break;
+      case opRound: round(); break;
+      case opFloor: floor(); break;
+      case opCeil: ceil(); break;
+      case opTrunc: trunc(); break;
+
+      case opStoreVar:
+        storeVar(vops_current->e.ival);
+        break;
+      case opLoadVar:
+        loadVar(vops_current->e.ival);
+        break;
+      case opLoadFramePropVar:
+        push_and_broadcast(internal_vars[INTERNAL_VAR_FRAMEPROP_VARIABLES_START + vops_current->e.ival]);
+        break;
+      case opStoreVarAndDrop1:
+        storeVarAndDrop1(vops_current->e.ival);
+        break;
+      }
+      vops_current++; // next opcode
+    }
+  // store makes the sequence end, wherever it was
+  loopend:;
+  }
+};
+
+
+// Factory to create appropriate SIMD processors
+class SIMDProcessorFactory {
+public:
+  template<int MaxVectorSize>
+  static std::unique_ptr<ISIMDProcessor> createProcessor(
+    int w, int h, size_t maxStackSize, 
+    aligned_float_vector& var_area,
+    std::vector<float>& int_vars, std::vector<int>& src_str, std::vector<const uint8_t*>& src_orig, const ExprOp* vops) {
+    if constexpr (MaxVectorSize >= 16) {
+      return std::make_unique<SIMDProcessor<16>>(w, h, maxStackSize, var_area, int_vars, src_str, src_orig, vops);
+    }
+    if constexpr (MaxVectorSize >= 8) {
+      return std::make_unique<SIMDProcessor<8>>(w, h, maxStackSize, var_area, int_vars, src_str, src_orig, vops);
+    }
+    else if constexpr (MaxVectorSize >= 4) {
+      return std::make_unique<SIMDProcessor<4>>(w, h, maxStackSize, var_area, int_vars, src_str, src_orig, vops);
+    }
+    else {
+      return std::make_unique<SIMDProcessor<1>>(w, h, maxStackSize, var_area, int_vars, src_str, src_orig, vops);
+    }
+  }
+};
+
+
+template<int MaxVectorSize>
+void processFrameWithDynamicVectors(int plane, int w, int h, int pixels_per_iter, float framecount, float relative_time, int numInputs,
+  uint8_t* &dstp, int dst_stride,
+  std::vector<const uint8_t*>& srcp, std::vector<int>& src_stride, std::vector<intptr_t>& ptroffsets, std::vector<const uint8_t*>& srcp_orig, ExprData& d) {
+
+  const ExprOp* vops = d.ops[plane].data();
+  aligned_float_vector variable_area(MAX_USER_VARIABLES * MAX_C_VECT); // for C, place for expr variables (each is a vector)
+
+  std::vector<float> internal_vars(INTERNAL_VARIABLES + MAX_FRAMEPROP_VARIABLES);
+  // frame dependent internal variables
+  internal_vars[INTERNAL_VAR_CURRENT_FRAME] = (float)framecount;
+  internal_vars[INTERNAL_VAR_RELTIME] = (float)relative_time;
+  // followed by dynamic frame properties
+  for (auto& framePropToRead : d.frameprops[plane]) {
+    int whereToPut = framePropToRead.var_index;
+    internal_vars[INTERNAL_VAR_FRAMEPROP_VARIABLES_START + whereToPut] = framePropToRead.value;
+  };
+
+  // Create processors dynamically based on MaxVectorSize
+  std::unique_ptr<ISIMDProcessor> processor16 = MaxVectorSize >= 16 ?
+    SIMDProcessorFactory::createProcessor<16>(w, h, d.maxStackSize, variable_area, internal_vars, src_stride, srcp_orig, vops) : nullptr;
+  std::unique_ptr<ISIMDProcessor> processor8 = MaxVectorSize >= 8 ?
+    SIMDProcessorFactory::createProcessor<8>(w, h, d.maxStackSize, variable_area, internal_vars, src_stride, srcp_orig, vops) : nullptr;
+  std::unique_ptr<ISIMDProcessor> processor4 = MaxVectorSize >= 4 ?
+    SIMDProcessorFactory::createProcessor<4>(w, h, d.maxStackSize, variable_area, internal_vars, src_stride, srcp_orig, vops) : nullptr;
+  std::unique_ptr<ISIMDProcessor> processor1 = SIMDProcessorFactory::createProcessor<1>(w, h, d.maxStackSize, variable_area, internal_vars, src_stride, srcp_orig, vops);
+
+  for (int y = 0; y < h; y++) {
+    int x = 0;
+
+    // Conditionally process larger vector sizes
+    if (MaxVectorSize >= 16 && processor16) {
+      for (; x + 16 <= w; x += 16) {
+        processor16->processVector(srcp, dstp, x, y);
+      }
+    }
+
+    if (MaxVectorSize >= 8 && processor8) {
+      for (; x + 8 <= w; x += 8) {
+        processor8->processVector(srcp, dstp, x, y);
+      }
+    }
+
+    if (MaxVectorSize >= 4 && processor4) {
+      for (; x + 4 <= w; x += 4) {
+        processor4->processVector(srcp, dstp, x, y);
+      }
+    }
+
+    // Always process remaining pixels
+    for (; x < w; x++) {
+      processor1->processVector(srcp, dstp, x, y);
+    }
+
+    // Update destination and source pointers for next row
+    dstp += dst_stride;
+    if (d.lutmode == 0) {
+      for (int i = 0; i < numInputs; i++)
+        srcp[i] += src_stride[i];
+    }
+  }
 }
 
 void Exprfilter::processFrame(int plane, int w, int h, int pixels_per_iter, float framecount, float relative_time, int numInputs, 
@@ -3994,25 +4694,7 @@ void Exprfilter::processFrame(int plane, int w, int h, int pixels_per_iter, floa
 
     ExprData::ProcessLineProc proc = d.proc[plane];
 
-#ifdef GCC
-    // the following local allocation in gcc 8.3 results in warning:
-    // alignas(32) intptr_t rwptrs[RWPTR_SIZE];
-    // requested alignment 32 is larger than 16 [-Wattributes]
-    // Some sources say this is only a bug, a false warning
-
-    // Using c++17 feature instead: new with alignment
-    intptr_t* rwptrs = new (std::align_val_t(32)) intptr_t[RWPTR_SIZE];
-
-    // Note: this method is giving immediate build error in VS2019 16.0.4 (bug?). Clang 8.0 and gcc 8.3 is O.K.
-    // error C2956: sized deallocation function 'operator delete(void*, size_t)' would be chosen as placement deallocation function.
-    // See https://developercommunity.visualstudio.com/content/problem/528320/using-c17-new-stdalign-val-tn-syntax-results-in-er.html
-    // Anyway, we are using it only for gcc)
-    // Possible MSVC 16.0 workaround: c++17: direct call of operator new with alignment-type parameters
-    //intptr_t* rwptrs = (intptr_t*) operator new[]((size_t)(sizeof(intptr_t) * RWPTR_SIZE), (std::align_val_t)(32));
-#else
-    // msvc, clang
-    alignas(32) intptr_t rwptrs[RWPTR_SIZE];
-#endif
+    alignas(32) intptr_t rwptrs[RWPTR_SIZE]; // should work, gcc 8.3 gives false warning
     
     *reinterpret_cast<float*>(&rwptrs[RWPTR_START_OF_INTERNAL_VARIABLES + INTERNAL_VAR_CURRENT_FRAME]) = (float)framecount;
     *reinterpret_cast<float*>(&rwptrs[RWPTR_START_OF_INTERNAL_VARIABLES + INTERNAL_VAR_RELTIME]) = (float)relative_time;
@@ -4028,17 +4710,25 @@ void Exprfilter::processFrame(int plane, int w, int h, int pixels_per_iter, floa
         rwptrs[i + RWPTR_START_OF_INPUTS] = reinterpret_cast<intptr_t>(srcp[i] + src_stride[i] * y); // input pointers 1..Nth
         rwptrs[i + RWPTR_START_OF_STRIDES] = static_cast<intptr_t>(src_stride[i]);
       }
-
+      // a single line at a time
       proc(rwptrs, ptroffsets.data(), nfulliterations, y); // parameters are put directly in registers
     }
-#ifdef GCC
-    operator delete[](rwptrs, (std::align_val_t)(32)); // paired with aligned new
-#endif
   }
   else
 #endif // VS_TARGET_CPU_X86
+  if (optVectorC) {
+    // SIMD factory, vector friendly C version 16 then 8, 4, 1 floats at a time
+    // Even if the compiler does not vectorize, we have less overhead during the opcode flow processing
+    // As of 2025: original:1-2.5fps, new MAX_C_VECT=16: MSVC~6fps MSVC AVX2:~6fps, LLVM-14,7fps, LLVM AVX2-19fps
+
+    processFrameWithDynamicVectors<MAX_C_VECT>(
+      plane, w, h, pixels_per_iter, framecount, relative_time, numInputs,
+      dstp, dst_stride,
+      srcp, src_stride, ptroffsets, srcp_orig, d);
+  }
+  else
   {
-    // C version
+    // C version, single pixel/loop reference
     std::vector<float> stackVector(d.maxStackSize);
 
     const ExprOp* vops = d.ops[plane].data();
@@ -5907,8 +6597,9 @@ static void foldConstants(std::vector<ExprOp> &ops) {
 }
 
 Exprfilter::Exprfilter(const std::vector<PClip>& _child_array, const std::vector<std::string>& _expr_array, const char *_newformat, const bool _optAvx2,
-  const bool _optSingleMode, const bool _optSSE2, const std::string _scale_inputs, const int _clamp_float_i, const int _lutmode, IScriptEnvironment *env) :
-  children(_child_array), expressions(_expr_array), optAvx2(_optAvx2), optSingleMode(_optSingleMode), optSSE2(_optSSE2), scale_inputs(_scale_inputs), clamp_float_i(_clamp_float_i), lutmode(_lutmode) {
+  const bool _optSingleMode, const bool _optSSE2, const bool _optVectorC, const std::string _scale_inputs, const int _clamp_float_i, const int _lutmode, IScriptEnvironment *env) :
+  children(_child_array), expressions(_expr_array), optAvx2(_optAvx2), optSingleMode(_optSingleMode), optSSE2(_optSSE2),
+  optVectorC(_optVectorC), scale_inputs(_scale_inputs), clamp_float_i(_clamp_float_i), lutmode(_lutmode) {
 
   vi = children[0]->GetVideoInfo();
   d.vi = vi;
