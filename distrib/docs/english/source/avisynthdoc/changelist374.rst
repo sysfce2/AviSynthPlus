@@ -161,6 +161,9 @@ Bugfixes
 Optimizations
 ~~~~~~~~~~~~~
 - avoid storing duplicated strings in internal string heap (related to issue #389)
+- Expr: rewritten the C (non-Intel-JIT) path to support vectorization, if the compiler is capable.
+  Useful for non-Intel platforms where the (Intel SSE2-AVX2) JIT compiler does not work.
+  Expect 3-20x speedup compared to the old method.
 
 Documentation
 ~~~~~~~~~~~~~
@@ -186,7 +189,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2025/02/24 13:53:00 $
+$Date: 2025/03/06 13:00:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

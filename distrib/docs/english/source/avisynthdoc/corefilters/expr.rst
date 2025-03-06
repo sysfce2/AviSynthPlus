@@ -12,7 +12,8 @@ Syntax and Parameters
 
     Expr (clip clip[, ...], string exp[, ...],
           string "format", bool "optAvx2", bool "optSingleMode", bool "optSSE2",
-          string "scale_inputs", bool "clamp_float", bool "clamp_float_UV", int "lut")
+          string "scale_inputs", bool "clamp_float", bool "clamp_float_UV", 
+          int "lut", int "optVectorC")
 
 .. describe:: clip
 
@@ -75,7 +76,7 @@ Syntax and Parameters
 
     Enables or disables `SSE2`_ code generation when in non-AVX2 mode. Setting
     ``optSSE2=false`` and ``optAVX2=false`` forces expression processing in a
-    slow interpreted way (C language). False disables SSE2.
+    slower interpreted way (C language, see also ``optVectorC``). False disables SSE2.
 
     Default: auto
 
@@ -182,6 +183,29 @@ Syntax and Parameters
 
     Default: 0
 
+.. describe:: optVectorC
+
+    C code is run when
+    
+    - non x86/x64 systems (architectures which are not supported by JIT compiler)
+    - expression contains tan, atan, asin, acos, which are not implemented in JIT.
+    - JIT is intentionally disabled with optSSE2=False
+    
+    Enables or disables a compiler friendly (more easily vectorizable) C code.
+    The source is written in such a ways that compilers can easily turn it into
+    efficient SIMD vector operation, the patterns - do the same operation on
+    4-8-16 pixels - are easily recognizable.
+    
+    Even if the compiler is not very advanced (MSVC khhhhmm..) this approach is 
+    faster because it has less overhead when interpreting the instruction flow. It 
+    processes 16, 8, 4, and 1 pixels (32 bit floats) when handling the horizontal 
+    line, taking the largest chunks it can then finishing the rest with the smaller ones.
+    
+    This way, a good compiler can achieve one-third the speed of the SSE2 JIT (which is considered 
+    fast), so this is quite impressive. Expect 3-20x speedup compared to the old method
+    (which can be tested with optVectorC=False).
+
+    Default: True
 
 Expressions
 ------------
@@ -526,6 +550,9 @@ Changelog
 +-----------------+----------------------------------------------------------+
 | Version         | Changes                                                  |
 +=================+==========================================================+
+| 3.7.4           || Enhancement: vectorizable C implementation helps nonJIT |
+|                 || New parameter: optVectorC                               |
++-----------------+----------------------------------------------------------+
 | AviSynth+ 3.7.2 || Expr: ``scale_inputs`` to case insensitive and add      |
 |                 |  floatUV to error message as an allowed value.           |
 |                 || Fix: Expr LUT operation Access Violation on x86 + AVX2  |
@@ -567,7 +594,7 @@ Changelog
 | AviSynth+ r2542 |  Initial release                                         |
 +-----------------+----------------------------------------------------------+
 
-$Date: 2022/03/28 05:58:18 $
+$Date: 2025/03/06 16:15:00 $
 
 .. _mathematical function:
     https://en.wikipedia.org/wiki/Function_(mathematics)

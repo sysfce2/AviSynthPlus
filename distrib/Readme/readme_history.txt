@@ -11,7 +11,73 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist374.html
 and
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html#what-s-new-in-the-api-v11
 
-20250304 3.7.3 r????
+20250306 3.7.3 r4612
+--------------------
+Expr: Rewrite the C (non-Intel-JIT) path to support vectorization, if the compiler is capable.
+
+    I created this for non-Intel platforms where the (Intel SSE2-AVX2) JIT compiler does not work.
+
+    Even if the compiler is not very advanced (MSVC khhhhmm..) this approach is faster because it 
+    has less overhead when interpreting the instruction flow. It processes 16, 8, 4, and 1 floats
+    when handling the horizontal line, taking the largest chunks it can then finishing the rest
+    with the smaller ones.
+
+    Benchmarks (x64 bit). For comparison, I also provide the JIT results. 
+
+    Script (optSSE2 = false disables JIT):
+    
+        # Mandelbrot
+        ColorBarsHD()
+        a="X dup * Y dup * - A + T^ X Y 2 * * B + 2 min Y^ T 2 min X^ "
+        b=a+a
+        c=b+b
+        blankclip(width=960,height=640,length=1600,pixel_type="YUV420P8")
+        Expr("sxr 3 * 2 - -1.2947627 - 1.01 frameno ^ / -1.2947627 + A@ X^ syr 2 * 1 - 0.4399695 "
+        \ + "- 1.01 frameno ^ / 0.4399695 + B@ Y^ "+c+c+c+c+c+b+a+"X dup * Y dup * + 4 < 0 255 ?",
+        \ "128", "128",optSSE2 = false, optAVX2=false) # optVectorC=true default
+
+    MSVC: Microsoft VC, actual VS2022 version.
+    Intel: Intel C++ Compiler 2025 - LLVM based, aka ICX.
+
+    "Base" means the instruction set is not specified: SSE2 is the minimum for x64. 
+
+    Compiler/Settings                      VectSize  FPS  
+    -------------------------------------- ---------- -----
+    MSVC debug                             1         0.27 
+    Intel (base + optional AVX2 paths)     1         1.01 (! Mixed instruction set support, slow) 
+    MSVC Base                              1         1.71 VectorSize=1, not optimal :)
+    MSVC old single variable C:            -         2.82 
+    Intel old single variable C:           -         2.90 
+    MSVC Base                              16        4.47 (initial Proof of Concept version) 
+    MSVC AVX2                              16        4.59 (initial PoC version) 
+    MSVC Base                              16        5.94 
+    MSVC AVX2                              16        6.04 
+    Intel Base                             16        6.29 (initial PoC version) 
+    Intel AVX2 optional AVX512 -Qax:AVX512 16        12.60 (! Mixed instruction set support, slow)
+    Intel Base                             16        14.70 
+    Intel AVX2                             16        19.20 
+    Intel AVX512                           16        20.10 
+    MSVC JIT SSE2                          2x4       59.00 (dual lanes, XMM regs)
+    MSVC JIT AVX2                          2x8       128.00 (dual lanes,YMM regs)
+
+    In this test, where dual processor optimization was enabled, Intel performed poorly (though 
+    it still achieved twice the speed of MSVC). It seems that dynamically dispatching code fragments
+    to different instruction sets incurs significant overhead.
+
+    Conclusion: 
+    
+    We should better avoid builds mixed-code sets.
+    Since AVX2 has been generally supported for at least ten years, creating a non-mixed 
+    AVX2-only compilation is a reasonable enhancement.
+    
+    Looking at the numbers, achieving one-third the speed of the old SSE2 JIT, which we considered 
+    fast, is quite impressive. Even x86/x64 users can benefit from this speedup. If the Expr contains
+    specific trigonometric functions (tan, asin, acos, atan) that have no JIT implementation, then 
+    Avisynth cannot use JIT and falls back to the C implementation.
+    
+    Expr has now a new debug parameter: bool optVectorC (default true) which C code to run if non-JIT is used.
+
+20250304 3.7.3 r4610
 --------------------
 - New: frame property copy/delete/show name filtering: add wildcard and regex support
 
