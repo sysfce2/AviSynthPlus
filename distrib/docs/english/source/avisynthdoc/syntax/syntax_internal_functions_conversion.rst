@@ -71,8 +71,8 @@ Function returns hex string in uppercase, instead of lowercase.
 
 .. describe:: int width (default 0)
 
-    Width is 0 to 8, the *minimum* width of the returned string. (8 hex digit is the
-    max of Avisynth 32 bit integer)
+    Width is 0 to 16 the *minimum* width of the returned string. (8 hex digit is the
+    max of Avisynth 32 bit integer, 16 digits for 64 bit numbers)
 
     Resulting string will be left-padded with zeroes as needed.
 
@@ -174,6 +174,6 @@ Changelog
 
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
-$Date: 2025/02/05 22:45:00 $
+$Date: 2025/03/06 16:00:00 $
 
 .. _Colors: http://avisynth.nl/index.php/Colors
