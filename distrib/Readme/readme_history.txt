@@ -11,6 +11,33 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist374.html
 and
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html#what-s-new-in-the-api-v11
 
+20250309 3.7.3 r----
+--------------------
+Expr: implement tanf in JisASM
+
+  Benchmark script
+  
+    BlankClip(1000,1280,720,pixel_type="Y8")
+    # swipes the range between -Pi to +Pi
+    s = "sxr 2 * 1 - 3.14159254 * 1 * tan 10 * 128 +"
+    # swipes the range between -5Pi to +5Pi
+    # s = "sxr 2 * 1 - 3.14159254 * 5 * tan 1 0 * 128 +"
+    a= Expr(s,  optSSE2 = false, optAVX2=false, OptVectorC=False)
+    b= Expr(s,  optSSE2 = false, optAVX2=false)
+    c= Expr(s,  optSSE2 = True, optAVX2=false)
+    d= Expr(s,  optSSE2 = True, optAVX2=True)
+
+    a # or b or c or d
+
+  Results:
+
+                       MSVC Intel ICX LLVM
+    SinglePixel C    :  48   66 [fps]
+    Vector friendly C: 122  175
+    JitASM SSE       :    345  (same for both)
+    JitASM AVX       :    727  (same for both)
+
+
 20250306 3.7.3 r4612
 --------------------
 Expr: Rewrite the C (non-Intel-JIT) path to support vectorization, if the compiler is capable.

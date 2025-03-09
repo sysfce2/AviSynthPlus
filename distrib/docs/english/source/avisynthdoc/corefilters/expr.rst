@@ -188,7 +188,8 @@ Syntax and Parameters
     C code is run when
     
     - non x86/x64 systems (architectures which are not supported by JIT compiler)
-    - expression contains tan, atan, asin, acos, which are not implemented in JIT.
+    - expression contains atan, asin, acos, which are not implemented in JIT.
+      (and ``tan`` before 3.7.4), 
     - JIT is intentionally disabled with optSSE2=False
     
     Enables or disables a compiler friendly (more easily vectorizable) C code.
@@ -254,8 +255,9 @@ Expr language/RPN elements
 * Function: ``clip`` three operand function for clipping. Example: ``x 16 240
   clip`` means min((max(x,16),240)
 * Functions: ``sin cos atan2 tan asin acos atan`` |br| On Intel x86/x64 the
-  functions ``sin``, ``cos`` and ``atan2`` have SSE2/AVX2 optimization, the others
-  have not (they make the whole expression to evaluate without SIMD optimization).
+  functions ``sin``, ``cos``, ``tan``  and ``atan2`` have SSE2/AVX2 optimization, 
+  the others have not (if e.g. ``acos`` is used it makes the whole expression to 
+  evaluate without JitASM optimization).
 * Functions: ``round, floor, ceil, trunc`` operators (nearest integer - banker's
   rounding, round down, round up, round to zero). |br| On Intel builds acceleration
   requires at least SSE4.1 capable processor or else the whole expression is
@@ -552,6 +554,7 @@ Changelog
 +=================+==========================================================+
 | 3.7.4           || Enhancement: vectorizable C implementation helps nonJIT |
 |                 || New parameter: optVectorC                               |
+|                 || Implement ``tan`` for JitASM                            |
 +-----------------+----------------------------------------------------------+
 | AviSynth+ 3.7.2 || Expr: ``scale_inputs`` to case insensitive and add      |
 |                 |  floatUV to error message as an allowed value.           |

@@ -164,6 +164,7 @@ Optimizations
 - Expr: rewritten the C (non-Intel-JIT) path to support vectorization, if the compiler is capable.
   Useful for non-Intel platforms where the (Intel SSE2-AVX2) JIT compiler does not work.
   Expect 3-20x speedup compared to the old method.
+- Expr: implement ``tan`` in JITasm. Expect ~6-15x speed up for an expression like "sxr 2 * 1 - 3.14159254 * 1 * tan 10 * 128 +"
 
 Documentation
 ~~~~~~~~~~~~~
