@@ -84,6 +84,7 @@ static int64_t signed_saturated_add64(int64_t x, int64_t y) {
   // the short version of the condition cannot be used safely.
   // Issue is reported: https://developercommunity.visualstudio.com/t/Bad-code-gen-with-inlined-functions-with/10813706
   // Workaround is presented here, until the fix.
+  // They seem to have it fixed in 17.13.1. Anyway, we keep this code path separated.
   if ((x < 0 && y > comp) || (x >= 0 && y <= comp))
 #else
   if ((x < 0) == (y > comp)) // short, quicker one
