@@ -7,6 +7,7 @@ Additions, changes
 - Animate: Custom function option. See :doc:`Animate <corefilters/animate>`.
 - Animate: more precise granularity for integer interpolation, allow 64 bit input
 - Animate: add proper rounding for integer interpolation
+- Resizers: add "force" integer parameter to force the resizing process even if Avisynth decides it is not needed
 - DirectShowSource new parameter ``utf8`` for utf8 filename support
 - "propShow" ``font``, ``text_color``, ``halo_color``, ``bold`` new parameters for custom style.
 - "propShow" (#366): ``x``, ``y``, ``align`` new parameters for custom positioning.
@@ -188,6 +189,7 @@ Documentation
 - Interface V11 changes: see :ref:`api_v11_whats_new` for more details.
 - Document 64 bit capable functions and changes in old ones in millions of other rst pages.
 - Document C interface (in progress)
+- Revamped resizer section :doc:`Resize filters <corefilters/resize>`
 - and so on...
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+

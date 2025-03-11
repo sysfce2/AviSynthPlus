@@ -5,6 +5,15 @@ Resize Filters
 The resize filters scale the input video frames to an arbitrary new resolution,
 and can optionally crop the frame before resizing with sub-pixel precision.
 
+They can be used either for ordinary resizing tasks or as convolution filters.
+
+In image resizing, a convolution filter is a mathematical tool used to apply various
+effects to an image, such as blurring, sharpening, edge detection, and more. When 
+resizing images, convolution filters help in smoothing or sharpening the image to 
+avoid artifacts like aliasing, which can occur when the image is scaled up or down. 
+Common convolution filters used in resizing include Gaussian, Lanczos, and Bicubic
+filters.
+
 The following resizers are included:
 
 * **BicubicResize** is similar to **BilinearResize**, except that instead of a
@@ -45,6 +54,14 @@ The following resizers are included:
   A high-quality resizer that supplements SincResize, designed to maintain performance 
   with increased sinc taps for minimal artifacts.
 
+  This is a version of ``SincResize`` with a workaround for the 'kernel edge computing issue'
+  present in the original SincResize kernel. It is slightly sharper compared to other 
+  weighted sinc kernels with the same number of taps (such as ``Lanczos`` or ``Blackman``). To 
+  suppress computing errors below 1 LSB of 8-bit, a recommended number of taps is greater 
+  than 3 or 4. Using too few taps may still expose this issue. For higher precision computing 
+  (greater than 8-bit per sample), the minimum number of taps required to shift residual 
+  computing errors below 1 LSB may be higher.
+
 * **UserDefined2Resize** (v3.7.3-)
   A versatile resizer offering fine control over sharpness and ringing, ideal for 
   downsampling and high-quality antialiasing with adjustable parameters.
@@ -52,6 +69,11 @@ The following resizers are included:
 * **SinPowerResize** (v3.7.3-)
   An easy-to-adjust resizer with a single control parameter, perfect for downsampling 
   and creating content conditioned to reduce aliasing and ringing.
+
+  Both ``SinPow`` and ``UserDefined2`` resizers allow control over the `acutance`_ effect of the
+  output while minimizing excessive ringing (within a certain range of control parameters). 
+  Acutance of the Gauss kernel can be considered the 'zero level,' whereas for SinPow and 
+  UserDefined2, it can be greater than zero, depending on the control parameters.
 
 * **Spline16Resize**, **Spline36Resize** and **Spline64Resize** are three
   `Spline based`_ resizers. They are the (cubic) spline-based resizers from
@@ -74,7 +96,22 @@ The following resizers are included:
 As with any resampling, there are trade-offs to be considered between preservation
 (or augmentation) of image detail and possible artifacts (i.e., oversharpening).
 
+The set of ``SinPower``/``UserDefined2`` and ``Sinc``/``SincLin2``/``Lanczos``/``Blackman`` resizers form a 
+complementary set for a sinc-based workflow in digital imaging, allowing controlled 
+sharpness and ringing. ``SinPowerResize`` or ``UserDefined2Resize`` are used for content creation 
+as downscaling (compressing), while any sinc-based resizer can be used for upscaling 
+for display or intermediate processing (interpolation, decompressing).
 
+Most resizers (except Point?) can be used for convolution processing with their kernel 
+without resampling. To force the processing even when dimensions are unchanged (no phyisical resizing
+happes), use the ``force`` parameter (since v3.7.4)
+(Before 3.7.4 to enable (force) processing for unchanged dimensions, users must set non-zero 
+values for src_left and/or src_top parameters (depending on the required dimensions for processing.
+To avoid visible shifting, the values must be very low floats - like 0.000001 - need to check the 
+lowest acceptable non-zero float value).
+
+Resizers in ConvertToXXXX
+-------------------------
 
 Resizers are implicitely work in :doc:`ConvertToXXX <convert>` function family,
 when U and V chroma must be converted (chroma placement or subsampling rate change).
@@ -106,46 +143,60 @@ Syntax and Parameters
 ::
 
     BicubicResize (clip, int target_width, int target_height, float "b", float "c",
-                   float "src_left", float "src_top", float, "src_width", float "src_height")
+                   float "src_left", float "src_top", float, "src_width", float "src_height",
+                   int "force")
 
     BilinearResize (clip, int target_width, int target_height,
-                    float "src_left", float "src_top", float "src_width", float "src_height")
+                    float "src_left", float "src_top", float "src_width", float "src_height",
+                    int "force")
 
     BlackmanResize (clip, int target_width, int target_height,
-                    float "src_left", float "src_top", float "src_width", float "src_height", int "taps")
+                    float "src_left", float "src_top", float "src_width", float "src_height", 
+                    int "taps", int "force")
 
     LanczosResize (clip, int target_width, int target_height,
-                   float "src_left", float "src_top", float "src_width", float "src_height", int "taps")
+                   float "src_left", float "src_top", float "src_width", float "src_height",
+                   int "taps", int "force")
 
     Lanczos4Resize (clip, int target_width, int target_height,
-                    float "src_left", float "src_top", float "src_width", float "src_height")
+                    float "src_left", float "src_top", float "src_width", float "src_height",
+                    int "force")
 
     PointResize (clip, int target_width, int target_height,
-                 float "src_left", float "src_top", float "src_width", float "src_height")
+                 float "src_left", float "src_top", float "src_width", float "src_height",
+                 int "force")
 
     Spline16Resize (clip, int target_width, int target_height,
-                    float "src_left", float "src_top", float "src_width", float "src_height")
+                    float "src_left", float "src_top", float "src_width", float "src_height",
+                    int "force")
 
     Spline36Resize (clip, int target_width, int target_height,
-                    float "src_left", float "src_top", float "src_width", float "src_height")
+                    float "src_left", float "src_top", float "src_width", float "src_height",
+                    int "force")
 
     Spline64Resize (clip, int target_width, int target_height,
-                    float "src_left", float "src_top", float "src_width", float "src_height")
+                    float "src_left", float "src_top", float "src_width", float "src_height",
+                    int "force")
 
     GaussResize (clip, int target_width, int target_height,
-                 float "src_left", float "src_top", float "src_width", float "src_height", float "p")
+                 float "src_left", float "src_top", float "src_width", float "src_height",
+                 float "p", int "force")
 
     SincResize (clip, int target_width, int target_height,
-                float "src_left", float "src_top", float "src_width", float "src_height", int "taps")
+                float "src_left", float "src_top", float "src_width", float "src_height",
+                int "taps", int "force")
 
     SinPowerResize (clip, int target_width, int target_height,
-                    float "src_left", float "src_top", float "src_width", float "src_height", float "p")
+                    float "src_left", float "src_top", float "src_width", float "src_height",
+                    float "p", int "force")
 
     SincLinResize (clip, int target_width, int target_height,
-                   float "src_left", float "src_top", float "src_width", float "src_height", int "taps")
+                   float "src_left", float "src_top", float "src_width", float "src_height",
+                   int "taps", int "force")
 
     UserDefined2Resize (clip, int target_width, int target_height, float "b", float "c", float "s",
-                        float "src_left", float "src_top", float "src_width", float "src_height")
+                        float "src_left", float "src_top", float "src_width", float "src_height",
+                        int "force")
 
 .. describe:: clip
 
@@ -196,7 +247,43 @@ Syntax and Parameters
 
     * b: Controls the blurring. Optimal range: -50 to 250.
     * c: Controls the ringing. Optimal range: -50 to 250.
-    * s (support): Controls the support size. Default is 2.2. Valid range: 2.0 to 4.0.
+    * s (support): Controls the support size. Default is 2.3. Valid range: 1.5 to 15.0.
+
+    For b, the valid range is -50 to 250 (values outside this range are typically nonsensical and
+    are clipped to -50 to 250). However, recommended c values may be as low as -40, so the lower range 
+    clipping can be expanded to -60 or lower.
+
+    The typical usable range for b is 70 to 130, and for c is -30 to 23.
+
+    The b and c values are generally interconnected via tables of recommended values. Typically, b controls 
+    the 'sharpness look/makeup,' while c supplements to balance the kernel to produce as little ringing as 
+    possible.
+
+    .. image:: ./pictures/userdefined2_b_c.png
+
+    ``ovsh`` means overshoot. Columns are classified as an 'overshoot/acutance' view of the output, 
+    but only a single combination of ``b`` and ``c`` may produce minimal ringing for each ``b`` and
+    ``c`` pair (which may also depend on source sharpness, such as the Fourier spectrum). 
+    
+    The table of recommended ``b`` and ``c`` values is mostly valid for high downsampling 
+    ratios like 10:1 or more, but typically usable for ratios down to about 2:1 and less.
+
+    * b > 130: Typically close to ``GaussResize`` with 'zero acutance' ('film' look/makeup).
+    * b < 95: Produces high levels of sharpness/acutance ('video' look/makeup).
+    
+    For the initial setup, the c value must follow the b value from the table and may be 
+    adjusted for each source to minimize ringing.
+
+    Internally, it is based on a sum of weighted sinc functions by b and c parameters. 
+    With b = c = 16, it is equivalent to SincResize with the given support size by the s parameter.
+
+    **s** parameter controls the used part of the computed kernel in the resampler. Also affect the resamplers' 
+    performance (more support - less performance). Most sinc-based resizers have ``support``=``taps``.
+
+    For ``UserDefine2Resize`` it is possible to manually control support value: Low values like 
+    ``1.8`` to ``2.2`` may give some additional 'crispening' effect (while can cause more ringing). 
+    High values like 3..4 and more required for more linear processing (highest level of ringing 
+    suppression). Also the 'wide-long' soft kernels like b=210 c=98 may require larger support to save from too early kernel truncation in a resampler. If the kernel decays very fast - too much support param may be useless wasting of the computing resources. Higher values of support param may be required for highest precision computing using float samples formats.
 
     Effects:
 
@@ -205,8 +292,8 @@ Syntax and Parameters
       b and c values.
     * Increasing the s parameter allows for better control over residual ringing but makes
       the result a bit softer.
-    * The default values of b and c (121/19) create a very soft result. 
-      It may be better to use sharper values like 90/-12.
+    * The default values of b and c (121/19) create a soft film-like look/makeup. It may be better to use 
+      sharper values like 80/-20 with higher 'sharpness/acutance'
 
     Defaults: ``b=121.0``, ``c=19.0``, ``s=2.3``
 
@@ -271,9 +358,13 @@ Syntax and Parameters
 
     **SincLin2Resize**
     
-    SincLin2Resize is a workaround supplement to SincResize. It is designed to 
-    be "not-worse" in full-strike sinc taps count.
-    Recommended to set SincLin2(taps) to two times larger than SincResize(taps).
+    ``SincLin2Resize`` is a workaround supplement to ``SincResize``.
+
+    It provides at least ``taps/2`` full-strike sinc taps (lobes ?) count before beginning of linear 
+    weighting to zero at the end of the kernel. Recommended to set SincLin2(taps) to two times larger 
+    in comparison with previously used SincResize(taps) in old projects. While performance of the resampler 
+    will degrade proportionally to taps value used". Taps param controls the balance between performance 
+    and quality and ringing length (if present).
     
     Effects:
 
@@ -284,7 +375,7 @@ Syntax and Parameters
     Range:
 
     * 1-100 for **BlackmanResize** and **LanczosResize**
-    * 1-20 for **SincResize**
+    * 1-150 for **SincResize**
     * 1-40 for **SincLine2Resize**
 
     Default:
@@ -306,7 +397,7 @@ Syntax and Parameters
 
     **SinPowerResize**
     
-    SinPowResize is designed for downsampling and can also be used as a convolution filter. 
+    SinPowerResize is designed for downsampling and can also be used as a convolution filter. 
     It is easier to adjust with a single control parameter.
     
     ``p`` Controls the sharpness. Optimal range: 2.5 to 3.5. Where 2.5 is very sharp and 3.0+
@@ -315,11 +406,37 @@ Syntax and Parameters
     Effects:
 
     * Provides a balance between sharpness and softness.
-    * Useful for creating content conditioned to the Nyquist frequency, reducing aliasing 
-      and ringing.
-    * Can enhance visual sharpness (acutance) by producing single lobe peaking.
+    * Useful for creating content conditioned to the band-limited channel, reducing aliasing
+      and Gibbs-ringing.
+    * Can enhance visual sharpness (`acutance`_) by producing single lobe peaking.
     
     Default: 2.5
+
+.. describe:: force
+
+    Force the resizing process even if the dimensions remain unchanged and ``src_width`` or ``src_top``
+    are zero. Useful to intentionally prevent sudden visual differences that might occur if resizing 
+    is unexpectedly skipped.
+    
+    * 0 - return unchanged if no resize needed
+    * 1 - force H - Horizontal resizing phase
+    * 2 - force V - Vertical resizing phase
+    * 3 - force H and V
+
+    ::
+
+        version.crop(8,32,16,16)
+        w=Width()
+        h=height()
+        force=3
+        # at frame 50 Force=0 (default) omits resizing, thus the 
+        # intentional blur.
+        animate(0,100,"bicubicresize",\
+        16,16,1.0/3.0,1.0/3.0,-1.0,-1.0,w,h,force,\
+        16,16,1.0/3.0,1.0/3.0, 1.0, 1.0,w,h,force)
+
+    Default: 0
+
 
 .. _resize-cropping:
 
@@ -430,7 +547,9 @@ Changelog
 +-----------------+---------------------------------------------------------------+
 | Version         | Changes                                                       |
 +=================+===============================================================+
-| 3.7.3           | Add SincPowerResize, SincLin2Resize, UserDefined2Resize       |
+| 3.7.4           | Add "force" parameter                                         |
++-----------------+---------------------------------------------------------------+
+| 3.7.3           | Add SinPowerResize, SincLin2Resize, UserDefined2Resize        |
 +-----------------+---------------------------------------------------------------+
 | AviSynth+ r2768 | Resizers: don't use crop at special edge cases to avoid       |
 |                 | inconsistent results across different parameters/colorspaces. |
@@ -464,8 +583,10 @@ Changelog
 +-----------------+---------------------------------------------------------------+
 
 
-$Date: 2025/03/07 20:30:00 $
+$Date: 2025/03/11 11:45:00 $
 
+.. _acutance:
+    https://en.wikipedia.org/wiki/Acutance
 .. _Mitchell–Netravali:
     http://en.wikipedia.org/wiki/Mitchell%E2%80%93Netravali_filters
 .. _antialiasing:
