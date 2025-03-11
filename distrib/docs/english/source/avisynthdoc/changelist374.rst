@@ -4,6 +4,9 @@ Changes from 3.7.3 to 3.7.4 (3.8?)
 Additions, changes
 ~~~~~~~~~~~~~~~~~~
 - Bump year to 2025
+- Animate: Custom function option. See :doc:`Animate <corefilters/animate>`.
+- Animate: more precise granularity for integer interpolation, allow 64 bit input
+- Animate: add proper rounding for integer interpolation
 - DirectShowSource new parameter ``utf8`` for utf8 filename support
 - "propShow" ``font``, ``text_color``, ``halo_color``, ``bold`` new parameters for custom style.
 - "propShow" (#366): ``x``, ``y``, ``align`` new parameters for custom positioning.
@@ -190,7 +193,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2025/03/06 13:00:00 $
+$Date: 2025/03/11 12:00:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

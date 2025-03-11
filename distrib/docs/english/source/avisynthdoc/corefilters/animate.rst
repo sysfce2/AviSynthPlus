@@ -26,7 +26,10 @@ than linear interpolation.
 
 ::
 
-    Animate (clip, int start_frame, int end_frame, string filtername, var start_args, var end_args)
+    Animate (clip, int start_frame, int end_frame, string filtername, function user_fn, 
+             var start_args, var end_args)
+    Animate (clip, int start_frame, int end_frame, string filtername, 
+             var start_args, var end_args)
 
 
 .. describe:: clip
@@ -39,11 +42,33 @@ than linear interpolation.
       arguments given by ``start_args``.
     | At frame ``end_frame`` and later, the filter is evaluated with the
       arguments given by ``end_args``.
-    | In between, the arguments are linearly interpolated for a smooth transition.
+    | In between, the arguments are linearly or by a user defined function interpolated 
+      for a smooth transition. Since v3.7.4 integer values are up to 64 bit, interpolation
+      is using a 96.32 bit integer arithmetic. Float parameters are computed with 64 bit double precision.
 
 .. describe:: filtername
 
     Name of any filter or function accessible to your script.
+
+.. describe:: user_fn (since v3.7.4)
+
+    An optional user defined function, which replaces the classic linear interpolation logic.
+    The simplest one that acts as the classic linear interpolation is:
+    ::
+    
+        function myfuncname(float "range") {
+            return range
+        }
+        
+    The function can be passed as parameter after a ``Func(myfuncname)`` conversion.
+    
+    * function is called with "stage" from 0.0 to 1.0.
+    * Since Avisynth handles the first and last frame directly (parameter begin and finish),
+      your function may never receive 0.0 and 1.0 range values. But for proper start-end 
+      conditions please keep the rule that ``f(0.0) = 0.0`` and ``f(1.0) = 1.0``.
+      The returned value may not necessary be between 0.0 and 1.0. You can return larger 
+      values as well. It's your reponsibility how the interpolated parameters bahave in this case.
+
 
 .. describe:: start_args, end_args
 
@@ -212,6 +237,57 @@ Animate Examples
 
 See also, :ref:`Subtitle: Animated parameter demonstration <subtitle-animated-demo>`
 
+**Comparison of different methods, linear, exp.** ::
+
+    version.crop(8,32,16,16)
+    w=Width()
+    h=height()
+    force=3 # for both horizontal and vertical
+
+    Function Diff(clip src1, clip src2)
+    {
+      return Subtract(src1.ConvertBits(8),src2.ConvertBits(8)).Levels(120, 1, 255-120, 0, 255, coring=false)
+    }
+
+    # rules for animate callback: float param named "stage"
+    # stage is called for values (0.0 , 1.0)
+    # For proper start-end conditions 
+    # f(0.0) = 0.0 and f(1.0) = 1.0 is a nice to have
+
+    function animhelper_lin(float "stage")
+    {
+        return stage # full linear
+    }
+
+    function animhelper_exp(float "stage")
+    {
+        return (stage*stage*stage)
+    }
+
+    fn_lin = Func(animhelper_lin)
+    fn_exp = Func(animhelper_exp)
+
+    #function
+    a=animate(0,100,"bicubicresize", fn_exp, \
+    16,16,1.0/3.0,1.0/3.0,-1.0,-1.0,w,h,force,\
+    16,16,1.0/3.0,1.0/3.0, 1.0, 1.0,w,h,force)
+
+    #function implemented as linear 
+    b=animate(0,100,"bicubicresize", fn_lin, \
+    16,16,1.0/3.0,1.0/3.0,-1.0,-1.0,w,h,force,\
+    16,16,1.0/3.0,1.0/3.0, 1.0, 1.0,w,h,force)
+
+    # classic, always linear
+    c=animate(0,100,"bicubicresize", \
+    16,16,1.0/3.0,1.0/3.0,-1.0,-1.0,w,h,force,\
+    16,16,1.0/3.0,1.0/3.0, 1.0, 1.0,w,h,force)
+
+    #check
+    d=Diff(b,c) # they are the same
+
+    StackHorizontal(a,b,c,d)
+
+
 
 ApplyRange Examples
 ^^^^^^^^^^^^^^^^^^^
@@ -244,12 +320,16 @@ ApplyRange Examples
 Changelog
 ---------
 
-+-----------------+-----------------------------------------------+
-| Version         | Changes                                       |
-+=================+===============================================+
-| AviSynth 2.5.3  || Added ApplyRange filter.                     |
-|                 || Added support for audio, and ``start_frame`` |
-|                 |  can be equal to ``end_frame``.               |
-+-----------------+-----------------------------------------------+
++-----------------+-------------------------------------------------------------+
+| Version         | Changes                                                     |
++=================+=============================================================+
+| 3.7.4           || Custom function option for Animate                         |
+|                 || Animate: more precise granularity for integer interpolation|
+|                 || Animate: add proper rounding for integer interpolation     |
++-----------------+-------------------------------------------------------------+
+| AviSynth 2.5.3  || Added ApplyRange filter.                                   |
+|                 || Added support for audio, and ``start_frame``               |
+|                 |  can be equal to ``end_frame``.                             |
++-----------------+-------------------------------------------------------------+
 
-$Date: 2022/03/24 15:10:22 $
+$Date: 2025/03/11 11:41:22 $
