@@ -319,8 +319,10 @@ void Turn::SetUVSource(int mod_h, int mod_v, IScriptEnvironment* env)
     const int uv_height = vi_u.height * mod_v / mod_h;
     const int uv_width  = vi_u.width  * mod_h / mod_v;
 
-    u_or_b_source = FilteredResize::CreateResize(u_or_b_source, uv_width, uv_height, subs, &filter, env);
-    v_or_r_source = FilteredResize::CreateResize(v_or_r_source, uv_width, uv_height, subs, &filter, env);
+    const int force = 0;
+
+    u_or_b_source = FilteredResize::CreateResize(u_or_b_source, uv_width, uv_height, subs, force, &filter, env);
+    v_or_r_source = FilteredResize::CreateResize(v_or_r_source, uv_width, uv_height, subs, force, &filter, env);
 
     splanes[1] = 0;
     splanes[2] = 0;

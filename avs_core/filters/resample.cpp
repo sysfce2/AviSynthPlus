@@ -215,20 +215,20 @@ static void resize_h_c_planar(BYTE* dst, const BYTE* src, int dst_pitch, int src
 ********************************************************************/
 
 extern const AVSFunction Resample_filters[] = {
-  { "PointResize",    BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f", FilteredResize::Create_PointResize },
-  { "BilinearResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f", FilteredResize::Create_BilinearResize },
-  { "BicubicResize",  BUILTIN_FUNC_PREFIX, "cii[b]f[c]f[src_left]f[src_top]f[src_width]f[src_height]f", FilteredResize::Create_BicubicResize },
-  { "LanczosResize",  BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i", FilteredResize::Create_LanczosResize},
-  { "Lanczos4Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f", FilteredResize::Create_Lanczos4Resize},
-  { "BlackmanResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i", FilteredResize::Create_BlackmanResize},
-  { "Spline16Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f", FilteredResize::Create_Spline16Resize},
-  { "Spline36Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f", FilteredResize::Create_Spline36Resize},
-  { "Spline64Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f", FilteredResize::Create_Spline64Resize},
-  { "GaussResize",    BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[p]f", FilteredResize::Create_GaussianResize},
-  { "SincResize",     BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i", FilteredResize::Create_SincResize},
-  { "SinPowerResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[p]f", FilteredResize::Create_SinPowerResize},
-  { "SincLin2Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i", FilteredResize::Create_SincLin2Resize},
-  { "UserDefined2Resize", BUILTIN_FUNC_PREFIX, "cii[b]f[c]f[s]f[src_left]f[src_top]f[src_width]f[src_height]f", FilteredResize::Create_UserDefined2Resize},
+  { "PointResize",    BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_PointResize },
+  { "BilinearResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_BilinearResize },
+  { "BicubicResize",  BUILTIN_FUNC_PREFIX, "cii[b]f[c]f[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_BicubicResize },
+  { "LanczosResize",  BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i", FilteredResize::Create_LanczosResize},
+  { "Lanczos4Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_Lanczos4Resize},
+  { "BlackmanResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i", FilteredResize::Create_BlackmanResize},
+  { "Spline16Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_Spline16Resize},
+  { "Spline36Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_Spline36Resize},
+  { "Spline64Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_Spline64Resize},
+  { "GaussResize",    BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[p]f[force]i", FilteredResize::Create_GaussianResize},
+  { "SincResize",     BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i", FilteredResize::Create_SincResize},
+  { "SinPowerResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[p]f[force]i", FilteredResize::Create_SinPowerResize},
+  { "SincLin2Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i", FilteredResize::Create_SincLin2Resize},
+  { "UserDefined2Resize", BUILTIN_FUNC_PREFIX, "cii[b]f[c]f[s]f[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_UserDefined2Resize},
   /**
     * Resize(PClip clip, dst_width, dst_height [src_left, src_top, src_width, int src_height,] )
     *
@@ -934,11 +934,11 @@ FilteredResizeV::~FilteredResizeV(void)
  *******   Resampling Factory Methods   *******
  **********************************************/
 
-PClip FilteredResize::CreateResizeH(PClip clip, double subrange_left, double subrange_width, int target_width,
+PClip FilteredResize::CreateResizeH(PClip clip, double subrange_left, double subrange_width, int target_width, bool force,
   ResamplingFunction* func, IScriptEnvironment* env)
 {
   const VideoInfo& vi = clip->GetVideoInfo();
-  if (subrange_left == 0 && subrange_width == target_width && subrange_width == vi.width) {
+  if (!force && subrange_left == 0 && subrange_width == target_width && subrange_width == vi.width) {
     return clip;
   }
   /*
@@ -965,11 +965,11 @@ PClip FilteredResize::CreateResizeH(PClip clip, double subrange_left, double sub
 }
 
 
-PClip FilteredResize::CreateResizeV(PClip clip, double subrange_top, double subrange_height, int target_height,
+PClip FilteredResize::CreateResizeV(PClip clip, double subrange_top, double subrange_height, int target_height, bool force,
   ResamplingFunction* func, IScriptEnvironment* env)
 {
   const VideoInfo& vi = clip->GetVideoInfo();
-  if (subrange_top == 0 && subrange_height == target_height && subrange_height == vi.height) {
+  if (!force && subrange_top == 0 && subrange_height == target_height && subrange_height == vi.height) {
     return clip;
   }
   /*
@@ -986,9 +986,10 @@ PClip FilteredResize::CreateResizeV(PClip clip, double subrange_top, double subr
 }
 
 
-PClip FilteredResize::CreateResize(PClip clip, int target_width, int target_height, const AVSValue* args,
+PClip FilteredResize::CreateResize(PClip clip, int target_width, int target_height, const AVSValue* args, int force,
   ResamplingFunction* f, IScriptEnvironment* env)
 {
+  // args 0-1-2-3: left-top-width-height
   const VideoInfo& vi = clip->GetVideoInfo();
   const double subrange_left = args[0].AsFloat(0), subrange_top = args[1].AsFloat(0);
 
@@ -1005,15 +1006,22 @@ PClip FilteredResize::CreateResize(PClip clip, int target_width, int target_heig
 
   // "minimal area" logic is not necessarily faster because H and V resizers are not the same speed.
   // so we keep the traditional max area logic.
+
+  // 0 - return unchanged if no resize needed
+  // 1 - force H
+  // 2 - force V
+  // 3 - force H and V
+  const bool force_H = force == 1 || force == 3;
+  const bool force_V = force == 2 || force == 3;
   if (area_FirstH < area_FirstV)
   {
-    result = CreateResizeV(clip, subrange_top, subrange_height, target_height, f, env);
-    result = CreateResizeH(result, subrange_left, subrange_width, target_width, f, env);
+    result = CreateResizeV(clip, subrange_top, subrange_height, target_height, force_V, f, env);
+    result = CreateResizeH(result, subrange_left, subrange_width, target_width, force_H, f, env);
   }
   else
   {
-    result = CreateResizeH(clip, subrange_left, subrange_width, target_width, f, env);
-    result = CreateResizeV(result, subrange_top, subrange_height, target_height, f, env);
+    result = CreateResizeH(clip, subrange_left, subrange_width, target_width, force_H, f, env);
+    result = CreateResizeV(result, subrange_top, subrange_height, target_height, force_V, f, env);
   }
   return result;
 }
@@ -1021,89 +1029,103 @@ PClip FilteredResize::CreateResize(PClip clip, int target_width, int target_heig
 AVSValue __cdecl FilteredResize::Create_PointResize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = PointFilter();
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], &f, env);
+  const int force = args[7].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 
 
 AVSValue __cdecl FilteredResize::Create_BilinearResize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = TriangleFilter();
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], &f, env);
+  const int force = args[7].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 
 
 AVSValue __cdecl FilteredResize::Create_BicubicResize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = MitchellNetravaliFilter(args[3].AsDblDef(1. / 3.), args[4].AsDblDef(1. / 3.));
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[5], &f, env);
+  const int force = args[9].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[5], force, &f, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_LanczosResize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = LanczosFilter(args[7].AsInt(3));
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], &f, env);
+  const int force = args[8].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_Lanczos4Resize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = LanczosFilter(4);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], &f, env);
+  const int force = args[7].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_BlackmanResize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = BlackmanFilter(args[7].AsInt(4));
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], &f, env);
+  const int force = args[8].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_Spline16Resize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = Spline16Filter();
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], &f, env);
+  const int force = args[7].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_Spline36Resize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = Spline36Filter();
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], &f, env);
+  const int force = args[7].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_Spline64Resize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = Spline64Filter();
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], &f, env);
+  const int force = args[7].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_GaussianResize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = GaussianFilter(args[7].AsFloat(30.0f));
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], &f, env);
+  const int force = args[8].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_SincResize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = SincFilter(args[7].AsInt(4));
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], &f, env);
+  const int force = args[8].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 
 // like GaussianFilter(); optional P
 AVSValue __cdecl FilteredResize::Create_SinPowerResize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = SinPowerFilter(args[7].AsFloat(2.5f));
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], &f, env);
+  const int force = args[8].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 
 // like SincFilter or LanczosFilter: optional Taps
 AVSValue __cdecl FilteredResize::Create_SincLin2Resize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = SincLin2Filter(args[7].AsInt(15));
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], &f, env);
+  const int force = args[8].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 
 // like bicubic, plus 's'upport: optional B and C and S
 AVSValue __cdecl FilteredResize::Create_UserDefined2Resize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = UserDefined2Filter(args[3].AsFloat(121.0f), args[4].AsFloat(19.0f), args[5].AsFloat(2.3f));
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[6], &f, env);
+  const int force = args[10].AsInt(0);
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[6], force, &f, env);
 }
 

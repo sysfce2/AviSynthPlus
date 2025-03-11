@@ -1428,6 +1428,8 @@ ConvertToPlanarGeneric::ConvertToPlanarGeneric(
     return P ? (dOut - dIn) / sIn : 0.5f + (dOut - dIn - 0.5f*sOut) / sIn;
   };
 
+  const int force = 0;
+
   if (interlaced) {
     uv_height /=  2;
 
@@ -1442,10 +1444,10 @@ ConvertToPlanarGeneric::ConvertToPlanarGeneric(
     std::vector<PClip> tbUsource(2); // Interleave() will take ownership of these
     std::vector<PClip> tbVsource(2);
 
-    tbUsource[0] = FilteredResize::CreateResize(new SelectEvery(Usource, 2, 0, env), uv_width, uv_height, tUsubSampling, filter, env);
-    tbUsource[1] = FilteredResize::CreateResize(new SelectEvery(Usource, 2, 1, env), uv_width, uv_height, bUsubSampling, filter, env);
-    tbVsource[0] = FilteredResize::CreateResize(new SelectEvery(Vsource, 2, 0, env), uv_width, uv_height, tVsubSampling, filter, env);
-    tbVsource[1] = FilteredResize::CreateResize(new SelectEvery(Vsource, 2, 1, env), uv_width, uv_height, bVsubSampling, filter, env);
+    tbUsource[0] = FilteredResize::CreateResize(new SelectEvery(Usource, 2, 0, env), uv_width, uv_height, tUsubSampling, force, filter, env);
+    tbUsource[1] = FilteredResize::CreateResize(new SelectEvery(Usource, 2, 1, env), uv_width, uv_height, bUsubSampling, force, filter, env);
+    tbVsource[0] = FilteredResize::CreateResize(new SelectEvery(Vsource, 2, 0, env), uv_width, uv_height, tVsubSampling, force, filter, env);
+    tbVsource[1] = FilteredResize::CreateResize(new SelectEvery(Vsource, 2, 1, env), uv_width, uv_height, bVsubSampling, force, filter, env);
 
     Usource = new SelectEvery(new DoubleWeaveFields(new Interleave(std::move(tbUsource), env)), 2, 0, env);
     Vsource = new SelectEvery(new DoubleWeaveFields(new Interleave(std::move(tbVsource), env)), 2, 0, env);
@@ -1454,8 +1456,8 @@ ConvertToPlanarGeneric::ConvertToPlanarGeneric(
     AVSValue UsubSampling[4] = { ChrOffset(xsIn, xdInU, xsOut, xdOutU), ChrOffset(ysIn, ydInU, ysOut, ydOutU), AVSValue(), AVSValue() };
     AVSValue VsubSampling[4] = { ChrOffset(xsIn, xdInV, xsOut, xdOutV), ChrOffset(ysIn, ydInV, ysOut, ydOutV), AVSValue(), AVSValue() };
 
-    Usource = FilteredResize::CreateResize(new SwapUVToY(child, SwapUVToY::UToY8, env), uv_width, uv_height, UsubSampling, filter, env);
-    Vsource = FilteredResize::CreateResize(new SwapUVToY(child, SwapUVToY::VToY8, env), uv_width, uv_height, VsubSampling, filter, env);
+    Usource = FilteredResize::CreateResize(new SwapUVToY(child, SwapUVToY::UToY8, env), uv_width, uv_height, UsubSampling, force, filter, env);
+    Vsource = FilteredResize::CreateResize(new SwapUVToY(child, SwapUVToY::VToY8, env), uv_width, uv_height, VsubSampling, force, filter, env);
   }
   delete filter;
 }

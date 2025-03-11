@@ -137,13 +137,13 @@ class FilteredResize
    **/
 {
 public:
-  static PClip CreateResizeH(PClip clip, double subrange_left, double subrange_width, int target_width,
+  static PClip CreateResizeH(PClip clip, double subrange_left, double subrange_width, int target_width, bool force,
     ResamplingFunction* func, IScriptEnvironment* env);
 
-  static PClip CreateResizeV(PClip clip, double subrange_top, double subrange_height, int target_height,
+  static PClip CreateResizeV(PClip clip, double subrange_top, double subrange_height, int target_height, bool force,
     ResamplingFunction* func, IScriptEnvironment* env);
 
-  static PClip CreateResize(PClip clip, int target_width, int target_height, const AVSValue* args,
+  static PClip CreateResize(PClip clip, int target_width, int target_height, const AVSValue* args, int force,
     ResamplingFunction* f, IScriptEnvironment* env);
 
   static AVSValue __cdecl Create_PointResize(AVSValue args, void*, IScriptEnvironment* env);
