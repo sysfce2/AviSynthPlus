@@ -57,9 +57,13 @@ extern const AVSFunction Combine_filters[] = {
   { "StackVertical", BUILTIN_FUNC_PREFIX, "cc+", StackVertical::Create },
   { "StackHorizontal", BUILTIN_FUNC_PREFIX, "cc+", StackHorizontal::Create },
   { "ShowFiveVersions", BUILTIN_FUNC_PREFIX, "ccccc", ShowFiveVersions::Create },
-  { "Animate", BUILTIN_FUNC_PREFIX, "iis.*", Animate::Create },  // start frame, end frame, filter, start-args, end-args
-  { "Animate", BUILTIN_FUNC_PREFIX, "ciis.*", Animate::Create },
-  { "ApplyRange", BUILTIN_FUNC_PREFIX, "ciis.*", Animate::Create_Range },
+  // first come the custom function versions, bacause of array_of_anything finish
+  { "Animate", BUILTIN_FUNC_PREFIX, "iisn.*", Animate::Create, (void*)1 },  // start frame, end frame, filter, function, start-args, end-args
+  { "Animate", BUILTIN_FUNC_PREFIX, "ciisn.*", Animate::Create, (void*)1 },
+  // then the legacy linear version
+  { "Animate", BUILTIN_FUNC_PREFIX, "iis.*", Animate::Create, (void *)0 },  // start frame, end frame, filter, start-args, end-args
+  { "Animate", BUILTIN_FUNC_PREFIX, "ciis.*", Animate::Create, (void*)0 },
+  { "ApplyRange", BUILTIN_FUNC_PREFIX, "ciis.*", Animate::Create_Range, (void*)0 },
   { 0 }
 };
 
@@ -407,8 +411,8 @@ AVSValue __cdecl ShowFiveVersions::Create(AVSValue args, void*, IScriptEnvironme
  **************************************/
 
 Animate::Animate( PClip context, int _first, int _last, const char* _name, const AVSValue* _args_before,
-                  const AVSValue* _args_after, int _num_args, bool _range_limit, IScriptEnvironment* env )
-   : first(_first), last(_last), num_args(_num_args), name(_name), range_limit(_range_limit)
+                  const AVSValue* _args_after, int _num_args, bool _range_limit, const AVSValue& _custom_fn, IScriptEnvironment* env )
+   : first(_first), last(_last), num_args(_num_args), name(_name), range_limit(_range_limit), custom_fn(_custom_fn)
 {
   if (first > last)
     env->ThrowError("Animate: final frame number must be greater than initial.");
@@ -439,6 +443,54 @@ Animate::Animate( PClip context, int _first, int _last, const char* _name, const
     }
   }
 
+  if (custom_fn.IsFunction()) {
+    // pre-check validity
+
+    // We could even check if function returns f(0.0) = 0.0 and f(1.0) = 1.0
+    // But we are not that serious. Who implements custom function, will take care of it if needed
+    constexpr bool check_first = false;
+    constexpr bool check_last = false;
+
+    double result_first = 0.0;
+    double result_last = 1.0;
+    PFunction func = custom_fn.AsFunction();
+    try {
+
+      // The Animate callback is a plain scalar function, no child
+      // one compulsory double "stage" parameter
+      const char* argnames[1] = { "stage" };
+
+      // for syntax check this is always called
+      AVSValue test1_args[1] = { 0.0 };
+      const AVSValue test1_args_array = AVSValue(test1_args, 1);
+      result_first = env->Invoke3(AVSValue(), func, test1_args_array, argnames).AsFloat();
+
+      if (check_last) {
+        if (first != last) {
+          AVSValue test2_args[1] = { 1.0 };
+          const AVSValue test2_args_array = AVSValue(test2_args, 1);
+          result_last = env->Invoke3(AVSValue(), func, test2_args_array, argnames).AsFloat();
+        }
+      }
+    }
+    catch (IScriptEnvironment::NotFound) {
+      env->ThrowError("Animate: Invalid function parameter type '%s'(%s)\n"
+        "Function must have exactly one float argument: stage",
+        func->GetDefinition()->param_types, func->ToString(env));
+    }
+    catch (const AvisynthError& error) {
+      env->ThrowError("Animate: Error in custom function: %s\n%s",
+        func->ToString(env), error.msg);
+    }
+
+    if (check_first && result_first != 0.0)
+      env->ThrowError("Animate: Error in custom function, for stage 0.0: 0.0 must be returned.\n%s\n",
+        func->ToString(env));
+    if (check_last && result_last != 1.0)
+      env->ThrowError("Animate: Error in custom function, for stage 1.0: 1.0 must be returned.\n%s\n",
+        func->ToString(env));
+  }
+
   // copy args, and add initial clip arg for OOP notation
 
   if (context)
@@ -464,6 +516,7 @@ Animate::Animate( PClip context, int _first, int _last, const char* _name, const
 
   memset(cache_stage, -1, sizeof(cache_stage));
 
+  // first clip with starting parameter values
   cache[0] = env->Invoke(name, AVSValue(args_before.data(), num_args)).AsClip();
   cache_stage[0] = 0;
   VideoInfo vi1 = cache[0]->GetVideoInfo();
@@ -478,6 +531,7 @@ Animate::Animate( PClip context, int _first, int _last, const char* _name, const
       env->ThrowError("ApplyRange: Filtered and unfiltered video colorspace must match");
   }
   else {
+    // last clip with ending parameter values
     cache[1] = env->Invoke(name, AVSValue(args_after, num_args)).AsClip();
     cache_stage[1] = last-first;
     VideoInfo vi2 = cache[1]->GetVideoInfo();
@@ -502,6 +556,110 @@ bool __stdcall Animate::GetParity(int n)
   return cache[0]->GetParity(n);
 }
 
+// 96.32 bit arithmetic helper stuff for Animate
+
+// 128-bit integer structure
+struct my_int128_t {
+  int64_t H;  // High 64 bits (includes sign)
+  uint64_t L; // Low 64 bits (unsigned)
+};
+
+// Function to multiply two 64-bit values and produce a 128-bit result
+static inline my_int128_t mul_64_64_to_128(int64_t a, int64_t b) {
+  my_int128_t result;
+
+  // Handle sign separately
+  uint64_t sign = ((a < 0) ^ (b < 0)) ? 1 : 0;
+
+  // Use absolute values for multiplication
+  uint64_t abs_a = (a < 0) ? -a : a;
+  uint64_t abs_b = (b < 0) ? -b : b;
+
+  // Multiply using 32-bit parts to avoid overflow
+  uint64_t a_lo = abs_a & 0xFFFFFFFF;
+  uint64_t a_hi = abs_a >> 32;
+  uint64_t b_lo = abs_b & 0xFFFFFFFF;
+  uint64_t b_hi = abs_b >> 32;
+
+  // Multiply the components
+  uint64_t lo_lo = a_lo * b_lo;
+  uint64_t hi_lo = a_hi * b_lo;
+  uint64_t lo_hi = a_lo * b_hi;
+  uint64_t hi_hi = a_hi * b_hi;
+
+  // Combine the results
+  uint64_t mid = (lo_lo >> 32) + (hi_lo & 0xFFFFFFFF) + (lo_hi & 0xFFFFFFFF);
+  uint64_t carry = mid >> 32;
+
+  result.L = (lo_lo & 0xFFFFFFFF) | ((mid & 0xFFFFFFFF) << 32);
+  result.H = (hi_lo >> 32) + (lo_hi >> 32) + hi_hi + carry;
+
+  // Apply sign if needed
+  if (sign) {
+    // Two's complement negation
+    result.L = ~result.L + 1;
+    result.H = ~result.H + (result.L == 0);
+  }
+
+  return result;
+}
+
+// Function to add two 128-bit integers
+static inline my_int128_t add_128(my_int128_t a, my_int128_t b) {
+  my_int128_t result;
+
+  result.L = a.L + b.L;
+  // Check for carry
+  result.H = a.H + b.H + (result.L < a.L ? 1 : 0);
+
+  return result;
+}
+
+// Function to shift a 128-bit integer right by 'shift' bits
+static inline int64_t shift_right_128(my_int128_t a, int shift) {
+  if (shift >= 64) {
+    // If shifting by 64 or more, the result comes entirely from the high part
+    return a.H >> (shift - 64);
+  }
+  else {
+    // Combine portions from both high and low parts
+    return (a.H << (64 - shift)) | (a.L >> shift);
+  }
+}
+
+// Constants for 96.32 integer arithmetic
+constexpr int ANIMATE_INT_ARITH_SCALEBITS = 32;
+constexpr uint64_t ANIMATE_FULL_SCALE = 1ULL << ANIMATE_INT_ARITH_SCALEBITS; // 2^32
+constexpr uint64_t ANIMATE_ROUND = ANIMATE_FULL_SCALE >> 1; // 2^31
+
+// Main interpolation function with uint64_t factor
+// factor = 2^32 means 1.0
+int64_t Muldiv_64_32_integer_arithm(int64_t a, int64_t b, uint64_t factor) {
+
+  // Special case handling for factor = 0 or factor = 2^32 (0.0 or 1.0)
+  if (factor == 0)
+    return a;
+  else if (factor == ANIMATE_FULL_SCALE)
+    return b;
+
+  // Calculate the interpolation
+  // (a*(1-factor) + b*factor + round) / fullscale
+
+  my_int128_t temp_a, temp_b;
+  temp_a = mul_64_64_to_128(a, ANIMATE_FULL_SCALE - factor);
+  temp_b = mul_64_64_to_128(b, factor);
+  my_int128_t temp = add_128(temp_a, temp_b);
+
+  // Add rounding constant
+  temp.L += ANIMATE_ROUND;
+  // Check for carry
+  if (temp.L < ANIMATE_ROUND) {
+    temp.H++;
+  }
+
+  // Back to the real integer domain
+  return shift_right_128(temp, ANIMATE_INT_ARITH_SCALEBITS);
+}
 
 PVideoFrame __stdcall Animate::GetFrame(int n, IScriptEnvironment* env)
 {
@@ -523,17 +681,54 @@ PVideoFrame __stdcall Animate::GetFrame(int n, IScriptEnvironment* env)
       furthest = j;
 
   int scale = last-first;
+  double stage_mod = (double)stage / scale; // linear 0.0 .. 1.0
+
+  if (custom_fn.IsFunction()) {
+    // custom function maps x -> fn(x), so that x=0.0 and x=1.0 still returns 0.0 and 1.0 (ideally)
+    PFunction func = custom_fn.AsFunction();
+    const char* argnames[1] = { "stage" };
+    AVSValue actual_args[1] = { stage_mod };
+    const AVSValue actual_args_array = AVSValue(actual_args, 1);
+    stage_mod = env->Invoke3(AVSValue(), func, actual_args_array, argnames).AsFloat();
+    // Used for integer interpolations as well.
+    // Since normalization is at 2^32 (where 1.0 equals 2^32), and int64_t is used,
+    // it can handle up to a 2^31 multiplier from fn(x).
+    // However, a return value range of 0.0 to 1.0 is ideal.
+  }
+
+  const uint64_t stage_int_arith = (int64_t)(double(ANIMATE_FULL_SCALE) * stage_mod);
+
+  for (int a = 0; a < num_args; ++a) {
+    if (args_before[a].IsInt() && args_after[a].IsInt()) {
+      // 96.32 bit arithmetic, intermediate 128 bits inside. 
+      // Uses proper rounding when returning to real integer domain.
+      args_now[a] = Muldiv_64_32_integer_arithm(args_before[a].AsLong(), args_after[a].AsLong(), stage_int_arith);
+    }
+    else if (args_before[a].IsFloat() && args_after[a].IsFloat()) {
+      // note: AsFloat() returns double
+      args_now[a] = args_before[a].AsFloat() * (1 - stage_mod) + args_after[a].AsFloat() * stage_mod;;
+    }
+    else {
+      args_now[a] = args_before[a]; // bool, string, etc.. no transition
+    }
+  }
+#if 0
+  // old classic linear, 32 bit only kept for reference
+  int scale = last - first;
+
   for (int a=0; a<num_args; ++a) {
     if (args_before[a].IsInt() && args_after[a].IsInt()) {
+      // no rounding here
       args_now[a] = int((Int32x32To64(args_before[a].AsInt(), scale-stage) + Int32x32To64(args_after[a].AsInt(), stage)) / scale);
     }
     else if (args_before[a].IsFloat() && args_after[a].IsFloat()) {
-      args_now[a] = float(((double)args_before[a].AsFloat()*(scale-stage) + (double)args_after[a].AsFloat()*stage) / scale);
+      args_now[a] = (args_before[a].AsFloat()*(scale-stage) + args_after[a].AsFloat()*stage) / scale;
     }
     else {
       args_now[a] = args_before[a];
     }
   }
+#endif
   cache_stage[furthest] = stage;
   cache[furthest] = env->Invoke(name, AVSValue(args_now, num_args)).AsClip();
   return cache[furthest]->GetFrame(n, env);
@@ -582,20 +777,30 @@ void __stdcall Animate::GetAudio(void* buf, int64_t start, int64_t count, IScrip
 }
 
 
-AVSValue __cdecl Animate::Create(AVSValue args, void*, IScriptEnvironment* env)
+AVSValue __cdecl Animate::Create(AVSValue args, void* user_data, IScriptEnvironment* env)
 {
+  auto anim_kind = reinterpret_cast<intptr_t>(user_data);
+  // 0: legacy 1: extra callback function parameter
+
   PClip context;
+  // When function parameter exists, it shifts the parameter array by one
+  const int param_index = (anim_kind == 0) ? 3 : 4;
+  // Convert the clip-at-zeroth-param version to the other signature.
   if (args[0].IsClip()) {
+    // ciis.* -> iis.*
+    // ciisn.* -> iisn.*
     context = args[0].AsClip();
-    args = AVSValue(&args[1], 4);
+    args = AVSValue(&args[1], param_index + 1);
   }
   const int first = args[0].AsInt();
   const int last = args[1].AsInt();
   const char* const name = args[2].AsString();
-  int n = args[3].ArraySize();
+
+  int n = args[param_index].ArraySize();
   if (n&1)
-    env->ThrowError("Animate: must have two argument lists of the same length");
-  return new Animate(context, first, last, name, &args[3][0], &args[3][n>>1], n>>1, false, env);
+    env->ThrowError("Animate: must have two argument lists of the same length"); // two sets
+  return new Animate(context, first, last, name, &args[param_index][0], &args[param_index][n>>1], n>>1, false, 
+    anim_kind == 0 ? AVSValue() : args[3], env);
 }
 
 
@@ -607,5 +812,5 @@ AVSValue __cdecl Animate::Create_Range(AVSValue args, void*, IScriptEnvironment*
   const int last = args[2].AsInt();
   const char* const name = args[3].AsString();
   int n = args[4].ArraySize();
-  return new Animate(context, first, last, name, &args[4][0], &args[4][0], n, true, env);
+  return new Animate(context, first, last, name, &args[4][0], &args[4][0], n, true, AVSValue(), env);
 }
