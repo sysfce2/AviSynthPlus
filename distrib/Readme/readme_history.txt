@@ -11,7 +11,15 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist374.html
 and
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html#what-s-new-in-the-api-v11
 
-20250309 3.7.3 r----
+20250311 3.7.3 rXXXX
+--------------------
+- Animate: Custom function option
+- Animate: more precise granularity for integer interpolation, allow 64 bit input
+- Animate: add proper rounding for integer interpolation
+- Resizers: add "force" integer parameter to force the resizing process even if Avisynth decided it's not needed
+- GaussResize: add "b" and "s" parameters See :doc:`Resize Filters <corefilters/resize>`.
+
+20250309 3.7.3 r4217
 --------------------
 Expr: implement tanf in JisASM
 

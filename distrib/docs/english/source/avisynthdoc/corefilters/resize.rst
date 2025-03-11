@@ -33,6 +33,7 @@ The following resizers are included:
 
 * **GaussResize** uses a `gaussian`_ resizer, which unlike the bicubics, does
   not overshoot – but perhaps does not appear as sharp to the eye.
+  Since 3.7.4 it got an extra ``b``, ``s`` parameters.
 
 * **LanczosResize** is a sharper alternative to **BicubicResize**. It is NOT suited
   for low bitrate video; the various Bicubic flavours are much better for this.
@@ -125,13 +126,14 @@ The control parameters of the resizers are to be given in "param1", "param2" and
 if "chromaresample" parameter exists. Since 3.7.3 it is possible to use chromaresample 
 with nondefault settings.
   
-- param1 will set 'taps', 'b', or 'p', while param2 sets 'c' parameter for resizers where applicable.
-- param3 sets 's' parameter for userdefined2 (UserDefined2Resize)
+- param1 will set 'taps', 'b', or 'p', while param2 sets 'b' or 'c' parameter for resizers where applicable.
+- param3 sets 's' parameter for userdefined2 and gauss
 
   * b,c: bicubic (1/3.0, 1/3.0)
   * b,c,s: userdefined2 (121.0, 19.0, 2.3)
   * taps: lanczos (3), blackman (4), sinc (4), sinclin2 (15)
-  * p: gauss (30.0), sinpow (2.5)
+  * p,b,s: gauss (30.0, 2.0, 4.0) (``b`` and ``s`` since 3.7.4) 
+  * p: sinpow (2.5)
   * 'param1', 'param2' and "param3" are always float. For 'taps' 'param1' is truncated to integer internally.
     When a resizer does not use one or more parameters they are simply ignored.
 
@@ -180,7 +182,7 @@ Syntax and Parameters
 
     GaussResize (clip, int target_width, int target_height,
                  float "src_left", float "src_top", float "src_width", float "src_height",
-                 float "p", int "force")
+                 float "p", float "b", float "s", int "force")
 
     SincResize (clip, int target_width, int target_height,
                 float "src_left", float "src_top", float "src_width", float "src_height",
@@ -208,9 +210,11 @@ Syntax and Parameters
 
 .. describe:: b, c, s
 
-    Parameters ``b`` and ``c`` for **BicubicResize** and **UserDefined2Resize** only.
-    
-    Parameter ``s`` for **UserDefined2Resize** only.
+    Parameters ``b`` for **BicubicResize** and **UserDefined2Resize** and **GaussResize** only.
+
+    Parameters ``c`` for **BicubicResize** and **UserDefined2Resize** only.
+
+    Parameter ``s`` for **GaussResize** and **UserDefined2Resize** only.
 
     **BicubicResize**
     
@@ -236,6 +240,21 @@ Syntax and Parameters
     | Try the default setting, ``(b=0, c=0.75)`` as above, or ``(b= -0.5, c=0.25)``.
 
     Default: 1/3, 1/3
+
+    **GaussResize**
+    
+    Parameters
+    
+    * p: Controls the blurring. Valid range: 0.01 to 100. (before 3.7.4: 0.1 to 100)
+    * b: Controls the blurring. Valid range: 1.5 to 3.5.
+    * s (support): Controls the support size. Default is 4. Valid range: 0.1 to 150.
+      Special case: ``s==0`` (auto)
+      **s** is calculated from b and param for 0.01 of residual kernel value.
+      as ``s = sqrt(4.6 / ((param * 0.1) * log(b)))``, original equation is 
+      ``s = sqrt(-ln(0.01)/(param*ln(b))``, where ``ln(0.01)`` is about ``-4.6`` 
+      and ``-ln(0.01)`` is ``4.6``.
+    
+    Default: p=30.0, b=2.0, s=4.0
     
     **UserDefined2Resize**
     
@@ -547,7 +566,8 @@ Changelog
 +-----------------+---------------------------------------------------------------+
 | Version         | Changes                                                       |
 +=================+===============================================================+
-| 3.7.4           | Add "force" parameter                                         |
+| 3.7.4           || Add "force" parameter                                        |
+|                 || GaussResize: add "b" and "s" parameters                      |
 +-----------------+---------------------------------------------------------------+
 | 3.7.3           | Add SinPowerResize, SincLin2Resize, UserDefined2Resize        |
 +-----------------+---------------------------------------------------------------+

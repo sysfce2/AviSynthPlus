@@ -8,6 +8,7 @@ Additions, changes
 - Animate: more precise granularity for integer interpolation, allow 64 bit input
 - Animate: add proper rounding for integer interpolation
 - Resizers: add "force" integer parameter to force the resizing process even if Avisynth decides it is not needed
+- GaussResize: add "b" and "s" parameters See :doc:`Resize Filters <corefilters/resize>`.
 - DirectShowSource new parameter ``utf8`` for utf8 filename support
 - "propShow" ``font``, ``text_color``, ``halo_color``, ``bold`` new parameters for custom style.
 - "propShow" (#366): ``x``, ``y``, ``align`` new parameters for custom positioning.
