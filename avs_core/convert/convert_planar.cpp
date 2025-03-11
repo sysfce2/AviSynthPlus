@@ -1791,7 +1791,7 @@ static ResamplingFunction* getResampler(const char* resampler, AVSValue param1, 
     else if (!lstrcmpi(resampler, "spline64"))
       return new Spline64Filter();
     else if (!lstrcmpi(resampler, "gauss"))
-      return new GaussianFilter(param1.AsDblDef(30.0)); // optional P as param1
+      return new GaussianFilter(param1.AsDblDef(30.0), param2.AsDblDef(2.0), param3.AsDblDef(4.0)); // optional P, B, S as param1, param2, param3
     else if (!lstrcmpi(resampler, "sinc"))
       return new SincFilter((int)param1.AsFloat(4)); // optional Taps as param1
     else if (!lstrcmpi(resampler, "sinpow"))

@@ -224,7 +224,7 @@ extern const AVSFunction Resample_filters[] = {
   { "Spline16Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_Spline16Resize},
   { "Spline36Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_Spline36Resize},
   { "Spline64Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_Spline64Resize},
-  { "GaussResize",    BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[p]f[force]i", FilteredResize::Create_GaussianResize},
+  { "GaussResize",    BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[p]f[b]f[s]f[force]i", FilteredResize::Create_GaussianResize},
   { "SincResize",     BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i", FilteredResize::Create_SincResize},
   { "SinPowerResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[p]f[force]i", FilteredResize::Create_SinPowerResize},
   { "SincLin2Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i", FilteredResize::Create_SincLin2Resize},
@@ -1093,8 +1093,8 @@ AVSValue __cdecl FilteredResize::Create_Spline64Resize(AVSValue args, void*, ISc
 
 AVSValue __cdecl FilteredResize::Create_GaussianResize(AVSValue args, void*, IScriptEnvironment* env)
 {
-  auto f = GaussianFilter(args[7].AsFloat(30.0f));
-  const int force = args[8].AsInt(0);
+  auto f = GaussianFilter(args[7].AsFloat(30.0f), args[8].AsFloat(2.0f), args[9].AsFloat(4.0f)); // defaults at two more places
+  const int force = args[10].AsInt(0);
   return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
 }
 

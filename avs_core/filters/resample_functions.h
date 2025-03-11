@@ -242,12 +242,14 @@ class GaussianFilter : public ResamplingFunction
  **/
 {
 public:
-  GaussianFilter(double p = 30.0);
-	double f(double x);
-	double support() { return 4.0; };
+  GaussianFilter(double p = 30.0, double _b = 2.0, double _s = 4.0);
+  double f(double x);
+  double support() { return s; }; // <3.7.4 was fixed at 4.0
 
 private:
- double param;
+  double param;
+  double b; // base value since 3.7.4
+  double s; // variable support since 3.7.4
 };
 
 class SincFilter : public ResamplingFunction
