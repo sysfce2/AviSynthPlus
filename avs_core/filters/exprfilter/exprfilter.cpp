@@ -880,7 +880,7 @@ YmmReg x1, x2, x3, x4, x5, x6, x7, x8, x9, x10; \
 /* Normalize to [-pi, pi] using multiplication and subtraction */ \
 vmovaps(x1, CPTR_AVX(float_invpi)); /* 1/pi */ \
 vmulps(x2, x0, x1); /* x / pi */ \
-vroundps(x3, x2, _MM_FROUND_TO_NEAREST_INT); /* round(x / pi) */ \
+vroundps(x3, x2, FROUND_TO_NEAREST_INT); /* round(x / pi) */ \
 vmovaps(x4, CPTR_AVX(float_pi1)); /* Load pi1 (highest precision part) */ \
 vmulps(x5, x3, x4); /* round(x / pi) * pi1 */ \
 vsubps(x6, x0, x5); /* Remainder after subtracting largest part */ \
