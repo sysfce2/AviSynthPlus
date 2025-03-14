@@ -137,6 +137,19 @@ with nondefault settings.
   * 'param1', 'param2' and "param3" are always float. For 'taps' 'param1' is truncated to integer internally.
     When a resizer does not use one or more parameters they are simply ignored.
 
+Resizers in AddBorders and LetterBox
+------------------------------------
+
+Optionally, when a filtering radius is given, a custom resizer can be added to :doc:`AddBorders <addborders>` and
+:doc:`LetterBox <letterbox>`. In these filters the transient areas (boundary of the new borders) are filtered, 
+in order to prevent ringing e.g. in a subsequent upscale.
+
+The filters are used purely as convolution filters, no real resize happens.
+
+Everything is the same as mentioned above in ``Resizers in ConvertToXXXX`` section, except, that 
+``'gauss'`` default parameters are tunes for blurring:
+
+* p,b,s: gauss (p=10, b=2.71828182, s=0)
 
 
 Syntax and Parameters
