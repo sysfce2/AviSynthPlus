@@ -4,6 +4,8 @@ Changes from 3.7.3 to 3.7.4 (3.8?)
 Additions, changes
 ~~~~~~~~~~~~~~~~~~
 - Bump year to 2025
+- AddBorders and LetterBox: add transient filtering See :doc:`AddBorders <corefilters/addborders>`.
+- new filter: MultiOverlay. Bulk copy-paste from clips. See :doc:`MultiOverlay <corefilters/multioverlay>`.
 - Animate: Custom function option. See :doc:`Animate <corefilters/animate>`.
 - Animate: more precise granularity for integer interpolation, allow 64 bit input
 - Animate: add proper rounding for integer interpolation
@@ -196,7 +198,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2025/03/11 12:00:00 $
+$Date: 2025/03/14 14:09:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

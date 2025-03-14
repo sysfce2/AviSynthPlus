@@ -11,7 +11,12 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist374.html
 and
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html#what-s-new-in-the-api-v11
 
-20250311 3.7.3 rXXXX
+20250314 3.7.3 r42XX
+--------------------
+- AddBorders and LetterBox: add transient filtering See :doc:`AddBorders <corefilters/addborders>`.
+- new filter: MultiOverlay. Bulk copy-paste from clips. See :doc:`MultiOverlay <corefilters/multioverlay>`.
+
+20250311 3.7.3 r4241
 --------------------
 - Animate: Custom function option
 - Animate: more precise granularity for integer interpolation, allow 64 bit input
