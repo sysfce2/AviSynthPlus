@@ -40,6 +40,7 @@
 #include <avisynth.h>
 #include <stdint.h>
 #include "convert.h"
+#include "../filters/resample.h"
 
 // useful functions
 template <typename pixel_t>
@@ -48,6 +49,7 @@ void fill_chroma(uint8_t * dstp_u, uint8_t * dstp_v, int height, int row_size, i
 template <typename pixel_t>
 void fill_plane(uint8_t * dstp, int height, int row_size, int pitch, pixel_t val);
 
+ResamplingFunction* getResampler(const char* resampler, AVSValue param1, AVSValue param2, AVSValue param3, bool throw_on_error, IScriptEnvironment* env);
 
 class ConvertToY : public GenericVideoFilter
 {

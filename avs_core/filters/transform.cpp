@@ -37,6 +37,10 @@
 #include <avs/minmax.h>
 #include "../core/bitblt.h"
 #include <stdint.h>
+#include "resample_functions.h"
+#include "../convert/convert_planar.h"
+#include "combine.h"
+#include <vector>
 
 
 
@@ -50,8 +54,8 @@ extern const AVSFunction Transform_filters[] = {
   { "Crop",           BUILTIN_FUNC_PREFIX, "ciiii[align]b", Crop::Create },              // left, top, width, height *OR*
                                                   //  left, top, -right, -bottom (VDub style)
   { "CropBottom", BUILTIN_FUNC_PREFIX, "ci", Create_CropBottom },      // bottom amount
-  { "AddBorders", BUILTIN_FUNC_PREFIX, "ciiii[color]i[color_yuv]i", AddBorders::Create },  // left, top, right, bottom [,color] [,color_yuv]
-  { "Letterbox",  BUILTIN_FUNC_PREFIX, "cii[x1]i[x2]i[color]i[color_yuv]i", Create_Letterbox },       // top, bottom, [left], [right] [,color] [,color_yuv]
+  { "AddBorders", BUILTIN_FUNC_PREFIX, "ciiii[color]i[color_yuv]i[resample]s[param1]f[param2]f[param3]f[r]i", AddBorders::Create },  // left, top, right, bottom [,color] [,color_yuv]
+  { "Letterbox",  BUILTIN_FUNC_PREFIX, "cii[x1]i[x2]i[color]i[color_yuv]i[resample]s[param1]f[param2]f[param3]f[r]i", Create_Letterbox },       // top, bottom, [left], [right] [,color] [,color_yuv]
   { 0 }
 };
 
@@ -396,7 +400,12 @@ AVSValue __cdecl Crop::Create(AVSValue args, void*, IScriptEnvironment* env)
  *****************************/
 
 AddBorders::AddBorders(int _left, int _top, int _right, int _bot, int _clr, bool _force_color_as_yuv, PClip _child, IScriptEnvironment* env)
- : GenericVideoFilter(_child), left(max(0,_left)), top(max(0,_top)), right(max(0,_right)), bot(max(0,_bot)), clr(_clr), xsub(0), ysub(0), force_color_as_yuv(_force_color_as_yuv)
+  : GenericVideoFilter(_child),
+  left(max(0, _left)), top(max(0, _top)), right(max(0, _right)), bot(max(0, _bot)),
+  clr(_clr),
+  xsub(0), ysub(0),
+  force_color_as_yuv(_force_color_as_yuv)
+
 {
   if (vi.IsYUV() || vi.IsYUVA()) {
     if (vi.NumComponents() > 1) {
@@ -660,21 +669,360 @@ PVideoFrame AddBorders::GetFrame(int n, IScriptEnvironment* env)
   return dst;
 }
 
+// Optional transient area filtering when radius > 0
+// The primary aim to blur the border neighborhood to prevent excessive ringing on
+// a following upscaleing process
+static PClip AddBorderPostProcess(PClip child,
+  int left, int top, int right, int bottom,
+  const AVSValue& _resample, const AVSValue& _param1, const AVSValue& _param2, const AVSValue& _param3, const AVSValue& _flt_rad,
+  IScriptEnvironment* env) {
+
+  // filtering radius, default 0: no transient area filtering
+  int r = _flt_rad.AsInt(0);
+
+  if (r == 0)
+    return child;
+
+  // Default: only the border side gets the blur treatment
+  // Minus "r": only the outer - added border - part is blurred
+  // though this is usually not enough to prevent ringing when upscaling.
+  const bool both_side = (r > 0);
+  if (r < 0)
+    r = -r;
+
+  const VideoInfo& vi = child->GetVideoInfo();
+
+  /*if (vi.IsYUY2())
+    env->ThrowError("AddBorders: YUY2 transient filtering not supported, use YV16.");
+    */
+
+  AVSValue param1 = _param1;
+  AVSValue param2 = _param2;
+  AVSValue param3 = _param3;
+
+  // evaluate resample parameters only radius > 0
+  const char* resampler_name = _resample.AsString("gauss");
+  if (_stricmp(resampler_name, "gauss") == 0) {
+    // for gauss, defaults are different from what we use in chroma resamplers.
+    // here we use this filter for blurring (convolution use)
+    // p = 10, b = 2.71828, s = 0
+    param1 = _param1.AsDblDef(10); // p
+    param2 = _param2.AsDblDef(2.718281828); // b
+    param3 = _param3.AsDblDef(0); // 0
+  }
+  ResamplingFunction* filter = getResampler(resampler_name, param1, param2, param3, false, env);
+  if (filter == nullptr)
+    env->ThrowError("AddBorders: unknown resampler name: %s", resampler_name);
+
+  const bool grey = vi.IsY();
+  const bool isRGBPfamily = vi.IsPlanarRGB() || vi.IsPlanarRGBA();
+
+  const int shift_w = (vi.IsPlanar() && !grey && !isRGBPfamily) ? vi.GetPlaneWidthSubsampling(PLANAR_U) : 0;
+  const int shift_h = (vi.IsPlanar() && !grey && !isRGBPfamily) ? vi.GetPlaneHeightSubsampling(PLANAR_U) : 0;
+  const int shift = max(shift_w, shift_h); // worst case
+
+  // adjust radius for worst case chroma
+  r = (r + (1 << shift) - 1) & ~((1 << shift) - 1); // chroma friendly
+
+  // just a decision
+  constexpr int MIN_FILTERING_EXTENT = 10; 
+  // +/- 10, ideally symmetric around the new border boundary.
+  // but if one of the margins are smaller, e.g. 5, the the 2*10 is achieved as 5+15 pixel wide (high) parts
+
+  // We always filter a larger area, but only copy the 2*radius (r) pixels from it.
+  int filtering_width = MIN_FILTERING_EXTENT;
+  // adjust the filtering width for the worst case, considering the chroma subsampling
+  filtering_width = (filtering_width + (1 << shift) - 1) & ~((1 << shift) - 1);
+
+  // active area before adding the new borders
+  const int orig_width = vi.width - left - right;
+  const int orig_height = vi.height - top - bottom;
+
+  filtering_width = max(filtering_width, r); // a larger radius might be specified
+
+  while (1) {
+    // avoid "Resize: Source image too small for this resize method. Width=%d, Support=%d", source_size, int(ceil(filter_support))"
+    // there may be another check at specific circumstances, I hope, filtering width was chosen to big enough to avoid it
+    const int width = 2 * filtering_width;
+    // int source_size, double crop_size, int target_size
+    // We use the resizer as convolution filter (no size change), all parameters are the same here
+    if (filter->CheckValidity(width, width, width))
+      break;
+    filtering_width += (1 << shift);
+  }
+
+  // End of safety adjustments
+  // Radius "r" and "filtering_width" are both +/- values and are chroma and resizer friendly.
+  // left, right, top, bottom are already chroma subsample friendly values
+
+  /*
+  Create up to 8 sections.
+  
+  left, top, right, bottom and the four corner bars mark the convolution (blur) area.
+  - left and right needs only force horizontal resizer
+  - top and bottom bars force vertical resizer
+  - corners force both H and V resizer
+  +---+-------------------+
+  | oo|ooooooooooooooo|oo |
+  +-o-+-----------------o-+
+  | o |               | o |
+  | o |               | o |
+  | o |               | o |
+  | o |               | o |
+  | o |               | o |
+  | o |               | o |
+  +-o-+---------------+-o-+
+  | oo|ooooooooooooooo|oo |
+  +---+---------------+---+
+  */
+
+  typedef struct {
+    PClip clip; // a smart pointer
+    int extent_outer_horiz, extent_inner_horiz; // may not be symmetric
+    int extent_outer_vert, extent_inner_vert;
+    int crop_x, crop_y;
+    int target_x, target_y;
+    int target_width, target_height;
+    int src_x, src_y;
+    int src_width, src_height;
+    int force;
+    //  0 - return unchanged if no resize needed
+    //  1 - force H - Horizontal resizing phase, For vertical bars
+    //  2 - force V - Vertical resizing phase, For horizontal bars
+    //  3 - force H and V for corner rectangles
+  } BarSection;
+
+  BarSection bar;
+
+  std::vector<BarSection> bars;
+
+  /* Example on LEFT and RIGHT vertical bar
+  
+    extent_outer extent_inner                extent_inner extent_outer
+        <------>|<--------->                  <------>|<--------->
+
+              r*2                                   r*2 
+             |<>|<>|           orig_width          |<>|<>|
+                 <------------------------------------>
+        +----+--|--+-------+  ^               +----+--|--+-------+
+        |    |  |  |       |  |               |    |  |  |       |
+        |    |  |  |       |  |orig_height    |    |  |  |       |
+        |    |  |  |       |  |               |    |  |  |       |
+        |    |  |  |       |  |               |    |  |  |       |
+        |    |  |  |       |  |               |    |  |  |       |
+        +----+--|--+-------+  V               +----+--|--+-------+
+
+  The extent_inner+extent_outer area is cropped and blurred (filtered) with the given algoritm, e.g "gauss".
+  From this blurred Clip only the (2*r) * orig_height rectangle is copied back onto the transient area.
+  */
+
+  // Define bar sections data for iteration
+
+  struct BarSectionTemplate {
+    int side;           // 0=left, 1=right, 2=top, 3=bottom 4=top-left 5=top-right 6=bottom-left 7=bottom-right
+    int direction;      // 1=horizontally, 2=vertically filtere, 3=both (corners)
+  };
+
+  const BarSectionTemplate templates[] = {
+    {0, 1}, // left bar (horizontally filtered)
+    {1, 1}, // right bar (horizontally filtered)
+    {2, 2}, // top bar (vertically filtered)
+    {3, 2}, // bottom bar (vertically filtered)
+    {4, 3}, // top left rectangle (H-V filtered)
+    {5, 3}, // top right rectangle (H-V filtered)
+    {6, 3}, // bottom left rectangle (H-V filtered)
+    {7, 3}  // bottom right rectangle (H-V filtered)
+  };
+
+  // First cycle: initialize common parameters and calculate dimensions
+  for (int i = 0; i < 8; i++) {
+    memset(&bar, 0, sizeof(BarSection));
+
+    const bool isHorizontallyFiltered = (templates[i].direction == 1) || (templates[i].direction == 3);
+    const bool isVerticallyFiltered = (templates[i].direction == 2) || (templates[i].direction == 3);
+    const int side = templates[i].side;
+
+    // Calculate border to use based on side
+    int borderSize, borderSize2;
+    switch (side) {
+    case 0: borderSize = left; borderSize2 = 0;  break;
+    case 1: borderSize = right; borderSize2 = 0; break;
+    case 2: borderSize = 0; borderSize2 = top; break;
+    case 3: borderSize = 0; borderSize2 = bottom; break;
+    case 4: borderSize = left; borderSize2 = top; break;
+    case 5: borderSize = right; borderSize2 = top; break;
+    case 6: borderSize = left;  borderSize2 = bottom; break;
+    case 7: borderSize = right; borderSize2 = bottom; break;
+    }
+
+    int safe_flt_rad = r;
+    if (borderSize > 0) { // same as isHorizontallyFiltered
+      bar.extent_outer_horiz = std::min(filtering_width, borderSize);
+      bar.extent_inner_horiz = 2 * filtering_width - bar.extent_outer_horiz;
+    }
+    if (borderSize2 > 0) { // same as(isVerticallyFiltered
+      bar.extent_outer_vert = std::min(filtering_width, borderSize2);
+      bar.extent_inner_vert = 2 * filtering_width - bar.extent_outer_vert;
+    }
+
+    if (isHorizontallyFiltered) {
+      safe_flt_rad = std::min(safe_flt_rad, borderSize);
+      bar.extent_inner_horiz = std::min(bar.extent_inner_horiz, orig_width);
+    }
+    if (isVerticallyFiltered) {
+      safe_flt_rad = std::min(safe_flt_rad, borderSize2);
+      bar.extent_inner_vert = std::min(bar.extent_inner_vert, orig_height);
+    }
+
+    int safe_flt_rad_inner = both_side ? safe_flt_rad : 0;
+    // Set force direction
+    bar.force = templates[i].direction;
+
+    // Set dimensions based on direction and side
+    if (isHorizontallyFiltered && isVerticallyFiltered) { // corners
+      bar.target_width = bar.extent_outer_horiz + bar.extent_inner_horiz;
+      bar.target_height = bar.extent_outer_vert + bar.extent_inner_vert;
+      bar.src_width = safe_flt_rad + safe_flt_rad_inner;
+      bar.src_height = safe_flt_rad + safe_flt_rad_inner;
+
+      if (side == 4 || side == 6) {  // Top Left Bottom Left
+        bar.crop_x = left - bar.extent_outer_horiz;
+        bar.target_x = left - safe_flt_rad;
+        bar.src_x = bar.extent_outer_horiz - safe_flt_rad;
+      }
+      else {  // Top Right Bottom Right
+        bar.crop_x = left + orig_width - bar.extent_inner_horiz;
+        bar.target_x = left + orig_width - safe_flt_rad_inner;
+        bar.src_x = bar.extent_inner_horiz - safe_flt_rad_inner;
+      }
+
+      if (side == 4 || side == 5) {  // Top Left Top Right
+        bar.crop_y = top - bar.extent_outer_vert;
+        bar.target_y = top - safe_flt_rad;
+        bar.src_y = bar.extent_outer_vert - safe_flt_rad;
+      }
+      else {  // Bottom Left Bottom Right
+        bar.crop_y = top + orig_height - bar.extent_inner_vert;
+        bar.target_y = top + orig_height - safe_flt_rad_inner;
+        bar.src_y = bar.extent_inner_vert - safe_flt_rad_inner;
+      }
+    }
+    else if (isHorizontallyFiltered) {
+      // Vertical but horizontally filtered bars on the left/right side
+      bar.target_width = bar.extent_outer_horiz + bar.extent_inner_horiz;
+      bar.target_height = orig_height;
+      bar.src_width = safe_flt_rad + safe_flt_rad_inner;
+      bar.src_height = orig_height;
+
+      if (side == 0) {  // Left
+        bar.crop_x = left - bar.extent_outer_horiz;;
+        bar.crop_y = top;
+        bar.target_x = left - safe_flt_rad;
+        bar.target_y = top;
+        bar.src_x = bar.extent_outer_horiz - safe_flt_rad;
+
+      }
+      else {  // Right
+        bar.crop_x = left + orig_width - bar.extent_inner_horiz;
+        bar.crop_y = top;
+        bar.target_x = left + orig_width - safe_flt_rad_inner;
+        bar.target_y = top;
+        bar.src_x = bar.extent_inner_horiz - safe_flt_rad_inner;
+      }
+     
+      bar.src_y = 0;
+    }
+    else {
+      // Horizontal, but vertically filtered bars (top/bottom)
+      bar.target_width = orig_width;
+      bar.target_height = bar.extent_outer_vert + bar.extent_inner_vert;
+      bar.src_width = orig_width;
+      bar.src_height = safe_flt_rad + safe_flt_rad_inner;
+
+      if (side == 2) {  // Top
+        bar.crop_x = left;
+        bar.crop_y = top - bar.extent_outer_vert;
+        bar.target_x = left;
+        bar.target_y = top - safe_flt_rad;
+        bar.src_y = bar.extent_outer_vert - safe_flt_rad;
+      }
+      else {  // Bottom
+        bar.crop_x = left;
+        bar.crop_y = top + orig_height - bar.extent_inner_vert;
+        bar.target_x = left;
+        bar.target_y = top + orig_height - safe_flt_rad_inner;
+        bar.src_y = bar.extent_inner_vert - safe_flt_rad_inner;
+      }
+
+      bar.src_x = 0;
+    }
+
+    // avoid "Resize: Source image too small for this resize method. Width=%d, Support=%d", source_size, int(ceil(filter_support))"
+    // int source_size, double crop_size, int target_size
+    // all are the same here
+    // whether H or V resizing is forced, only check for that dimension
+    bool ok = true;
+    if (isHorizontallyFiltered)
+      ok = ok && (filter->CheckValidity(bar.target_width, bar.target_width, bar.target_width));
+    if (isVerticallyFiltered)
+      ok = ok && (filter->CheckValidity(bar.target_height, bar.target_height, bar.target_height));
+
+    // But we can still get later: if (src_size < resampling_program->filter_size) {
+    // env->ThrowError("Source height (%d) is too small for this resizing method, must be minimum of %d", vi.height, resampling_program_luma->filter_size);
+
+    if(ok)
+      bars.push_back(bar);
+  }
+
+  std::vector<PClip> child_array = { child };
+  std::vector<int> position_array = { };
+
+  for (auto& bar : bars) {
+    // or use [src_left]f[src_top]f[src_width]f[src_height]f
+    // resizer parameters set for convolution (unchanged dimensions) filter
+    /* When we directly pass source position, it's not possible to govern the directional "force", anyway, it would just call crop as well.
+    AVSValue args_left_top_w_h[4] = {bar.crop_x, bar.crop_y, bar.target_width, bar.target_height}; // left, top, width (auto), height (auto)
+    bar.clip = FilteredResize::CreateResize(child, bar.target_width, bar.target_height, args_left_top_w_h, bar.force, filter, env);
+    */
+    AVSValue args_left_top_w_h[4] = { 0, 0, AVSValue(), AVSValue() }; // left, top, width (auto), height (auto)
+    bar.clip = FilteredResize::CreateResize(
+      new Crop(bar.crop_x, bar.crop_y, bar.target_width, bar.target_height, 0, child, env),
+      bar.target_width, bar.target_height, args_left_top_w_h, bar.force, filter, env);
+
+
+    // Add to vector
+    child_array.push_back(bar.clip);
+    position_array.push_back(bar.target_x);
+    position_array.push_back(bar.target_y);
+    // we can copy only a smaller part from the filtered area
+    // After blurring e.g. a 10x10 rectangle, we'd copy only from a radius of +/-1 or +/-2
+    position_array.push_back(bar.src_x);
+    position_array.push_back(bar.src_y);
+    position_array.push_back(bar.src_width);
+    position_array.push_back(bar.src_height);
+  }
+
+  PClip clip = new MultiOverlay(child_array, position_array, env);
+
+  return clip;
+}
 
 
 AVSValue __cdecl AddBorders::Create(AVSValue args, void*, IScriptEnvironment* env)
 {
-  // [0][1][2][3][4]  [5]       [6]
-  //  c  i  i  i  i [color]i[color_yuv]i
+  // [0][1][2][3][4]  [5]       [6]        [7]       [8]       [9]      [10]  [11]
+  //  c  i  i  i  i [color]i[color_yuv]i[resample]s[param1]f[param2]f[param3]f[r]i
+  // int left, int top, int right, int bottom
 
   // similar to BlankClip
   int color = args[5].AsInt(0);
   bool color_as_yuv = false;
+
+  const VideoInfo& vi = args[0].AsClip()->GetVideoInfo();
+
   if (args[6].Defined()) {
     if (color != 0) // Not quite 100% test
       env->ThrowError("AddBorders: color and color_yuv are mutually exclusive");
-
-    const VideoInfo &vi = args[0].AsClip()->GetVideoInfo();
 
     if (!vi.IsYUV() && !vi.IsYUVA())
       env->ThrowError("AddBorders: color_yuv only valid for YUV color spaces");
@@ -682,8 +1030,18 @@ AVSValue __cdecl AddBorders::Create(AVSValue args, void*, IScriptEnvironment* en
     color_as_yuv = true;
   }
 
-  return new AddBorders( args[1].AsInt(), args[2].AsInt(), args[3].AsInt(),
-                         args[4].AsInt(), color, color_as_yuv, args[0].AsClip(), env);
+  const int left = max(0, args[1].AsInt());
+  const int top = max(0, args[2].AsInt());
+  const int right = max(0, args[3].AsInt());
+  const int bottom = max(0, args[4].AsInt());
+
+  PClip clip = new AddBorders( left, top, right, bottom, color, color_as_yuv, args[0].AsClip(), env);
+
+  // args[7], args[8], args[9], args[10], args[11], // [resample]s[param1]f[param2]f[param3]f[r]i
+
+  clip = AddBorderPostProcess(clip, left, top, right, bottom, args[7], args[8], args[9], args[10], args[11], env);
+
+  return clip;
 }
 
 
@@ -696,14 +1054,15 @@ AVSValue __cdecl Create_Letterbox(AVSValue args, void*, IScriptEnvironment* env)
 {
   PClip clip = args[0].AsClip();
   int top = args[1].AsInt();
-  int bot = args[2].AsInt();
+  int bottom = args[2].AsInt();
   int left = args[3].AsInt(0);
   int right = args[4].AsInt(0);
   int color = args[5].AsInt(0);
   const VideoInfo& vi = clip->GetVideoInfo();
 
-  // [0][1][2][3]   [4]   [5]        [6]
-  //  c  i  i [x1]i [x2]i [color]i [color_yuv]i"  // top, bottom, [left], [right] [,color] [,color_yuv]
+  // [0][1][2][3]   [4]   [5]        [6]          [7]       [8]       [9]      [10]  [11]
+  //  c  i  i [x1]i [x2]i [color]i [color_yuv]i[resample]s[param1]f[param2]f[param3]f[r]i
+  //   top, bottom, [left], [right] [,color] [,color_yuv]
 
   // similar to BlankClip/AddBorders
   bool color_as_yuv = false;
@@ -717,9 +1076,9 @@ AVSValue __cdecl Create_Letterbox(AVSValue args, void*, IScriptEnvironment* env)
     color_as_yuv = true;
   }
 
-  if ( (top<0) || (bot<0) || (left<0) || (right<0) )
+  if ( (top<0) || (bottom<0) || (left<0) || (right<0) )
     env->ThrowError("LetterBox: You cannot specify letterboxing less than 0.");
-  if (top+bot>=vi.height) // Must be >= otherwise it is interpreted wrong by crop()
+  if (top+bottom>=vi.height) // Must be >= otherwise it is interpreted wrong by crop()
     env->ThrowError("LetterBox: You cannot specify letterboxing that is bigger than the picture (height).");
   if (right+left>=vi.width) // Must be >= otherwise it is interpreted wrong by crop()
     env->ThrowError("LetterBox: You cannot specify letterboxing that is bigger than the picture (width).");
@@ -741,12 +1100,25 @@ AVSValue __cdecl Create_Letterbox(AVSValue args, void*, IScriptEnvironment* env)
     if (right & xmask)
       env->ThrowError("LetterBox: YUV images width must be divideable by %d (right side).", xmask+1);
 
-    if (top   & ymask)
+    if (top & ymask)
       env->ThrowError("LetterBox: YUV images height must be divideable by %d (top).", ymask+1);
-    if (bot   & ymask)
+    if (bottom & ymask)
       env->ThrowError("LetterBox: YUV images height must be divideable by %d (bottom).", ymask+1);
   }
-  return new AddBorders(left, top, right, bot, color, color_as_yuv, new Crop(left, top, vi.width-left-right, vi.height-top-bot, 0, clip, env), env);
+
+  left = max(0, left);
+  top = max(0, top);
+  right = max(0, right);
+  bottom = max(0, bottom);
+
+  clip = new AddBorders(left, top, right, bottom, color, color_as_yuv, new Crop(left, top, vi.width-left-right, vi.height-top-bottom, 0, clip, env), env);
+
+  // args[7], args[8], args[9], args[10], args[11], // [resample]s[param1]f[param2]f[param3]f[r]i
+
+  clip = AddBorderPostProcess(clip, left, top, right, bottom, args[7], args[8], args[9], args[10], args[11], env);
+
+  return clip;
+
 }
 
 

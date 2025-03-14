@@ -129,6 +129,7 @@ public:
 
   virtual ResamplingProgram* GetResamplingProgram(int source_size, double crop_start, double crop_size, int target_size, int bits_per_pixel, IScriptEnvironment* env);
   virtual ~ResamplingFunction() = default;
+  virtual bool CheckValidity(int source_size, double crop_size, int target_size);
 };
 
 class PointFilter : public ResamplingFunction

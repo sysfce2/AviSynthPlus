@@ -324,6 +324,27 @@ double UserDefined2Filter::f(double x)
  **** Resampling Patterns  ****
  *****************************/
 
+// AddBorders{
+bool ResamplingFunction::CheckValidity(int source_size, double crop_size, int target_size) {
+  double filter_scale = double(target_size) / crop_size;
+  double filter_step = min(filter_scale, 1.0);
+  double filter_support = support() / filter_step;
+  int fir_filter_size = int(ceil(filter_support * 2));
+
+  // instead of 
+  // env->ThrowError("Resize: Source image too small for this resize method. Width=%d, Support=%d", source_size, int(ceil(filter_support)));
+  if (source_size <= filter_support)
+    return false;
+
+  // instead of 
+  // env->ThrowError("Source height (%d) is too small for this resizing method, must be minimum of %d", vi.height, resampling_program_luma->filter_size);
+  // env->ThrowError("Source width (%d) is too small for this resizing method, must be minimum of %d", vi.width, resampling_program_luma->filter_size);
+  if (source_size <= fir_filter_size)
+    return false;
+
+  return true;
+}
+
 ResamplingProgram* ResamplingFunction::GetResamplingProgram(int source_size, double crop_start, double crop_size, int target_size, int bits_per_pixel, IScriptEnvironment* env)
 {
   double filter_scale = double(target_size) / crop_size;

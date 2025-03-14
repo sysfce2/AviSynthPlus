@@ -58,8 +58,6 @@
 #include <algorithm>
 #include <string>
 
-static ResamplingFunction* getResampler( const char* resampler, AVSValue param1, AVSValue param2, AVSValue param3, IScriptEnvironment* env);
-
 template <typename pixel_t>
 void fill_chroma(uint8_t * dstp_u, uint8_t * dstp_v, int height, int row_size, int pitch, pixel_t val)
 {
@@ -1419,7 +1417,7 @@ ConvertToPlanarGeneric::ConvertToPlanarGeneric(
   int uv_width  = vi.width  >> vi.GetPlaneWidthSubsampling(PLANAR_U);
   int uv_height = vi.height >> vi.GetPlaneHeightSubsampling(PLANAR_U);
 
-  ResamplingFunction *filter = getResampler(chromaResampler.AsString("bicubic"), param1, param2, param3, env);
+  ResamplingFunction *filter = getResampler(chromaResampler.AsString("bicubic"), param1, param2, param3, true, env);
 
   bool P = !lstrcmpi(chromaResampler.AsString(""), "point");
 
@@ -1770,7 +1768,7 @@ static int getPlacement(const AVSValue& _placement, IScriptEnvironment* env) {
 */
 
 
-static ResamplingFunction* getResampler(const char* resampler, AVSValue param1, AVSValue param2, AVSValue param3, IScriptEnvironment* env) {
+ResamplingFunction* getResampler(const char* resampler, AVSValue param1, AVSValue param2, AVSValue param3, bool throw_on_error, IScriptEnvironment* env) {
   if (resampler) {
     if (!lstrcmpi(resampler, "point"))
       return new PointFilter();
@@ -1801,7 +1799,10 @@ static ResamplingFunction* getResampler(const char* resampler, AVSValue param1, 
     else if (!lstrcmpi(resampler, "userdefined2"))
       return new UserDefined2Filter(param1.AsDblDef(121.0), param2.AsDblDef(19.0), param3.AsDblDef(2.3)); // optional B and C and S as param1, param2, param3
     else
-      env->ThrowError("Convert: Unknown chroma resampler, '%s'", resampler);
+      if (throw_on_error)
+        env->ThrowError("Convert: Unknown chroma resampler, '%s'", resampler);
+      else
+        return nullptr; // e.g. from AddBorders
   }
   return new MitchellNetravaliFilter(param1.AsDblDef(1.0/3), param2.AsDblDef(1.0/3)); // Default colorspace conversion for AviSynth
 }
