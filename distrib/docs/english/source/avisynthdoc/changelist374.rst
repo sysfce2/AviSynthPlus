@@ -1,5 +1,5 @@
-Changes from 3.7.3 to 3.7.4 (3.8?)
-----------------------------------
+Changes from 3.7.3 to 3.7.4
+---------------------------
 
 Additions, changes
 ~~~~~~~~~~~~~~~~~~
@@ -108,6 +108,14 @@ Additions, changes
     - Since ``propSet`` script function in Avisynth is string-only, it sets the hint to ``DATATYPEHINT_UTF8`` 
       (utf8 just hinting that this is a string)
 
+- WinInstaller: add InnoSetup script for Windows on ARM
+- buildsystem: restrict use of MSVC to x86(-64) only
+- avs/config.h: add defines to separate X86 and ARM Windows variants
+- PluginManager: only enable +GCC plugindir registry entries on X86
+- PluginManager: indent cosmetics for clarity
+- Restore AVS_VERSION define
+
+
 Build environment, Interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 - add LOONGARCH support
@@ -134,6 +142,10 @@ Build environment, Interface
 
 - Background modification: ``env->SaveString`` can store longer strings than ``INT_MAX`` if ``len`` is ``-1`` (autodetect length by null termination).
   Even on 32 bit systems ``size_t`` can exceed ``INT_MAX``. (nevertheless, the length parameter - when is given - is still int type)
+- Shibatch: check for GCC or Clang for MulDiv under MinGW
+- plugins/CMakeLists.txt: restrict VDubFilter to x86(-64)
+- plugin/CMakeLists: add CMake detection fallback for SoundTouch
+- CMakeLists.txt: use extended policy version requirements
 
 Bugfixes
 ~~~~~~~~
@@ -205,6 +217,7 @@ Documentation
 - Document 64 bit capable functions and changes in old ones in millions of other rst pages.
 - Document C interface (in progress)
 - Revamped resizer section :doc:`Resize filters <corefilters/resize>`
+- Add instructions for building or using external system installs of SoundTouch and DevIL
 - and so on...
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
