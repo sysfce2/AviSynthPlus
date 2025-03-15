@@ -92,8 +92,8 @@ AVS_FORCEINLINE int static_clip(int value) {
 *****************************************/
 
 // safe_int_t is int or int64_t. Int is faster but for larger bitdepth int32 overflows
-template<typename pixel_t, int bits_per_pixel, int matrix_size, typename safe_int_t>
-static void do_conv_integer(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias)
+template<typename pixel_t, int matrix_size, typename safe_int_t>
+static void do_conv_integer(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel)
 {
   pixel_t *dstp = reinterpret_cast<pixel_t *>(dstp8);
   const pixel_t *srcp = reinterpret_cast<const pixel_t *>(srcp8);
@@ -101,7 +101,7 @@ static void do_conv_integer(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int s
   src_pitch /= sizeof(pixel_t);
 
   constexpr int limit = (matrix_size - 1) / 2; // +-1, +-2, +-3
-  constexpr int max_pixel_value = (1 << bits_per_pixel) - 1;
+  const int max_pixel_value = (1 << bits_per_pixel) - 1;
 
   std::vector<const pixel_t*> src_lineptrs;
   src_lineptrs.resize(limit + height + limit);
@@ -110,11 +110,11 @@ static void do_conv_integer(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int s
   for (int y = -limit; y < height + limit; y++)
   {
     if (y < 0)
-      src_lineptrs[y + limit] = srcp + src_pitch * 0;
+      src_lineptrs[y + limit] = srcp + src_pitch * 0; // duplicate top
     else if (y < height)
       src_lineptrs[y + limit] = srcp + src_pitch * y;
     else
-      src_lineptrs[y + limit] = srcp + src_pitch * (height - 1);
+      src_lineptrs[y + limit] = srcp + src_pitch * (height - 1); // duplicate bottom
   }
 
   std::vector<const pixel_t *> src_current_lineptrs(matrix_size); // +/-limit => 2*limit + 1
@@ -145,7 +145,7 @@ static void do_conv_integer(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int s
         current_matrix += matrix_size; // next matrix line
       }
       int result = (int)((sum * iCountDiv + rounder) >> 20) + iBias;
-      dstp[x] = static_clip<0, max_pixel_value>(result);
+      dstp[x] = clamp(result, 0, max_pixel_value);
     }
     // middle area: no x check: fast!
     for (; x < width - limit; x++) {
@@ -182,7 +182,7 @@ static void do_conv_integer(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int s
         current_matrix += matrix_size; // next matrix line
       }
       int result = (int)((sum * iCountDiv + rounder) >> 20) + iBias;
-      dstp[x] = static_clip<0, max_pixel_value>(result);
+      dstp[x] = clamp(result, 0, max_pixel_value);
     }
     // right area: check valid x
     for (; x < width; x++)
@@ -202,7 +202,7 @@ static void do_conv_integer(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int s
         current_matrix += matrix_size; // next matrix line
       }
       int result = (int)((sum * iCountDiv + rounder) >> 20) + iBias;
-      dstp[x] = static_clip<0, max_pixel_value>(result);
+      dstp[x] = clamp(result, 0, max_pixel_value);
     }
     dstp += dst_pitch;
     srcp += src_pitch;
@@ -210,50 +210,23 @@ static void do_conv_integer(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int s
 }
 
 // instantiate for 8 bit 3,5,7 and 9
-template void do_conv_integer<uint8_t, 8, 3, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint8_t, 8, 5, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint8_t, 8, 7, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint8_t, 8, 9, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint8_t, 8, 3, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint8_t, 8, 5, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint8_t, 8, 7, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint8_t, 8, 9, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
+template void do_conv_integer<uint8_t, 3, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint8_t, 5, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint8_t, 7, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint8_t, 9, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint8_t, 3, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint8_t, 5, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint8_t, 7, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint8_t, 9, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
 
-template void do_conv_integer<uint16_t, 10, 3, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 10, 5, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 10, 7, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 10, 9, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 10, 3, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 10, 5, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 10, 7, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 10, 9, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-
-template void do_conv_integer<uint16_t, 12, 3, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 12, 5, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 12, 7, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 12, 9, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 12, 3, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 12, 5, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 12, 7, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 12, 9, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-
-template void do_conv_integer<uint16_t, 14, 3, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 14, 5, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 14, 7, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 14, 9, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 14, 3, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 14, 5, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 14, 7, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 14, 9, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-
-template void do_conv_integer<uint16_t, 16, 3, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 16, 5, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 16, 7, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 16, 9, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 16, 3, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 16, 5, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 16, 7, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
-template void do_conv_integer<uint16_t, 16, 9, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
+template void do_conv_integer<uint16_t, 3, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint16_t, 5, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint16_t, 7, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint16_t, 9, int>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint16_t, 3, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint16_t, 5, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint16_t, 7, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
+template void do_conv_integer<uint16_t, 9, int64_t>(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
 
 template<int matrix_size>
 static void do_conv_float(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const float *matrix, float fCountDiv, float fBias)
@@ -329,6 +302,7 @@ static void do_conv_float(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src
             current_line[x + 2] * current_matrix[2];
         }
         else {
+          // surprise: even MSVC unrolls this loop for 7 and 9
           for (int xx = -limit; xx <= limit; xx++) {
             int current_x = x + xx;
             // no checking!
@@ -423,96 +397,42 @@ GeneralConvolution::GeneralConvolution(PClip _child, double _divisor, float _nBi
 
     case 8:
       if (nSize == 3 * 3) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint8_t, 8, 3, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint8_t, 8, 3, int>;
+        if (int64needed) conversionFnPtr = do_conv_integer<uint8_t, 3, int64_t>;
+        else conversionFnPtr = do_conv_integer<uint8_t, 3, int>;
       }
       else if (nSize == 5 * 5) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint8_t, 8, 5, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint8_t, 8, 5, int>;
+        if (int64needed) conversionFnPtr = do_conv_integer<uint8_t, 5, int64_t>;
+        else conversionFnPtr = do_conv_integer<uint8_t, 5, int>;
       }
       else if (nSize == 7 * 7) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint8_t, 8, 7, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint8_t, 8, 7, int>;
+        if (int64needed) conversionFnPtr = do_conv_integer<uint8_t, 7, int64_t>;
+        else conversionFnPtr = do_conv_integer<uint8_t, 7, int>;
       }
       else if (nSize == 9 * 9) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint8_t, 8, 9, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint8_t, 8, 9, int>;
+        if (int64needed) conversionFnPtr = do_conv_integer<uint8_t, 9, int64_t>;
+        else conversionFnPtr = do_conv_integer<uint8_t, 9, int>;
       }
       break;
 
     case 10:
-      if (nSize == 3 * 3) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 10, 3, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 10, 3, int>;
-      }
-      else if (nSize == 5 * 5) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 10, 5, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 10, 5, int>;
-      }
-      else if (nSize == 7 * 7) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 10, 7, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 10, 7, int>;
-      }
-      else if (nSize == 9 * 9) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 10, 9, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 10, 9, int>;
-      }
-      break;
-
     case 12:
-      if (nSize == 3 * 3) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 12, 3, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 12, 3, int>;
-      }
-      else if (nSize == 5 * 5) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 12, 5, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 12, 5, int>;
-      }
-      else if (nSize == 7 * 7) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 12, 7, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 12, 7, int>;
-      }
-      else if (nSize == 9 * 9) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 12, 9, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 12, 9, int>;
-      }
-      break;
-
     case 14:
-      if (nSize == 3 * 3) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 14, 3, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 14, 3, int>;
-      }
-      else if (nSize == 5 * 5) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 14, 5, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 14, 5, int>;
-      }
-      else if (nSize == 7 * 7) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 14, 7, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 14, 7, int>;
-      }
-      else if (nSize == 9 * 9) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 14, 9, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 14, 9, int>;
-      }
-      break;
-
     case 16:
       if (nSize == 3 * 3) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 16, 3, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 16, 3, int>;
+        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 3, int64_t>;
+        else conversionFnPtr = do_conv_integer<uint16_t, 3, int>;
       }
       else if (nSize == 5 * 5) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 16, 5, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 16, 5, int>;
+        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 5, int64_t>;
+        else conversionFnPtr = do_conv_integer<uint16_t, 5, int>;
       }
       else if (nSize == 7 * 7) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 16, 7, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 16, 7, int>;
+        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 7, int64_t>;
+        else conversionFnPtr = do_conv_integer<uint16_t, 7, int>;
       }
       else if (nSize == 9 * 9) {
-        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 16, 9, int64_t>;
-        else conversionFnPtr = do_conv_integer<uint16_t, 16, 9, int>;
+        if (int64needed) conversionFnPtr = do_conv_integer<uint16_t, 9, int64_t>;
+        else conversionFnPtr = do_conv_integer<uint16_t, 9, int>;
       }
       break;
     }
@@ -680,7 +600,7 @@ PVideoFrame __stdcall GeneralConvolution::GetFrame(int n, IScriptEnvironment* en
     }
 
     if(vi.BitsPerComponent() <= 16)
-      conversionFnPtr(dst->GetWritePtr(plane), dst->GetPitch(plane), src->GetReadPtr(plane), src->GetPitch(plane), width, height, matrix, iCountDiv, nBias);
+      conversionFnPtr(dst->GetWritePtr(plane), dst->GetPitch(plane), src->GetReadPtr(plane), src->GetPitch(plane), width, height, matrix, iCountDiv, nBias, vi.BitsPerComponent());
     else
       FconversionFnPtr(dst->GetWritePtr(plane), dst->GetPitch(plane), src->GetReadPtr(plane), src->GetPitch(plane), width, height, matrixf, fCountDiv, fBias);
   }

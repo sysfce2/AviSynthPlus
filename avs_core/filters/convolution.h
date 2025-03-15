@@ -54,7 +54,7 @@ class GeneralConvolution : public GenericVideoFilter
   * kernel -- to a clip.  Smaller (3x3) kernels have their own code path.  SIMD support forthcoming.
  **/
 {
-  using do_conv_int_t = void(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias);
+  using do_conv_int_t = void(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const int *matrix, int iCountDiv, int iBias, int bits_per_pixel);
   using do_conv_float_t = void(BYTE* dstp8, int dst_pitch, const BYTE *srcp8, int src_pitch, int width, int height, const float *matrix, float fCountDiv, float fBias);
 
 public:
