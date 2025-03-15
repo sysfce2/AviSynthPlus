@@ -106,7 +106,7 @@ Expr: implement tanf in JisASM
     JitASM AVX       :    727  (same for both)
 
 
-20250306 3.7.3 r4612
+20250306 3.7.3 r4212
 --------------------
 Expr: Rewrite the C (non-Intel-JIT) path to support vectorization, if the compiler is capable.
 
@@ -172,7 +172,7 @@ Expr: Rewrite the C (non-Intel-JIT) path to support vectorization, if the compil
     
     Expr has now a new debug parameter: bool optVectorC (default true) which C code to run if non-JIT is used.
 
-20250304 3.7.3 r4610
+20250304 3.7.3 r4210
 --------------------
 - New: frame property copy/delete/show name filtering: add wildcard and regex support
 
