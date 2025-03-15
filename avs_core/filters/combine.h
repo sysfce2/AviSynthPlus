@@ -209,7 +209,7 @@ public:
     switch (cachehints)
     {
     case CACHE_GET_MTMODE:
-      return MT_SERIALIZED;
+      return MT_MULTI_INSTANCE;
     }
     return 0;  // We do not pass cache requests upwards.
   };
