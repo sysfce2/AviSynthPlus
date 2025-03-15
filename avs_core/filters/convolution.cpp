@@ -416,7 +416,7 @@ GeneralConvolution::GeneralConvolution(PClip _child, double _divisor, float _nBi
     // When max_pixel_value * sum(max(weight_pos, -weight_neg)) * iCountDiv > 1 << 31 = > int64_t needed(safe_int_t is int64_t)
     const int max_pixel_value = (1 << vi.BitsPerComponent()) - 1;
     const int maxWeightSum = max(iWeightSumPositives, -iWeightSumNegatives);
-    if ((int64_t)max_pixel_value * maxWeightSum * iCountDiv >= std::numeric_limits<int>::max())
+    if ((int64_t)max_pixel_value * maxWeightSum * std::abs(iCountDiv) >= std::numeric_limits<int>::max())
       int64needed = true;
 
     switch (vi.BitsPerComponent()) {
