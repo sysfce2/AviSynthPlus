@@ -79,6 +79,19 @@ AddBorders, LetterBox
 - Resizers: add "force" integer parameter to force the resizing process even if Avisynth decided it's not needed
 - GaussResize: add "b" and "s" parameters See :doc:`Resize Filters <corefilters/resize>`.
 
+Merged Windows on ARM-related fixes:
+- docs: miscellaneous updates for external dependencies guide
+- CMakeLists.txt: use extended policy version requirements
+- Restore AVS_VERSION define
+- plugin/CMakeLists: add CMake detection fallback for SoundTouch
+- buildsystem: restrict use of MSVC to x86(-64) only
+- PluginManager: indent cosmetics for clarity
+- PluginManager: only enable +GCC plugindir registry entries on X86
+- avs/config.h: add defines to separate X86 and ARM Windows variants
+- plugins/CMakeLists.txt: restrict VDubFilter to x86(-64)
+- WinInstaller: add InnoSetup script for Windows on ARM
+- Shibatch: check for GCC or Clang for MulDiv under MinGW
+
 20250309 3.7.3 r4217
 --------------------
 Expr: implement tanf in JisASM
