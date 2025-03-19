@@ -284,8 +284,8 @@ AVSValue __cdecl ConvertToRGB::Create(AVSValue args, void* user_data, IScriptEnv
     case 48: {
             // instead of C code of YUV444P16->RGB48
             // we convert to PlanarRGB then to RGB48 (both is fast)
-          AVSValue new_args2[5] = { clip, args[1], args[2], args[3], args[4] };
-          clip = ConvertToRGB::Create(AVSValue(new_args2, 5), (void *)-1, env).AsClip();
+          AVSValue new_args2[8] = { clip, args[1], args[2], args[3], args[4], args[5], args[6], args[7] };
+          clip = ConvertToRGB::Create(AVSValue(new_args2, 8), (void *)-1, env).AsClip();
           vi = clip->GetVideoInfo();
           reallyConvert = false;
           rgbtype_param = 6; // old option RGB48 target, slow C
@@ -294,8 +294,8 @@ AVSValue __cdecl ConvertToRGB::Create(AVSValue args, void* user_data, IScriptEnv
     case 64: {
         // instead of C code of YUV(A)444P16->RGB64
         // we convert to PlanarRGB(A) then to RGB64 (both is fast)
-        AVSValue new_args2[5] = { clip, args[1], args[2], args[3], args[4] };
-        clip = ConvertToRGB::Create(AVSValue(new_args2, 5), vi.IsYUVA() ? (void *)-2 : (void *)-1, env).AsClip();
+        AVSValue new_args2[8] = { clip, args[1], args[2], args[3], args[4], args[5], args[6], args[7] };
+        clip = ConvertToRGB::Create(AVSValue(new_args2, 8), vi.IsYUVA() ? (void *)-2 : (void *)-1, env).AsClip();
         vi = clip->GetVideoInfo();
         reallyConvert = false;
         rgbtype_param = 8; // old option RGB64 target, slow C
