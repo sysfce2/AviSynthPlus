@@ -621,10 +621,14 @@ static void convert_uint_limited_c(const BYTE* srcp, BYTE* dstp, int src_rowsize
     // reduce range
     const int shift_bits = source_bitdepth - target_bitdepth;
     const int round = 1 << (shift_bits - 1);
+
+    const int target_max = (1 << target_bitdepth) - 1;
+    constexpr auto target_min = 0;
+
     for (int y = 0; y < src_height; y++)
     {
       for (int x = 0; x < src_width; x++) {
-        dstp0[x] = (srcp0[x] + round) >> shift_bits;  // reduce range
+        dstp0[x] = clamp((srcp0[x] + round) >> shift_bits, target_min, target_max);;  // reduce range
       }
       dstp0 += dst_pitch;
       srcp0 += src_pitch;
