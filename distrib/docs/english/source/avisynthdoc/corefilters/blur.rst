@@ -46,10 +46,14 @@ Syntax and Parameters
 Notes
 -----
 
-If you need a larger radius Gaussian blur, try chaining several Blurs together::
+If you need a larger radius Gaussian blur, try ::
+
+    GaussResize(width, height, force=3, p=0.1, s=0) # 3.7.4-
+
+or chaining several Blurs together::
 
     Blur(1.0).Blur(1.0).Blur(1.0)
-
+    
 Chaining calls to **Sharpen** is not a good idea, as the image quickly deteriorates.
 
 
@@ -96,7 +100,7 @@ Changelog
 | AviSynth 2.5.7  | Added ``mmx`` option.                                                     |
 +-----------------+---------------------------------------------------------------------------+
 
-$Date: 2022/02/28 11:37:04 $
+$Date: 2025/03/15 13:40:00 $
 
 .. _kernel:
     http://en.wikipedia.org/wiki/Kernel_(image_processing)
