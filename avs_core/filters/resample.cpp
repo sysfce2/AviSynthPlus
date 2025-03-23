@@ -497,20 +497,20 @@ static void resize_h_c_planar(BYTE* dst8, const BYTE* src8, int dst_pitch, int s
 ********************************************************************/
 
 extern const AVSFunction Resample_filters[] = {
-  { "PointResize",    BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_PointResize },
-  { "BilinearResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_BilinearResize },
-  { "BicubicResize",  BUILTIN_FUNC_PREFIX, "cii[b]f[c]f[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_BicubicResize },
-  { "LanczosResize",  BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i", FilteredResize::Create_LanczosResize},
-  { "Lanczos4Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_Lanczos4Resize},
-  { "BlackmanResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i", FilteredResize::Create_BlackmanResize},
-  { "Spline16Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_Spline16Resize},
-  { "Spline36Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_Spline36Resize},
-  { "Spline64Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_Spline64Resize},
-  { "GaussResize",    BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[p]f[b]f[s]f[force]i", FilteredResize::Create_GaussianResize},
-  { "SincResize",     BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i", FilteredResize::Create_SincResize},
-  { "SinPowerResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[p]f[force]i", FilteredResize::Create_SinPowerResize},
-  { "SincLin2Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i", FilteredResize::Create_SincLin2Resize},
-  { "UserDefined2Resize", BUILTIN_FUNC_PREFIX, "cii[b]f[c]f[s]f[src_left]f[src_top]f[src_width]f[src_height]f[force]i", FilteredResize::Create_UserDefined2Resize},
+  { "PointResize",    BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i[keep_center]b[placement]s", FilteredResize::Create_PointResize },
+  { "BilinearResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i[keep_center]b[placement]s", FilteredResize::Create_BilinearResize },
+  { "BicubicResize",  BUILTIN_FUNC_PREFIX, "cii[b]f[c]f[src_left]f[src_top]f[src_width]f[src_height]f[force]i[keep_center]b[placement]s", FilteredResize::Create_BicubicResize },
+  { "LanczosResize",  BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i[keep_center]b[placement]s", FilteredResize::Create_LanczosResize},
+  { "Lanczos4Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i[keep_center]b[placement]s", FilteredResize::Create_Lanczos4Resize},
+  { "BlackmanResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i[keep_center]b[placement]s", FilteredResize::Create_BlackmanResize},
+  { "Spline16Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i[keep_center]b[placement]s", FilteredResize::Create_Spline16Resize},
+  { "Spline36Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i[keep_center]b[placement]s", FilteredResize::Create_Spline36Resize},
+  { "Spline64Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[force]i[keep_center]b[placement]s", FilteredResize::Create_Spline64Resize},
+  { "GaussResize",    BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[p]f[b]f[s]f[force]i[keep_center]b[placement]s", FilteredResize::Create_GaussianResize},
+  { "SincResize",     BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i[keep_center]b[placement]s", FilteredResize::Create_SincResize},
+  { "SinPowerResize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[p]f[force]i[keep_center]b[placement]s", FilteredResize::Create_SinPowerResize},
+  { "SincLin2Resize", BUILTIN_FUNC_PREFIX, "cii[src_left]f[src_top]f[src_width]f[src_height]f[taps]i[force]i[keep_center]b[placement]s", FilteredResize::Create_SincLin2Resize},
+  { "UserDefined2Resize", BUILTIN_FUNC_PREFIX, "cii[b]f[c]f[s]f[src_left]f[src_top]f[src_width]f[src_height]f[force]i[keep_center]b[placement]s", FilteredResize::Create_UserDefined2Resize},
   /**
     * Resize(PClip clip, dst_width, dst_height [src_left, src_top, src_width, int src_height,] )
     *
@@ -1350,7 +1350,12 @@ AVSValue __cdecl FilteredResize::Create_PointResize(AVSValue args, void*, IScrip
 {
   auto f = PointFilter();
   const int force = args[7].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
+
+  bool preserve_center = args[8].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[9].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 
@@ -1358,7 +1363,12 @@ AVSValue __cdecl FilteredResize::Create_BilinearResize(AVSValue args, void*, ISc
 {
   auto f = TriangleFilter();
   const int force = args[7].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
+
+  bool preserve_center = args[8].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[9].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 
@@ -1366,63 +1376,108 @@ AVSValue __cdecl FilteredResize::Create_BicubicResize(AVSValue args, void*, IScr
 {
   auto f = MitchellNetravaliFilter(args[3].AsDblDef(1. / 3.), args[4].AsDblDef(1. / 3.));
   const int force = args[9].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[5], force, &f, env);
+
+  bool preserve_center = args[10].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[11].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[5], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_LanczosResize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = LanczosFilter(args[7].AsInt(3));
   const int force = args[8].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
+
+  bool preserve_center = args[9].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[10].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_Lanczos4Resize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = LanczosFilter(4);
   const int force = args[7].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
+
+  bool preserve_center = args[8].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[9].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_BlackmanResize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = BlackmanFilter(args[7].AsInt(4));
   const int force = args[8].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
+
+  bool preserve_center = args[8].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[9].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_Spline16Resize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = Spline16Filter();
   const int force = args[7].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
+
+  bool preserve_center = args[8].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[9].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_Spline36Resize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = Spline36Filter();
   const int force = args[7].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
+
+  bool preserve_center = args[8].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[9].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_Spline64Resize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = Spline64Filter();
   const int force = args[7].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
+
+  bool preserve_center = args[8].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[9].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_GaussianResize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = GaussianFilter(args[7].AsFloat(30.0f), args[8].AsFloat(2.0f), args[9].AsFloat(4.0f)); // defaults at two more places
   const int force = args[10].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
+
+  bool preserve_center = args[11].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[12].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 AVSValue __cdecl FilteredResize::Create_SincResize(AVSValue args, void*, IScriptEnvironment* env)
 {
   auto f = SincFilter(args[7].AsInt(4));
   const int force = args[8].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
+ 
+  bool preserve_center = args[9].AsBool(true); // [keep_center] default Avisynth
+  const char * placement_name = args[10].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 // like GaussianFilter(); optional P
@@ -1430,7 +1485,12 @@ AVSValue __cdecl FilteredResize::Create_SinPowerResize(AVSValue args, void*, ISc
 {
   auto f = SinPowerFilter(args[7].AsFloat(2.5f));
   const int force = args[8].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
+
+  bool preserve_center = args[9].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[10].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 // like SincFilter or LanczosFilter: optional Taps
@@ -1438,7 +1498,12 @@ AVSValue __cdecl FilteredResize::Create_SincLin2Resize(AVSValue args, void*, ISc
 {
   auto f = SincLin2Filter(args[7].AsInt(15));
   const int force = args[8].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, env);
+
+  bool preserve_center = args[9].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[10].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
 // like bicubic, plus 's'upport: optional B and C and S
@@ -1446,6 +1511,11 @@ AVSValue __cdecl FilteredResize::Create_UserDefined2Resize(AVSValue args, void*,
 {
   auto f = UserDefined2Filter(args[3].AsFloat(121.0f), args[4].AsFloat(19.0f), args[5].AsFloat(2.3f));
   const int force = args[10].AsInt(0);
-  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[6], force, &f, env);
+
+  bool preserve_center = args[11].AsBool(true); // [keep_center] default Avisynth
+  const char* placement_name = args[12].AsString("auto"); // [placement]s
+  const int forced_chroma_placement = -1; // no force, used internally
+
+  return CreateResize(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[6], force, &f, preserve_center, placement_name, forced_chroma_placement, env);
 }
 
