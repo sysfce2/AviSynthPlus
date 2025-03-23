@@ -105,11 +105,19 @@ for display or intermediate processing (interpolation, decompressing).
 
 Most resizers (except Point?) can be used for convolution processing with their kernel 
 without resampling. To force the processing even when dimensions are unchanged (no phyisical resizing
-happes), use the ``force`` parameter (since v3.7.4)
+happens), use the ``force`` parameter (since v3.7.4)
 (Before 3.7.4 to enable (force) processing for unchanged dimensions, users must set non-zero 
 values for src_left and/or src_top parameters (depending on the required dimensions for processing.
 To avoid visible shifting, the values must be very low floats - like 0.000001 - need to check the 
 lowest acceptable non-zero float value).
+
+Since 3.7.4, resizers are aware of the chroma placement of color subsampled formats (411, 420, 422).
+Either the ``_ChromaLocation`` frame property or the new, direct ``placement`` parameter is used.
+Previously, a fixed "center" placement was assumed, which, for example, resulted in chroma shifts when
+a 422 format with MPEG-2 (left) chroma placement was downsized.
+
+In 3.7.4, a new ``keep_center`` parameter was introduced as well, allowing one to disable the chroma 
+placement corrections altogether.
 
 Resizers in ConvertToXXXX
 -------------------------
@@ -159,59 +167,60 @@ Syntax and Parameters
 
     BicubicResize (clip, int target_width, int target_height, float "b", float "c",
                    float "src_left", float "src_top", float, "src_width", float "src_height",
-                   int "force")
+                   int "force", bool "keep_center", string "placement")
 
     BilinearResize (clip, int target_width, int target_height,
                     float "src_left", float "src_top", float "src_width", float "src_height",
-                    int "force")
+                    int "force", bool "keep_center", string "placement")
 
     BlackmanResize (clip, int target_width, int target_height,
                     float "src_left", float "src_top", float "src_width", float "src_height", 
-                    int "taps", int "force")
+                    int "taps", int "force", bool "keep_center", string "placement")
 
     LanczosResize (clip, int target_width, int target_height,
                    float "src_left", float "src_top", float "src_width", float "src_height",
-                   int "taps", int "force")
+                   int "taps", int "force", bool "keep_center", string "placement")
 
     Lanczos4Resize (clip, int target_width, int target_height,
                     float "src_left", float "src_top", float "src_width", float "src_height",
-                    int "force")
+                    int "force", bool "keep_center", string "placement")
 
     PointResize (clip, int target_width, int target_height,
                  float "src_left", float "src_top", float "src_width", float "src_height",
-                 int "force")
+                 int "force", bool "keep_center", string "placement")
 
     Spline16Resize (clip, int target_width, int target_height,
                     float "src_left", float "src_top", float "src_width", float "src_height",
-                    int "force")
+                    int "force", bool "keep_center", string "placement")
 
     Spline36Resize (clip, int target_width, int target_height,
                     float "src_left", float "src_top", float "src_width", float "src_height",
-                    int "force")
+                    int "force", bool "keep_center", string "placement")
 
     Spline64Resize (clip, int target_width, int target_height,
                     float "src_left", float "src_top", float "src_width", float "src_height",
-                    int "force")
+                    int "force", bool "keep_center", string "placement")
 
     GaussResize (clip, int target_width, int target_height,
                  float "src_left", float "src_top", float "src_width", float "src_height",
-                 float "p", float "b", float "s", int "force")
+                 float "p", float "b", float "s", int "force",
+                 bool "keep_center", string "placement")
 
     SincResize (clip, int target_width, int target_height,
                 float "src_left", float "src_top", float "src_width", float "src_height",
-                int "taps", int "force")
+                int "taps", int "force", bool "keep_center", string "placement")
 
     SinPowerResize (clip, int target_width, int target_height,
                     float "src_left", float "src_top", float "src_width", float "src_height",
-                    float "p", int "force")
+                    float "p", int "force", bool "keep_center", string "placement")
 
     SincLinResize (clip, int target_width, int target_height,
                    float "src_left", float "src_top", float "src_width", float "src_height",
-                   int "taps", int "force")
+                   int "taps", int "force", bool "keep_center", string "placement")
 
     UserDefined2Resize (clip, int target_width, int target_height, float "b", float "c", float "s",
                         float "src_left", float "src_top", float "src_width", float "src_height",
-                        int "force")
+                        int "force", bool "keep_center", string "placement")
 
 .. describe:: clip
 
@@ -259,13 +268,19 @@ Syntax and Parameters
     Parameters
     
     * p: Controls the blurring. Valid range: 0.01 to 100. (before 3.7.4: 0.1 to 100)
-    * b: Controls the blurring. Valid range: 1.5 to 3.5.
+    * b: Controls the blurring. Valid range: 1.5 to 3.5. Filter kernel is ``b^(-p*0.1*(x^2))``.
+      Default ``b`` is 2.0 to be compatible with pre-3.7.4 use cases. If high precision 
+      Gauss kernel is required (for example for filtering applications) it is recommended to 
+      use the base of the natural logarithm 2.71828182. 
     * s (support): Controls the support size. Default is 4. Valid range: 0.1 to 150.
-      Special case: ``s==0`` (auto)
-      **s** is calculated from b and param for 0.01 of residual kernel value.
-      as ``s = sqrt(4.6 / ((param * 0.1) * log(b)))``, original equation is 
-      ``s = sqrt(-ln(0.01)/(param*ln(b))``, where ``ln(0.01)`` is about ``-4.6`` 
-      and ``-ln(0.01)`` is ``4.6``.
+    
+      Special case: ``s==0`` (auto):
+      
+      **s** is calculated from ``b`` and ``p`` parameters for 0.01 of residual kernel value.
+      as ``s = sqrt(4.6 / ((p_param * 0.1) * ln(b)))``, original equation is 
+      ``s = sqrt(-ln(0.01)/(p_param*ln(b))``, where ``ln(0.01)`` is about ``-4.6`` 
+      and ``-ln(0.01)`` is ``4.6``, and ``p`` and ``b`` are directly entered by 
+      user parameter values.
     
     Default: p=30.0, b=2.0, s=4.0
     
@@ -425,6 +440,14 @@ Syntax and Parameters
 
     **GaussResize**
     
+    Original equation is ``s = sqrt(-ln(0.01)/(p*ln(b))``.
+
+    As seen, the ``p`` parameter passed to GaussResize is internally scaled by 0.1. (We don't 
+    know why, probably for historical reasons, when this arguments was integer (?)). 
+    So from user's view original equation is ``s = sqrt(-ln(0.01)/((p_param * 0.1)*ln(b))``.
+    ``p`` and ``b`` are directly entered by user params values.
+    For more details see the description of b, c and s parameters.
+
     Default: 30.0
 
     **SinPowerResize**
@@ -446,9 +469,11 @@ Syntax and Parameters
 
 .. describe:: force
 
-    Force the resizing process even if the dimensions remain unchanged and ``src_width`` or ``src_top``
-    are zero. Useful to intentionally prevent sudden visual differences that might occur if resizing 
-    is unexpectedly skipped.
+    Force the resizing or convolution with resize kernel (filtering) process even if the dimensions 
+    remain unchanged and ``src_width`` or ``src_top`` are zero. Useful to intentionally prevent sudden 
+    visual differences that might occur if resizing is unexpectedly skipped or if convolution only 
+    (filtering) without resize is required.
+    Some sources say it must be co-used with ``keep_center=false`` -- to be checked.
     
     * 0 - return unchanged if no resize needed
     * 1 - force H - Horizontal resizing phase
@@ -469,6 +494,66 @@ Syntax and Parameters
 
     Default: 0
 
+.. describe:: keep_center (boolean) 
+
+    If ``true`` (default), the chroma shift from "placement" is now respected when resizing chroma.
+    ``fmtconv`` documentation mentions that this must be false for convolution filter use, 
+    when no resize occurs and ``force`` is not 0.
+
+    Default: True
+
+.. describe:: placement (string) 
+
+    Specifies chroma placement. Valid options are "auto", "mpeg2", "center", etc.,
+    similar to ConvertToXXXX and Text.
+    
+    - ``"MPEG2"`` (synonyms: ``"left"``)
+      Subsampling used in MPEG-2 4:2:x and most other formats. Chroma samples are located on the left pixel column of the group (default).
+    - ``"MPEG1"`` (synonyms: ``"jpeg"``, ``"center"``)
+      Subsampling used in MPEG-1 4:2:0. Chroma samples are located on the center of each group of 4 pixels.
+    - ``"DV"``
+      Like MPEG-2, but U and V channels are co-sited vertically: V on the top row, and U on the bottom row. For 4:1:1, chroma is located on the leftmost column.
+    - ``"top_left"``
+      Subsampling used in UHD 4:2:0. Chroma samples are located on the top left pixel column of the group.
+    - ``bottom_left`` 4:2:0 only
+    - ``bottom``   4:2:0 only 
+
+    The default is "auto", which reads the frame property ``_ChromaLocation`` for 420, 422, and 411 
+    formats. The chroma placement is ignored when ``keep_center`` is set to ``False`` or in 
+    ``PointResize``. Frame property ``_ChromaLocation`` is only read, not set.
+
+    The positions of the sampling points are relative to the frame's top/left border in plane coordinates.
+    For reference, the frame border is at 0.5 units of luma from the first luma sampling point, 
+    meaning the luma sampling point is at the pixel's center. RGB planes all behave like a luma plane
+    with pixel center placed sampling position (0.5, 0.5).
+    For more information, visit this link. http://www.mir.com/DMG/chroma.html
+    
+    Rules:
+    
+    The used chroma placement is
+    
+    - read from ``"_ChromaLocation"`` frame property, otherwise ``"center"``
+    - override or set from ``"placement"`` parameter if parameter is other than ``"auto"``
+    - if ``"auto"`` + have frame property -> use frame property
+    - if ``"auto"`` + no frame property -> use ``"center"``
+    - no frame property and no parameter -> use ``"center"``
+
+    Note that Avisynth does not take into account fieldbased or interlaced material.
+
+    ::
+
+        ColorBarsHD(1024,768)
+        ConvertToYV16() # sets "_ChromaLocation" to 0 (mpeg2 / left)
+        # mimic pre-v3.7.4 Avisynth, results in heavy chroma shift:
+        a=GaussResize(width/6, height/6, placement="center")
+        # set "left", which is the same as in frame propery, so b and c are equal
+        b=GaussResize(width/6, height/6, placement="left")
+        # same as with additional placement="auto":
+        c=GaussResize(width/6, height/6)
+        Interleave(a,b,c)
+
+
+    Default: "auto"
 
 .. _resize-cropping:
 
@@ -571,6 +656,7 @@ External Links
 * `Discussion of resizers for downsizing`_ (doom9.org)
 * `Resampling guide`_ (guide.encode.moe)
 * Github discussion on newly added resizer kernels: https://github.com/AviSynth/AviSynthPlus/issues/337
+* `fmtconv`_ (https://gitlab.com/EleonoreMizo/fmtconv)
 
 
 Changelog
@@ -580,6 +666,9 @@ Changelog
 | Version         | Changes                                                       |
 +=================+===============================================================+
 | 3.7.4           || Add "force" parameter                                        |
+|                 || Add "keep_center" parameter                                  |
+|                 || Add "placement" parameter                                    |
+|                 || Resizers now respect chroma placement setting                |
 |                 || GaussResize: add "b" and "s" parameters                      |
 +-----------------+---------------------------------------------------------------+
 | 3.7.3           | Add SinPowerResize, SincLin2Resize, UserDefined2Resize        |
@@ -616,8 +705,10 @@ Changelog
 +-----------------+---------------------------------------------------------------+
 
 
-$Date: 2025/03/11 11:45:00 $
+$Date: 2025/03/23 11:45:00 $
 
+.. _fmtconv:
+    https://gitlab.com/EleonoreMizo/fmtconv
 .. _acutance:
     https://en.wikipedia.org/wiki/Acutance
 .. _Mitchell–Netravali:
