@@ -727,15 +727,17 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
       env);
   }
 
+// when not fast_resize, then we use vertical resizers between turnleft/turnright
 #ifdef INTEL_INTRINSICS
-  // r2592+: no target_width mod4 check, (old avs needed for unaligned frames?)
   int cpu = env->GetCPUFlags();
-  fast_resize = (cpu & CPUF_SSSE3) == CPUF_SSSE3 && vi.IsPlanar();
   bool has_sse2 = (cpu & CPUF_SSE2) != 0;
 #else
   int cpu = 0;
-  fast_resize = false;
 #endif
+
+  fast_resize = vi.IsPlanar();
+  // PF 2025: H is not slower than V in C implementation.
+  // Still, H resizers are incompatible with packed RGB formats
 
     if (!fast_resize) {
 
