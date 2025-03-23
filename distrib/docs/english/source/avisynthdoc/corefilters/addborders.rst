@@ -93,9 +93,9 @@ Syntax and Parameters
     
     Eight crops are taken from around the transient areas: 
     
-    - left and right rectangles, which cover +/- 10 (but at least ``r``) pixels 
+    - left and right rectangles, which cover +/- 10 (but at least ``r`` + ceil(filter_support)) pixels 
       horizontally around the new border line.
-    - top and bottom rectangles, which cover +/- 10 (but at least ``r``) pixels 
+    - top and bottom rectangles, which cover +/- 10 (but at least ``r`` + ceil(filter_support)) pixels 
       vertically around the new border line.
     - four corners, top left, top right, bottom left, bottom right, dimension rules
       as seen above.
@@ -103,7 +103,7 @@ Syntax and Parameters
     These eight rectangles are "resized", using the given resizer in convolution mode.
     No dimension is changed, just we'll get a blurred area.
     
-    Since 3.7.4 resizers can accept a ``force`` parameter, so we use it. 
+    Since 3.7.4 resizers can accept a ``force`` parameter, so we use it internally. 
     
     - left and right parts need only horizontal treatment.
     - top and bottom parts need only vertical treatment.
@@ -124,7 +124,9 @@ Syntax and Parameters
     
     Other notes:
     
-    This copy-paste of the up-to eight area is using a new :doc:`MultiOverlay <multioverlay>` filter.
+    - This copy-paste of the up-to eight area is using a new :doc:`MultiOverlay <multioverlay>` filter.
+    - The convolution filters (resizers) now take the chroma placement into account (``_ChromaLocation`` 
+    frame property)
     
 Examples
 --------
@@ -239,7 +241,7 @@ Changelog
 | AviSynth 2.0.7  | New ``color`` parameter                                          |
 +-----------------+------------------------------------------------------------------+
 
-$Date: 2022/04/17 11:37:04 $
+$Date: 2025/03/23 11:37:04 $
 
 .. _aspect ratio:
     http://avisynth.nl/index.php/Aspect_ratios
