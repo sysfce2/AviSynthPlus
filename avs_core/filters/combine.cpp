@@ -269,8 +269,6 @@ PVideoFrame __stdcall MultiOverlay::GetFrame(int n, IScriptEnvironment* env)
   PVideoFrame dst = frames[0]; // multioverlay target clip
   env->MakeWritable(&dst);
 
-  const int pixelsize = vi.ComponentSize();
-
   const size_t copy_paste_count = children.size() - 1;
   const size_t param_count = positions.size();
   const size_t params_per_clip = param_count / copy_paste_count; // 2 or 6
