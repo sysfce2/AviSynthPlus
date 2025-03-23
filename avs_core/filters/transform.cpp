@@ -675,6 +675,7 @@ PVideoFrame AddBorders::GetFrame(int n, IScriptEnvironment* env)
 static PClip AddBorderPostProcess(PClip child,
   int left, int top, int right, int bottom,
   const AVSValue& _resample, const AVSValue& _param1, const AVSValue& _param2, const AVSValue& _param3, const AVSValue& _flt_rad,
+  int forced_chroma_placement,
   IScriptEnvironment* env) {
 
   // filtering radius, default 0: no transient area filtering
@@ -977,6 +978,11 @@ static PClip AddBorderPostProcess(PClip child,
   std::vector<PClip> child_array = { child };
   std::vector<int> position_array = { };
 
+  const bool preserve_center = true;
+  const char* placement_name = nullptr; 
+  // along with forced_chroma_placement, does not read frame props again in eight child resizers
+  // _ChromaLocation - if any - was read in AddBorders - once - and passed here
+
   for (auto& bar : bars) {
     // or use [src_left]f[src_top]f[src_width]f[src_height]f
     // resizer parameters set for convolution (unchanged dimensions) filter
@@ -985,9 +991,12 @@ static PClip AddBorderPostProcess(PClip child,
     bar.clip = FilteredResize::CreateResize(child, bar.target_width, bar.target_height, args_left_top_w_h, bar.force, filter, env);
     */
     AVSValue args_left_top_w_h[4] = { 0, 0, AVSValue(), AVSValue() }; // left, top, width (auto), height (auto)
+
     bar.clip = FilteredResize::CreateResize(
       new Crop(bar.crop_x, bar.crop_y, bar.target_width, bar.target_height, 0, child, env),
-      bar.target_width, bar.target_height, args_left_top_w_h, bar.force, filter, env);
+      bar.target_width, bar.target_height, args_left_top_w_h, bar.force, filter, 
+      preserve_center, placement_name, forced_chroma_placement,
+      env);
 
 
     // Add to vector

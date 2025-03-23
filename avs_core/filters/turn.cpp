@@ -46,6 +46,7 @@
 #include "planeswap.h"
 #include "../core/internal.h"
 #include <stdint.h>
+#include "../convert/convert_helper.h"
 
 
 extern const AVSFunction Turn_filters[] = {
@@ -320,9 +321,13 @@ void Turn::SetUVSource(int mod_h, int mod_v, IScriptEnvironment* env)
     const int uv_width  = vi_u.width  * mod_h / mod_v;
 
     const int force = 0;
+    const bool preserve_center = true;
+    const char* placement_name = ""; // n/a
+    const int forced_chroma_placement = -1; // n/a
+    // chroma planes are extracted, behave like Y when resized, no chroma is involved
 
-    u_or_b_source = FilteredResize::CreateResize(u_or_b_source, uv_width, uv_height, subs, force, &filter, env);
-    v_or_r_source = FilteredResize::CreateResize(v_or_r_source, uv_width, uv_height, subs, force, &filter, env);
+    u_or_b_source = FilteredResize::CreateResize(u_or_b_source, uv_width, uv_height, subs, force, &filter, preserve_center, placement_name, forced_chroma_placement, env);
+    v_or_r_source = FilteredResize::CreateResize(v_or_r_source, uv_width, uv_height, subs, force, &filter, preserve_center, placement_name, forced_chroma_placement, env);
 
     splanes[1] = 0;
     splanes[2] = 0;

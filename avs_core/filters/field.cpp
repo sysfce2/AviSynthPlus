@@ -41,6 +41,7 @@
 #endif
 #include <avs/minmax.h>
 #include "../core/internal.h"
+#include "../convert/convert_helper.h"
 #include <vector>
 
 
@@ -1033,14 +1034,17 @@ static AVSValue __cdecl Create_Bob(AVSValue args, void*, IScriptEnvironment* env
 
   const VideoInfo& vi = clip->GetVideoInfo();
 
+  bool preserve_center = true; // default Avisynth
+  int chroma_placement = ChromaLocation_e::AVS_CHROMA_UNUSED; // default
+
   const double b = args[1].AsDblDef(1./3.);
   const double c = args[2].AsDblDef(1./3.);
   const int new_height = args[3].AsInt(vi.height*2);
   MitchellNetravaliFilter filter(b, c);
   return new Fieldwise(new FilteredResizeV(clip, -0.25, vi.height,
-                                           new_height, &filter, env),
+                                           new_height, &filter, preserve_center, chroma_placement, env),
                        new FilteredResizeV(clip, +0.25, vi.height,
-                                           new_height, &filter, env));
+                                           new_height, &filter, preserve_center, chroma_placement, env));
 }
 
 

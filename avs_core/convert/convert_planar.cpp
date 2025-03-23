@@ -1427,6 +1427,10 @@ ConvertToPlanarGeneric::ConvertToPlanarGeneric(
   };
 
   const int force = 0;
+  const bool preserve_center = true;
+  const char *placement_name_notused = nullptr; // n/a
+  const int forced_chroma_placement = -1; // no force
+  // chroma planes are extracted, behave like Y when resized, no chroma planes involved
 
   if (interlaced) {
     uv_height /=  2;
@@ -1442,10 +1446,10 @@ ConvertToPlanarGeneric::ConvertToPlanarGeneric(
     std::vector<PClip> tbUsource(2); // Interleave() will take ownership of these
     std::vector<PClip> tbVsource(2);
 
-    tbUsource[0] = FilteredResize::CreateResize(new SelectEvery(Usource, 2, 0, env), uv_width, uv_height, tUsubSampling, force, filter, env);
-    tbUsource[1] = FilteredResize::CreateResize(new SelectEvery(Usource, 2, 1, env), uv_width, uv_height, bUsubSampling, force, filter, env);
-    tbVsource[0] = FilteredResize::CreateResize(new SelectEvery(Vsource, 2, 0, env), uv_width, uv_height, tVsubSampling, force, filter, env);
-    tbVsource[1] = FilteredResize::CreateResize(new SelectEvery(Vsource, 2, 1, env), uv_width, uv_height, bVsubSampling, force, filter, env);
+    tbUsource[0] = FilteredResize::CreateResize(new SelectEvery(Usource, 2, 0, env), uv_width, uv_height, tUsubSampling, force, filter, preserve_center, placement_name_notused, forced_chroma_placement, env);
+    tbUsource[1] = FilteredResize::CreateResize(new SelectEvery(Usource, 2, 1, env), uv_width, uv_height, bUsubSampling, force, filter, preserve_center, placement_name_notused, forced_chroma_placement, env);
+    tbVsource[0] = FilteredResize::CreateResize(new SelectEvery(Vsource, 2, 0, env), uv_width, uv_height, tVsubSampling, force, filter, preserve_center, placement_name_notused, forced_chroma_placement, env);
+    tbVsource[1] = FilteredResize::CreateResize(new SelectEvery(Vsource, 2, 1, env), uv_width, uv_height, bVsubSampling, force, filter, preserve_center, placement_name_notused, forced_chroma_placement, env);
 
     Usource = new SelectEvery(new DoubleWeaveFields(new Interleave(std::move(tbUsource), env)), 2, 0, env);
     Vsource = new SelectEvery(new DoubleWeaveFields(new Interleave(std::move(tbVsource), env)), 2, 0, env);
@@ -1454,8 +1458,8 @@ ConvertToPlanarGeneric::ConvertToPlanarGeneric(
     AVSValue UsubSampling[4] = { ChrOffset(xsIn, xdInU, xsOut, xdOutU), ChrOffset(ysIn, ydInU, ysOut, ydOutU), AVSValue(), AVSValue() };
     AVSValue VsubSampling[4] = { ChrOffset(xsIn, xdInV, xsOut, xdOutV), ChrOffset(ysIn, ydInV, ysOut, ydOutV), AVSValue(), AVSValue() };
 
-    Usource = FilteredResize::CreateResize(new SwapUVToY(child, SwapUVToY::UToY8, env), uv_width, uv_height, UsubSampling, force, filter, env);
-    Vsource = FilteredResize::CreateResize(new SwapUVToY(child, SwapUVToY::VToY8, env), uv_width, uv_height, VsubSampling, force, filter, env);
+    Usource = FilteredResize::CreateResize(new SwapUVToY(child, SwapUVToY::UToY8, env), uv_width, uv_height, UsubSampling, force, filter, preserve_center, placement_name_notused, forced_chroma_placement, env);
+    Vsource = FilteredResize::CreateResize(new SwapUVToY(child, SwapUVToY::VToY8, env), uv_width, uv_height, VsubSampling, force, filter, preserve_center, placement_name_notused, forced_chroma_placement, env);
   }
   delete filter;
 }
@@ -1566,7 +1570,7 @@ AVSValue ConvertToPlanarGeneric::Create(AVSValue& args, const char* filter, bool
   bool shouldAddAlpha = vi.NumComponents() != 4 && to_yuva;
   bool targethasAlpha = hasAlpha || shouldAddAlpha;
 
-  int ChromaLocation_In = -1; // invalid
+  int ChromaLocation_In = -1; // invalid. Chromalocation_e::AVS_CHROMALOCATION_UNUSED
   int ChromaLocation_Out = -1;
 
   const bool to_420 = strcmp(filter, "ConvertToYUV420") == 0;
