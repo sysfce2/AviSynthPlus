@@ -983,7 +983,6 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
     if (CPU & CPUF_SSSE3) {
       return resizer_h_ssse3_generic;
     }
-    else // C version
 #endif
     return resize_h_c_planar<uint8_t, 1>;
   }
@@ -1191,7 +1190,6 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
     else if (pixelsize == 2)
     {
 #ifdef INTEL_INTRINSICS
-      // always aligned
       if (CPU & CPUF_AVX2) {
         if (bits_per_pixel < 16)
           return resize_v_avx2_planar_uint16_t<true>;
