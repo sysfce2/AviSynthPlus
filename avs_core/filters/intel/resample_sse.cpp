@@ -890,6 +890,9 @@ AVS_FORCEINLINE static void process_two_pixels_h_uint16(const uint16_t* src_ptr,
 }
 
 template<bool is_safe, bool lessthan16bit>
+#if defined(GCC) || defined(CLANG)
+__attribute__((__target__("ssse3")))
+#endif
 AVS_FORCEINLINE static void process_eight_pixels_h_uint16(const uint16_t* src, int x, short* current_coeff_base, int filter_size,
   __m128i& rounder128, __m128i& zero128,
   uint16_t* dst,
