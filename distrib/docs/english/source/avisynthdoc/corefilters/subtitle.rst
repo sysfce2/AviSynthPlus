@@ -31,7 +31,8 @@ versions of a frame at once, and you want to label them to remember which is whi
     Subtitle (clip, string text, float "x", float "y", int "first_frame",
               int "last_frame", string "font", float "size", int "text_color",
               int "halo_color", int "align", int "spc", int "lsp", float "font_width",
-              float "font_angle", bool "interlaced", string "font_filename", bool "utf8")
+              float "font_angle", bool "interlaced", string "font_filename", bool "utf8",
+              bool "bold", bool "italic", bool "noaa")
 
 .. describe:: clip
 
@@ -178,6 +179,29 @@ versions of a frame at once, and you want to label them to remember which is whi
 
     Default: false
 
+.. describe:: bold
+
+    | Using bold letters or not
+    | Default is true, since bold has better visibility.
+
+    Default: true
+
+.. describe:: italic
+
+    | Using italic letters or not
+
+    Default: false
+
+.. describe:: noaa
+
+    | Disables antialiasing when drawing the text.
+    | Setting it true will disable antialiasing.
+      Useful when someone would use ``"VCR OSD Mono"`` as-is, without beautifying the outlines,
+      as it as mentioned in https://forum.doom9.org/showthread.php?t=184627
+
+    Default: false
+
+
 .. _Text:
 
 Text
@@ -197,7 +221,8 @@ of specifying ``lsp`` parameter.
     Text (clip, string text, float "x", float "y", int "first_frame",
           int "last_frame", string "font", float "size", int "text_color",
           int "halo_color", int "align", int "spc", int "lsp", float "font_width",
-          float "font_angle", bool "interlaced", string "font_filename", bool "utf8", bool "bold")
+          float "font_angle", bool "interlaced", string "font_filename", bool "utf8",
+          bool "bold", bool "italic", bool "noaa", string "placement")
 
 .. describe:: clip
 
@@ -267,6 +292,41 @@ of specifying ``lsp`` parameter.
 
     Default: false
 
+.. describe:: italic, noaa
+
+    These parameters have no effect in Text. They are provided only to match the parameter list 
+    with SubTitle, because on non-Windows systems "Subtitle" is aliased to "Text", so
+    each Subtitle parameter must exist in "Text" as well.
+
+.. describe:: placement
+
+    Chroma location hint. Used in subsampled YUV formats, otherwise ignored.
+    Valid values for "placement" are the same as in ``ChromaInPlacement`` and 
+    ``ChromaOutPlacement`` in the :doc:`Convert <convert>` functions.
+    
+    The placement can be one of these strings: 
+
+    - ``"MPEG2"`` (synonyms: ``"left"``)
+      Subsampling used in MPEG-2 4:2:x and most other formats. Chroma samples are located on the left pixel column of the group (default).
+    - ``"MPEG1"`` (synonyms: ``"jpeg"``, ``"center"``)
+      Subsampling used in MPEG-1 4:2:0. Chroma samples are located on the center of each group of 4 pixels.
+    - ``"DV"``
+      Like MPEG-2, but U and V channels are co-sited vertically: V on the top row, and U on the bottom row. For 4:1:1, chroma is located on the leftmost column.
+    - ``"top_left"``
+      Subsampling used in UHD 4:2:0. Chroma samples are located on the top left pixel column of the group.
+    - ``bottom_left`` 4:2:0 only
+    - ``bottom``   4:2:0 only 
+
+    Meaningful values: "center", "left", "auto" at the moment, only ``"center"`` and ``"left"`` 
+    is implemented. 
+    
+    Default value is
+    
+    - read from ``"_ChromaLocation"`` frame property, otherwise ``"left"``
+    - override or set from ``"placement"`` parameter if parameter is other than ``"auto"``
+    - if ``"auto"`` + have frame property -> use frame property
+    - if ``"auto"`` + no frame property -> use ``"left"``
+    - no frame property and no parameter -> use ``"left"``
 
 Examples
 --------
@@ -401,6 +461,9 @@ Changelog
 |                 |  vertical/horizontal center alignment.                                   |
 |                 || Fix: "Text" to throw proper error message if the specified font (#293)  |
 |                 |  name (e.g. Arial) is not found among internal bitmap fonts.             |
+|                 || "Text": add "italic" and "noaa" (unused) parameters                     |
+|                 || "SubTitle": add "bold", "italic" and "noaa" parameters                  |
+|                 || "Text": add "placement" parameter                                       |
 +-----------------+--------------------------------------------------------------------------+
 | AviSynth+ 3.7.1 | Fix: "Text" filter would crash when y coord is odd and format has        |
 |                 | vertical subsampling.                                                    |
@@ -427,7 +490,7 @@ Changelog
 |                 | (undocumented prior to v2.07)                                            |
 +-----------------+--------------------------------------------------------------------------+
 
-$Date: 2024/12/31 8:30:00 $
+$Date: 2025/03/23 22:30:00 $
 
 .. _BDF:
     https://en.wikipedia.org/wiki/Glyph_Bitmap_Distribution_Format
