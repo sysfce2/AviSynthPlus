@@ -50,24 +50,163 @@
 #include <type_traits>
 #include <algorithm>
 
+
+// Prepares resampling coefficients for end conditions and/or SIMD processing by:
+// 1. Sets a "real-life" size for the filter, which at small dimensions can be less than the original
+// 2. Aligning filter_size to 8 or 16 boundary for SIMD efficiency
+// 3. Right-aligning coefficients within padded arrays to ensure valid access at boundaries
+//
+// Before:                After right-alignment (filter_size=4, kernel_size=2):
+//
+// offset->|            offset-2 ->|         
+//        [x][y][  ][  ]          [0][0][x][y]
+//         ^ ^   ^   ^             ^         ^
+//         | |   Off-boundary      |         |
+//     Values used                 Values used
+//
+// This ensures SIMD instructions can safely load full vectors even at image boundaries
+// while maintaining correct coefficient positioning and proper zero padding.
+
+
+void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int filter_size_alignment) {
+  p->filter_size_alignment = filter_size_alignment;
+  p->overread_possible = false;
+
+  // note: filter_size_real was the max(kernel_sizes[])
+  int filter_size_aligned = AlignNumber(p->filter_size_real, p->filter_size_alignment);
+
+  int target_size_aligned = AlignNumber(p->target_size, ALIGN_RESIZER_TARGET_SIZE);
+
+  // Common variables for both float and integer paths
+  void* new_coeff = nullptr;
+  void* src_coeff = nullptr;
+  size_t element_size = 0;
+
+  // allocate for a larger target_size area and nullify the coeffs.
+  // Even between target_size and target_size_aligned.
+  if (p->bits_per_pixel == 32) {
+    element_size = sizeof(float);
+    src_coeff = p->pixel_coefficient_float;
+    new_coeff = env->Allocate(element_size * target_size_aligned * filter_size_aligned, 64, AVS_NORMAL_ALLOC);
+    if (!new_coeff) {
+      env->Free(new_coeff);
+      env->ThrowError("Could not reserve memory in a resampler.");
+    }
+    std::fill_n((float*)new_coeff, target_size_aligned * filter_size_aligned, 0.0f);
+  }
+  else {
+    element_size = sizeof(short);
+    src_coeff = p->pixel_coefficient;
+    new_coeff = env->Allocate(element_size * target_size_aligned * filter_size_aligned, 64, AVS_NORMAL_ALLOC);
+    if (!new_coeff) {
+      env->Free(new_coeff);
+      env->ThrowError("Could not reserve memory in a resampler.");
+    }
+    memset(new_coeff, 0, element_size * target_size_aligned * filter_size_aligned);
+  }
+
+  const int last_line = p->source_size - 1;
+
+  // Process coefficients - common code for both types
+  for (int i = 0; i < p->target_size; i++) {
+    const int kernel_size = p->kernel_sizes[i];
+    const int offset = p->pixel_offset[i];
+    const int last_coeff_index = offset + p->filter_size_real - 1;
+    const int shift_needed = last_coeff_index > last_line ? p->filter_size_real - kernel_size : 0;
+
+    // Copy coefficients with appropriate shift
+    if (p->bits_per_pixel == 32) {
+      float* dst = (float*)new_coeff + i * filter_size_aligned;
+      float* src = (float*)src_coeff + i * p->filter_size;
+      for (int j = 0; j < kernel_size; j++) {
+        dst[j + shift_needed] = src[j];
+      }
+    }
+    else {
+      short* dst = (short*)new_coeff + i * filter_size_aligned;
+      short* src = (short*)src_coeff + i * p->filter_size;
+      for (int j = 0; j < kernel_size; j++) {
+        dst[j + shift_needed] = src[j];
+      }
+    }
+
+    // Update offsets and kernel sizes
+    p->pixel_offset[i] -= shift_needed;
+    p->kernel_sizes[i] += shift_needed;
+
+    // left side, already right padded with zero coeffs, we can
+    // change to actual width to the common one
+    if(p->kernel_sizes[i] < p->filter_size_real)
+      p->kernel_sizes[i] = p->filter_size_real;
+
+    // In a horizontal resizer, when reading filter_size_alignment pixels,
+    // we must protect against source scanline overread.
+    // Using this not in only 32-bit float resizers is new in 3.7.4.
+    const int start_pos = p->pixel_offset[i];
+    const int end_pos_aligned = start_pos + filter_size_aligned - 1;
+    const int end_pos = start_pos + p->filter_size_real - 1;
+    if (end_pos >= p->source_size) {
+      // This issue has already been fixed, so it cannot occur.
+    }
+
+    // Check for SIMD optimization limits
+    if (end_pos_aligned >= p->source_size) {
+      if (!p->overread_possible) {
+        // Register the first occurrence, because we are entering the danger zone from here.
+        // Up to this point, template-based alignment-aware quick code can be used
+        // in H resizers. But beyond this point an e.g. _mm256_loadu_si256() would read into 
+        // invalid memory area at the end of the frame buffer.
+        p->overread_possible = true;
+        p->source_overread_offset = start_pos;
+        p->source_overread_beyond_targetx = i; 
+      }
+    }
+  }
+
+  // Fill the extra offset after target_size with fake values.
+  // Our aim is to have a safe, up to 8 pixels/cycle simd loop for V resizers.
+  // Their coeffs will be 0, so they don't count if such coeffs
+  // are multiplied with invalid pixels.
+  if (p->target_size < target_size_aligned) {
+    p->kernel_sizes.resize(target_size_aligned);
+    p->pixel_offset.resize(target_size_aligned);
+    for (int i = p->target_size; i < target_size_aligned; ++i) {
+      p->kernel_sizes[i] = p->filter_size_real;
+      p->pixel_offset[i] = 0; // 0th pixel offset makes no harm
+    }
+  }
+
+  // Free old coefficients and assign new ones
+  if (p->bits_per_pixel == 32) {
+    env->Free(p->pixel_coefficient_float);
+    p->pixel_coefficient_float = (float*)new_coeff;
+  }
+  else {
+    env->Free(p->pixel_coefficient);
+    p->pixel_coefficient = (short*)new_coeff;
+  }
+
+  p->filter_size = filter_size_aligned;
+  // by now coeffs[old_filter_size][target_size] was copied and padded into coeffs[new_filter_size][target_size]
+}
+
 /***************************************
  ***** Vertical Resizer Assembly *******
  ***************************************/
 
 template<typename pixel_t>
-static void resize_v_planar_pointresize(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel, const int* pitch_table, const void* storage)
+static void resize_v_planar_pointresize(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
 {
-  AVS_UNUSED(src_pitch);
   AVS_UNUSED(bits_per_pixel);
-  AVS_UNUSED(storage);
 
   pixel_t* src0 = (pixel_t*)src;
   pixel_t* dst0 = (pixel_t*)dst;
+  src_pitch = src_pitch / sizeof(pixel_t);
   dst_pitch = dst_pitch / sizeof(pixel_t);
 
   for (int y = 0; y < target_height; y++) {
     int offset = program->pixel_offset[y];
-    const pixel_t* src_ptr = src0 + pitch_table[offset] / sizeof(pixel_t);
+    const pixel_t* src_ptr = src0 + src_pitch * offset;
 
     memcpy(dst0, src_ptr, width * sizeof(pixel_t));
 
@@ -75,11 +214,11 @@ static void resize_v_planar_pointresize(BYTE* dst, const BYTE* src, int dst_pitc
   }
 }
 
-template<typename pixel_t>
-static void resize_v_c_planar(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel, const int* pitch_table, const void* storage)
+// C versions: vectorizer friendly version giving 1.6-2.6x speed even with MSVC
+
+template<typename pixel_t, bool lessthan16bit>
+static void resize_v_c_planar(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
 {
-  AVS_UNUSED(src_pitch);
-  AVS_UNUSED(storage);
 
   int filter_size = program->filter_size;
 
@@ -91,8 +230,9 @@ static void resize_v_c_planar(BYTE* dst, const BYTE* src, int dst_pitch, int src
   else
     current_coeff = (coeff_t*)program->pixel_coefficient_float;
 
-  pixel_t* src0 = (pixel_t*)src;
-  pixel_t* dst0 = (pixel_t*)dst;
+  pixel_t* src = (pixel_t*)src8;
+  pixel_t* dst = (pixel_t*)dst8;
+  src_pitch = src_pitch / sizeof(pixel_t);
   dst_pitch = dst_pitch / sizeof(pixel_t);
 
   pixel_t limit = 0;
@@ -101,71 +241,119 @@ static void resize_v_c_planar(BYTE* dst, const BYTE* src, int dst_pitch, int src
     else if constexpr (sizeof(pixel_t) == 2) limit = pixel_t((1 << bits_per_pixel) - 1);
   }
 
+  // for 16 bits only
+  const short shifttosigned_short = -32768;
+  const int shiftfromsigned_int = 32768 << FPScale16bits;
+
   for (int y = 0; y < target_height; y++) {
     int offset = program->pixel_offset[y];
-    const pixel_t* src_ptr = src0 + pitch_table[offset] / sizeof(pixel_t);
+    const int kernel_size = program->kernel_sizes[y];
+    const pixel_t* src_ptr = src + src_pitch * offset;
+
+    // perhaps helps vectorizing decision
+    const int ksmod4 = kernel_size / 4 * 4;
 
     for (int x = 0; x < width; x++) {
-      // todo: check whether int result is enough for 16 bit samples (can an int overflow because of 16384 scale or really need int64_t?)
-      typename std::conditional < sizeof(pixel_t) == 1, int, typename std::conditional < sizeof(pixel_t) == 2, int64_t, float>::type >::type result;
-      result = 0;
-      for (int i = 0; i < filter_size; i++) {
-        result += (src_ptr + pitch_table[i] / sizeof(pixel_t))[x] * current_coeff[i];
+      if constexpr (std::is_floating_point<pixel_t>::value) {
+        const float* src2_ptr = src_ptr + x;
+
+        float result = 0;
+        for (int i = 0; i < ksmod4; i+=4) {
+          result += *(src2_ptr + 0 * src_pitch) * current_coeff[i + 0];
+          result += *(src2_ptr + 1 * src_pitch) * current_coeff[i + 1];
+          result += *(src2_ptr + 2 * src_pitch) * current_coeff[i + 2];
+          result += *(src2_ptr + 3 * src_pitch) * current_coeff[i + 3];
+          src2_ptr += 4 * src_pitch;
+        }
+        for (int i = ksmod4; i < kernel_size; i++) {
+          result += *src2_ptr * current_coeff[i];
+          src2_ptr += src_pitch;
+        }
+        dst[x] = result;
       }
-      if (!std::is_floating_point<pixel_t>::value) {  // floats are unscaled and uncapped
-        if constexpr (sizeof(pixel_t) == 1)
-          result = (result + (1 << (FPScale8bits - 1))) >> FPScale8bits;
-        else if constexpr (sizeof(pixel_t) == 2)
-          result = (result + (1 << (FPScale16bits - 1))) >> FPScale16bits;
-        result = clamp(result, decltype(result)(0), decltype(result)(limit));
+      else if constexpr (sizeof(pixel_t) == 2) {
+        // theoretically, no need for int64 accumulator,
+        // sum of coeffs is 1.0 that is (1 << FPScale16bits) in integer arithmetic
+        const uint16_t* src2_ptr = src_ptr + x;
+        int result = 1 << (FPScale16bits - 1); // rounder;
+        for (int i = 0; i < ksmod4; i+=4) {
+          int val;
+          val = *(src2_ptr + 0 * src_pitch);
+          if constexpr (!lessthan16bit)
+            val = val + shifttosigned_short;
+          result += val * current_coeff[i + 0];
+
+          val = *(src2_ptr + 1 * src_pitch);
+          if constexpr (!lessthan16bit)
+            val = val + shifttosigned_short;
+          result += val * current_coeff[i + 1];
+
+          val = *(src2_ptr + 2 * src_pitch);
+          if constexpr (!lessthan16bit)
+            val = val + shifttosigned_short;
+          result += val * current_coeff[i + 2];
+
+          val = *(src2_ptr + 3 * src_pitch);
+          if constexpr (!lessthan16bit)
+            val = val + shifttosigned_short;
+          result += val * current_coeff[i + 3];
+
+          src2_ptr += 4 * src_pitch;
+        }
+        for (int i = ksmod4; i < kernel_size; i++) {
+          int val = *src2_ptr;
+          if constexpr (!lessthan16bit)
+            val = val + shifttosigned_short;
+          result += val * current_coeff[i];
+          src2_ptr += src_pitch;
+        }
+        if constexpr (!lessthan16bit)
+          result = result + shiftfromsigned_int;
+        result = result >> FPScale16bits;
+        result = result > limit ? limit : result < 0 ? 0 : result; // clamp 10..16 bits
+        dst[x] = (uint16_t)result;
       }
-      dst0[x] = (pixel_t)result;
+      else if constexpr (sizeof(pixel_t) == 1) {
+        const uint8_t* src2_ptr = src_ptr + x;
+        int result = 1 << (FPScale8bits - 1); // rounder;
+        for (int i = 0; i < ksmod4; i+=4) {
+          short val;
+          val = *(src2_ptr + 0 * src_pitch);
+          result += val * current_coeff[i + 0];
+          
+          val = *(src2_ptr + 1 * src_pitch);
+          result += val * current_coeff[i + 1];
+          
+          val = *(src2_ptr + 2 * src_pitch);
+          result += val * current_coeff[i + 2];
+          
+          val = *(src2_ptr + 3 * src_pitch);
+          result += val * current_coeff[i + 3];
+          
+          src2_ptr += 4 * src_pitch;
+        }
+        for (int i = ksmod4; i < kernel_size; i++) {
+          short val = *src2_ptr;
+          result += val * current_coeff[i];
+          src2_ptr += src_pitch;
+        }
+        result = result >> FPScale8bits;
+        result = result > limit ? limit : result < 0 ? 0 : result; // clamp 8 bits
+        dst[x] = (uint8_t)result;
+      }
     }
 
-    dst0 += dst_pitch;
+    dst += dst_pitch;
     current_coeff += filter_size;
   }
 }
 
-AVS_FORCEINLINE static void resize_v_create_pitch_table(int* table, int pitch, int height) {
-  table[0] = 0;
-  for (int i = 1; i < height; i++) {
-    table[i] = table[i - 1] + pitch;
-  }
-}
-
-
-
 /***************************************
  ********* Horizontal Resizer** ********
  ***************************************/
-#if 0
-static void resize_h_pointresize(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  AVS_UNUSED(bits_per_pixel);
 
-  int wMod4 = width / 4 * 4;
-
-  for (int y = 0; y < height; y++) {
-    for (int x = 0; x < wMod4; x += 4) {
-#define pixel(a) src[program->pixel_offset[x+a]]
-      unsigned int data = (pixel(3) << 24) + (pixel(2) << 16) + (pixel(1) << 8) + pixel(0);
-#undef pixel
-      * ((unsigned int*)(dst + x)) = data;
-    }
-
-    for (int x = wMod4; x < width; x++) {
-      dst[x] = src[program->pixel_offset[x]];
-    }
-
-    dst += dst_pitch;
-    src += src_pitch;
-  }
-}
-#endif
-
-
-template<typename pixel_t>
-static void resize_h_c_planar(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
+template<typename pixel_t, bool lessthan16bit>
+static void resize_h_c_planar(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
   int filter_size = program->filter_size;
 
   typedef typename std::conditional < std::is_floating_point<pixel_t>::value, float, short>::type coeff_t;
@@ -180,8 +368,17 @@ static void resize_h_c_planar(BYTE* dst, const BYTE* src, int dst_pitch, int src
   src_pitch = src_pitch / sizeof(pixel_t);
   dst_pitch = dst_pitch / sizeof(pixel_t);
 
-  pixel_t* src0 = (pixel_t*)src;
-  pixel_t* dst0 = (pixel_t*)dst;
+  pixel_t* src = (pixel_t*)src8;
+  pixel_t* dst = (pixel_t*)dst8;
+
+  // for 16 bits only
+  const short shifttosigned_short = -32768;
+  const int shiftfromsigned_int = 32768 << FPScale16bits;
+
+  // perhaps helps vectorizing decision
+  const int kernel_size = program->filter_size_real;
+  const int ksmod4 = kernel_size / 4 * 4;
+  const int ksmod8 = kernel_size / 8 * 8;
 
   // external loop y is much faster
   for (int y = 0; y < height; y++) {
@@ -189,22 +386,106 @@ static void resize_h_c_planar(BYTE* dst, const BYTE* src, int dst_pitch, int src
       current_coeff = (coeff_t*)program->pixel_coefficient;
     else
       current_coeff = (coeff_t*)program->pixel_coefficient_float;
+
+    pixel_t* dst2_ptr = dst + y * dst_pitch;
+    const pixel_t* src_ptr = src + y * src_pitch;
+
     for (int x = 0; x < width; x++) {
       int begin = program->pixel_offset[x];
-      // todo: check whether int result is enough for 16 bit samples (can an int overflow because of 16384 scale or really need int64_t?)
-      typename std::conditional < sizeof(pixel_t) == 1, int, typename std::conditional < sizeof(pixel_t) == 2, int64_t, float>::type >::type result;
-      result = 0;
-      for (int i = 0; i < filter_size; i++) {
-        result += (src0 + y * src_pitch)[(begin + i)] * current_coeff[i];
+      const pixel_t* src2_ptr = src_ptr + begin;
+
+      if constexpr (std::is_floating_point<pixel_t>::value) {
+        float result = 0;
+        for (int i = 0; i < ksmod4; i+=4) {
+          result += src2_ptr[i+0] * current_coeff[i+0];
+          result += src2_ptr[i+1] * current_coeff[i+1];
+          result += src2_ptr[i+2] * current_coeff[i+2];
+          result += src2_ptr[i+3] * current_coeff[i+3];
+        }
+        for (int i = ksmod4; i < kernel_size; i++) {
+          result += src2_ptr[i] * current_coeff[i];
+        }
+        dst2_ptr[x] = result;
       }
-      if (!std::is_floating_point<pixel_t>::value) {  // floats are unscaled and uncapped
-        if constexpr (sizeof(pixel_t) == 1)
-          result = (result + (1 << (FPScale8bits - 1))) >> FPScale8bits;
-        else if constexpr (sizeof(pixel_t) == 2)
-          result = (result + (1 << (FPScale16bits - 1))) >> FPScale16bits;
-        result = clamp(result, decltype(result)(0), decltype(result)(limit));
+      else if constexpr (sizeof(pixel_t) == 2) {
+        // theoretically, no need for int64 accumulator,
+        // sum of coeffs is 1.0 that is (1 << FPScale16bits) in integer arithmetic
+        int result = 1 << (FPScale16bits - 1); // rounder;
+        for (int i = 0; i < ksmod4; i += 4) {
+          int val;
+          val = src2_ptr[i+0];
+          if constexpr (!lessthan16bit)
+            val = val + shifttosigned_short;
+          result += val * current_coeff[i+0];
+
+          val = src2_ptr[i+1];
+          if constexpr (!lessthan16bit)
+            val = val + shifttosigned_short;
+          result += val * current_coeff[i+1];
+
+          val = src2_ptr[i + 2];
+          if constexpr (!lessthan16bit)
+            val = val + shifttosigned_short;
+          result += val * current_coeff[i + 2];
+
+          val = src2_ptr[i + 3];
+          if constexpr (!lessthan16bit)
+            val = val + shifttosigned_short;
+          result += val * current_coeff[i + 3];
+        }
+        for (int i = ksmod4; i < kernel_size; i++) {
+          int val = src2_ptr[i];
+          if constexpr (!lessthan16bit)
+            val = val + shifttosigned_short;
+          result += val * current_coeff[i];
+        }
+        if constexpr (!lessthan16bit)
+          result = result + shiftfromsigned_int;
+        result = result >> FPScale16bits;
+        result = result > limit ? limit : result < 0 ? 0 : result; // clamp 10..16 bits
+        dst2_ptr[x] = (uint16_t)result;
       }
-      (dst0 + y * dst_pitch)[x] = (pixel_t)result;
+      else if constexpr (sizeof(pixel_t) == 1) {
+        int result = 1 << (FPScale8bits - 1); // rounder;
+        for (int i = 0; i < ksmod8; i += 8) {
+          short val;
+          val = src2_ptr[i + 0];
+          result += val * current_coeff[i + 0];
+          val = src2_ptr[i + 1];
+          result += val * current_coeff[i + 1];
+          val = src2_ptr[i + 2];
+          result += val * current_coeff[i + 2];
+          val = src2_ptr[i + 3];
+          result += val * current_coeff[i + 3];
+          val = src2_ptr[i + 4];
+          result += val * current_coeff[i + 4];
+          val = src2_ptr[i + 5];
+          result += val * current_coeff[i + 5];
+          val = src2_ptr[i + 6];
+          result += val * current_coeff[i + 6];
+          val = src2_ptr[i + 7];
+          result += val * current_coeff[i + 7];
+        }
+        for (int i = ksmod8; i < ksmod4; i += 4) {
+          short val;
+          val = src2_ptr[i + 0];
+          result += val * current_coeff[i + 0];
+          val = src2_ptr[i + 1];
+          result += val * current_coeff[i + 1];
+          val = src2_ptr[i + 2];
+          result += val * current_coeff[i + 2];
+          val = src2_ptr[i + 3];
+          result += val * current_coeff[i + 3];
+          val = src2_ptr[i + 4];
+        }
+        for (int i = ksmod4; i < kernel_size; i++) {
+          short val = src2_ptr[i];
+          result += val * current_coeff[i];
+        }
+        result = result >> FPScale8bits;
+        result = result > limit ? limit : result < 0 ? 0 : result; // clamp 8 bits
+        dst2_ptr[x] = (uint8_t)result;
+      }
       current_coeff += filter_size;
     }
   }

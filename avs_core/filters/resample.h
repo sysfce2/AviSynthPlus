@@ -38,8 +38,10 @@
 #include <avisynth.h>
 #include "resample_functions.h"
 
+void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int alignFilterSize8or16);
+
 // Resizer function pointer
-typedef void (*ResamplerV)(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel, const int* pitch_table, const void* storage);
+typedef void (*ResamplerV)(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel);
 typedef void (*ResamplerH)(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel);
 
 // Turn function pointer -- copied from turn.h
@@ -62,18 +64,12 @@ public:
     return cachehints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
   }
 
-  static ResamplerH GetResampler(int CPU, bool aligned, int pixelsize, int bits_per_pixel, ResamplingProgram* program, IScriptEnvironment* env);
+  static ResamplerH GetResampler(int CPU, int pixelsize, int bits_per_pixel, ResamplingProgram* program, IScriptEnvironment* env);
 
 private:
   // Resampling
   ResamplingProgram* resampling_program_luma;
   ResamplingProgram* resampling_program_chroma;
-  int* src_pitch_table_luma;
-
-  // Note: these pointer are currently not used; they are used to pass data into run-time resampler.
-  // They are kept because this may be needed later (like when we implemented actual horizontal resizer.)
-  void* filter_storage_luma;
-  void* filter_storage_chroma;
 
   int temp_1_pitch, temp_2_pitch;
 
@@ -109,7 +105,7 @@ public:
     return cachehints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
   }
 
-  static ResamplerV GetResampler(int CPU, bool aligned, int pixelsize, int bits_per_pixel, void*& storage, ResamplingProgram* program);
+  static ResamplerV GetResampler(int CPU, int pixelsize, int bits_per_pixel, ResamplingProgram* program, IScriptEnvironment* env);
 
 private:
   bool grey;
@@ -119,13 +115,8 @@ private:
   ResamplingProgram* resampling_program_luma;
   ResamplingProgram* resampling_program_chroma;
 
-  // Note: these pointer are currently not used; they are used to pass data into run-time resampler.
-  // They are kept because this may be needed later (like when we implemented actual horizontal resizer.)
-  void* filter_storage_luma_aligned;
-  void* filter_storage_chroma_aligned;
-
-  ResamplerV resampler_luma_aligned;
-  ResamplerV resampler_chroma_aligned;
+  ResamplerV resampler_luma;
+  ResamplerV resampler_chroma;
 };
 
 
