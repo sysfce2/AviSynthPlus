@@ -156,7 +156,7 @@ Syntax and Parameters
     Ignore any given conditional (runtime) variables. 
 
     See also: conditional variables section :doc:`ColorYUV <coloryuv>`, or 
-    :doc:<ConditionalReader <conditionalreader>` or 
+    :doc:`ConditionalReader <conditionalreader>` or 
     http://avisynth.nl/index.php/ColorYUV.
 
     Default: false
@@ -371,7 +371,7 @@ the black rectangles the blue is given by R23 G22 B124. Probably due to the
 compression of blue.jpg.
 
 - Move a red (or any other color) dot on a clip using ``ConditionalReader``
-(dot.bmp is a red dot on a black background):
+  (dot.bmp is a red dot on a black background):
 
 ::
 
@@ -437,7 +437,7 @@ And the same with using ``condvarsuffix``:
 +-----------+------------------------------------------------------------------------+
 | Changelog |                                                                        |
 +===========+========================================================================+
-| 3.7.2     | Address issue #255): "blend": now using accurate formula using float   |
+| 3.7.2     | Address issue #255: "blend": now using accurate formula using float    |
 |           | calculation.                                                           |
 +-----------+------------------------------------------------------------------------+
 | 3.7.1     | Overlay mode "multiply": overlay clip is not converted to 4:4:4        |
