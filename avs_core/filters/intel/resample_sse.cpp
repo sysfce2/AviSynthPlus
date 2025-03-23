@@ -410,6 +410,9 @@ AVS_FORCEINLINE static void process_two_pixels_h_float(const float* src_ptr, int
 }
 
 template<bool is_safe>
+#if defined(GCC) || defined(CLANG)
+__attribute__((__target__("ssse3")))
+#endif
 AVS_FORCEINLINE static void process_eight_pixels_h_float(const float* src, int x, float* current_coeff_base, int filter_size,
   __m128& zero128,
   float* dst,
