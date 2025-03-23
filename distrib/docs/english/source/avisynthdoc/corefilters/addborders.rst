@@ -126,7 +126,7 @@ Syntax and Parameters
     
     - This copy-paste of the up-to eight area is using a new :doc:`MultiOverlay <multioverlay>` filter.
     - The convolution filters (resizers) now take the chroma placement into account (``_ChromaLocation`` 
-    frame property)
+      frame property)
     
 Examples
 --------
@@ -229,6 +229,7 @@ Changelog
 | Version         | Changes                                                          |
 +=================+==================================================================+
 | 3.7.4           | Add filtering. resample, param1, param2, param3, r parameters    |
+|                 | Make filtering with chroma placement aware resizers.             |
 +-----------------+------------------------------------------------------------------+
 | AviSynth+ 3.6.2 | Fix: AddBorders did not pass frame properties                    |
 +-----------------+------------------------------------------------------------------+
