@@ -11,7 +11,62 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist374.html
 and
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html#what-s-new-in-the-api-v11
 
-20250314 3.7.3 r42XX
+20250323 3.7.3 r4xxx
+--------------------
+
+Resizers:
+  - ideas and some code imported from the excellent ""fmtconv" image format converter.
+    (https://gitlab.com/EleonoreMizo/fmtconv) namely edge condition handling and 
+    respecting chroma position.
+  - Fix: Resizers chroma shift if not chroma is not center-positioned (respect _ChromaLocation, and "placement" parameter)
+    (Until now Avisynth was resizing the chroma with the same center position like luma.)
+  - read "_ChromaPlacement" frame property (but not write it)
+  - "keep_center" parameter
+  - "placement" parameter
+  - Resizers C implementation: more vectorizer compiler friendly code (1.5 - 2.5 speed, still slooow)
+  - Quicker SSE2 horizontal and vertical resizer
+  - Fix possibly memory overread - generally rewritten resizer codebase ==>
+  - [Un-optimization]: minor speed decrease in other resizers' performance, due to healing a hidden 
+    possibility which would allow over-addressing the scan-lines and frame buffer. No wonder the old
+    code, which checked nothing, did well. IMHO the code is still quick.
+  - Resizers: allow arbitrary dimensions; the filter "support" size does not limit usability, no more
+    "image height is too small for this resizing method"-like error messages.
+
+  New Parameters:
+
+  - "placement": Specifies chroma placement, with options such as "auto", "mpeg2", "center", etc., 
+    similar to ConvertToXXXX and Text. The default is "auto", which reads the frame property 
+    _ChromaLocation for 420, 422, and 411 formats.
+    The chroma placement is ignored when "keep_center" is set to False or in PointResizeFilter.
+    Does not write new _ChromaLocation parameter.
+  - "keep_center" (boolean, default: true) 
+    If true, the chroma shift from "placement" is now considered when resizing chroma.
+    fmtconv mentiones that this must be false for convolution filter use, when no resize and "force" is not 0
+
+  The positions of the sampling points are relative to the frame's top/left border in plane coordinates.
+  For reference, the frame border is at 0.5 units of luma from the first luma sampling point, 
+  meaning the luma sampling point is at the pixel's center.
+  For more information, visit this link. http://www.mir.com/DMG/chroma.html
+
+  Stupid example
+    ColorBarsHD(1024,768)
+    ConvertToYV16()
+    PropSet("_ChromaLocation", 0) # 0 left
+    ConvertToRGB32()
+    ConvertToYV12(chromaoutplacement = "left")
+    propShow()
+    GaussResize(width*3, height*3) # keepc=true, placement="auto"
+    GaussResize(width*3, height*3, placement="auto") # the new default, read frame props
+    GaussResize(width*3, height*3, placement="bottom") #center, top, etc visible differences in chroma
+    GaussResize(width*3, height*3, placement="center") #legacy Avisynth worked like this
+    GaussResize(width*3, height*3, keepc=false) #dont keep pixel center, not even for the luma
+
+AddBorders, LetterBox
+
+  The resizer area is +/- (r + ceil(filter.support())
+  The internal blurring resizers take the chroma placement into account (_ChromaLocation frame prop)
+
+20250314 3.7.3 r4246
 --------------------
 - AddBorders and LetterBox: add transient filtering See :doc:`AddBorders <corefilters/addborders>`.
 - new filter: MultiOverlay. Bulk copy-paste from clips. See :doc:`MultiOverlay <corefilters/multioverlay>`.

@@ -10,6 +10,10 @@ Additions, changes
 - Animate: more precise granularity for integer interpolation, allow 64 bit input
 - Animate: add proper rounding for integer interpolation
 - Resizers: add "force" integer parameter to force the resizing process even if Avisynth decides it is not needed
+- Resizers: respect _ChromaLocation, and "placement" parameter which to adjust chroma locations during resizing
+- Resizers: add "keep_center" parameter to disable pixel center position adjustments
+- Resizers: allow arbitrary dimensions; the filter "support" size does not limit usability, no more
+  "image height is too small for this resizing method"-like error messages.
 - GaussResize: add "b" and "s" parameters See :doc:`Resize Filters <corefilters/resize>`.
 - DirectShowSource new parameter ``utf8`` for utf8 filename support
 - "propShow" ``font``, ``text_color``, ``halo_color``, ``bold`` new parameters for custom style.
@@ -133,6 +137,9 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix ConvertBits C 16->8 bit (x+round, then bitshift) which turned 0xFFFF into 256 which is 0 (wrong)
+- Fix ConvertToRGB48/64 debug assert which passed less than adequate parameters to an internal PlanarRGb converter
+- Fix: Resizers chroma shift if not chroma is not center-positioned (respect _ChromaLocation, and "placement" parameter)
 - Fix #429 CPU-CUDA transfer would copy less bytes than vfb data_size
 - Fix: ScriptClip and other runtime functions / frame prop read would crash if called from Avs2.5 or Pre-v11 C 
   IScriptEnvironment, which would happen is there is an old C plugin within ScriptClip
@@ -172,6 +179,11 @@ Optimizations
   Useful for non-Intel platforms where the (Intel SSE2-AVX2) JIT compiler does not work.
   Expect 3-20x speedup compared to the old method.
 - Expr: implement ``tan`` in JITasm. Expect ~6-15x speed up for an expression like "sxr 2 * 1 - 3.14159254 * 1 * tan 10 * 128 +"
+- Resizers C implementation: more vectorizer compiler friendly code (1.5 - 2.5 speed, still slooow)
+- Quicker SSE2 horizontal and vertical resizer
+- [Un-optimization]: minor speed decrease in other resizers' performance, due to healing a hidden 
+  possibility which would allow over-addressing the scan-lines and frame buffer. No wonder the old
+  code, which checked nothing, did well. IMHO the code is still quick.
 
 Documentation
 ~~~~~~~~~~~~~
