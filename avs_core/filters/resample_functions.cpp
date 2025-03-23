@@ -34,6 +34,8 @@
 
 #include "resample_functions.h"
 #include <cmath>
+#include <vector>
+#include <algorithm>
 #include <avs/minmax.h>
 #include <avs/alignment.h>
 
@@ -324,27 +326,177 @@ double UserDefined2Filter::f(double x)
  **** Resampling Patterns  ****
  *****************************/
 
-// AddBorders{
-bool ResamplingFunction::CheckValidity(int source_size, double crop_size, int target_size) {
-  double filter_scale = double(target_size) / crop_size;
-  double filter_step = min(filter_scale, 1.0);
-  double filter_support = support() / filter_step;
-  int fir_filter_size = int(ceil(filter_support * 2));
+ResamplingProgram* ResamplingFunction::GetResamplingProgram(int source_size, double crop_start, double crop_size, int target_size, int bits_per_pixel, 
+  double center_pos_src, double center_pos_dst,
+  IScriptEnvironment* env)
+{
+  // edge condition ideas from fmtconv, thanks.
+  double src_step = crop_size / double(target_size); // Distance between source pixels for adjacent dest pixels
+  double zc_size = std::max(src_step, 1.0) / 1.0;    // Size of filter unit step (kernel_scale=1.0 in our case)
+  double imp_step = 1.0 / zc_size;                   // Corresponding distance in the impulse
+  double filter_support = support() * zc_size;       // Number of source pixels covered by the FIR
 
-  // instead of 
-  // env->ThrowError("Resize: Source image too small for this resize method. Width=%d, Support=%d", source_size, int(ceil(filter_support)));
-  if (source_size <= filter_support)
-    return false;
+  int fir_filter_size = std::max(int(std::ceil(filter_support * 2)), 1);
+  int max_kernel_size = 0;
 
-  // instead of 
-  // env->ThrowError("Source height (%d) is too small for this resizing method, must be minimum of %d", vi.height, resampling_program_luma->filter_size);
-  // env->ThrowError("Source width (%d) is too small for this resizing method, must be minimum of %d", vi.width, resampling_program_luma->filter_size);
-  if (source_size <= fir_filter_size)
-    return false;
+  const int last_line = source_size - 1;
 
-  return true;
+  ResamplingProgram* program = new ResamplingProgram(fir_filter_size, source_size, target_size, crop_start, crop_size, bits_per_pixel, env);
+
+  // Initial position calculation
+
+  double pos = crop_start;
+
+  /*
+  pre 3.7.4 logic:
+
+  Now in 2025, let's fact-check this comment.
+
+    pos = crop_start + ((crop_size - target_size) / (target_size*2)); // TODO this look wrong, gotta check
+    ==>
+    pos = crop_start + 1/2 * (crop_size / target_size - 1)
+    ==>
+    pos = crop_start + src_step * 0.5 - 1 * 0.5
+
+    fmtconv generic formula:
+
+    pos = crop_start + src_step * center_pos_dst - 1 * center_pos_src; // 3.7.4- fmtconv
+
+    Solved: center_pos_dst = 0.5, center_pos_src = 0.5 in old Avisynth
+
+  */
+  
+  // Introduces an offset because samples are located at the center of the
+  // pixels, not on their boundaries. Excepted for pointresize.
+  if (filter_support > 0)
+  {
+    // Pre 3.7.4 Avisynth worked with fixed center_pos_dst = center_pos_src = 0.5
+    // Now it's externally configurable. In our use case they are always the same.
+    pos += src_step * center_pos_dst - 1 * center_pos_src;
+  }
+  else
+  {
+    // In case of PointResize(), which now returns real 0 for support().
+    // Avisynth heritage.
+    filter_support = 0.0001;
+  }
+
+  const int current_FPScale = (bits_per_pixel > 8 && bits_per_pixel <= 16) ? FPScale16 : FPScale;
+
+  std::vector<double> coef_tmp;
+  for (int i = 0; i < target_size; ++i) {
+    coef_tmp.clear();
+
+    int start_pos = (int)(pos + filter_support) - fir_filter_size + 1;
+    program->pixel_offset[i] = clamp(start_pos, 0, last_line);
+
+    // First pass: Accumulate all coefficients for weighting
+    double total = 0.0;
+    for (int k = 0; k < fir_filter_size; ++k) {
+      const int p = start_pos + k;
+      double val = f((pos - p) * imp_step);
+      coef_tmp.push_back(val);
+      total += val;
+    }
+
+    if (total == 0.0) {
+      // Shouldn't happen for valid positions.
+      total = 1.0;
+    }
+
+    const int coeff_arr_base_index = i * fir_filter_size;
+
+    // Second pass: Generate real coefficients, handling edge conditions
+    double accu = 0.0;
+    double prev_value = 0.0;
+
+    int kernel_size = 0;
+
+    if (bits_per_pixel == 32) {
+      // Float version
+      for (int k = 0; k < fir_filter_size; ++k) {
+        const int p = start_pos + k;
+        double val = coef_tmp[k];
+        accu += val;
+        if (p >= 0 && p <= last_line) {
+          program->pixel_coefficient_float[coeff_arr_base_index + kernel_size] = float(accu / total);
+          ++kernel_size;
+          accu = 0;
+        }
+      }
+    }
+    else {
+      // Integer version - using upscaled integer arithmetic (FPScale/FPScale16)
+      for (int k = 0; k < fir_filter_size; ++k) {
+        const int p = start_pos + k;
+        double val = coef_tmp[k];
+        accu += val;
+        if (p >= 0 && p <= last_line) {
+          double new_value = prev_value + accu / total;
+          // differential approach ensures the filter coefficients sum to exactly FPScale) 
+          // The subtraction method guarantees that no matter how many terms we add, the 
+          // final sum will be exactly equal to the fixed-point representation of 1.0.
+          program->pixel_coefficient[coeff_arr_base_index + kernel_size] = (short)((int)(new_value * current_FPScale + 0.5) - int(prev_value * current_FPScale + 0.5));
+          prev_value = new_value;
+          ++kernel_size;
+          accu = 0;
+        }
+      }
+    }
+
+    // We even haven't reached any valid line, 
+    // or gathered accu values from past last line.
+    if (accu != 0)
+    {
+      if (kernel_size > 0) {
+        // Assign the remaining accumulator to the last line, just like we put 
+        // the accumulator before the first valid line to the first line.
+        if (bits_per_pixel == 32)
+          program->pixel_coefficient_float[coeff_arr_base_index + kernel_size - 1] += float(accu / total);
+        else {
+          double new_value = prev_value + accu / total;
+          program->pixel_coefficient[coeff_arr_base_index + kernel_size - 1] += (short)((int)(new_value * current_FPScale + 0.5) - int(prev_value * current_FPScale + 0.5));
+        }
+        // no change in kernel_size
+      }
+      else
+      {
+        // new entry, accu/total must be 1.0 here (we always normalize)
+        if (bits_per_pixel == 32)
+          program->pixel_coefficient_float[coeff_arr_base_index + kernel_size] = float(accu / total);
+        else
+          program->pixel_coefficient[coeff_arr_base_index + kernel_size] = (short)((int)(accu / total * current_FPScale + 0.5));
+        ++kernel_size;
+      }
+    }
+
+    if (kernel_size == 0) {
+      // write a single 1.0 coeff entry
+      if (bits_per_pixel == 32)
+        program->pixel_coefficient_float[coeff_arr_base_index + kernel_size] = 1.0f;
+      else
+        program->pixel_coefficient[coeff_arr_base_index + kernel_size] = (short)((int)(1.0 * current_FPScale + 0.5));
+      ++kernel_size;
+    }
+
+    program->kernel_sizes[i] = kernel_size;
+    if (kernel_size > max_kernel_size) max_kernel_size = kernel_size;
+
+    pos += src_step;
+  }
+
+  // the different kernel sizes and coeff table will be later postprocessed
+  // to have aligned and equally sized coefficients.
+
+  program->filter_size_real = max_kernel_size; 
+  // can be less than original filter size if source dimensions are small
+  
+  return program;
 }
 
+
+#if 0
+// old pre 3.7.4, kept for reference
 ResamplingProgram* ResamplingFunction::GetResamplingProgram(int source_size, double crop_start, double crop_size, int target_size, int bits_per_pixel, IScriptEnvironment* env)
 {
   double filter_scale = double(target_size) / crop_size;
@@ -441,3 +593,4 @@ ResamplingProgram* ResamplingFunction::GetResamplingProgram(int source_size, dou
 
   return program;
 }
+#endif
