@@ -45,6 +45,7 @@ typedef enum ColorRange_e {
 } ColorRange_e;
 
 typedef enum ChromaLocation_e {
+  AVS_CHROMA_UNUSED = -1,
   AVS_CHROMA_LEFT = 0,
   AVS_CHROMA_CENTER = 1,
   AVS_CHROMA_TOP_LEFT = 2,

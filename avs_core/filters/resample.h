@@ -54,8 +54,8 @@ typedef void (*TurnFuncPtr) (const BYTE* srcp, BYTE* dstp, int width, int height
 class FilteredResizeH : public GenericVideoFilter
 {
 public:
-  FilteredResizeH(PClip _child, double subrange_left, double subrange_width, int target_width,
-    ResamplingFunction* func, IScriptEnvironment* env);
+  FilteredResizeH(PClip _child, double subrange_left, double subrange_width, int target_width, ResamplingFunction* func, 
+    bool preserve_center, int chroma_placement, IScriptEnvironment* env);
   virtual ~FilteredResizeH(void);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
@@ -96,7 +96,8 @@ private:
 class FilteredResizeV : public GenericVideoFilter
 {
 public:
-  FilteredResizeV(PClip _child, double subrange_top, double subrange_height, int target_height, ResamplingFunction* func, IScriptEnvironment* env);
+  FilteredResizeV(PClip _child, double subrange_top, double subrange_height, int target_height, ResamplingFunction* func, 
+    bool preserve_center, int chroma_placement, IScriptEnvironment* env);
   virtual ~FilteredResizeV(void);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
@@ -129,13 +130,19 @@ class FilteredResize
 {
 public:
   static PClip CreateResizeH(PClip clip, double subrange_left, double subrange_width, int target_width, bool force,
-    ResamplingFunction* func, IScriptEnvironment* env);
+    ResamplingFunction* func, 
+    bool preserve_center, int chroma_placement,
+    IScriptEnvironment* env);
 
   static PClip CreateResizeV(PClip clip, double subrange_top, double subrange_height, int target_height, bool force,
-    ResamplingFunction* func, IScriptEnvironment* env);
+    ResamplingFunction* func, 
+    bool preserve_center, int chroma_placement,
+    IScriptEnvironment* env);
 
   static PClip CreateResize(PClip clip, int target_width, int target_height, const AVSValue* args, int force,
-    ResamplingFunction* f, IScriptEnvironment* env);
+    ResamplingFunction* f, 
+    bool preserve_center, const char *placement_name, int forced_chroma_placement,
+    IScriptEnvironment* env);
 
   static AVSValue __cdecl Create_PointResize(AVSValue args, void*, IScriptEnvironment* env);
 
