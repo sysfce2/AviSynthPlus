@@ -54,10 +54,14 @@ if (WIN32)
     add_subdirectory("DirectShowSource")
   endif()
 
-if ("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "AMD64" OR
-    "${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "X86")
 # obviously depends on VirtualDub being available natively,
 # which is only true for X86 and AMD64
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" ARCHID)
+if( ("${ARCHID}" STREQUAL "x86") OR
+    ("${ARCHID}" STREQUAL "x64") OR
+    ("${ARCHID}" STREQUAL "i686") OR
+    ("${ARCHID}" STREQUAL "amd64") OR
+    ("${ARCHID}" STREQUAL "x86_64") )
   if (BUILD_VDUBFILTER)
     add_subdirectory("VDubFilter")
   endif()
