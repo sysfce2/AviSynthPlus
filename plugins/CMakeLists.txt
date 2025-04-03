@@ -24,6 +24,7 @@ if(SOUNDTOUCH_FOUND)
   set(SOUNDTOUCH_PLUGIN_STATE ON)
 else()
   # check to see if SoundTouch's CMake files were installed and whether the library itself exists
+  MESSAGE(WARNING "SoundTouch not found by pkg-config, falling back to CMake detection")
   find_package(SoundTouch)
   find_library(SOUNDTOUCH SoundTouch PATH ${SoundTouch_LIBRARY_DIRS})
   if(SoundTouch_FOUND)
