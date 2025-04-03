@@ -95,7 +95,7 @@ Name: "ru"; MessagesFile: "Translations\ru.isl"; LicenseFile: ..\gpl-ru.txt
 [Components]
 Name: "main"; Description: "{cm:CmpMain,{#AvsName}}"; Types: full compact custom; Flags: fixed
 ;Name: "main\avs32"; Description: "{#AvsName} (x86)"; Types: full compact custom
-Name: "main\avs64"; Description: "{#AvsName} (x64)"; Types: full compact custom; Check: IsWin64
+Name: "main\avs64"; Description: "{#AvsName} (arm64)"; Types: full compact custom; Check: IsWin64
 
 #ifdef WITH_DOCS
 Name: "docs"; Description: "{cm:CmpDocs}";
@@ -162,7 +162,7 @@ Source: "..\Prerequisites\VC_redist.arm64.exe"; DestDir: {app}; Components: main
 #ifdef WITH_DOCS
 ;don't forget to render .rst sources into html-format by issuing 'make html'. E.g. in the ..\docs\english\
 ;You needed a working python sphinx-build. https://www.sphinx-doc.org/
-Source: "..\docs\*.css"; DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion
+;Source: "..\docs\*.css"; DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion
 ;Source: "..\docs\czech\*"; DestDir: "{app}\docs\Czech"; Components: docs\cs; Flags: ignoreversion recursesubdirs
 Source: "..\docs\english\build\html\*"; DestDir: "{app}\docs\English"; Components: docs\en docs\enall; Flags: ignoreversion recursesubdirs
 ;Source: "..\docs\french\*"; DestDir: "{app}\docs\French"; Components: docs\fr; Flags: ignoreversion recursesubdirs
@@ -175,7 +175,7 @@ Source: "..\docs\english\build\html\*"; DestDir: "{app}\docs\English"; Component
 #endif
 
 #ifdef WITH_SDK
-Source: "..\FilterSDK\*"; DestDir: "{app}\FilterSDK"; Components: sdk; Flags: ignoreversion recursesubdirs
+Source: "..\docs\english\build\html\avisynthdoc\FilterSDK\*"; DestDir: "{app}\FilterSDK"; Components: sdk; Flags: ignoreversion recursesubdirs
 Source: "..\..\avs_core\include\*"; DestDir: "{app}\FilterSDK\include"; Components: sdk; Flags: ignoreversion recursesubdirs
 Source: "{#BuildDir64}\usr\aarch64-w64-mingw32\lib\*.a"; DestDir: "{app}\FilterSDK\lib\arm64"; Components: sdk; Flags: ignoreversion recursesubdirs
 #endif
@@ -211,18 +211,18 @@ Root: HKLM; Subkey: "Software\Classes\avsfile\shell\play\command"; ValueName: ""
 Root: HKLM; Subkey: "Software\Classes\avsfile\shell\play\command"; ValueName: ""; ValueType: string; ValueData: """{pf}\Windows Media Player\wmplayer.exe"" ""%1"""; Flags: uninsdeletekey; Components: associations\wmplayer; Check: ExistsWMPlayer
 
 Root: HKLM; Subkey: "Software\Classes\avsfile"; ValueName: ""; ValueType: string; ValueData: "{cm:FileTypeDescAvs,{#AvsName}}"; Components: main; Flags: uninsdeletekey
-Root: HKLM; Subkey: "Software\Classes\avsfile\DefaultIcon"; ValueName: ""; ValueType: string; ValueData: "{sys}\AviSynth.dll,0"; Components: main\avs32
-Root: HKLM; Subkey: "Software\Classes\avsfile\DefaultIcon"; ValueName: ""; ValueType: string; ValueData: "{win}\system32\AviSynth.dll,0"; Components: main\avs64 and not main\avs32
+;Root: HKLM; Subkey: "Software\Classes\avsfile\DefaultIcon"; ValueName: ""; ValueType: string; ValueData: "{sys}\AviSynth.dll,0"; Components: main\avs32
+;Root: HKLM; Subkey: "Software\Classes\avsfile\DefaultIcon"; ValueName: ""; ValueType: string; ValueData: "{win}\system32\AviSynth.dll,0"; Components: main\avs64 and not main\avs32
 Root: HKLM; Subkey: "Software\Classes\avs_auto_file"; ValueName: ""; ValueType: string; ValueData: "{cm:FileTypeDescAvsi,{#AvsName}}"; Components: main; Flags: uninsdeletekey
-Root: HKLM; Subkey: "Software\Classes\avs_auto_file\DefaultIcon"; ValueName: ""; ValueType: string; ValueData: "{sys}\AviSynth.dll,1"; Components: main\avs32
-Root: HKLM; Subkey: "Software\Classes\avs_auto_file\DefaultIcon"; ValueName: ""; ValueType: string; ValueData: "{win}\system32\AviSynth.dll,1"; Components: main\avs64 and not main\avs32
+;Root: HKLM; Subkey: "Software\Classes\avs_auto_file\DefaultIcon"; ValueName: ""; ValueType: string; ValueData: "{sys}\AviSynth.dll,1"; Components: main\avs32
+;Root: HKLM; Subkey: "Software\Classes\avs_auto_file\DefaultIcon"; ValueName: ""; ValueType: string; ValueData: "{win}\system32\AviSynth.dll,1"; Components: main\avs64 and not main\avs32
 
-Root: HKLM32; Subkey: "Software\Classes\AVIFile\Extensions\AVS"; ValueName: ""; ValueType: string; ValueData: "{{E6D6B700-124D-11D4-86F3-DB80AFD98778}"; Components: main\avs32; Flags: uninsdeletekey
+;Root: HKLM32; Subkey: "Software\Classes\AVIFile\Extensions\AVS"; ValueName: ""; ValueType: string; ValueData: "{{E6D6B700-124D-11D4-86F3-DB80AFD98778}"; Components: main\avs32; Flags: uninsdeletekey
 Root: HKLM64; Subkey: "Software\Classes\AVIFile\Extensions\AVS"; ValueName: ""; ValueType: string; ValueData: "{{E6D6B700-124D-11D4-86F3-DB80AFD98778}"; Components: main\avs64; Flags: uninsdeletekey; Check:IsWin64
 
-Root: HKLM32; Subkey: "Software\AviSynth"; ValueName:""; ValueType: string; ValueData: "{app}"; Components: main\avs32; Flags: uninsdeletevalue uninsdeletekeyifempty
-Root: HKLM32; Subkey: "Software\AviSynth"; ValueName:"plugindir2_5"; ValueType: string; ValueData: "{code:GetAvsDirsPlus|Plug32}"; Components: main\avs32; Flags: uninsdeletevalue
-Root: HKLM32; Subkey: "Software\AviSynth"; ValueName:"plugindir+"; ValueType: string; ValueData: "{code:GetAvsDirsPlus|PlugPlus32}"; Components: main\avs32; Flags: uninsdeletevalue
+;Root: HKLM32; Subkey: "Software\AviSynth"; ValueName:""; ValueType: string; ValueData: "{app}"; Components: main\avs32; Flags: uninsdeletevalue uninsdeletekeyifempty
+;Root: HKLM32; Subkey: "Software\AviSynth"; ValueName:"plugindir2_5"; ValueType: string; ValueData: "{code:GetAvsDirsPlus|Plug32}"; Components: main\avs32; Flags: uninsdeletevalue
+;Root: HKLM32; Subkey: "Software\AviSynth"; ValueName:"plugindir+"; ValueType: string; ValueData: "{code:GetAvsDirsPlus|PlugPlus32}"; Components: main\avs32; Flags: uninsdeletevalue
 
 Root: HKLM64; Subkey: "Software\AviSynth"; ValueName:""; ValueType: string; ValueData: "{app}"; Components: main\avs64; Flags: uninsdeletevalue uninsdeletekeyifempty; Check:IsWin64
 Root: HKLM64; Subkey: "Software\AviSynth"; ValueName:"plugindir2_5"; ValueType: string; ValueData: "{code:GetAvsDirsPlus|Plug64}"; Components: main\avs64; Check:IsWin64; Flags: uninsdeletevalue
@@ -241,8 +241,8 @@ Root: HKLM32; Subkey: "Software\AviSynth"; ValueName: "LegacyDir"; ValueType: st
 Type: files; Name: "{app}\Setup Log*.txt"
 
 [Run]
-Filename: "{app}\VC_redist.x86.exe"; Parameters: "/q /norestart"; Components: main\avs32 ;Description: "{#VcVersion} (x86)"; StatusMsg: "{cm:InstallStatusRuntime,{#VcVersion},x86}"; Check: IncludeVcRedist()
-Filename: "{app}\VC_redist.x64.exe"; Parameters: "/q /norestart"; Components: main\avs64 ;Description: "{#VcVersion} (x64)"; StatusMsg: "{cm:InstallStatusRuntime,{#VcVersion},x64}"; Check: IncludeVcRedist()
+;Filename: "{app}\VC_redist.x86.exe"; Parameters: "/q /norestart"; Components: main\avs32 ;Description: "{#VcVersion} (x86)"; StatusMsg: "{cm:InstallStatusRuntime,{#VcVersion},x86}"; Check: IncludeVcRedist()
+;Filename: "{app}\VC_redist.x64.exe"; Parameters: "/q /norestart"; Components: main\avs64 ;Description: "{#VcVersion} (x64)"; StatusMsg: "{cm:InstallStatusRuntime,{#VcVersion},x64}"; Check: IncludeVcRedist()
 
 [Ini]
 ;Backup legacy AviSynth registry entries to .reg file
