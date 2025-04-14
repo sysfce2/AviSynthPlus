@@ -582,13 +582,13 @@ PVideoFrame __stdcall SwapYToUV::GetFrame(int n, IScriptEnvironment* env) {
   int pitch = dst->GetPitch(PLANAR_Y);
 
   if (vi.ComponentSize() == 1)  // 8bit
-    fill_plane<BYTE>(dstp, rowsize, vi.height, pitch, 0x7e);
+    fill_plane<BYTE>(dstp, vi.height, rowsize, pitch, 0x7e);
   else if (vi.ComponentSize() == 2) { // 16bit
     uint16_t luma_val = 0x7e << (vi.BitsPerComponent() - 8);
-    fill_plane<uint16_t>(dstp, rowsize, vi.height, pitch, luma_val);
+    fill_plane<uint16_t>(dstp, vi.height, rowsize, pitch, luma_val);
   }
   else { // 32bit(float)
-    fill_plane<float>(dstp, rowsize, vi.height, pitch, 126.0f / 256);
+    fill_plane<float>(dstp, vi.height, rowsize, pitch, 126.0f / 256);
   }
 
   return dst;
