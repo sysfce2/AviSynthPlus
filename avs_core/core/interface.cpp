@@ -756,7 +756,7 @@ AVSValue::AVSValue(double f)                             { CONSTRUCTOR6(f); }
 void AVSValue::CONSTRUCTOR6(double f)
 {
   type = 'd'; array_size = 0; clip = NULL;
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   // pre-v11: floating_pt = float(f);
   double_pt = f; // v11: real 64 bit double!
 #else
@@ -797,7 +797,7 @@ void AVSValue::CONSTRUCTOR11(const PFunction& n) { type = 'n'; array_size = 0; f
 
 AVSValue::AVSValue(int64_t l) { CONSTRUCTOR12(l); }
 void AVSValue::CONSTRUCTOR12(int64_t l) { type = 'l'; array_size = 0; clip = NULL; 
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   longlong = l; 
 #else
   longlong_ptr = new int64_t;
@@ -812,7 +812,7 @@ void AVSValue::DESTRUCTOR()
     clip->Release();
   if (IsFunction() && function)
     function->Release();
-#ifndef X86_64
+#if !(UINTPTR_MAX >= 0xffffffffffffffff)
   // 32-bit systems support 64-bit data through dynamic allocation.
   if (type == 'l' && longlong_ptr) {
     delete longlong_ptr;
@@ -877,7 +877,7 @@ bool AVSValue::AsBool() const { return AsBool1(); }
 int AVSValue::AsInt1() const { 
   _ASSERTE(IsInt()); 
   // simple typecast, no saturation
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   return type == 'i' ? integer : (int)longlong;
 #else
   return type == 'i' ? integer : (int)*longlong_ptr;
@@ -888,7 +888,7 @@ int AVSValue::AsInt() const { return AsInt1(); }
 
 int64_t AVSValue::AsLong1() const {
   _ASSERTE(IsInt());
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   return type == 'i' ? integer : longlong;
 #else
   return type == 'i' ? integer : *longlong_ptr;
@@ -900,7 +900,7 @@ const char* AVSValue::AsString1() const { _ASSERTE(IsString()); return IsString(
 const char* AVSValue::AsString() const { return AVSValue::AsString1(); }
 
 double AVSValue::AsFloat1() const { 
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   _ASSERTE(IsFloat()); return type == 'i' ? (double)integer : type == 'l' ? (double)longlong : type == 'f' ? (double)floating_pt : double_pt;
 #else
   _ASSERTE(IsFloat()); return type == 'i' ? (double)integer : type == 'l' ? (double)*longlong_ptr : type == 'f' ? (double)floating_pt : *double_pt_ptr;
@@ -910,7 +910,7 @@ double AVSValue::AsFloat1() const {
 double AVSValue::AsFloat() const { return AsFloat1(); }
 
 float AVSValue::AsFloatf() const { 
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   _ASSERTE(IsFloat()); return type == 'i' ? (float)integer : type == 'l' ? (float)longlong : type == 'f' ? floating_pt : (float)double_pt;
 #else
   _ASSERTE(IsFloat()); return type == 'i' ? (float)integer : type == 'l' ? (float)*longlong_ptr : type == 'f' ? floating_pt : (float)*double_pt_ptr;
@@ -922,7 +922,7 @@ bool AVSValue::AsBool(bool def) const { return AsBool2(def); }
 
 int AVSValue::AsInt2(int def) const { 
   _ASSERTE(IsInt()||!Defined());
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   return type == 'i' ? integer : type == 'l' ? (int)longlong : def;
 #else
   return type == 'i' ? integer : type == 'l' ? (int)*longlong_ptr : def;
@@ -932,7 +932,7 @@ int AVSValue::AsInt2(int def) const {
 int AVSValue::AsInt(int def) const { return AsInt2(def); }
 int64_t AVSValue::AsLong2(int64_t def) const {
   _ASSERTE(IsInt() || !Defined());
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   return type == 'i' ? integer : type == 'l' ? longlong : def;
 #else
   return type == 'i' ? integer : type == 'l' ? *longlong_ptr : def;
@@ -945,7 +945,7 @@ int64_t AVSValue::AsLong(int64_t def) const {
 
 double AVSValue::AsDblDef(double def) const { 
   _ASSERTE(IsFloat()||!Defined());
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   return type == 'i' ? (double)integer : type == 'l' ? (double)longlong : type == 'f' ? (double)floating_pt : type == 'd' ? double_pt : def;
 #else
   return type == 'i' ? (double)integer : type == 'l' ? (double)*longlong_ptr : type == 'f' ? (double)floating_pt : type == 'd' ? *double_pt_ptr : def;
@@ -954,7 +954,7 @@ double AVSValue::AsDblDef(double def) const {
 
 double AVSValue::AsFloat2(float def) const { 
   _ASSERTE(IsFloat()||!Defined()); 
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   return type == 'i' ? integer : type == 'l' ? (double)longlong : type == 'f' ? (double)floating_pt : type == 'd' ? double_pt : (double)def;
 #else
   return type == 'i' ? integer : type == 'l' ? (double)*longlong_ptr : type == 'f' ? (double)floating_pt : type == 'd' ? *double_pt_ptr : (double)def;
@@ -997,7 +997,7 @@ void AVSValue::Assign2(const AVSValue* src, bool init, bool no_deep_arrays) {
   const bool shouldReleaseClip = !init && IsClip() && clip;
   const bool shouldReleaseFunction = !init && IsFunction() && function;
   const bool shouldReleaseArray = !init && IsArray() && array && !no_deep_arrays;
-#ifndef X86_64
+#if !(UINTPTR_MAX >= 0xffffffffffffffff)
   const bool shouldReleaseDouble = !init && type == 'd' && double_pt_ptr;
   const bool shouldReleaseLong = !init && type == 'l' && longlong_ptr;
 #endif
@@ -1019,7 +1019,7 @@ void AVSValue::Assign2(const AVSValue* src, bool init, bool no_deep_arrays) {
       tmp[i].Assign(&src->array[i], true); // init from source
     array = tmp;
   }
-#ifndef X86_64
+#if !(UINTPTR_MAX >= 0xffffffffffffffff)
   // 32 bit Avisynth: new 64 bit types are specially treated
   else if (this->type == 'l') {
     const uint64_t l = *src->longlong_ptr;
@@ -1044,9 +1044,9 @@ void AVSValue::Assign2(const AVSValue* src, bool init, bool no_deep_arrays) {
   if (shouldReleaseArray)
     delete[](AVSValue*)(prev_pointer_to_release);
   // deallocates former array memory + calls destructor of AVSValue elements
-#ifndef X86_64
+#if !(UINTPTR_MAX >= 0xffffffffffffffff)
   if (shouldReleaseDouble)
-    delete (double *)prev_pointer_to_release;
+    delete (double*)prev_pointer_to_release;
   else if (shouldReleaseLong)
     delete (int64_t*)prev_pointer_to_release;
 #endif

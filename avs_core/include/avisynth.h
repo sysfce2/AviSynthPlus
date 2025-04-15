@@ -53,6 +53,7 @@
 //           - New propGetDataTypeHint (VSAPI4: mapGetDataTypeHint)
 //           - New propSetDataH, like propSetData but with optional data type hint (byte/string)
 //             (VSAPI4: mapSetData, our propSetData became VSAPI4: mapSetData3)
+// 20250415  V11.1 Fix AVS_Value 64 bit data member declaration for 64-bit non Intel (other than X86_X64) systems.
 
 // http://avisynth.nl
 
@@ -124,7 +125,7 @@ enum AvsVersion {
   AVISYNTH_CLASSIC_INTERFACE_VERSION_26BETA = 5,
   AVISYNTH_CLASSIC_INTERFACE_VERSION = 6,
   AVISYNTH_INTERFACE_VERSION = 11,
-  AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 0 // reset to zero whenever the normal interface version bumps
+  AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 1 // reset to zero whenever the normal interface version bumps
 };
 
 /* Compiler-specific crap */
@@ -1404,7 +1405,7 @@ private:
     const char* string;
     const AVSValue* array;
     IFunction* function;
-    #ifdef X86_64
+    #if UINTPTR_MAX >= 0xffffffffffffffff
     int64_t longlong; // 8 bytes
     double double_pt; // 8 bytes
     #else

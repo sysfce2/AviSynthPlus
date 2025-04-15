@@ -129,6 +129,7 @@
 //         New avs_prop_set_data_h
 //         New avs_add_func_r: alternative avs_add_func which returns the result in a byref parameter
 //         New AVS_ApplyFuncR type
+// 20250415 V11.1 Fix AVS_Value 64 bit data member declaration for 64-bit non Intel (other than X86_X64) systems.
 
 // Notes.
 // Choose either method:
@@ -163,7 +164,7 @@
 enum {
   AVISYNTH_INTERFACE_CLASSIC_VERSION = 6,
   AVISYNTH_INTERFACE_VERSION = 11,
-  AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 0 // reset to zero whenever the normal interface version bumps
+  AVISYNTHPLUS_INTERFACE_BUGFIX_VERSION = 1 // reset to zero whenever the normal interface version bumps
 };
 #endif
 
@@ -947,7 +948,7 @@ struct AVS_Value {
     const char * string;
     const AVS_Value * array;
     void * function; // not supported on C interface
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
     // if ever, only x64 will support. It breaks struct size on 32 bit
     int64_t longlong; // 8 bytes
     double double_pt; // 8 bytes
@@ -1027,7 +1028,7 @@ AVSC_INLINE int avs_as_bool(AVS_Value v) { return v.d.boolean; }
 AVSC_INLINE int avs_as_int(AVS_Value v)
 {
   // we'll return a casted int64_t as-is
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   return v.type == 'l' ? (int)v.d.longlong : v.d.integer;
 #else
   return v.type == 'l' ? (int)*v.d.longlong_ptr : v.d.integer;
@@ -1036,7 +1037,7 @@ AVSC_INLINE int avs_as_int(AVS_Value v)
 // v11: new, returns true 64 bit value, even for 32 bit content
 AVSC_INLINE int64_t avs_as_long(AVS_Value v)
 {
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   return v.type == 'l' ? v.d.longlong : v.d.integer;
 #else
   return v.type == 'l' ? *v.d.longlong_ptr : v.d.integer;
@@ -1048,7 +1049,7 @@ AVSC_INLINE const char * avs_as_string(AVS_Value v)
 // v11: Extended for 'double' and 'l'ong
 AVSC_INLINE double avs_as_float(AVS_Value v)
 {
-#ifdef X86_64
+#if UINTPTR_MAX >= 0xffffffffffffffff
   return v.type == 'i' ? v.d.integer : v.type=='l' ? v.d.longlong : v.type == 'd' ? v.d.double_pt : v.d.floating_pt;
 #else
   return v.type == 'i' ? v.d.integer : v.type == 'l' ? *v.d.longlong_ptr : v.type == 'd' ? *v.d.double_pt_ptr : v.d.floating_pt;
