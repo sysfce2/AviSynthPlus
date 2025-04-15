@@ -99,7 +99,7 @@ private:
 // Originally, non-conformant multi-character characters were used.
 // For example: int('012') == 0x303132. Hence, the rightmost character
 // is placed at the least significant byte.
-static constexpr int operator "" _i(const char s[], const size_t len) {
+static constexpr int operator ""_i(const char s[], const size_t len) {
   int acc = 0;
   for (size_t i = 0; i < len; ++i)
     acc = (acc << 8) + (unsigned char) s[i];
