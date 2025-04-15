@@ -841,15 +841,11 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
     }
     else {
       // planar format (or Y)
-#ifdef INTEL_INTRINSICS
       resampler_h_luma = GetResampler(cpu, pixelsize, bits_per_pixel, resampling_program_luma, env);
 
       if (!grey && !isRGBPfamily) {
         resampler_h_chroma = GetResampler(cpu, pixelsize, bits_per_pixel, resampling_program_chroma, env);
       }
-#else
-      assert(0);
-#endif
     }
   // Change target video info size
   vi.width = target_width;
