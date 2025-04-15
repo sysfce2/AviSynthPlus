@@ -1001,7 +1001,7 @@ void AVSValue::Assign2(const AVSValue* src, bool init, bool no_deep_arrays) {
   const bool shouldReleaseDouble = !init && type == 'd' && double_pt_ptr;
   const bool shouldReleaseLong = !init && type == 'l' && longlong_ptr;
 #endif
-  const void* prev_pointer_to_release = (void*)clip;
+  void* prev_pointer_to_release = (void*)clip;
 
   // common fields
   this->type = src->type;
@@ -1045,8 +1045,10 @@ void AVSValue::Assign2(const AVSValue* src, bool init, bool no_deep_arrays) {
     delete[](AVSValue*)(prev_pointer_to_release);
   // deallocates former array memory + calls destructor of AVSValue elements
 #ifndef X86_64
-  if (shouldReleaseDouble || shouldReleaseLong)
-    delete prev_pointer_to_release;
+  if (shouldReleaseDouble)
+    delete (double *)prev_pointer_to_release;
+  else if (shouldReleaseLong)
+    delete (int64_t*)prev_pointer_to_release;
 #endif
 }
 
