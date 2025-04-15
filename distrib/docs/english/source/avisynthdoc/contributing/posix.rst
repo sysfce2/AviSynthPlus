@@ -177,6 +177,10 @@ On all of these OSes, AviSynth+ can interface with FFmpeg.
 This change was applied to the FFmpeg git master branch on
 2020-04-05.
 
+It is always useful to check their guide before the process:
+https://trac.ffmpeg.org/wiki/CompilationGuide
+
+
 To compile a basic build of FFmpeg that supports
 AviSynth+, the following steps will suffice:
 
@@ -234,8 +238,8 @@ Ubuntu
 
 ::
 
-        ./configure --prefix=$HOME/ffmpeg_build --enable-gpl --enable-version3 \
-        --disable-doc --disable-debug --enable-pic --enable-avisynth && \
+    ./configure --prefix=$HOME/ffmpeg_build --enable-gpl --enable-version3 \
+    --disable-doc --disable-debug --enable-pic --enable-avisynth && \
     make -j$(nproc) && \
     make install
 
@@ -251,13 +255,32 @@ option and then using the following checkinstall command:
     --fstrans=no --default
 
 
+Raspbian
+........
+
+Raspberry Pi 5 is able to compile ffmpeg and its prerequisites within a reasonable time, 
+which means 7-10 minutes (when you don't forget setting -j4 for multithreaded build process).
+
+This is a general Ubuntu/Debian compilation guide by the ffmpeg project:
+https://trac.ffmpeg.org/wiki/CompilationGuide/Ubuntu
+
+You can also refer to this video (Raspberry Pi 5 - Compile FFMPEG on Raspberry PI OS):
+https://www.youtube.com/live/if9UG4kJ9L4?si=Nq802tiUteRdlyHE
+
+which helps you through the process.
+
+Important: you'll need some additions, like extending the configuration with 
+``--enable-avisynth`` and maybe ``--disable-doc``.
+
+
+
 macOS
 ~~~~~
 
 ::
 
-        ./configure --prefix=$HOME/ffmpeg_build --enable-gpl --enable-version3 --disable-doc \
-        --disable-debug --enable-avisynth
+    ./configure --prefix=$HOME/ffmpeg_build --enable-gpl --enable-version3 --disable-doc \
+    --disable-debug --enable-avisynth
     make -j$(nproc)
     make install
 
@@ -268,8 +291,8 @@ FreeBSD
 
 ::
 
-        ./configure --prefix=$HOME/ffmpeg_build --enable-gpl --enable-version3 --disable-doc \
-        --disable-debug --enable-pic --enable-avisynth --cc=cc
+    ./configure --prefix=$HOME/ffmpeg_build --enable-gpl --enable-version3 --disable-doc \
+    --disable-debug --enable-pic --enable-avisynth --cc=cc
     gmake -j$(nproc)
     gmake install
 
@@ -298,13 +321,44 @@ And running this script in the test build of FFmpeg:
 ::
 
     cd ~/ffmpeg_build/bin
-    [create the script in this directory, for ease of testing]
 
-    # to play the script:
+
+Create the script in this directory, for ease of testing.
+
+To play the script::
+
     ./ffplay -i test.avs
 
-    # to convert as usual:
+To convert as usual::
+
     ./ffmpeg -i test.avs [encoding options]
+
+Benchmark::
+
+    ./ffmpeg -benchmark -i test.avs -f null -
+
+Stream to a GUI, e.g. to VLC Media Player on a Raspberry Pi.
+Choose "Open Network Stream" from menu, and enter ``udp://@127.0.0.1:10000`` 
+for the network url.
+::
+
+    ./ffmpeg -i test.avs -pix_fmt yuv420p -f mpegts udp://127.0.0.1:10000
+
+
+Troubleshooting:
+
+- ffmpeg reports an unknown error. One possible reason is that libavisynth.so could
+  not be loaded; the ``$LD_LIBRARY_PATH`` environment variable may be empty.
+  Check with ``echo $LD_LIBRARY_PATH``.
+  Fix it by (Raspberry Pi 5 Raspbian):
+
+::
+
+    echo 'export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH' >> ~/.bashrc
+
+- ffmpeg does not recognize the AviSynth script. You probably typed ``ffmpeg`` 
+  instead of ``./ffmpeg``. For example, Raspberry Pi 5 Raspbian comes with a 5.x ffmpeg 
+  without AviSynth support, and your command finds that one.
 
 
 Loading actual video sources will require a source filter.  FFMS2 doesn't require any porting
@@ -384,7 +438,7 @@ autoloading to function.
 
 Back to the :doc:`main page <../../index>`
 
-$ Date: 2021-01-01 20:26:18-05:00 $
+$ Date: 2025-04-15 15:15:00 $
 
 .. _an external implementation: https://github.com/gulrak/filesystem
 .. _filesystem submodule: https://github.com/gulrak/filesystem
