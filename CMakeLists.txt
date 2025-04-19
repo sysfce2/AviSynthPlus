@@ -113,10 +113,28 @@ endif()
   option(ENABLE_CUDA "Enable CUDA support" OFF)
   set(CORE_PLUGIN_INSTALL_PATH "${CMAKE_INSTALL_FULL_LIBDIR}" CACHE STRING "Set system plugin install parent directory (default: value of CMAKE_INSTALL_FULL_LIBDIR)")
 
-  if(CMAKE_CONFIGURATION_TYPES)
-    set(CMAKE_CONFIGURATION_TYPES Debug Release RelWithDebInfo)
-    set(CMAKE_CONFIGURATION_TYPES "${CMAKE_CONFIGURATION_TYPES}" CACHE STRING "Reset the configurations to what we need" FORCE)
+if(CMAKE_VERSION VERSION_GREATER 3.9)
+  get_cmake_property(MULTI_CONFIG GENERATOR_IS_MULTI_CONFIG)
+  if(MULTI_CONFIG)
+    if(CMAKE_CONFIGURATION_TYPES)
+      set(CMAKE_CONFIGURATION_TYPES Debug Release RelWithDebInfo)
+      set(CMAKE_CONFIGURATION_TYPES "${CMAKE_CONFIGURATION_TYPES}" CACHE STRING "Reset the configurations to what we need" FORCE)
+    endif()
+    message("-- Build type: Multi-configuration (${CMAKE_CONFIGURATION_TYPES})")
+  else()
+    # When CMAKE_BUILD_TYPE is not defined, CMake defaults to a simple -O0 configuration, no compiler optimizations
+    # and no debug symbols.  For single-configuration generators (Makefiles, Ninja, etc.) we can make Release the
+    # assumed default if it isn't explicitly set by the user.  Multi-config generators like Visual Studio ignore
+    # CMAKE_BUILD_TYPE.
+
+    # Unfortunately, this is not visible in CMakeCache, but it can be seen to take effect in build.ninja or running
+    # make with VERBOSE=1 adding the appropriate Release flags.
+    if(NOT CMAKE_BUILD_TYPE)
+      set(CMAKE_BUILD_TYPE "Release")
+    endif()
+    message("-- Build type: ${CMAKE_BUILD_TYPE}")
   endif()
+endif()
 
   IF( MSVC )  # Check for Visual Studio
 
