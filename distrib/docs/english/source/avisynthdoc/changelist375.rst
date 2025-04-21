@@ -8,6 +8,7 @@ Build environment, Interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 - Fix AVS_Value 64 bit data member declaration for non Intel (X86_X64) systems.
 - v11.1: Bumped the bugfix-interface-version number from 0 to 1.
+- CMakeLists.txt: use Release for single-configuration targets if CMAKE_BUILD_TYPE isn't set
 
 Bugfixes
 ~~~~~~~~
