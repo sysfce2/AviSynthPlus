@@ -959,15 +959,17 @@ void resize_v_avx2_planar_float(BYTE* dst8, const BYTE* src8, int dst_pitch, int
 {
   AVS_UNUSED(bits_per_pixel);
 
-  int filter_size = program->filter_size;
-  float* current_coeff = program->pixel_coefficient_float;
+  const int filter_size = program->filter_size;
+  const float* AVS_RESTRICT current_coeff = program->pixel_coefficient_float;
 
   const float* src = (const float*)src8;
-  float* dst = (float*)dst8;
+  float* AVS_RESTRICT dst = (float*)dst8;
   dst_pitch = dst_pitch / sizeof(float);
   src_pitch = src_pitch / sizeof(float);
 
   const int kernel_size = program->filter_size_real; // not the aligned
+  const int kernel_size_mod2 = (kernel_size / 2) * 2; // Process pairs of rows for better efficiency
+  const bool notMod2 = kernel_size_mod2 < kernel_size;
 
   for (int y = 0; y < target_height; y++) {
     int offset = program->pixel_offset[y];
@@ -977,13 +979,32 @@ void resize_v_avx2_planar_float(BYTE* dst8, const BYTE* src8, int dst_pitch, int
     // no need for wmod8, alignment is safe 32 bytes at least
     for (int x = 0; x < width; x += 8) {
       __m256 result_single = _mm256_setzero_ps();
-      const float* src2_ptr = src_ptr + x;
+      __m256 result_single_2 = _mm256_setzero_ps();
 
-      // Process each row with its coefficient
-      for (int i = 0; i < kernel_size; i++) {
+      const float* AVS_RESTRICT src2_ptr = src_ptr + x; // __restrict here
+
+      // Process pairs of rows for better efficiency (2 coeffs/cycle)
+      // two result variables for potential parallel operation
+      int i = 0;
+      for (; i < kernel_size_mod2; i += 2) {
+        __m256 coeff_even = _mm256_set1_ps(current_coeff[i]);
+        __m256 coeff_odd = _mm256_set1_ps(current_coeff[i + 1]);
+
+        __m256 src_even = _mm256_loadu_ps(src2_ptr);
+        __m256 src_odd = _mm256_loadu_ps(src2_ptr + src_pitch);
+
+        result_single = _mm256_fmadd_ps(src_even, coeff_even, result_single);
+        result_single_2 = _mm256_fmadd_ps(src_odd, coeff_odd, result_single_2);
+
+        src2_ptr += 2 * src_pitch;
+      }
+
+      result_single = _mm256_add_ps(result_single, result_single_2);
+
+      // Process the last odd row if needed
+      if (notMod2) {
         __m256 coeff = _mm256_set1_ps(current_coeff[i]);
-        // Load 8 float pixels
-        __m256 src_val = _mm256_loadu_ps(src2_ptr + i * src_pitch);
+        __m256 src_val = _mm256_loadu_ps(src2_ptr);
         result_single = _mm256_fmadd_ps(src_val, coeff, result_single);
       }
 

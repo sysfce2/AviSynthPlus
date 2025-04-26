@@ -508,43 +508,79 @@ void resizer_h_ssse3_generic_float(BYTE* dst8, const BYTE* src8, int dst_pitch, 
 
 //-------- 32 bit float Vertical
 
+// Process each row with its coefficient
 void resize_v_sse2_planar_float(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
 {
   AVS_UNUSED(bits_per_pixel);
 
-  int filter_size = program->filter_size;
-  float* current_coeff = program->pixel_coefficient_float;
+  const int filter_size = program->filter_size;
+  const float* AVS_RESTRICT current_coeff = program->pixel_coefficient_float;
 
-  const float* src = (float*)src8;
-  float* dst = (float*)dst8;
+  const float* src = (const float*)src8;
+  float* AVS_RESTRICT dst = (float*)dst8;
   dst_pitch = dst_pitch / sizeof(float);
   src_pitch = src_pitch / sizeof(float);
 
   const int kernel_size = program->filter_size_real; // not the aligned
+  const int kernel_size_mod2 = (kernel_size / 2) * 2; // Process pairs of rows for better efficiency
+  const bool notMod2 = kernel_size_mod2 < kernel_size;
 
   for (int y = 0; y < target_height; y++) {
     int offset = program->pixel_offset[y];
     const float* src_ptr = src + offset * src_pitch;
 
-    // 16 byte 4 floats (SSE2 register holds 4 floats)
-    // no need wmod4, alignment is safe at least 32
-    for (int x = 0; x < width; x += 4) {
-      __m128 result_single = _mm_setzero_ps();
-      const float* src2_ptr = src_ptr + x;
+    // use 8 pixels, like AVX2, by utilizing 2x2 ps registers (speed)
+    for (int x = 0; x < width; x += 8) {
+      __m128 result_single_even = _mm_setzero_ps();
+      __m128 result_single_odd = _mm_setzero_ps();
+      __m128 result_single_even_b = _mm_setzero_ps();
+      __m128 result_single_odd_b = _mm_setzero_ps();
 
-      // Process each row with its coefficient
-      for (int i = 0; i < kernel_size; i++) {
-        // common coefficients
-        __m128 coeff = _mm_set1_ps(current_coeff[i]);
-        // Load 4 float values from source
-        __m128 src_val = _mm_loadu_ps(src2_ptr + i * src_pitch);
+      const float* AVS_RESTRICT src2_ptr = src_ptr + x; // __restrict here
 
-        src_val = _mm_mul_ps(src_val, coeff);
-        result_single = _mm_add_ps(result_single, src_val);
+      // Process pairs of rows for better efficiency (2 coeffs/cycle)
+      int i = 0;
+      for (; i < kernel_size_mod2; i += 2) {
+        __m128 coeff_even = _mm_set1_ps(current_coeff[i]);
+        __m128 coeff_odd = _mm_set1_ps(current_coeff[i + 1]);
+
+        __m128 src_even = _mm_loadu_ps(src2_ptr);
+        __m128 src_odd = _mm_loadu_ps(src2_ptr + src_pitch);
+
+        __m128 mul_even = _mm_mul_ps(src_even, coeff_even);
+        __m128 mul_odd = _mm_mul_ps(src_odd, coeff_odd);
+
+        result_single_even = _mm_add_ps(result_single_even, mul_even);
+        result_single_odd = _mm_add_ps(result_single_odd, mul_odd);
+
+        __m128 src_even_b = _mm_loadu_ps(src2_ptr + 4);
+        __m128 src_odd_b = _mm_loadu_ps(src2_ptr + 4 + src_pitch);
+
+        __m128 mul_even_b = _mm_mul_ps(src_even_b, coeff_even);
+        __m128 mul_odd_b = _mm_mul_ps(src_odd_b, coeff_odd);
+
+        result_single_even_b = _mm_add_ps(result_single_even_b, mul_even_b);
+        result_single_odd_b = _mm_add_ps(result_single_odd_b, mul_odd_b);
+
+        src2_ptr += 2 * src_pitch;
       }
 
-      // Store result
-      _mm_stream_ps(dst + x, result_single);
+      result_single_even = _mm_add_ps(result_single_even, result_single_odd);
+      result_single_even_b = _mm_add_ps(result_single_even_b, result_single_odd_b);
+
+      // Process the last odd row if needed  
+      if (notMod2) {
+        __m128 coeff = _mm_set1_ps(current_coeff[i]);
+        __m128 src_val = _mm_loadu_ps(src2_ptr);
+        __m128 src_val_b = _mm_loadu_ps(src2_ptr + 4);
+
+        result_single_even = _mm_add_ps(result_single_even, _mm_mul_ps(src_val, coeff));
+        result_single_even_b = _mm_add_ps(result_single_even_b, _mm_mul_ps(src_val_b, coeff));
+      }
+
+      // Store result  
+      _mm_stream_ps(dst + x, result_single_even);
+      _mm_stream_ps(dst + x + 4, result_single_even_b);
     }
 
     dst += dst_pitch;
