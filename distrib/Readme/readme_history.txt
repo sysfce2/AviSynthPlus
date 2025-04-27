@@ -6,7 +6,115 @@ This file contains all change log, with detailed examples and explanations.
 The "rst" version of the documentation just lists changes in brief.
 For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
-For changes see:
+Actual:
+https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
+
+20250427 3.7.5.xxxx
+-------------------
+- SIMD C module added. Non x86 benefits. Integer C code llvm benefits on x86. Float C code benefits even for MSVC.
+- Resizers again. C code, Stepped back float vertical, quicker integer verticals, code integration, etc..
+- How-to-Build on Raspberry Pi 5 with llvm description
+
+Giga-benchmarks. Built and measured at least 1000 times.
+
+Benchmarks.
+
+  SetMaxCPU("none")
+  #SetMaxCPU("SSSE3")
+  #SetMaxCPU("AVX2")
+  ColorbarsHD(200,200, pixel_type="YUV444P8") # P8, P10, P16, PS
+
+  wmul=2 # >1: horizontal resizer test
+  hmul=1 # >1: vertical resizer test
+
+  avs=LanczosResize(width*wmul, height*hmul, taps=16)
+  avsr=z_ConvertFormat(width=width*wmul, height=height*hmul, resample_filter="lanczos", filter_param_a=16)
+  fmtconv=fmtc_resample(w=width*wmul, h=height*hmul, kernel="lanczos", taps=16)
+  avs
+
+Figures in general has no place in source code but it is useful to have a clue 
+and see the huge differences between compilers and code variants.
+Also, only mazochists want to test integer optimization with MSVC (x86). Wasted time.
+Use llvm on Arm, clangcl/llvm on Windows x86.
+
+Horizontals                Hor+Vert    Verticals
+ [8]  [10-14]  [16]  [32]  [8]  [10]   [8]  [10-14] [16] [32]
+ 177     170    101  208               262   486    417   217    C-RaspberryPi5 gcc 12.2 (code variant)
+ 137     469     88  208                                         C-RaspberryPi5 gcc 12.2 (code variant)
+ 227     218    147  178                                         C-RaspberryPi5 gcc 12.2 no vector attrib ??! Quicker than vector attrib version gcc not recommended
+ 416     611    579  404    128  186   362   609    556   624    C-RaspberryPi5 llvm 14 vector attrib
+  90     185     94  403                                         C-RaspberryPi5 llvm 14 vector attrib + integer madd@H
+ 180     182    162          67        213   212    206   639    C-RaspberryPi5 llvm 14 no vector attrib
+1230    1168   1129                                              C-ClangCl SSE2
+1270    1238   1186                   1550  1555   1560  3670    C-ClangCl AVX2
+1051    1126   1102                                              C-Intel ICX 2025 SSE2
+1513    2355   1560 1128                                 1969    C-Intel ICX 2025 SSE4.2  smart madd!
+2173    2620   1804 1283                                         C-Intel ICX 2025 AVX2    3.7.6 old tmp
+1938    2413   1775 1061    442  453  1136  1126   1037  3511    C-Intel ICX 2025 AVX2
+ 212     188    187  264     73   64   223   195    198   268    C-MSVC SSE2     3.7.3 code
+ 417     463    360                    449   424    384   352    C-MSVC SSE2     3.7.4 code
+ 215     215     97  928     79   79   220   744     96  1951    C-MSVC SSE2 
+ 201     206     99                                              C-MSVC AVX2 
+ 597     631    651                                              C-Intel SSE4.2  3.7.4 code
+1183    1193    889                                              C-Intel AVX2    3.7.4 code
+5600                       2140                                  SIMD-avsresize (AVX2 or AVX512?)
+2260                        840                                  SIMD-fmtconv (16 bit output for 8 bits) 
+4578    2614   2560 2250   1490       4220  4534   3887  3570    SIMD-MSVC AVX2 3.7.3 (horizontal was memory-boundary unsafe)
+3631    3505   3221 2344   1291 1354  3804  4466   3855  2260    SIMD-MSVC AVX2 3.7.4 Float vertical regression - no time to finish
+3720    3478   3130 2385   1566 1480  5014  5288   5077  3810    SIMD-MSVC AVX2 + incrementing offsets in V, 20-25% gain in integer verticals
+4730    4612   4233 2487   1390 1471  3792  4476   4380  3942    SIMD-ClangCl AVX2, verticals behind MSVC by surprise
+2373    2181   1893 1306    868  723  2660  2137   2670  1886    SIMD-MSVC SSSE3 + incrementing offsets in V, 20-25% gain in integer verticals
+2294    2979   2595 1460    859  976  2623  2865   2625  1962    SIMD-Intel ICX 2025 SSSE3
+4395    4616   4160 2570   1664 1720  5110  5870   5085  2999    SIMD-Intel ICX 2025 AVX2 Surprisingly slow at vertical float FIXME, slower than C :)
+
+* float has different optimization: 8 pixels 2 coeffs
+** on aarch64 the float benchmarks included a ConvertBits(8) at the end.
+
+Non-x86 platforms are the focus of this comparison, as they lack SIMD optimized paths.
+x86 platforms have their own SIMD optimized paths and do not use C.
+
+Compilers can give totally different results even after some reordering of the code,
+See gcc aarch64: the 8 bit case dropped to 2/3 speed while 16 bits increased by a factor of 250%
+depending on where I put a line.
+
+Considerations for aarch64 (Armv8a, includes neon, e.g. RPi5 with gcc 12.2, llvm 14.0.6)
+- gcc is not recommended, their vectorizer is either broken or not yet ready.
+  Using vector attribute gave slower code.
+- llvm gave consistent fast results.
+- Vertical resampler: aarch64 + GCC, (8-16 bits) the 4-pixel 4-coefficient version performs best.
+
+On x86 platforms MSVC is unusable regarding integer vectorization, the more the code helps to
+recognize vectorization patterns the slower assembly it produces, e.g. horizontal resizer AVX2 16 bit: 
+MSVC 99 fps, MSVC+clangcl: 1186 fps, Intel+LLVM: 1775 fps. Joke.
+
+MSVC on x86 is only capable of vectorizing 32 bit float code, and even then it is not the fastest.
+There is no reason to not use clangcl for x86 Visual Studio builds. It comes officially with VS2022 for free.
+
+20250420 3.7.5
+--------------
+
+https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist375.html
+
+Hotfix release for YtoUV and non-x86 platforms
+
+- CMakeLists.txt: if CMAKE_BUILD_TYPE isn't set, use Release
+- Update build.yml, retire unsupported 20.04, add 24.04
+- Fix an llvm syntax warning.
+- rstdoc: update change log
+- Bump to IF v11.1: Fix AVS_Value 64 bit data member declaration for 64 bit non Intel (X86_X64) systems.
+- rstdoc: open 3.7.5 change log, add Raspberry pi stuff to posix.
+- Fix gcc compilation warning
+- Fix: resizer crash for non-intel (e.g. aarch64), regression in 3.7.4
+- Fix #434: YtoUV crash, regression since 61d2c9a
+- Add pkgconf->cmake detection fallback message for SoundTouch
+- avisynth+_arm64.iss: assorted fixups
+- plugins/CMakeLists.txt: fix VDubFilter build check
+- Remove upx.exe from the source tree
+
+20250324 3.7.4
+--------------
+
+- Released
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist374.html
 and
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html#what-s-new-in-the-api-v11

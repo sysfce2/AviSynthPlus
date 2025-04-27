@@ -45,7 +45,7 @@ Ubuntu 19.10 or higher
     mkdir avisynth-build && \
     cd avisynth-build && \
 
-    cmake ../ -G Ninja && \
+    cmake ../ -G Ninja -DCMAKE_BUILD_TYPE=Release && \
     ninja && \
         sudo checkinstall --pkgname=avisynth --pkgversion="$(grep -r \
         Version avs_core/avisynth.pc | cut -f2 -d " ")-$(date --rfc-3339=date | \
@@ -66,12 +66,116 @@ the use of the `filesystem submodule`_.
     mkdir avisynth-build && \
     cd avisynth-build && \
 
-    cmake ../ -G Ninja && \
+    cmake ../ -G Ninja -DCMAKE_BUILD_TYPE=Release && \
     ninja && \
         sudo checkinstall --pkgname=avisynth --pkgversion="$(grep -r \
         Version avs_core/avisynth.pc | cut -f2 -d " ")-$(date --rfc-3339=date | \
         sed 's/-//g')-git" --backup=no --deldoc=yes --delspec=yes --deldesc=yes \
         --strip=yes --stripso=yes --addso=yes --fstrans=no --default ninja install
+
+Raspbian Raspberry Pi 5 + llvm + ninja
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Raspberry Pi 5 is an aarch64 architecture, presently (2025) comes with a gcc 12.2.
+Unfortunately it is not able to optimize well, namely it does not recognize well
+the vectorizable code, and even produces slower code with a so-called "vector attribute"
+that without it. Probably the ArmV8-a support is not perfect.
+
+Using llvm instead is the way to go. At the moment it comes with 14.0.6 version for this
+distribution.
+
+I'm still using here the -DCMAKE_BUILD_TYPE=Release flag, but after a May 2025 source
+it is no longer needed to avoid a completely unoptimized build with Ninja.
+
+First, get some basic stuff.
+
+::
+
+    sudo apt-get install build-essential cmake git ninja-build checkinstall
+
+::
+
+    git clone https://github.com/AviSynth/AviSynthPlus && \
+    cd AviSynthPlus && \
+    mkdir avisynth-build && \
+    cd avisynth-build && \
+
+From now on, instead of a copy-pastable content, we create script files with the following contents.
+
+*config.sh*: grabs the missing components for compiling AviSynth with llvm.
+The prefix path is very important.
+::
+
+    #!/bin/bash
+
+    # Configuration variables for LLVM build
+    LLVM_PACKAGE="llvm"
+    LLVM_CMAKE_PREFIX_PATH="/usr/lib/llvm-$(ls /usr/lib/llvm-* 2>/dev/null | sed 's>
+
+    echo "Using LLVM CMake prefix path: $LLVM_CMAKE_PREFIX_PATH"
+
+    # Optional: Install LLVM, libc++-dev, and libc++abi-dev if not already present
+    if ! command -v clang++ &> /dev/null || ! dpkg -s libc++-dev &> /dev/null || ! >
+      echo "LLVM, libc++-dev, or libc++abi-dev not found. Installing..."
+      sudo apt update
+      sudo apt install -y "$LLVM_PACKAGE" libc++-dev libc++abi-dev
+    fi
+
+
+*build-llvm.sh* makes an actual clean build, assumes that avisynth was cloned
+in the right folder in the previous step.
+
+You can remove the general purge by remove the ``rm -rf *`` if everythings behaves as it should.
+
+::
+
+    #!/bin/bash
+
+    # Source the configuration script
+    source ./config.sh
+
+    cd ~/AviSynthPlus/avisynth-build
+    rm -rf *
+
+    cmake ../ -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_C_COMPILER=clang \
+        -DCMAKE_CXX_COMPILER=clang++ \
+        -DCMAKE_PREFIX_PATH="$LLVM_CMAKE_PREFIX_PATH"
+
+    ninja
+
+    sudo checkinstall --pkgname=avisynth --pkgversion="$(grep -r \
+        Version avs_core/avisynth.pc | cut -f2 -d " ")-$(date --rfc-3339=date | \
+        sed 's/-//g')-git" --backup=no --deldoc=yes --delspec=yes --deldesc=yes \
+        --strip=yes --stripso=yes --addso=yes --fstrans=no --default ninja install
+
+    cd ~bin
+
+    echo "AviSynth+ built and installed with LLVM!"
+
+
+When you are happy with gcc, use this script:
+
+build-gcc.sh:
+::
+
+    #!/bin/bash
+
+    cd ~/AviSynthPlus/avisynth-build
+    rm -rf *
+
+    cmake ../ -G Ninja -DCMAKE_BUILD_TYPE=Release && \
+    ninja && \
+        sudo checkinstall --pkgname=avisynth --pkgversion="$(grep -r \
+        Version avs_core/avisynth.pc | cut -f2 -d " ")-$(date --rfc-3339=date | \
+        sed 's/-//g')-git" --backup=no --deldoc=yes --delspec=yes --deldesc=yes \
+        --strip=yes --stripso=yes --addso=yes --fstrans=no --default ninja install
+
+    cd ~bin
+
+
+
 
 
 Distributions without checkinstall
@@ -117,7 +221,7 @@ using `an external implementation`_ as a submodule.
     mkdir avisynth-build && \
     cd avisynth-build
 
-    cmake ../ -G Ninja && \
+    cmake ../ -G Ninja -DCMAKE_BUILD_TYPE=Release && \
     ninja && \
     sudo ninja install
 
@@ -130,7 +234,7 @@ be built with the default Clang installation.
 
 ::
 
-    cmake ../ -G Ninja && \
+    cmake ../ -G Ninja -DCMAKE_BUILD_TYPE=Release && \
     ninja && \
     sudo ninja install
 
