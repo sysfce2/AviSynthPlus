@@ -425,8 +425,8 @@ VideoFrame::VideoFrame(VideoFrameBuffer* _vfb, AVSMap* avsmap, int _offset, int 
   : refcount(0), vfb(_vfb), offset(_offset), pitch(_pitch), row_size(_row_size), height(_height),
   offsetU(_offset), offsetV(_offset), pitchUV(0), row_sizeUV(0), heightUV(0),  // PitchUV=0 so this doesn't take up additional space
   offsetA(0), pitchA(0), row_sizeA(0),
-  pixel_type(_pixel_type),
-  properties(avsmap)
+  properties(avsmap),
+  pixel_type(_pixel_type)
 {
   InterlockedIncrement(&vfb->refcount);
 }
@@ -436,8 +436,8 @@ VideoFrame::VideoFrame(VideoFrameBuffer* _vfb, AVSMap* avsmap, int _offset, int 
   : refcount(0), vfb(_vfb), offset(_offset), pitch(_pitch), row_size(_row_size), height(_height),
   offsetU(_offsetU), offsetV(_offsetV), pitchUV(_pitchUV), row_sizeUV(_row_sizeUV), heightUV(_heightUV),
   offsetA(0), pitchA(0), row_sizeA(0),
-  pixel_type(_pixel_type),
-  properties(avsmap)
+  properties(avsmap),
+  pixel_type(_pixel_type)
 {
   InterlockedIncrement(&vfb->refcount);
 }
@@ -447,8 +447,8 @@ VideoFrame::VideoFrame(VideoFrameBuffer* _vfb, AVSMap* avsmap, int _offset, int 
   : refcount(0), vfb(_vfb), offset(_offset), pitch(_pitch), row_size(_row_size), height(_height),
   offsetU(_offsetU), offsetV(_offsetV), pitchUV(_pitchUV), row_sizeUV(_row_sizeUV), heightUV(_heightUV),
   offsetA(_offsetA), pitchA(_pitch), row_sizeA(_row_size),
-  pixel_type(_pixel_type),
-  properties(avsmap)
+  properties(avsmap),
+  pixel_type(_pixel_type)
 {
   InterlockedIncrement(&vfb->refcount);
 }
@@ -2433,8 +2433,8 @@ ScriptEnvironment::ScriptEnvironment()
   FrontCache(NULL),
   nTotalThreads(1),
   nMaxFilterInstances(1),
-  graphAnalysisEnable(false),
   LogLevel(LOGLEVEL_NONE),
+  graphAnalysisEnable(false),
   cacheMode(CACHE_DEFAULT)
 {
 #ifdef XP_TLS

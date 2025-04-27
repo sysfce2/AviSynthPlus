@@ -105,10 +105,6 @@ PClip Create_MessageClip(const char* message, int width, int height,
   int fps_numerator, int fps_denominator, int num_frames,
   IScriptEnvironment* env);
 
-PClip new_Splice(PClip _child1, PClip _child2, bool realign_sound, IScriptEnvironment* env);
-PClip new_SeparateFields(PClip _child, IScriptEnvironment* env);
-PClip new_AssumeFrameBased(PClip _child);
-
 
 /* Used to clip/clamp a byte to the 0-255 range.
    Uses a look-up table internally for performance.

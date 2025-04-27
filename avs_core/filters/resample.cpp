@@ -1215,7 +1215,7 @@ static void GetCenterShiftForResizers(double& center_pos_luma, double& center_po
       int src_ss_h = vi.GetPlaneWidthSubsampling(PLANAR_U);
       int src_ss_v = vi.GetPlaneHeightSubsampling(PLANAR_U);
 
-      int chromaplace = ChromaLocation_e::AVS_CHROMA_CENTER; // MPEG1
+      // int chromaplace = ChromaLocation_e::AVS_CHROMA_CENTER; // MPEG1
 
       ChromaPlacement_compute_cplace(
         cp_s_h, cp_s_v, chroma_placement, plane_index, src_ss_h, src_ss_v,
@@ -1256,8 +1256,8 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
   int target_width, ResamplingFunction* func, bool preserve_center, int chroma_placement, IScriptEnvironment* env)
   : GenericVideoFilter(_child),
   resampling_program_luma(nullptr), resampling_program_chroma(nullptr), 
-  resampler_h_chroma(nullptr), resampler_h_luma(nullptr),
-  resampler_chroma(nullptr), resampler_luma(nullptr)
+  resampler_h_luma(nullptr), resampler_h_chroma(nullptr),
+  resampler_luma(nullptr), resampler_chroma(nullptr)
 
 {
   src_width = vi.width;

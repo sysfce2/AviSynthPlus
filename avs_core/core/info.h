@@ -118,8 +118,8 @@ public:
     font_name(_font_name),
     font_filename(_font_filename),
     width(_w), height(_h),
-    fontline_bytes(_fontline_bytes),
-    bold(_bold)
+    bold(_bold),
+    fontline_bytes(_fontline_bytes)
     //font_bitmaps(_font_bitmaps),
   {
     //fixme: do not copy data
