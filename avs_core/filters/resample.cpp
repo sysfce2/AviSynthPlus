@@ -51,6 +51,8 @@
 #include <type_traits>
 #include <algorithm>
 
+#include "../core/avs_simd_c.h"
+#include <cassert>
 
 // Prepares resampling coefficients for end conditions and/or SIMD processing by:
 // 1. Sets a "real-life" size for the filter, which at small dimensions can be less than the original
@@ -215,8 +217,14 @@ static void resize_v_planar_pointresize(BYTE* dst, const BYTE* src, int dst_pitc
   }
 }
 
-// C versions: vectorizer friendly version giving 1.6-2.6x speed even with MSVC
-
+// This C implementation isn't optimized for auto-vectorization,
+// But on x86 MSVC SSE2 settings for 8 bit pixel types it performs better than our 
+// vectorizer-friendly version.
+// Other compilers benefit from vectorizing by a huge margin for every case.
+// The vector code which replaced this is already 2x faster for 10-16 bits processing
+// and achieves a 6x speedup for 32-bit operations. LLVM has even an additional 1.5x-4x speedup 
+// compared to MSVC.
+// Kept for reference, supports 8, 10-16 and 32 bit pixel types.
 template<typename pixel_t, bool lessthan16bit>
 static void resize_v_c_planar(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
 {
@@ -259,7 +267,7 @@ static void resize_v_c_planar(BYTE* dst8, const BYTE* src8, int dst_pitch, int s
         const float* src2_ptr = src_ptr + x;
 
         float result = 0;
-        for (int i = 0; i < ksmod4; i+=4) {
+        for (int i = 0; i < ksmod4; i += 4) {
           result += *(src2_ptr + 0 * src_pitch) * current_coeff[i + 0];
           result += *(src2_ptr + 1 * src_pitch) * current_coeff[i + 1];
           result += *(src2_ptr + 2 * src_pitch) * current_coeff[i + 2];
@@ -277,7 +285,7 @@ static void resize_v_c_planar(BYTE* dst8, const BYTE* src8, int dst_pitch, int s
         // sum of coeffs is 1.0 that is (1 << FPScale16bits) in integer arithmetic
         const uint16_t* src2_ptr = src_ptr + x;
         int result = 1 << (FPScale16bits - 1); // rounder;
-        for (int i = 0; i < ksmod4; i+=4) {
+        for (int i = 0; i < ksmod4; i += 4) {
           int val;
           val = *(src2_ptr + 0 * src_pitch);
           if constexpr (!lessthan16bit)
@@ -317,20 +325,20 @@ static void resize_v_c_planar(BYTE* dst8, const BYTE* src8, int dst_pitch, int s
       else if constexpr (sizeof(pixel_t) == 1) {
         const uint8_t* src2_ptr = src_ptr + x;
         int result = 1 << (FPScale8bits - 1); // rounder;
-        for (int i = 0; i < ksmod4; i+=4) {
+        for (int i = 0; i < ksmod4; i += 4) {
           short val;
           val = *(src2_ptr + 0 * src_pitch);
           result += val * current_coeff[i + 0];
-          
+
           val = *(src2_ptr + 1 * src_pitch);
           result += val * current_coeff[i + 1];
-          
+
           val = *(src2_ptr + 2 * src_pitch);
           result += val * current_coeff[i + 2];
-          
+
           val = *(src2_ptr + 3 * src_pitch);
           result += val * current_coeff[i + 3];
-          
+
           src2_ptr += 4 * src_pitch;
         }
         for (int i = ksmod4; i < kernel_size; i++) {
@@ -349,16 +357,314 @@ static void resize_v_c_planar(BYTE* dst8, const BYTE* src8, int dst_pitch, int s
   }
 }
 
+
+/*
+
+Benchmarks.
+
+  SetMaxCPU("none")
+  #SetMaxCPU("SSSE3")
+  #SetMaxCPU("AVX2")
+  ColorbarsHD(200,200, pixel_type="YUV444P8") # P8, P10, P16, PS
+
+  wmul=2 # >1: horizontal resizer test
+  hmul=1 # >1: vertical resizer test
+
+  avs=LanczosResize(width*wmul, height*hmul, taps=16)
+  avsr=z_ConvertFormat(width=width*wmul, height=height*hmul, resample_filter="lanczos", filter_param_a=16)
+  fmtconv=fmtc_resample(w=width*wmul, h=height*hmul, kernel="lanczos", taps=16)
+  avs
+
+Figures in general has no place in source code but it is useful to have a clue 
+and see the huge differences between compilers and code variants.
+Also, only mazochists want to test integer optimization with MSVC (x86). Wasted time.
+Use llvm on Arm, clangcl/llvm on Windows x86.
+
+Horizontals                Hor+Vert    Verticals
+ [8]  [10-14]  [16]  [32]  [8]  [10]   [8]  [10-14] [16] [32]
+ 177     170    101  208               262   486    417   217    C-RaspberryPi5 gcc 12.2 (code variant)
+ 137     469     88  208                                         C-RaspberryPi5 gcc 12.2 (code variant)
+ 227     218    147  178                                         C-RaspberryPi5 gcc 12.2 no vector attrib ??! Quicker than vector attrib version gcc not recommended
+ 416     611    579  404    128  186   362   609    556   624    C-RaspberryPi5 llvm 14 vector attrib
+  90     185     94  403                                         C-RaspberryPi5 llvm 14 vector attrib + integer madd@H
+ 180     182    162          67        213   212    206   639    C-RaspberryPi5 llvm 14 no vector attrib
+1230    1168   1129                                              C-ClangCl in VS2022 SSE2
+1270    1238   1186                   1550  1555   1560  3670    C-ClangCl in VS2022 AVX2
+1051    1126   1102                                              C-Intel ICX 2025 SSE2
+1513    2355   1560 1128                                 1969    C-Intel ICX 2025 SSE4.2  smart madd!
+1938    2413   1775 1061    442  453  1136  1126   1037  3511    C-Intel ICX 2025 AVX2
+ 212     188    187  264     73   64   223   195    198   268    C-MSVC SSE2 3.7.3
+ 417     463    360                    449   424    384   352    C-MSVC SSE2 3.7.4 (some unrolling vs. 3.7.3)
+ 215     215     97  928     79   79   220   744     96  1951    C-MSVC SSE2 (zero optim on 8-16, did not tolerate vector-friendly code)
+ 201     206     99                                              C-MSVC AVX2 (zero optim also on 8-16, not even using SSE2 xmm registers)
+ 597     631    651                                              C-Intel SSE4.2  3.7.4 code
+1183    1193    889                                              C-Intel AVX2    3.7.4 code
+5600                       2140                                  SIMD-avsresize (AVX2 or AVX512?)
+2260                        840                                  SIMD-fmtconv (16 bit output for 8 bits)
+4578    2614   2560 2250   1490       4220  4534   3887  3570    SIMD-MSVC AVX2 3.7.3 (horizontal was memory-boundary unsafe)
+3631    3505   3221 2344   1291 1354  3804  4466   3855  2260    SIMD-MSVC AVX2 3.7.4 Float vertical regression - no time to finish
+3629    3538   3212 2322   1292 1354  3780  4482   3915  3840    SIMD-MSVC AVX2
+                                      4640  5340   4992  3783    SIMD-MSVC AVX2 + incrementing offsets
+2870                        859                                  SIMD-Intel ICX 2025 SSSE3
+4330    4433   3980 2570   1664 1720  5055  5870   5139  3240    SIMD-Intel ICX 2025 AVX2    FIXME, Vertical32 slower than C :)
+
+* float has different optimization: 8 pixels 2 coeffs
+** on aarch64 the float benchmarks included a ConvertBits(8) at the end.
+
+Non-x86 platforms are the focus of this comparison, as they lack SIMD optimized paths.
+x86 platforms have their own SIMD optimized paths and do not use C.
+
+Compilers can give totally different results even after some reordering of the code,
+See gcc aarch64: the 8 bit case dropped to 2/3 speed while 16 bits increased by a factor of 250%
+depending on where I put a line.
+
+Considerations for aarch64 (Armv8a, includes neon, e.g. RPi5 with gcc 12.2, llvm 14.0.6)
+- gcc is not recommended, their vectorizer is either broken or not yet ready.
+  Using vector attribute gave slower code.
+- llvm gave consistent fast results.
+- Vertical resampler: aarch64 + GCC, (8-16 bits) the 4-pixel 4-coefficient version performs best.
+
+On x86 platforms MSVC is unusable regarding integer vectorization, the more the code helps to
+recognize vectorization patterns the slower assembly it produces, e.g. horizontal resizer AVX2 16 bit: 
+MSVC 99 fps, MSVC+clangcl: 1186 fps, Intel+LLVM: 1775 fps. Joke.
+
+MSVC on x86 is only capable of vectorizing 32 bit float code, and even then it is not the fastest.
+There is no reason to not use clangcl for x86 Visual Studio builds. It comes officially with VS2022 for free.
+
+*/
+
+// This is a vectorizer-friendly version of the above function.
+template<typename pixel_t, bool lessthan16bit>
+void resize_v_c_planar_uint8_16_t_auto_vectorized(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel) {
+
+  const short* AVS_RESTRICT current_coeff = program->pixel_coefficient;
+
+  auto src = reinterpret_cast<const pixel_t*>(src8);
+  auto dst = reinterpret_cast<pixel_t * AVS_RESTRICT>(dst8);
+  src_pitch = src_pitch / sizeof(pixel_t);
+  dst_pitch = dst_pitch / sizeof(pixel_t);
+
+  int limit = 0;
+  if constexpr (sizeof(pixel_t) == 1) limit = 255;
+  else if constexpr (sizeof(pixel_t) == 2) limit = pixel_t((1 << bits_per_pixel) - 1);
+
+  // for 16 bits only
+  [[maybe_unused]] Int16x4 shifttosigned_short(-32768);
+  [[maybe_unused]] const Int32x4 shiftfromsigned_int(32768 << FPScale16bits);
+
+  const int filter_size = program->filter_size;
+  constexpr int fixpoint_scaler_bits = sizeof(pixel_t) == 2 ? FPScale16bits : FPScale8bits;
+  const int rounder = 1 << (fixpoint_scaler_bits - 1);
+
+  // 8-16 SIMD padding of coeffs is not usable here, work with single coeffs
+
+  const int kernel_size = program->filter_size_real;
+
+  const int ksmod4 = kernel_size / 4 * 4;
+
+  for (int y = 0; y < target_height; y++) {
+    int offset = program->pixel_offset[y];
+    const pixel_t* src_ptr = src + offset * src_pitch;
+
+    // 4 pixels at a time
+    for (int x = 0; x < width; x += 4) {
+      Int32x4 result(rounder); // master accumulator and the initial first coeff part
+      Int32x4 result_2(rounder);
+      Int32x4 result_3(rounder);
+      Int32x4 result_4(rounder);
+      const pixel_t* AVS_RESTRICT src2_ptr = src_ptr + x; // __restrict here
+      int i = 0;
+      // Process coefficients in pairs or quads for better instruction parallelism.
+      // Depending on platform and compiler, results may vary.
+      // Since on Intel we have SIMD optimized paths, we decide on the
+      // results of a not-yet-optimized aarch64 platform: takeout is 4 pix 4 coeff
+      for (; i < ksmod4; i += 4) {
+
+        Int32x4 src_1, src_2, src_3, src_4;
+
+        const int coeff_1 = current_coeff[i];
+        const int coeff_2 = current_coeff[i + 1];
+        const int coeff_3 = current_coeff[i + 2];
+        const int coeff_4 = current_coeff[i + 3];
+
+        if constexpr (sizeof(pixel_t) == 1) {
+          // uint8_t
+          auto src8_1 = Uint8x4::from_ptr(src2_ptr);
+          auto src8_2 = Uint8x4::from_ptr(src2_ptr + src_pitch);
+          auto src8_3 = Uint8x4::from_ptr(src2_ptr + 2 * src_pitch);
+          auto src8_4 = Uint8x4::from_ptr(src2_ptr + 3 * src_pitch);
+
+          src_1 = Int32x4::convert_from(src8_1);
+          src_2 = Int32x4::convert_from(src8_2);
+          src_3 = Int32x4::convert_from(src8_3);
+          src_4 = Int32x4::convert_from(src8_4);
+        }
+        else {
+          // uint16_t
+          auto src16_1 = Int16x4::from_ptr(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr));
+          auto src16_2 = Int16x4::from_ptr(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr + src_pitch));
+          auto src16_3 = Int16x4::from_ptr(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr + 2 * src_pitch));
+          auto src16_4 = Int16x4::from_ptr(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr + 3 * src_pitch));
+
+          // Turn unsigned to signed 16 bit, will be adjusted back before scaling back and storing.
+          // Since there's a little hope that short*short pattern is recognized by the compiler, though 
+          // this is different from the horizontal case where hadd can be used.
+          if constexpr (!lessthan16bit) {
+            src16_1 += shifttosigned_short;
+            src16_2 += shifttosigned_short;
+            src16_3 += shifttosigned_short;
+            src16_4 += shifttosigned_short;
+          }
+          // widen short->int
+          src_1 = Int32x4::convert_from(src16_1);
+          src_2 = Int32x4::convert_from(src16_2);
+          src_3 = Int32x4::convert_from(src16_3);
+          src_4 = Int32x4::convert_from(src16_4);
+        }
+
+        result += src_1 * coeff_1;
+        result_2 += src_2 * coeff_2;
+        result_3 += src_3 * coeff_3;
+        result_4 += src_4 * coeff_4;
+
+        src2_ptr += 4 * src_pitch;
+      }
+
+      result += result_2;
+      result_3 += result_4;
+      result += result_3;
+
+      // rest zero or one
+      for (; i < kernel_size; ++i) {
+        Int32x4 src;
+        const int a_coeff = current_coeff[i];
+        if constexpr (sizeof(pixel_t) == 1) {
+          // uint8_t
+          src.load_from_any_intptr(src2_ptr);
+        }
+        else {
+          // uint16_t
+          auto src16 = Int16x4::from_ptr(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr));
+          if constexpr (!lessthan16bit) {
+            src16 += shifttosigned_short;
+          }
+          src.convert_from(src16); // widen short->int
+        }
+
+        result += src * a_coeff;
+
+        src2_ptr += src_pitch;
+      }
+
+      // back to unsigned 16 bit for exact 16 bit source
+      if constexpr (sizeof(pixel_t) == 2 && !lessthan16bit) {
+        result += shiftfromsigned_int;
+      }
+
+      result >>= fixpoint_scaler_bits;
+
+      if constexpr (sizeof(pixel_t) == 1) {
+        Uint8x4 result8;
+        convert_and_saturate_int32x4_to_uint8x4(result, result8);
+        result8.store(dst + x);
+      }
+      else {
+        Uint16x4 result16;
+        if constexpr (lessthan16bit) {
+          convert_and_saturate_int32x4_to_uint16x4_limit(result, result16, limit);
+        }
+        else {
+          convert_and_saturate_int32x4_to_uint16x4(result, result16);
+        }
+        result16.store(dst + x);
+      }
+    }
+
+    dst += dst_pitch;
+    current_coeff += filter_size;
+  }
+}
+
+
+static void resize_v_c_planar_float_auto_vectorized(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel) {
+
+  const float* AVS_RESTRICT current_coeff = program->pixel_coefficient_float;
+
+  auto src = reinterpret_cast<const float*>(src8);
+  auto dst = reinterpret_cast<float* AVS_RESTRICT>(dst8);
+  src_pitch = src_pitch / sizeof(float);
+  dst_pitch = dst_pitch / sizeof(float);
+
+  const int filter_size = program->filter_size;
+
+  // 8-16 SIMD padding of coeffs is not usable here, work with single coeffs
+  const int kernel_size = program->filter_size_real;
+  const int ksmod2 = kernel_size / 2 * 2; // Ensure kernel_size is processed in multiples of 2
+
+  for (int y = 0; y < target_height; y++) {
+    int offset = program->pixel_offset[y];
+    const float* src_ptr = src + offset * src_pitch;
+
+    for (int x = 0; x < width; x += 8) {
+      // This function written in vectorizer-friendly C unexpectedly outperformed 
+      // our hand-written SSE2 version.
+      // The reason: Float8 class is probably using two 128-bit XMM registers
+      // when compiled with SSE2 enabled by MSVC, processing 8 floats per iteration.
+      // Our original SSE2 function only processed 4 pixels at once, explaining the
+      // performance difference. We've since updated the SSE2 version to also process
+      // 8 pixels simultaneously using two XMM registers.
+      // Processing two coefficients further increases the throughput.
+      Float8 result(0.f);
+      Float8 result_2(0.f);
+      const float* AVS_RESTRICT src2_ptr = src_ptr + x;
+
+      for (int i = 0; i < ksmod2; i += 2) {
+        const float coeff_1 = current_coeff[i];
+        const float coeff_2 = current_coeff[i + 1];
+        Float8 src_1 = Float8::from_ptr(src2_ptr);
+        Float8 src_2 = Float8::from_ptr(src2_ptr + src_pitch);
+        result += src_1 * coeff_1;
+        result_2 += src_2 * coeff_2;
+
+        src2_ptr += 2 * src_pitch;
+      }
+
+      result += result_2;
+
+      // Process remaining coefficients if kernel_size is odd
+      if (ksmod2 < kernel_size) {
+        const float a_coeff = current_coeff[ksmod2];
+        Float8 src = Float8::from_ptr(src2_ptr);
+        result += src * a_coeff;
+      }
+
+      // no rounding, no clamp
+      result.store(dst + x);
+    }
+
+    dst += dst_pitch;
+    current_coeff += filter_size;
+  }
+}
+
+
 /***************************************
  ********* Horizontal Resizer** ********
  ***************************************/
+
+// Only <float> is used, which got some SIMD-C optimizations.
+// On x86 MSVC the 8-16 bit versions may perform better due to their extremely poor integer 
+// vectorization capabilities.
+// But gcc and llvm (clangcl) compilers perform very good, their code from the other,
+// vector-fiendly versions are excellent, as expected in 2025.
+// Luckily, on x86 there are handcrafted SIMD versions for all 8, 10-16 and 32 bit pixel types.
 
 template<typename pixel_t, bool lessthan16bit>
 static void resize_h_c_planar(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
   int filter_size = program->filter_size;
 
   typedef typename std::conditional < std::is_floating_point<pixel_t>::value, float, short>::type coeff_t;
-  coeff_t* current_coeff;
+  const coeff_t* AVS_RESTRICT current_coeff;
 
   pixel_t limit = 0;
   if (!std::is_floating_point<pixel_t>::value) {  // floats are unscaled and uncapped
@@ -384,29 +690,29 @@ static void resize_h_c_planar(BYTE* dst8, const BYTE* src8, int dst_pitch, int s
   // external loop y is much faster
   for (int y = 0; y < height; y++) {
     if (!std::is_floating_point<pixel_t>::value)
-      current_coeff = (coeff_t*)program->pixel_coefficient;
+      current_coeff = (const coeff_t* AVS_RESTRICT)program->pixel_coefficient;
     else
-      current_coeff = (coeff_t*)program->pixel_coefficient_float;
+      current_coeff = (const coeff_t* AVS_RESTRICT)program->pixel_coefficient_float;
 
-    pixel_t* dst2_ptr = dst + y * dst_pitch;
+    pixel_t* AVS_RESTRICT dst2_ptr = dst + y * dst_pitch;
     const pixel_t* src_ptr = src + y * src_pitch;
 
     for (int x = 0; x < width; x++) {
       int begin = program->pixel_offset[x];
-      const pixel_t* src2_ptr = src_ptr + begin;
+      const pixel_t* AVS_RESTRICT src2_ptr = src_ptr + begin;
 
       if constexpr (std::is_floating_point<pixel_t>::value) {
-        float result = 0;
-        for (int i = 0; i < ksmod4; i+=4) {
-          result += src2_ptr[i+0] * current_coeff[i+0];
-          result += src2_ptr[i+1] * current_coeff[i+1];
-          result += src2_ptr[i+2] * current_coeff[i+2];
-          result += src2_ptr[i+3] * current_coeff[i+3];
+        Float4 result(0.f);
+        for (int i = 0; i < ksmod4; i += 4) {
+          Float4 src = Float4::from_ptr(src2_ptr + i);
+          Float4 coeff = Float4::from_ptr(current_coeff + i);
+          result += src * coeff;
         }
+        float result_single = result.horiz_add_float();
         for (int i = ksmod4; i < kernel_size; i++) {
-          result += src2_ptr[i] * current_coeff[i];
+          result_single += src2_ptr[i] * current_coeff[i];
         }
-        dst2_ptr[x] = result;
+        dst2_ptr[x] = result_single;
       }
       else if constexpr (sizeof(pixel_t) == 2) {
         // theoretically, no need for int64 accumulator,
@@ -491,6 +797,279 @@ static void resize_h_c_planar(BYTE* dst8, const BYTE* src8, int dst_pitch, int s
     }
   }
 }
+
+// Vectorizer-friendly 8-16 bit horizontal resampler
+
+// 8 pixel instead of real-SIMD 16 to ease register pressure 
+// and the make the compiler task easier
+template<typename pixel_t, bool lessthan16bit>
+AVS_FORCEINLINE static void process_two_8pixels_h_uint8_16_core(const pixel_t* AVS_RESTRICT src_ptr, const short* AVS_RESTRICT current_coeff, Int32x4& result, const Int16x8& shifttosigned_8xshort) {
+
+  Int16x8 data;
+  // using signed int16 (short) until the coeff multiplication
+  if constexpr (sizeof(pixel_t) == 1) {
+    // pixel_t is uint8_t
+    Uint8x8 src = Uint8x8::from_ptr(src_ptr);
+    data = Int16x8::convert_from(src); // 8 pixels uint8_t->int16
+  }
+  else {
+    // pixel_t is uint16_t, at exact 16 bit bit depth unsigned -> signed 16 bit conversion needed
+    // this mimics the behavior of the SIMD version, which processes signed 16 bit input
+    // data.load(reinterpret_cast<const short * AVS_RESTRICT>(src_ptr));
+    Uint16x8 src = Uint16x8::from_ptr(src_ptr);
+    data = Int16x8::convert_from(src); // 8 pixels uint8_t->int16
+
+    if constexpr (!lessthan16bit) {
+      data += shifttosigned_8xshort; // 16 bit addition is invariant regarding overflow
+    }
+  }
+
+  Int16x8 coeff = Int16x8::from_ptr(current_coeff); // 8 coeffs
+
+  // no need real intel-like madd, but intel compiler can use it (experienced)
+#if defined(__INTEL_LLVM_COMPILER)
+  // Intel proc + LLVM: only this compiler combo is compiling into madd,which is much faster.
+  Int32x4 madd_result = simul_madd_epi16(data, coeff);
+#else
+  Int32x4 madd_result = mul16x16_reduce_to_Int32x4(data, coeff);
+#endif
+  result += madd_result;
+  // later, the four 32 bit results will be further reduced and added together (hadd)
+}
+
+
+template<typename pixel_t, bool lessthan16bit>
+AVS_FORCEINLINE static void process_two_4pixels_h_uint8_16_core(const pixel_t* AVS_RESTRICT src_ptr, const short* AVS_RESTRICT current_coeff, Int32x4& result, const Int32x4& shifttosigned_4xint) {
+  Int32x4 data;
+
+  // this one is using full int32 internally
+
+  if constexpr (sizeof(pixel_t) == 1) {
+    data.load_from_any_intptr(src_ptr); // 4 pixels uint8_t->int32
+  }
+  else {
+    // pixel_t is uint16_t, at exact 16 bit bit depth an unsigned -> signed 16 bit conversion needed
+    data.load_from_any_intptr(src_ptr); // 4 pixels uint16_t->int32
+
+    if constexpr (!lessthan16bit) {
+      data += shifttosigned_4xint;
+    }
+  }
+
+  // 4x signed 16 bit coeffs to int32
+  Int32x4 coeff_int;
+  coeff_int.load_from_any_intptr(current_coeff);
+
+  result += data * coeff_int;
+  // later, the four 32 bit results will be added together (hadd)
+}
+
+template<bool safe_aligned_mode, typename pixel_t, bool lessthan16bit>
+AVS_FORCEINLINE static void process_two_pixels_h_uint8_16(const pixel_t* src_ptr, const int begin1, const int begin2, const short* AVS_RESTRICT current_coeff, const int filter_size,
+  Int32x4& result1, Int32x4& result2, const int kernel_size,
+  const Int16x8& shifttosigned) {
+
+  int ksmod8;
+  // 16 is too much for C optimizer
+  if constexpr (safe_aligned_mode)
+    ksmod8 = filter_size / 8 * 8;
+  else
+    ksmod8 = kernel_size / 8 * 8; // danger zone, scanline overread possible. Use exact unaligned kernel_size
+  const pixel_t* src_ptr1 = src_ptr + begin1;
+  const pixel_t* src_ptr2 = src_ptr + begin2;
+  int i = 0;
+
+  // Process 16 elements at a time
+  for (; i < ksmod8; i += 8) {
+    process_two_8pixels_h_uint8_16_core<pixel_t, lessthan16bit>(src_ptr1 + i, current_coeff + i, result1, shifttosigned);
+    process_two_8pixels_h_uint8_16_core<pixel_t, lessthan16bit>(src_ptr2 + i, current_coeff + filter_size + i , result2, shifttosigned);
+  }
+
+  if constexpr (!safe_aligned_mode) {
+    // working with the original, unaligned kernel_size
+    if (i == kernel_size) return;
+
+    const int ksmod4 = kernel_size / 4 * 4;
+    // Process 4 elements if needed
+    if (i < ksmod4) {
+      Int32x4 shifttosigned_4;
+      shifttosigned_4.convert_from_lo(shifttosigned); // copy lower half of 8xshort, 4xshort to 4xint
+      process_two_4pixels_h_uint8_16_core<pixel_t, lessthan16bit>(src_ptr1 + i, current_coeff + i, result1, shifttosigned_4);
+      process_two_4pixels_h_uint8_16_core<pixel_t, lessthan16bit>(src_ptr2 + i, current_coeff + filter_size + i, result2, shifttosigned_4);
+      i += 4;
+      if (i == kernel_size) return;
+    }
+
+    // Process remaining 1-3 elements with scalar operations
+    if (i < kernel_size) {
+      Int32x4 scalar_sum1(0); // like an __m128i
+      Int32x4 scalar_sum2(0);
+
+      int index = 0;
+      for (; i < kernel_size; i++, index++) {
+
+        if constexpr (sizeof(pixel_t) == 1) {
+          scalar_sum1.set(index, scalar_sum1[index] + src_ptr1[i] * current_coeff[i]);
+          scalar_sum2.set(index, scalar_sum2[index] + src_ptr2[i] * current_coeff[filter_size + i]);
+        }
+        else {
+          // pixel_t is uint16_t
+          short val = src_ptr1[i];
+          if constexpr (!lessthan16bit)
+            val = val + shifttosigned[0]; // still short
+          scalar_sum1.set(index, scalar_sum1[index] + val * current_coeff[i]);
+
+          val = src_ptr2[i];
+          if constexpr (!lessthan16bit)
+            val = val + shifttosigned[0]; // still short
+          scalar_sum2.set(index, scalar_sum2[index] + val * current_coeff[filter_size + i]);
+        }
+      }
+
+      // update result vectors
+      result1 += scalar_sum1;
+      result2 += scalar_sum2;
+
+    }
+  }
+}
+
+
+template<bool is_safe, typename pixel_t, bool lessthan16bit>
+AVS_FORCEINLINE static void process_eight_pixels_h_uint8_16(const pixel_t * AVS_RESTRICT src, int x, const short* current_coeff_base, int filter_size,
+  const Int32x4& rounder128, const Int16x8& shifttosigned, const uint16_t clamp_limit,
+  pixel_t* AVS_RESTRICT dst,
+  ResamplingProgram* program)
+{
+  assert(program->filter_size_alignment >= 16); // code assumes this
+
+  const short* AVS_RESTRICT current_coeff = current_coeff_base + x * filter_size;
+  const int unaligned_kernel_size = program->filter_size_real;
+
+  // Unrolled processing of all 8 pixels
+
+  // hadd_epi32 or other SIMD pattern is not recognized, do it differently
+
+  // 0 & 1
+  Int32x4 result0 = rounder128;
+  Int32x4 result1 = rounder128;
+  int begin0 = program->pixel_offset[x + 0];
+  int begin1 = program->pixel_offset[x + 1];
+  process_two_pixels_h_uint8_16<is_safe, pixel_t, lessthan16bit>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size, shifttosigned);
+  current_coeff += 2 * filter_size;
+
+  // 2 & 3
+  Int32x4 result2 = rounder128;
+  Int32x4 result3 = rounder128;
+  begin0 = program->pixel_offset[x + 2];
+  begin1 = program->pixel_offset[x + 3];
+  process_two_pixels_h_uint8_16<is_safe, pixel_t, lessthan16bit>(src, begin0, begin1, current_coeff, filter_size, result2, result3, unaligned_kernel_size, shifttosigned);
+  current_coeff += 2 * filter_size;
+
+  Int32x4 sumQuad1234;
+  sumQuad1234.set(0, result0.horiz_add_int32());
+  sumQuad1234.set(1, result1.horiz_add_int32());
+  sumQuad1234.set(2, result2.horiz_add_int32());
+  sumQuad1234.set(3, result3.horiz_add_int32());
+
+  // 4 & 5
+  result0 = rounder128;
+  result1 = rounder128;
+  begin0 = program->pixel_offset[x + 4];
+  begin1 = program->pixel_offset[x + 5];
+  process_two_pixels_h_uint8_16<is_safe, pixel_t, lessthan16bit>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size, shifttosigned);
+  current_coeff += 2 * filter_size;
+
+  // 6 & 7
+  result2 = rounder128;
+  result3 = rounder128;
+  begin0 = program->pixel_offset[x + 6];
+  begin1 = program->pixel_offset[x + 7];
+  process_two_pixels_h_uint8_16<is_safe, pixel_t, lessthan16bit>(src, begin0, begin1, current_coeff, filter_size, result2, result3, unaligned_kernel_size, shifttosigned);
+  // current_coeff += 2 * filter_size; // not needed anymore
+
+  Int32x4 sumQuad5678;
+  sumQuad5678.set(0, result0.horiz_add_int32());
+  sumQuad5678.set(1, result1.horiz_add_int32());
+  sumQuad5678.set(2, result2.horiz_add_int32());
+  sumQuad5678.set(3, result3.horiz_add_int32());
+
+  // correct if signed, scale back, store
+  if constexpr (sizeof(pixel_t) == 2 && !lessthan16bit) {
+    const Int32x4 shiftfromsigned(32768 << FPScale16bits);
+    sumQuad1234 += shiftfromsigned;
+    sumQuad5678 += shiftfromsigned;
+  }
+
+  const int current_fp_scale_bits = (sizeof(pixel_t) == 1) ? FPScale8bits : FPScale16bits;
+  // scale back, store
+  sumQuad1234 >>= current_fp_scale_bits;
+  sumQuad5678 >>= current_fp_scale_bits;
+ 
+  if constexpr (sizeof(pixel_t) == 1) {
+    Uint8x8 result_2x4x_uint8;
+    convert_and_saturate_int32x4x2_to_uint8x8(sumQuad1234, sumQuad5678, result_2x4x_uint8);
+    result_2x4x_uint8.store(&dst[x]);
+  }
+  else {
+    // uint16_t 10-16 bit
+    Uint16x8 result_2x4x_uint16_128;
+    if constexpr (lessthan16bit) {
+      convert_and_saturate_int32x4x2_to_uint16x8_limit(sumQuad1234, sumQuad5678, result_2x4x_uint16_128, clamp_limit);
+    }
+    else {
+      convert_and_saturate_int32x4x2_to_uint16x8(sumQuad1234, sumQuad5678, result_2x4x_uint16_128);
+    }
+    result_2x4x_uint16_128.store(&dst[x]);
+  
+  }
+}
+
+//-------- uint8/16_t Horizontal
+// 4 pixels at a time. 
+template<typename pixel_t, bool lessthan16bit>
+void resizer_h_c_generic_uint8_16_vectorized(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
+
+  const int filter_size = program->filter_size;
+  const int current_fp_scale_bits = (sizeof(pixel_t) == 1) ? FPScale8bits : FPScale16bits;
+  const Int32x4 rounder128 = { 1 << (current_fp_scale_bits - 1), 0, 0, 0 };
+
+  const Int16x8 shifttosigned_or_zero128(sizeof(pixel_t) == 1 ? 0 : -32768);
+
+  const uint16_t clamp_limit = (1 << bits_per_pixel) - 1;
+
+  const pixel_t* AVS_RESTRICT src = reinterpret_cast<const pixel_t*>(src8);
+  pixel_t* AVS_RESTRICT dst = reinterpret_cast<pixel_t*>(dst8);
+  dst_pitch /= sizeof(pixel_t);
+  src_pitch /= sizeof(pixel_t);
+
+  const int w_safe_mod8 = (program->overread_possible ? program->source_overread_beyond_targetx : width) / 8 * 8;
+
+  for (int y = 0; y < height; y++) {
+    const short* current_coeff_base = program->pixel_coefficient;
+
+    // Process safe aligned pixels
+    for (int x = 0; x < w_safe_mod8; x += 8) {
+      process_eight_pixels_h_uint8_16<true, pixel_t, lessthan16bit>(src, x, current_coeff_base, filter_size, rounder128, shifttosigned_or_zero128, clamp_limit, dst, program);
+    }
+
+    // Process up to the actual kernel size instead of the aligned filter_size to prevent overreading beyond the last source pixel.
+    // We assume extra offset entries were added to the p->pixel_offset array (aligned to 8 during initialization).
+    // This may store 1-7 false pixels but it still remain in alignment-safe area.
+    for (int x = w_safe_mod8; x < width; x += 8) {
+      process_eight_pixels_h_uint8_16<false, pixel_t, lessthan16bit>(src, x, current_coeff_base, filter_size, rounder128, shifttosigned_or_zero128, clamp_limit, dst, program);
+    }
+
+    dst += dst_pitch;
+    src += src_pitch;
+  }
+}
+
+// 16 bit Horizontal
+
+template void resizer_h_c_generic_uint8_16_vectorized<uint8_t, true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
+template void resizer_h_c_generic_uint8_16_vectorized<uint16_t, false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
+template void resizer_h_c_generic_uint8_16_vectorized<uint16_t, true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 
 /********************************************************************
 ***** Declare index of new filters for Avisynth's filter engine *****
@@ -955,19 +1534,16 @@ PVideoFrame __stdcall FilteredResizeH::GetFrame(int n, IScriptEnvironment* env)
 
 ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pixel, ResamplingProgram* program, IScriptEnvironment* env)
 {
-  // even for plain C, maybe once we write more vectorizer compiler-friendly code
   int simd_coeff_count_padding = 8;
-#ifdef INTEL_INTRINSICS
-  if (CPU & CPUF_SSSE3) {
-    // both 8 and 16 bit SSSE3 and AVX2 horizontal resizer benefits from 16 pixels/cycle
-    // float is also using 32 bytes, but as 32/sizeof(float) = 8, then don't need 16
-    if (pixelsize == 1 || pixelsize == 2)
-      simd_coeff_count_padding = 16;
-  }
-#endif
-  // not only prepares and pads for SIMD, but corrects and reorders
-  // coeffs at the right/bottom end, since we have variable kernel size
-  // because of boundary conditions
+
+  // Both 8-bit and 16-bit SSSE3 and AVX2 horizontal resizers benefit from processing 16 pixels per cycle.
+  // Floats also use 32 bytes, but since 32/sizeof(float) = 8, processing 16 pixels is unnecessary.
+  // Even in C, the code is optimized to be vector-friendly.
+  if (pixelsize == 1 || pixelsize == 2)
+    simd_coeff_count_padding = 16;
+
+  // Not only does it prepare and pad for SIMD/vector code, but it also corrects, reorders, and equalizes coefficients 
+  // at the right and bottom ends, since we may have variable kernel sizes due to boundary conditions.
   resize_prepare_coeffs(program, env, simd_coeff_count_padding);
 
   if (pixelsize == 1)
@@ -980,7 +1556,8 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
       return resizer_h_ssse3_generic;
     }
 #endif
-    return resize_h_c_planar<uint8_t, 1>;
+    return resizer_h_c_generic_uint8_16_vectorized<uint8_t, true>;
+    //return resize_h_c_planar<uint8_t, 1>;
   }
   else if (pixelsize == 2) {
 #ifdef INTEL_INTRINSICS
@@ -998,9 +1575,11 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
     }
 #endif
     if (bits_per_pixel == 16)
-      return resize_h_c_planar<uint16_t, 0>;
+      return resizer_h_c_generic_uint8_16_vectorized<uint16_t, false>;
+      // return resize_h_c_planar<uint16_t, 0>;
     else
-      return resize_h_c_planar<uint16_t, 1>;
+      return resizer_h_c_generic_uint8_16_vectorized<uint16_t, true>;
+      // return resize_h_c_planar<uint16_t, 1>;
   }
   else { //if (pixelsize == 4)
 #ifdef INTEL_INTRINSICS
@@ -1181,7 +1760,7 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
 #endif
 #endif
       // C version
-      return resize_v_c_planar<uint8_t, 1>;
+      return resize_v_c_planar_uint8_16_t_auto_vectorized<uint8_t, true>;
     }
     else if (pixelsize == 2)
     {
@@ -1201,9 +1780,9 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
 #endif
       // C version
       if(bits_per_pixel == 16)
-        return resize_v_c_planar<uint16_t, 0>;
+        return resize_v_c_planar_uint8_16_t_auto_vectorized<uint16_t, false>;
       else
-        return resize_v_c_planar<uint16_t, 1>;
+        return resize_v_c_planar_uint8_16_t_auto_vectorized<uint16_t, true>;
     }
     else // pixelsize== 4
     {
@@ -1215,7 +1794,7 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
         return resize_v_sse2_planar_float;
       }
 #endif
-      return resize_v_c_planar<float, 0>;
+      return resize_v_c_planar_float_auto_vectorized;
     }
   }
 }
