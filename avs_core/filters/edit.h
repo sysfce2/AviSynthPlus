@@ -283,7 +283,6 @@ private:
 /**** A few factory methods ****/
 
 AVSValue __cdecl Create_Fade(AVSValue args, void* user_data, IScriptEnvironment* env);
-PClip new_Splice(PClip _child1, PClip _child2, bool realign_sound, IScriptEnvironment* env);
 
 
 #endif  // __Edit_H__

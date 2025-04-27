@@ -780,8 +780,6 @@ static PClip AddBorderPostProcess(PClip child,
     //  3 - force H and V for corner rectangles
   } BarSection;
 
-  BarSection bar;
-
   std::vector<BarSection> bars;
 
   /* Example on LEFT and RIGHT vertical bar
@@ -824,7 +822,7 @@ static PClip AddBorderPostProcess(PClip child,
 
   // First cycle: initialize common parameters and calculate dimensions
   for (int i = 0; i < 8; i++) {
-    memset(&bar, 0, sizeof(BarSection));
+    BarSection bar = {};
 
     const bool isHorizontallyFiltered = (templates[i].direction == 1) || (templates[i].direction == 3);
     const bool isVerticallyFiltered = (templates[i].direction == 2) || (templates[i].direction == 3);
