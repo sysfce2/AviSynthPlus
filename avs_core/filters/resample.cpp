@@ -403,10 +403,11 @@ Horizontals                Hor+Vert    Verticals
 2260                        840                                  SIMD-fmtconv (16 bit output for 8 bits)
 4578    2614   2560 2250   1490       4220  4534   3887  3570    SIMD-MSVC AVX2 3.7.3 (horizontal was memory-boundary unsafe)
 3631    3505   3221 2344   1291 1354  3804  4466   3855  2260    SIMD-MSVC AVX2 3.7.4 Float vertical regression - no time to finish
-3629    3538   3212 2322   1292 1354  3780  4482   3915  3840    SIMD-MSVC AVX2
-                                      4640  5340   4992  3783    SIMD-MSVC AVX2 + incrementing offsets
-2870                        859                                  SIMD-Intel ICX 2025 SSSE3
-4330    4433   3980 2570   1664 1720  5055  5870   5139  3240    SIMD-Intel ICX 2025 AVX2    FIXME, Vertical32 slower than C :)
+3720    3478   3130 2385   1566 1480  5014  5288   5077  3810    SIMD-MSVC AVX2 + incrementing offsets in V, 20-25% gain in integer verticals
+4730    4612   4233 2487   1390 1471  3792  4476   4380  3942    SIMD-ClangCl AVX2, verticals behind MSVC by surprise
+2373    2181   1893 1306    868  723  2660  2137   2670  1886    SIMD-MSVC SSSE3 + incrementing offsets in V, 20-25% gain in integer verticals
+2294    2979   2595 1460    859  976  2623  2865   2625  1962    SIMD-Intel ICX 2025 SSSE3
+4395    4616   4160 2570   1664 1720  5110  5870   5085  2999    SIMD-Intel ICX 2025 AVX2 Surprisingly slow at vertical float FIXME, slower than C :)
 
 * float has different optimization: 8 pixels 2 coeffs
 ** on aarch64 the float benchmarks included a ConvertBits(8) at the end.
@@ -1553,7 +1554,7 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
       return resizer_h_avx2_generic_uint8_t;
     }
     if (CPU & CPUF_SSSE3) {
-      return resizer_h_ssse3_generic;
+      return resizer_h_ssse3_generic_uint8_16<uint8_t, true>;
     }
 #endif
     return resizer_h_c_generic_uint8_16_vectorized<uint8_t, true>;
@@ -1569,9 +1570,9 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
     }
     if (CPU & CPUF_SSSE3) {
       if (bits_per_pixel < 16)
-        return resizer_h_ssse3_generic_uint16_t<true>;
+        return resizer_h_ssse3_generic_uint8_16<uint16_t, true>;
       else
-        return resizer_h_ssse3_generic_uint16_t<false>;
+        return resizer_h_ssse3_generic_uint8_16<uint16_t, false>;
     }
 #endif
     if (bits_per_pixel == 16)

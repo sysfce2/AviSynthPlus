@@ -49,16 +49,11 @@ void resize_v_sse2_planar_uint16_t(BYTE* dst0, const BYTE* src0, int dst_pitch, 
 
 void resize_v_sse2_planar_float(BYTE* dst0, const BYTE* src0, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel);
 
+template<typename pixel_t, bool lessthan16bit>
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("ssse3")))
 #endif
-void resizer_h_ssse3_generic(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-
-template<bool lessthan16bit>
-#if defined(GCC) || defined(CLANG)
-__attribute__((__target__("ssse3")))
-#endif
-void resizer_h_ssse3_generic_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
+void resizer_h_ssse3_generic_uint8_16(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("ssse3")))

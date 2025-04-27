@@ -152,14 +152,15 @@ void resize_v_mmx_planar(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitc
 }
 #endif
 
-void resize_v_sse2_planar(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+void resize_v_sse2_planar(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
 {
   AVS_UNUSED(bits_per_pixel);
 
-  int filter_size = program->filter_size;
-  short* current_coeff = program->pixel_coefficient;
+  const int filter_size = program->filter_size;
+  uint8_t* AVS_RESTRICT dst = (uint8_t * AVS_RESTRICT)dst8;
+  const short* AVS_RESTRICT current_coeff = program->pixel_coefficient;
 
-  __m128i zero = _mm_setzero_si128();
+  const __m128i zero = _mm_setzero_si128();
   const __m128i rounder = _mm_set1_epi32(1 << (FPScale8bits - 1));
 
   const int kernel_size = program->filter_size_real; // not the aligned
@@ -167,7 +168,7 @@ void resize_v_sse2_planar(BYTE* dst, const BYTE* src, int dst_pitch, int src_pit
   const bool notMod2 = kernel_size_mod2 < kernel_size;
 
   for (int y = 0; y < target_height; y++) {
-    int offset = program->pixel_offset[y];
+    const int offset = program->pixel_offset[y];
     const BYTE* src_ptr = src + offset * src_pitch;
 
     // no need wmod8, alignment is safe at least 32
@@ -175,30 +176,31 @@ void resize_v_sse2_planar(BYTE* dst, const BYTE* src, int dst_pitch, int src_pit
       __m128i result_single_lo = rounder;
       __m128i result_single_hi = rounder;
 
-      const uint8_t* src2_ptr = src_ptr + x;
+      const uint8_t* AVS_RESTRICT src2_ptr = src_ptr + x;
 
       // Process pairs of rows for better efficiency (2 coeffs/cycle)
-      for (int i = 0; i < kernel_size_mod2; i += 2) {
-        // Load two coefficients as a single packed value and broadcast
+      int i = 0;
+      for (; i < kernel_size_mod2; i += 2) {
+        // Load _two_ coefficients as a single packed value and broadcast
         __m128i coeff = _mm_set1_epi32(*reinterpret_cast<const int*>(current_coeff + i)); // CO|co|CO|co|CO|co|CO|co
 
-        __m128i src_even = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src2_ptr + i * src_pitch)); // 8x 8bit pixels
-        __m128i src_odd = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src2_ptr + (i + 1) * src_pitch));  // 8x 8bit pixels
+        __m128i src_even = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src2_ptr)); // 8x 8bit pixels
+        __m128i src_odd = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src2_ptr + src_pitch));  // 8x 8bit pixels
         src_even = _mm_unpacklo_epi8(src_even, zero);
         src_odd = _mm_unpacklo_epi8(src_odd, zero);
         __m128i src_lo = _mm_unpacklo_epi16(src_even, src_odd);
         __m128i src_hi = _mm_unpackhi_epi16(src_even, src_odd);
         result_single_lo = _mm_add_epi32(result_single_lo, _mm_madd_epi16(src_lo, coeff)); // a*b + c
         result_single_hi = _mm_add_epi32(result_single_hi, _mm_madd_epi16(src_hi, coeff)); // a*b + c
+        src2_ptr += 2 * src_pitch; // Move to the next pair of rows
       }
 
       // Process the last odd row if needed
       if (notMod2) {
-        const int i = kernel_size_mod2;
         // Load a single coefficients as a single packed value and broadcast
         __m128i coeff = _mm_set1_epi16(*reinterpret_cast<const short*>(current_coeff + i)); // 0|co|0|co|0|co|0|co
 
-        __m128i src_even = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src2_ptr + i * src_pitch)); // 8x 8bit pixels
+        __m128i src_even = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src2_ptr)); // 8x 8bit pixels
         src_even = _mm_unpacklo_epi8(src_even, zero);
         __m128i src_lo = _mm_unpacklo_epi16(src_even, zero);
         __m128i src_hi = _mm_unpackhi_epi16(src_even, zero);
@@ -231,22 +233,19 @@ void resize_v_sse2_planar_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch, 
 {
   AVS_UNUSED(bits_per_pixel);
 
-  int filter_size = program->filter_size;
-  short* current_coeff = program->pixel_coefficient;
-  int wMod8 = (width / 8) * 8;  // Process 8 pixels at a time instead of 16
+  const int filter_size = program->filter_size;
+  const short* AVS_RESTRICT current_coeff = program->pixel_coefficient;
 
   const __m128i zero = _mm_setzero_si128();
   
   // for 16 bits only
-  const short shifttosigned_short = -32768;
-  const int shiftfromsigned_int = 32768 << FPScale16bits;
-  const __m128i shifttosigned = _mm_set1_epi16(-32768);
-  const __m128i shiftfromsigned = _mm_set1_epi32(32768 << FPScale16bits);
+  [[maybe_unused]] const __m128i shifttosigned = _mm_set1_epi16(-32768);
+  [[maybe_unused]] const __m128i shiftfromsigned = _mm_set1_epi32(32768 << FPScale16bits);
 
   const __m128i rounder = _mm_set1_epi32(1 << (FPScale16bits - 1));
 
   const uint16_t* src = (uint16_t*)src8;
-  uint16_t* dst = (uint16_t*)dst8;
+  uint16_t* AVS_RESTRICT dst = (uint16_t* AVS_RESTRICT)dst8;
   dst_pitch = dst_pitch / sizeof(uint16_t);
   src_pitch = src_pitch / sizeof(uint16_t);
 
@@ -258,7 +257,7 @@ void resize_v_sse2_planar_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch, 
   const bool notMod2 = kernel_size_mod2 < kernel_size;
 
   for (int y = 0; y < target_height; y++) {
-    int offset = program->pixel_offset[y];
+    const int offset = program->pixel_offset[y];
     const uint16_t* src_ptr = src + offset * src_pitch;
 
     // 16 byte 8 word (half as many as AVX2)
@@ -268,15 +267,16 @@ void resize_v_sse2_planar_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch, 
       __m128i result_single_lo = rounder;
       __m128i result_single_hi = rounder;
 
-      const uint16_t* src2_ptr = src_ptr + x;
+      const uint16_t* AVS_RESTRICT src2_ptr = src_ptr + x;
 
       // Process pairs of rows for better efficiency (2 coeffs/cycle)
-      for (int i = 0; i < kernel_size_mod2; i += 2) {
-        // Load two coefficients as a single packed value and broadcast
+      int i = 0;
+      for (; i < kernel_size_mod2; i += 2) {
+        // Load _two_ coefficients as a single packed value and broadcast
         __m128i coeff = _mm_set1_epi32(*reinterpret_cast<const int*>(current_coeff + i)); // CO|co|CO|co|CO|co|CO|co
 
-        __m128i src_even = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src2_ptr + i * src_pitch)); // 8x 16bit pixels
-        __m128i src_odd = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src2_ptr + (i + 1) * src_pitch));  // 8x 16bit pixels
+        __m128i src_even = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src2_ptr)); // 8x 16bit pixels
+        __m128i src_odd = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src2_ptr + src_pitch));  // 8x 16bit pixels
         if constexpr (!lessthan16bit) {
           src_even = _mm_add_epi16(src_even, shifttosigned);
           src_odd = _mm_add_epi16(src_odd, shifttosigned);
@@ -285,15 +285,15 @@ void resize_v_sse2_planar_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch, 
         __m128i src_hi = _mm_unpackhi_epi16(src_even, src_odd);
         result_single_lo = _mm_add_epi32(result_single_lo, _mm_madd_epi16(src_lo, coeff)); // a*b + c
         result_single_hi = _mm_add_epi32(result_single_hi, _mm_madd_epi16(src_hi, coeff)); // a*b + c
+        src2_ptr += 2 * src_pitch; // Move to the next pair of rows
       }
 
       // Process the last odd row if needed
       if (notMod2) {
-        const int i = kernel_size_mod2;
         // Load a single coefficients as a single packed value and broadcast
         __m128i coeff = _mm_set1_epi16(*reinterpret_cast<const short*>(current_coeff + i)); // 0|co|0|co|0|co|0|co
 
-        __m128i src_even = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src2_ptr + i * src_pitch)); // 8x 16bit pixels
+        __m128i src_even = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src2_ptr)); // 8x 16bit pixels
         if constexpr (!lessthan16bit) {
           src_even = _mm_add_epi16(src_even, shifttosigned);
         }
@@ -483,7 +483,6 @@ void resizer_h_ssse3_generic_float(BYTE* dst8, const BYTE* src8, int dst_pitch, 
   dst_pitch = dst_pitch / sizeof(float);
   src_pitch = src_pitch / sizeof(float);
 
-  const int wmod8 = width / 8 * 8;
   const int w_safe_mod8 = (program->overread_possible ? program->source_overread_beyond_targetx : width) / 8 * 8;
 
   for (int y = 0; y < height; y++) {
@@ -592,17 +591,39 @@ void resize_v_sse2_planar_float(BYTE* dst8, const BYTE* src8, int dst_pitch, int
 // 8 bit Horizontal.
 // Dual line processing, use template until alignment and end conditions allow.
 
-// Based on AVX2 code
+// Based on AVX2 code, but without the filter_size alignment template
 
-AVS_FORCEINLINE static void process_two_16pixels_h_uint8_t(const uint8_t* src, int begin1, int begin2, int i, short* current_coeff, int filter_size, __m128i& result1, __m128i& result2, const __m128i& zero128) {
+template<typename pixel_t, bool lessthan16bit>
+AVS_FORCEINLINE static void process_two_16pixels_h_uint8_16_core(const pixel_t* AVS_RESTRICT src, int begin1, int begin2, int i, const short* AVS_RESTRICT current_coeff, int filter_size, __m128i& result1, __m128i& result2, 
+  const __m128i& shifttosigned_or_zero128) {
+
+  __m128i data_1_lo, data_1_hi, data_2_lo, data_2_hi;
+
+  if constexpr (sizeof(pixel_t) == 1) {
+    // pixel_t is uint8_t
   __m128i data_1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + begin1 + i));
   __m128i data_2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + begin2 + i));
 
-  // Convert 8-bit unsigned integers to 16-bit integers using unpack
-  __m128i data_1_lo = _mm_unpacklo_epi8(data_1, zero128);
-  __m128i data_1_hi = _mm_unpackhi_epi8(data_1, zero128);
-  __m128i data_2_lo = _mm_unpacklo_epi8(data_2, zero128);
-  __m128i data_2_hi = _mm_unpackhi_epi8(data_2, zero128);
+    data_1_lo = _mm_unpacklo_epi8(data_1, shifttosigned_or_zero128);
+    data_1_hi = _mm_unpackhi_epi8(data_1, shifttosigned_or_zero128);
+    data_2_lo = _mm_unpacklo_epi8(data_2, shifttosigned_or_zero128);
+    data_2_hi = _mm_unpackhi_epi8(data_2, shifttosigned_or_zero128);
+  }
+  else {
+    // pixel_t is uint16_t, at exact 16 bit size an unsigned -> signed 16 bit conversion needed
+    data_1_lo = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + begin1 + i));
+    data_1_hi = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + begin1 + i + 8));
+    if constexpr (!lessthan16bit) {
+      data_1_lo = _mm_add_epi16(data_1_lo, shifttosigned_or_zero128);
+      data_1_hi = _mm_add_epi16(data_1_hi, shifttosigned_or_zero128);
+    }
+    data_2_lo = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + begin2 + i));
+    data_2_hi = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + begin2 + i + 8));
+    if constexpr (!lessthan16bit) {
+      data_2_lo = _mm_add_epi16(data_2_lo, shifttosigned_or_zero128);
+      data_2_hi = _mm_add_epi16(data_2_hi, shifttosigned_or_zero128);
+    }
+  }
 
   __m128i coeff_1_lo = _mm_load_si128(reinterpret_cast<const __m128i*>(current_coeff)); // 8 coeffs
   __m128i coeff_1_hi = _mm_load_si128(reinterpret_cast<const __m128i*>(current_coeff + 8)); // next 8 coeffs
@@ -615,39 +636,58 @@ AVS_FORCEINLINE static void process_two_16pixels_h_uint8_t(const uint8_t* src, i
   result2 = _mm_add_epi32(result2, _mm_madd_epi16(data_2_hi, coeff_2_hi));
 }
 
-template<bool safe_aligned_mode>
-AVS_FORCEINLINE static void process_two_pixels_h_uint8(const uint8_t* src_ptr, int begin1, int begin2, short* current_coeff, int filter_size, __m128i& result1, __m128i& result2, int kernel_size, const __m128i& zero128) {
+template<bool safe_aligned_mode, typename pixel_t, bool lessthan16bit>
+AVS_FORCEINLINE static void process_two_pixels_h_uint8_16(const pixel_t* AVS_RESTRICT src_ptr, int begin1, int begin2, const short* AVS_RESTRICT current_coeff, int filter_size, __m128i& result1, __m128i& result2, int kernel_size, 
+  const __m128i& shifttosigned_or_zero128) {
   int ksmod16;
   if constexpr (safe_aligned_mode)
     ksmod16 = filter_size / 16 * 16;
   else
     ksmod16 = kernel_size / 16 * 16; // danger zone, scanline overread possible. Use exact unaligned kernel_size
-  const uint8_t* src_ptr1 = src_ptr + begin1;
-  const uint8_t* src_ptr2 = src_ptr + begin2;
+  const pixel_t* src_ptr1 = src_ptr + begin1;
+  const pixel_t* src_ptr2 = src_ptr + begin2;
   int i = 0;
 
   // Process 16 elements at a time
   for (; i < ksmod16; i += 16) {
-    process_two_16pixels_h_uint8_t(src_ptr, begin1, begin2, i, current_coeff + i, filter_size, result1, result2, zero128);
+    process_two_16pixels_h_uint8_16_core<pixel_t, lessthan16bit>(src_ptr, begin1, begin2, i, current_coeff + i, filter_size, result1, result2, shifttosigned_or_zero128);
   }
 
   if constexpr (!safe_aligned_mode) {
     // working with the original, unaligned kernel_size
     if (i == kernel_size) return;
 
-    short* current_coeff2 = current_coeff + filter_size; // Points to second pixel's coefficients
+    const short* current_coeff2 = current_coeff + filter_size; // Points to second pixel's coefficients
     const int ksmod8 = kernel_size / 8 * 8;
     const int ksmod4 = kernel_size / 4 * 4;
 
     // Process 8 elements if needed
     if (i < ksmod8) {
       // Process 8 elements for first pixel
-      __m128i data_1 = _mm_unpacklo_epi8(_mm_loadl_epi64(reinterpret_cast<const __m128i*>(src_ptr1 + i)), zero128);
+      __m128i data_1;
+      if constexpr(sizeof(pixel_t) == 1)
+        data_1 = _mm_unpacklo_epi8(_mm_loadl_epi64(reinterpret_cast<const __m128i*>(src_ptr1 + i)), shifttosigned_or_zero128);
+      else {
+        // uint16_t
+        data_1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src_ptr1 + i));
+        if constexpr (!lessthan16bit)
+          data_1 = _mm_add_epi16(data_1, shifttosigned_or_zero128); // unsigned -> signed
+      }
+
       __m128i coeff_1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(current_coeff + i));
       __m128i temp_result1 = _mm_madd_epi16(data_1, coeff_1);
 
       // Process 8 elements for second pixel
-      __m128i data_2 = _mm_unpacklo_epi8(_mm_loadl_epi64(reinterpret_cast<const __m128i*>(src_ptr2 + i)), zero128);
+      __m128i data_2;
+      if constexpr (sizeof(pixel_t) == 1)
+        data_2 = _mm_unpacklo_epi8(_mm_loadl_epi64(reinterpret_cast<const __m128i*>(src_ptr2 + i)), shifttosigned_or_zero128);
+      else {
+        // uint16_t
+        data_2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src_ptr2 + i));
+        if constexpr (!lessthan16bit)
+          data_2 = _mm_add_epi16(data_2, shifttosigned_or_zero128); // unsigned -> signed
+      }
+
       __m128i coeff_2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(current_coeff2 + i));
       __m128i temp_result2 = _mm_madd_epi16(data_2, coeff_2);
 
@@ -662,12 +702,27 @@ AVS_FORCEINLINE static void process_two_pixels_h_uint8(const uint8_t* src_ptr, i
     // Process 4 elements if needed
     if (i < ksmod4) {
       // Process 4 elements for first pixel
-      __m128i data_1 = _mm_unpacklo_epi8(_mm_cvtsi32_si128(*reinterpret_cast<const int*>(src_ptr1 + i)), zero128);
+      __m128i data_1;
+      if constexpr (sizeof(pixel_t) == 1)
+        data_1 = _mm_unpacklo_epi8(_mm_cvtsi32_si128(*reinterpret_cast<const int*>(src_ptr1 + i)), shifttosigned_or_zero128);
+      else {
+        data_1 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src_ptr1 + i));
+        if constexpr (!lessthan16bit)
+          data_1 = _mm_add_epi16(data_1, shifttosigned_or_zero128); // unsigned -> signed
+      }
+
       __m128i coeff_1 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(current_coeff + i));
       __m128i temp_result1 = _mm_madd_epi16(data_1, coeff_1);
 
       // Process 4 elements for second pixel
-      __m128i data_2 = _mm_unpacklo_epi8(_mm_cvtsi32_si128(*reinterpret_cast<const int*>(src_ptr2 + i)), zero128);
+      __m128i data_2;
+      if constexpr (sizeof(pixel_t) == 1)
+        data_2 = _mm_unpacklo_epi8(_mm_cvtsi32_si128(*reinterpret_cast<const int*>(src_ptr2 + i)), shifttosigned_or_zero128);
+      else {
+        data_2 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src_ptr2 + i));
+        if constexpr (!lessthan16bit)
+          data_2 = _mm_add_epi16(data_2, shifttosigned_or_zero128); // unsigned -> signed
+      }
       __m128i coeff_2 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(current_coeff2 + i));
       __m128i temp_result2 = _mm_madd_epi16(data_2, coeff_2);
 
@@ -685,8 +740,21 @@ AVS_FORCEINLINE static void process_two_pixels_h_uint8(const uint8_t* src_ptr, i
       int scalar_sum2[4] = { 0, 0, 0, 0 };
 
       for (; i < kernel_size; i++) {
+        if constexpr (sizeof(pixel_t) == 1) {
         scalar_sum1[i % 4] += src_ptr1[i] * current_coeff[i];
         scalar_sum2[i % 4] += src_ptr2[i] * current_coeff2[i];
+        } else {
+          uint16_t pix1 = src_ptr1[i];
+          uint16_t pix2 = src_ptr2[i];
+
+          if constexpr (!lessthan16bit) {
+            pix1 -= 32768;
+            pix2 -= 32768;
+          }
+
+          scalar_sum1[i % 4] += (short)pix1 * current_coeff[i];
+          scalar_sum2[i % 4] += (short)pix2 * current_coeff2[i];
+        }
       }
 
       // Convert scalar results to SIMD and add to result vectors
@@ -700,18 +768,18 @@ AVS_FORCEINLINE static void process_two_pixels_h_uint8(const uint8_t* src_ptr, i
   }
 }
 
-template<bool is_safe>
+template<bool is_safe, typename pixel_t, bool lessthan16bit>
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("ssse3")))
 #endif
-AVS_FORCEINLINE static void process_eight_pixels_h_uint8(const uint8_t* src, int x, short* current_coeff_base, int filter_size,
-  __m128i& rounder128, __m128i& zero128,
-  uint8_t* dst,
+AVS_FORCEINLINE static void process_eight_pixels_h_uint8_16(const pixel_t* AVS_RESTRICT src, int x, const short* current_coeff_base, int filter_size,
+  __m128i& rounder128, __m128i& shifttosigned_or_zero128, __m128i& clamp_limit,
+  pixel_t* AVS_RESTRICT dst,
   ResamplingProgram* program)
 {
   assert(program->filter_size_alignment >= 16); // code assumes this
 
-  short* current_coeff = current_coeff_base + x * filter_size;
+  const short* AVS_RESTRICT current_coeff = current_coeff_base + x * filter_size;
   const int unaligned_kernel_size = program->filter_size_real;
 
   // Unrolled processing of all 8 pixels
@@ -721,7 +789,7 @@ AVS_FORCEINLINE static void process_eight_pixels_h_uint8(const uint8_t* src, int
   __m128i result1 = rounder128;
   int begin0 = program->pixel_offset[x + 0];
   int begin1 = program->pixel_offset[x + 1];
-  process_two_pixels_h_uint8<is_safe>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size, zero128);
+  process_two_pixels_h_uint8_16<is_safe, pixel_t, lessthan16bit>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size, shifttosigned_or_zero128);
   current_coeff += 2 * filter_size;
   __m128i sumQuad12 = _mm_hadd_epi32(result0, result1);
 
@@ -730,7 +798,7 @@ AVS_FORCEINLINE static void process_eight_pixels_h_uint8(const uint8_t* src, int
   result1 = rounder128;
   begin0 = program->pixel_offset[x + 2];
   begin1 = program->pixel_offset[x + 3];
-  process_two_pixels_h_uint8<is_safe>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size, zero128);
+  process_two_pixels_h_uint8_16<is_safe, pixel_t, lessthan16bit>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size, shifttosigned_or_zero128);
   current_coeff += 2 * filter_size;
   __m128i sumQuad1234 = _mm_hadd_epi32(sumQuad12, _mm_hadd_epi32(result0, result1));
 
@@ -739,7 +807,7 @@ AVS_FORCEINLINE static void process_eight_pixels_h_uint8(const uint8_t* src, int
   result1 = rounder128;
   begin0 = program->pixel_offset[x + 4];
   begin1 = program->pixel_offset[x + 5];
-  process_two_pixels_h_uint8<is_safe>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size, zero128);
+  process_two_pixels_h_uint8_16<is_safe, pixel_t, lessthan16bit>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size, shifttosigned_or_zero128);
   current_coeff += 2 * filter_size;
   __m128i sumQuad56 = _mm_hadd_epi32(result0, result1);
 
@@ -748,49 +816,78 @@ AVS_FORCEINLINE static void process_eight_pixels_h_uint8(const uint8_t* src, int
   result1 = rounder128;
   begin0 = program->pixel_offset[x + 6];
   begin1 = program->pixel_offset[x + 7];
-  process_two_pixels_h_uint8<is_safe>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size, zero128);
+  process_two_pixels_h_uint8_16<is_safe, pixel_t, lessthan16bit>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size, shifttosigned_or_zero128);
   //current_coeff += 2 * filter_size;
   __m128i sumQuad5678 = _mm_hadd_epi32(sumQuad56, _mm_hadd_epi32(result0, result1));
 
   __m128i pix1234 = sumQuad1234;
   __m128i pix5678 = sumQuad5678;
 
+  // correct if signed, scale back, store
+  if constexpr (sizeof(pixel_t) == 2 && !lessthan16bit) {
+    const __m128i shiftfromsigned = _mm_set1_epi32(+32768 << FPScale16bits); // yes, 32 bit data. for 16 bits only
+    pix1234 = _mm_add_epi32(pix1234, shiftfromsigned);
+    pix5678 = _mm_add_epi32(pix5678, shiftfromsigned);
+  }
+
+  const int current_fp_scale_bits = (sizeof(pixel_t) == 1) ? FPScale8bits : FPScale16bits;
   // scale back, shuffle, store
-  __m128i result1234 = _mm_srai_epi32(pix1234, FPScale8bits);
-  __m128i result5678 = _mm_srai_epi32(pix5678, FPScale8bits);
+  __m128i result1234 = _mm_srai_epi32(pix1234, current_fp_scale_bits);
+  __m128i result5678 = _mm_srai_epi32(pix5678, current_fp_scale_bits);
   __m128i result_2x4x_uint16_128 = _MM_PACKUS_EPI32(result1234, result5678);
-  __m128i result_2x4x_uint8 = _mm_packus_epi16(result_2x4x_uint16_128, zero128);
+  if constexpr (sizeof(pixel_t) == 1) {
+    __m128i result_2x4x_uint8 = _mm_packus_epi16(result_2x4x_uint16_128, shifttosigned_or_zero128);
   _mm_storel_epi64(reinterpret_cast<__m128i*>(dst + x), result_2x4x_uint8);
 }
+  else {
+    // uint16_t
+    if constexpr (lessthan16bit)
+      result_2x4x_uint16_128 = _MM_MIN_EPU16(result_2x4x_uint16_128, clamp_limit); // extra clamp for 10-14 bits
 
-//-------- uint8_t Horizontal (8bit)
+    _mm_store_si128(reinterpret_cast<__m128i*>(dst + x), result_2x4x_uint16_128);
+
+  }
+}
+
+//-------- uint8/16_t Horizontal
 // 4 pixels at a time. 
 // ssse3: _mm_hadd_epi32
+template<typename pixel_t, bool lessthan16bit>
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("ssse3")))
 #endif
-void resizer_h_ssse3_generic(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  AVS_UNUSED(bits_per_pixel);
+void resizer_h_ssse3_generic_uint8_16(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
   int filter_size = program->filter_size;
-  __m128i zero128 = _mm_setzero_si128();
-  __m128i rounder128 = _mm_setr_epi32(1 << (FPScale8bits - 1), 0, 0, 0);
+  const int current_fp_scale_bits = (sizeof(pixel_t) == 1) ? FPScale8bits : FPScale16bits;
+  __m128i rounder128 = _mm_setr_epi32(1 << (current_fp_scale_bits - 1), 0, 0, 0);
 
-  const int wmod8 = width / 8 * 8;
+  __m128i shifttosigned_or_zero128;
+  if constexpr(sizeof(pixel_t) == 1)
+    shifttosigned_or_zero128 = _mm_setzero_si128();
+  else
+    shifttosigned_or_zero128 = _mm_set1_epi16(-32768); // for 16 bits only
+  __m128i clamp_limit = _mm_set1_epi16((short)((1 << bits_per_pixel) - 1)); // clamp limit for 8< <16 bits
+
+  const pixel_t* src = reinterpret_cast<const pixel_t* AVS_RESTRICT>(src8);
+  pixel_t* dst = reinterpret_cast<pixel_t* AVS_RESTRICT>(dst8);
+  dst_pitch /= sizeof(pixel_t);
+  src_pitch /= sizeof(pixel_t);
+
   const int w_safe_mod8 = (program->overread_possible ? program->source_overread_beyond_targetx : width) / 8 * 8;
 
   for (int y = 0; y < height; y++) {
-    short* current_coeff_base = program->pixel_coefficient;
+    const short* AVS_RESTRICT current_coeff_base = program->pixel_coefficient;
 
     // Process safe aligned pixels
     for (int x = 0; x < w_safe_mod8; x += 8) {
-      process_eight_pixels_h_uint8<true>(src, x, current_coeff_base, filter_size, rounder128, zero128, dst, program);
+      process_eight_pixels_h_uint8_16<true, pixel_t, lessthan16bit>(src, x, current_coeff_base, filter_size, rounder128, shifttosigned_or_zero128, clamp_limit, dst, program);
     }
 
     // Process up to the actual kernel size instead of the aligned filter_size to prevent overreading beyond the last source pixel.
     // We assume extra offset entries were added to the p->pixel_offset array (aligned to 8 during initialization).
     // This may store 1-7 false pixels, but they are ignored since Avisynth will not read beyond the width.
     for (int x = w_safe_mod8; x < width; x += 8) {
-      process_eight_pixels_h_uint8<false>(src, x, current_coeff_base, filter_size, rounder128, zero128, dst, program);
+      process_eight_pixels_h_uint8_16<false, pixel_t, lessthan16bit>(src, x, current_coeff_base, filter_size, rounder128, shifttosigned_or_zero128, clamp_limit, dst, program);
     }
 
     dst += dst_pitch;
@@ -799,254 +896,10 @@ void resizer_h_ssse3_generic(BYTE* dst, const BYTE* src, int dst_pitch, int src_
 }
 
 // 16 bit Horizontal
-// 2x16 pixels of two consecutive offset entries.
-template<bool lessthan16bit>
-AVS_FORCEINLINE static void process_two_16pixels_h_uint16_t(const uint16_t* src, int begin1, int begin2, int i, short* current_coeff, int filter_size,
-  __m128i& result1, __m128i& result2, __m128i& shifttosigned) {
-  __m128i data_1_low = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + begin1 + i));
-  __m128i data_1_high = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + begin1 + i + 8));
-  if constexpr (!lessthan16bit) {
-    data_1_low = _mm_add_epi16(data_1_low, shifttosigned); // unsigned -> signed
-    data_1_high = _mm_add_epi16(data_1_high, shifttosigned); // unsigned -> signed
-  }
-  __m128i data_2_low = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + begin2 + i));
-  __m128i data_2_high = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + begin2 + i + 8));
-  if constexpr (!lessthan16bit) {
-    data_2_low = _mm_add_epi16(data_2_low, shifttosigned); // unsigned -> signed
-    data_2_high = _mm_add_epi16(data_2_high, shifttosigned); // unsigned -> signed
-  }
-  __m128i coeff_1_low = _mm_load_si128(reinterpret_cast<const __m128i*>(current_coeff)); // 8 coeffs
-  __m128i coeff_1_high = _mm_load_si128(reinterpret_cast<const __m128i*>(current_coeff + 8)); // 8 coeffs
-  __m128i coeff_2_low = _mm_load_si128(reinterpret_cast<const __m128i*>(current_coeff + 1 * filter_size)); // 8x second pixel's coefficients
-  __m128i coeff_2_high = _mm_load_si128(reinterpret_cast<const __m128i*>(current_coeff + 1 * filter_size + 8)); // 8x second pixel's coefficients
 
-  result1 = _mm_add_epi32(result1, _mm_madd_epi16(data_1_low, coeff_1_low));
-  result1 = _mm_add_epi32(result1, _mm_madd_epi16(data_1_high, coeff_1_high));
-  result2 = _mm_add_epi32(result2, _mm_madd_epi16(data_2_low, coeff_2_low));
-  result2 = _mm_add_epi32(result2, _mm_madd_epi16(data_2_high, coeff_2_high));
-}
-
-template<bool safe_aligned_mode, bool lessthan16bit>
-AVS_FORCEINLINE static void process_two_pixels_h_uint16(const uint16_t* src_ptr, int begin1, int begin2, short* current_coeff, int filter_size, __m128i& result1, __m128i& result2, int kernel_size) {
-  int ksmod16;
-  if constexpr (safe_aligned_mode)
-    ksmod16 = filter_size / 16 * 16;
-  else
-    ksmod16 = kernel_size / 16 * 16; // danger zone, scanline overread possible. Use exact unaligned kernel_size
-  const uint16_t* src_ptr1 = src_ptr + begin1;
-  const uint16_t* src_ptr2 = src_ptr + begin2;
-
-  __m128i shifttosigned = _mm_set1_epi16(-32768); // for 16 bits only
-
-  // Process 16 elements at a time
-  int i = 0;
-  for (; i < ksmod16; i += 16) {
-    process_two_16pixels_h_uint16_t<lessthan16bit>(src_ptr, begin1, begin2, i, current_coeff + i, filter_size, result1, result2, shifttosigned);
-  }
-
-  if constexpr (!safe_aligned_mode) {
-    // working with the original, unaligned kernel_size
-    if (i == kernel_size) return;
-
-    short* current_coeff2 = current_coeff + filter_size; // Points to second pixel's coefficients
-    const int ksmod8 = kernel_size / 8 * 8;
-    const int ksmod4 = kernel_size / 4 * 4;
-
-    // Process 8 elements if needed
-    if (i < ksmod8) {
-      // Process 8 elements for first pixel
-      __m128i data_1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src_ptr1 + i));
-      if constexpr (!lessthan16bit)
-        data_1 = _mm_add_epi16(data_1, shifttosigned); // unsigned -> signed
-      __m128i coeff_1 = _mm_load_si128(reinterpret_cast<const __m128i*>(current_coeff + i));
-      __m128i temp_result1 = _mm_madd_epi16(data_1, coeff_1);
-
-      // Process 8 elements for second pixel
-      __m128i data_2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src_ptr2 + i));
-      if constexpr (!lessthan16bit)
-        data_2 = _mm_add_epi16(data_2, shifttosigned); // unsigned -> signed
-      __m128i coeff_2 = _mm_load_si128(reinterpret_cast<const __m128i*>(current_coeff2 + i));
-      __m128i temp_result2 = _mm_madd_epi16(data_2, coeff_2);
-
-      // update result vectors
-      result1 = _mm_add_epi32(result1, temp_result1);
-      result2 = _mm_add_epi32(result2, temp_result2);
-
-      i += 8;
-      if (i == kernel_size) return;
-    }
-
-    // Process 4 elements if needed
-    if (i < ksmod4) {
-      // Process 4 elements for first pixel
-      __m128i data_1 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src_ptr1 + i));
-      if constexpr (!lessthan16bit)
-        data_1 = _mm_add_epi16(data_1, shifttosigned); // unsigned -> signed
-      __m128i coeff_1 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(current_coeff + i));
-      __m128i temp_result1 = _mm_madd_epi16(data_1, coeff_1);
-
-      // Process 4 elements for second pixel
-      __m128i data_2 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src_ptr2 + i));
-      if constexpr (!lessthan16bit)
-        data_2 = _mm_add_epi16(data_2, shifttosigned); // unsigned -> signed
-      __m128i coeff_2 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(current_coeff2 + i));
-      __m128i temp_result2 = _mm_madd_epi16(data_2, coeff_2);
-
-      // update result vectors
-      result1 = _mm_add_epi32(result1, temp_result1);
-      result2 = _mm_add_epi32(result2, temp_result2);
-
-      i += 4;
-      if (i == kernel_size) return;
-    }
-
-    // Process remaining elements with scalar operations
-    if (i < kernel_size) {
-      int scalar_sum1[4] = { 0, 0, 0, 0 }; // like an __m128i
-      int scalar_sum2[4] = { 0, 0, 0, 0 };
-
-      for (; i < kernel_size; i++) {
-        uint16_t pix1 = src_ptr1[i];
-        uint16_t pix2 = src_ptr2[i];
-
-        if constexpr (!lessthan16bit) {
-          pix1 -= 32768;
-          pix2 -= 32768;
-        }
-
-        scalar_sum1[i % 4] += (short)pix1 * current_coeff[i];
-        scalar_sum2[i % 4] += (short)pix2 * current_coeff2[i];
-      }
-
-      // Convert scalar results to SIMD and add to result vectors
-      __m128i temp_result1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(scalar_sum1));
-      __m128i temp_result2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(scalar_sum2));
-
-      result1 = _mm_add_epi32(result1, temp_result1);
-      result2 = _mm_add_epi32(result2, temp_result2);
-    }
-  }
-}
-
-template<bool is_safe, bool lessthan16bit>
-#if defined(GCC) || defined(CLANG)
-__attribute__((__target__("ssse3")))
-#endif
-AVS_FORCEINLINE static void process_eight_pixels_h_uint16(const uint16_t* src, int x, short* current_coeff_base, int filter_size,
-  __m128i& rounder128, __m128i& zero128,
-  uint16_t* dst,
-  ResamplingProgram* program,
-  __m128i& clamp_limit)
-{
-  assert(program->filter_size_alignment >= 16); // code assumes this
-
-  short* current_coeff = current_coeff_base + x * filter_size;
-  const int unaligned_kernel_size = program->filter_size_real;
-
-  const __m128i shiftfromsigned = _mm_set1_epi32(+32768 << FPScale16bits); // yes, 32 bit data. for 16 bits only
-  // Unrolled processing of all 8 pixels
-
-  // 0 & 1
-  __m128i result0 = rounder128;
-  __m128i result1 = rounder128;
-  int begin0 = program->pixel_offset[x + 0];
-  int begin1 = program->pixel_offset[x + 1];
-  process_two_pixels_h_uint16<is_safe, lessthan16bit>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size);
-  current_coeff += 2 * filter_size;
-  __m128i sumQuad12 = _mm_hadd_epi32(result0, result1);
-
-  // 2 & 3
-  result0 = rounder128;
-  result1 = rounder128;
-  begin0 = program->pixel_offset[x + 2];
-  begin1 = program->pixel_offset[x + 3];
-  process_two_pixels_h_uint16<is_safe, lessthan16bit>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size);
-  current_coeff += 2 * filter_size;
-  __m128i sumQuad1234 = _mm_hadd_epi32(sumQuad12, _mm_hadd_epi32(result0, result1));
-
-  // 4 & 5
-  result0 = rounder128;
-  result1 = rounder128;
-  begin0 = program->pixel_offset[x + 4];
-  begin1 = program->pixel_offset[x + 5];
-  process_two_pixels_h_uint16<is_safe, lessthan16bit>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size);
-  current_coeff += 2 * filter_size;
-  __m128i sumQuad56 = _mm_hadd_epi32(result0, result1);
-
-  // 6 & 7
-  result0 = rounder128;
-  result1 = rounder128;
-  begin0 = program->pixel_offset[x + 6];
-  begin1 = program->pixel_offset[x + 7];
-  process_two_pixels_h_uint16<is_safe, lessthan16bit>(src, begin0, begin1, current_coeff, filter_size, result0, result1, unaligned_kernel_size);
-  //current_coeff += 2 * filter_size;
-  __m128i sumQuad5678 = _mm_hadd_epi32(sumQuad56, _mm_hadd_epi32(result0, result1));
-
-  __m128i pix1234 = sumQuad1234;
-  __m128i pix5678 = sumQuad5678;
-
-  // correct if signed, scale back, store
-  if constexpr (!lessthan16bit) {
-    pix1234 = _mm_add_epi32(pix1234, shiftfromsigned);
-    pix5678 = _mm_add_epi32(pix5678, shiftfromsigned);
-  }  
-  // scale back, shuffle, store
-  __m128i result_lo = _mm_srai_epi32(pix1234, FPScale16bits);
-  __m128i result_hi = _mm_srai_epi32(pix5678, FPScale16bits);
-  __m128i result_2x4x_uint16_128 = _MM_PACKUS_EPI32(result_lo, result_hi);
- 
-  if constexpr (lessthan16bit)
-    result_2x4x_uint16_128 = _MM_MIN_EPU16(result_2x4x_uint16_128, clamp_limit); // extra clamp for 10-14 bits
-
-  _mm_store_si128(reinterpret_cast<__m128i*>(dst + x), result_2x4x_uint16_128);
-
-}
-
-//-------- uint16_t Horizontal (16bit)
-// 8 pixels at a time. 
-// ssse3: _mm_hadd_epi32
-template<bool lessthan16bit>
-#if defined(GCC) || defined(CLANG)
-__attribute__((__target__("ssse3")))
-#endif
-void resizer_h_ssse3_generic_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  int filter_size = program->filter_size;
-  __m128i zero128 = _mm_setzero_si128();
-  __m128i rounder128 = _mm_setr_epi32(1 << (FPScale16bits - 1), 0, 0, 0);
-
-  __m128i clamp_limit = _mm_set1_epi16((short)((1 << bits_per_pixel) - 1)); // clamp limit for <16 bits
-
-  const uint16_t* src = reinterpret_cast<const uint16_t*>(src8);
-  uint16_t* dst = reinterpret_cast<uint16_t*>(dst8);
-  dst_pitch /= sizeof(uint16_t);
-  src_pitch /= sizeof(uint16_t);
-
-  const int wmod8 = width / 8 * 8;
-  const int w_safe_mod8 = (program->overread_possible ? program->source_overread_beyond_targetx : width) / 8 * 8;
-
-  for (int y = 0; y < height; y++) {
-    short* current_coeff_base = program->pixel_coefficient;
-
-    // Process safe aligned pixels
-    for (int x = 0; x < w_safe_mod8; x += 8) {
-      process_eight_pixels_h_uint16<true, lessthan16bit>(src, x, current_coeff_base, filter_size, rounder128, zero128, dst, program, clamp_limit);
-    }
-
-    // Process up to the actual kernel size instead of the aligned filter_size to prevent overreading beyond the last source pixel.
-    // We assume extra offset entries were added to the p->pixel_offset array (aligned to 8 during initialization).
-    // This may store 1-7 false pixels, but they are ignored since Avisynth will not read beyond the width.
-    for (int x = w_safe_mod8; x < width; x += 8) {
-      process_eight_pixels_h_uint16<false, lessthan16bit>(src, x, current_coeff_base, filter_size, rounder128, zero128, dst, program, clamp_limit);
-    }
-
-    dst += dst_pitch;
-    src += src_pitch;
-  }
-}
-
-// instantiate
-template void resizer_h_ssse3_generic_uint16_t<false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resizer_h_ssse3_generic_uint16_t<true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
+template void resizer_h_ssse3_generic_uint8_16<uint8_t, true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
+template void resizer_h_ssse3_generic_uint8_16<uint16_t, false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
+template void resizer_h_ssse3_generic_uint8_16<uint16_t, true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 
 template void resize_v_sse2_planar_uint16_t<false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel);
 template void resize_v_sse2_planar_uint16_t<true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel);
