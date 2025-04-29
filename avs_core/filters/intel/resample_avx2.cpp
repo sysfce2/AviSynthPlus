@@ -627,7 +627,7 @@ void resizer_h_avx2_generic_float(BYTE* dst8, const BYTE* src8, int dst_pitch, i
 // end of H float
 
 //-------- 256 bit Verticals
-
+/*
 void resize_v_avx2_planar_uint8_t(BYTE* AVS_RESTRICT dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
 {
   AVS_UNUSED(bits_per_pixel);
@@ -702,7 +702,126 @@ void resize_v_avx2_planar_uint8_t(BYTE* AVS_RESTRICT dst, const BYTE* src, int d
     current_coeff += filter_size;
   }
 }
+*/
 
+void resize_v_avx2_planar_uint8_t(BYTE* AVS_RESTRICT dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+{
+    AVS_UNUSED(bits_per_pixel);
+    int filter_size = program->filter_size;
+    const short* AVS_RESTRICT current_coeff = program->pixel_coefficient;
+    __m256i rounder = _mm256_set1_epi32(1 << (FPScale8bits - 1));
+    __m256i zero = _mm256_setzero_si256();
+
+    const int kernel_size = program->filter_size_real; // not the aligned
+    const int kernel_size_mod2 = (kernel_size / 2) * 2;
+
+    for (int y = 0; y < target_height; y++) {
+        int offset = program->pixel_offset[y];
+        const BYTE* AVS_RESTRICT src_ptr = src + offset * src_pitch;
+
+        // 32 byte 32 pixel
+        // no need wmod16, alignment is safe at least 32
+        for (int x = 0; x < width; x += 32) { // was +=16
+
+            __m256i result_single_lo = rounder;
+            __m256i result_single_hi = rounder;
+
+            __m256i result_single_lo2 = rounder;
+            __m256i result_single_hi2 = rounder;
+
+            const uint8_t* AVS_RESTRICT src2_ptr = src_ptr + x;
+
+            // Process pairs of rows for better efficiency (2 coeffs/cycle)
+            int i = 0;
+            for (; i < kernel_size_mod2; i += 2) {
+
+                // Load two coefficients as a single packed value and broadcast
+                __m256i coeff = _mm256_set1_epi32(*reinterpret_cast<const int*>(current_coeff + i)); // CO|co|CO|co|CO|co|CO|co   CO|co|CO|co|CO|co|CO|co
+
+                __m256i src_even = _mm256_cvtepu8_epi16(_mm_loadu_si128(reinterpret_cast<const __m128i*>(src2_ptr))); // 16x 8->16bit pixels
+                __m256i src_odd = _mm256_cvtepu8_epi16(_mm_loadu_si128(reinterpret_cast<const __m128i*>(src2_ptr + src_pitch)));  // 16x 8->16bit pixels
+
+                __m256i src_even2 = _mm256_cvtepu8_epi16(_mm_loadu_si128(reinterpret_cast<const __m128i*>(src2_ptr + 16))); // 16x 8->16bit pixels
+                __m256i src_odd2 = _mm256_cvtepu8_epi16(_mm_loadu_si128(reinterpret_cast<const __m128i*>(src2_ptr + src_pitch + 16)));  // 16x 8->16bit pixels
+
+
+                __m256i src_lo = _mm256_unpacklo_epi16(src_even, src_odd);
+                __m256i src_hi = _mm256_unpackhi_epi16(src_even, src_odd);
+
+                __m256i src_lo2 = _mm256_unpacklo_epi16(src_even2, src_odd2);
+                __m256i src_hi2 = _mm256_unpackhi_epi16(src_even2, src_odd2);
+
+
+                result_single_lo = _mm256_add_epi32(result_single_lo, _mm256_madd_epi16(src_lo, coeff)); // a*b + c
+                result_single_hi = _mm256_add_epi32(result_single_hi, _mm256_madd_epi16(src_hi, coeff)); // a*b + c
+
+                result_single_lo2 = _mm256_add_epi32(result_single_lo2, _mm256_madd_epi16(src_lo2, coeff)); // a*b + c
+                result_single_hi2 = _mm256_add_epi32(result_single_hi2, _mm256_madd_epi16(src_hi2, coeff)); // a*b + c
+
+                src2_ptr += 2 * src_pitch;
+            }
+
+            // Process the last odd row if needed
+            for (; i < kernel_size; i++) {
+                // Broadcast a single coefficients
+                __m256i coeff = _mm256_set1_epi16(*reinterpret_cast<const short*>(current_coeff + i)); // 0|co|0|co|0|co|0|co   0|co|0|co|0|co|0|co
+
+                __m256i src_even = _mm256_cvtepu8_epi16(_mm_loadu_si128(reinterpret_cast<const __m128i*>(src2_ptr))); // 16x 8->16bit pixels
+
+                __m256i src_even2 = _mm256_cvtepu8_epi16(_mm_loadu_si128(reinterpret_cast<const __m128i*>(src2_ptr + 16))); // 16x 8->16bit pixels
+
+                __m256i src_lo = _mm256_unpacklo_epi16(src_even, zero);
+                __m256i src_hi = _mm256_unpackhi_epi16(src_even, zero);
+
+                __m256i src_lo2 = _mm256_unpacklo_epi16(src_even2, zero);
+                __m256i src_hi2 = _mm256_unpackhi_epi16(src_even2, zero);
+
+                result_single_lo = _mm256_add_epi32(result_single_lo, _mm256_madd_epi16(src_lo, coeff)); // a*b + c
+                result_single_hi = _mm256_add_epi32(result_single_hi, _mm256_madd_epi16(src_hi, coeff)); // a*b + c
+
+                result_single_lo2 = _mm256_add_epi32(result_single_lo2, _mm256_madd_epi16(src_lo2, coeff)); // a*b + c
+                result_single_hi2 = _mm256_add_epi32(result_single_hi2, _mm256_madd_epi16(src_hi2, coeff)); // a*b + c
+
+                src2_ptr += src_pitch;
+
+            }
+
+            // scale back, store
+            __m256i result_lo = result_single_lo;
+            __m256i result_hi = result_single_hi;
+
+            __m256i result_lo2 = result_single_lo2;
+            __m256i result_hi2 = result_single_hi2;
+
+
+            // shift back integer arithmetic 14 bits precision
+            result_lo = _mm256_srai_epi32(result_lo, FPScale8bits);
+            result_hi = _mm256_srai_epi32(result_hi, FPScale8bits);
+
+            result_lo2 = _mm256_srai_epi32(result_lo2, FPScale8bits);
+            result_hi2 = _mm256_srai_epi32(result_hi2, FPScale8bits);
+
+            __m256i result_2x8x_uint16 = _mm256_packus_epi32(result_lo, result_hi);
+
+            __m256i result_2x8x_uint16_2 = _mm256_packus_epi32(result_lo2, result_hi2);
+
+            __m128i result128_lo = _mm256_castsi256_si128(result_2x8x_uint16);
+            __m128i result128_hi = _mm256_extractf128_si256(result_2x8x_uint16, 1);
+            __m128i result128 = _mm_packus_epi16(result128_lo, result128_hi);
+
+            __m128i result128_lo2 = _mm256_castsi256_si128(result_2x8x_uint16_2);
+            __m128i result128_hi2 = _mm256_extractf128_si256(result_2x8x_uint16_2, 1);
+            __m128i result128_2 = _mm_packus_epi16(result128_lo2, result128_hi2);
+
+
+            _mm_store_si128(reinterpret_cast<__m128i*>(dst + x), result128);
+            _mm_store_si128(reinterpret_cast<__m128i*>(dst + x + 16), result128_2);
+
+        }
+        dst += dst_pitch;
+        current_coeff += filter_size;
+    }
+}
 
 template<bool lessthan16bit>
 void resize_v_avx2_planar_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
