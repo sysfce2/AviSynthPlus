@@ -56,8 +56,9 @@ static AVS_FORCEINLINE __m256 Eightpixels_to_floats(const pixel_t* src) {
   return _mm256_cvtepi32_ps(srci);
 }
 
-template<typename pixel_t, int bits_per_pixel>
+template<typename pixel_t>
 static AVS_FORCEINLINE void Store_Eightpixels(pixel_t* dst, __m256 what, const __m256 rounder) {
+  // trunc(x + 0.5f)
   what = _mm256_add_ps(what, rounder); // round
   __m256i si32 = _mm256_cvttps_epi32(what); // truncate
   __m256i result = _mm256_packus_epi32(si32, si32); // only low 8 words needed
@@ -93,10 +94,10 @@ AVS_FORCEINLINE static __m256 overlay_blend_avx2_core_new(const __m256& p1_f, co
   return res;
 } 
 
-template<bool has_mask, typename pixel_t, int bits_per_pixel>
+template<bool has_mask, typename pixel_t>
 void overlay_blend_avx2_uint(BYTE* p1, const BYTE* p2, const BYTE* mask,
   const int p1_pitch, const int p2_pitch, const int mask_pitch,
-  const int width, const int height, const int opacity, const float opacity_f)
+  const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel)
 {
 
   auto rounder = _mm256_set1_ps(0.5f);
@@ -133,12 +134,12 @@ void overlay_blend_avx2_uint(BYTE* p1, const BYTE* p2, const BYTE* mask,
         result_2 = overlay_blend_avx2_core_new(unpacked_p1_2, unpacked_p2_2, factor_v);
       }
 
-      Store_Eightpixels<pixel_t, bits_per_pixel>((pixel_t*)(p1 + x), result, rounder);
-      Store_Eightpixels<pixel_t, bits_per_pixel>((pixel_t*)(p1 + x + bytes_per_cycle / 2), result_2, rounder);
+      Store_Eightpixels<pixel_t>((pixel_t*)(p1 + x), result, rounder);
+      Store_Eightpixels<pixel_t>((pixel_t*)(p1 + x + bytes_per_cycle / 2), result_2, rounder);
     }
 
     // Leftover value
-
+    // Working with exact dimension, overlay is possible atop an existing frame at any position
     for (int x = wMod16 / sizeof(pixel_t); x < width; x++) {
       const float new_factor = has_mask ? static_cast<float>(reinterpret_cast<const pixel_t*>(mask)[x]) * factor : factor;
       auto result = overlay_blend_c_core_simple(reinterpret_cast<pixel_t*>(p1)[x], reinterpret_cast<const pixel_t*>(p2)[x], new_factor);
@@ -154,32 +155,20 @@ void overlay_blend_avx2_uint(BYTE* p1, const BYTE* p2, const BYTE* mask,
 
 // instantiate
 // mask yes/no
-template void overlay_blend_avx2_uint<true, uint8_t, 8>(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
-template void overlay_blend_avx2_uint<true, uint16_t, 10>(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
-template void overlay_blend_avx2_uint<true, uint16_t, 12>(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
-template void overlay_blend_avx2_uint<true, uint16_t, 14>(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
-template void overlay_blend_avx2_uint<true, uint16_t, 16>(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
+template void overlay_blend_avx2_uint<true, uint8_t>(BYTE* p1, const BYTE* p2, const BYTE* mask,
+  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
+template void overlay_blend_avx2_uint<true, uint16_t>(BYTE* p1, const BYTE* p2, const BYTE* mask,
+  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
 //--
-template void overlay_blend_avx2_uint<false, uint8_t, 8>(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
-template void overlay_blend_avx2_uint<false, uint16_t, 10>(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
-template void overlay_blend_avx2_uint<false, uint16_t, 12>(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
-template void overlay_blend_avx2_uint<false, uint16_t, 14>(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
-template void overlay_blend_avx2_uint<false, uint16_t, 16>(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
+template void overlay_blend_avx2_uint<false, uint8_t>(BYTE* p1, const BYTE* p2, const BYTE* mask,
+  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
+template void overlay_blend_avx2_uint<false, uint16_t>(BYTE* p1, const BYTE* p2, const BYTE* mask,
+  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
 
 template<bool has_mask>
 void overlay_blend_avx2_float(BYTE* p1, const BYTE* p2, const BYTE* mask,
   const int p1_pitch, const int p2_pitch, const int mask_pitch,
-  const int width, const int height, const int opacity, const float opacity_f)
+  const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel)
 {
 
   const int realwidth = width * sizeof(float);
@@ -205,7 +194,7 @@ void overlay_blend_avx2_float(BYTE* p1, const BYTE* p2, const BYTE* mask,
     }
 
     // Leftover value
-
+    // Working with exact dimension, overlay is possible atop an existing frame at any position
     for (int x = wMod32 / sizeof(float); x < width; x++) {
       auto new_mask = has_mask ? reinterpret_cast<const float*>(mask)[x] * opacity_f : opacity_f;
       auto p1x = reinterpret_cast<float*>(p1)[x];
@@ -223,7 +212,7 @@ void overlay_blend_avx2_float(BYTE* p1, const BYTE* p2, const BYTE* mask,
 }
 
 template void overlay_blend_avx2_float<false>(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
+  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
 template void overlay_blend_avx2_float<true>(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
+  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
 

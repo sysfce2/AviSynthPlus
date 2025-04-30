@@ -29,12 +29,12 @@
 #ifndef __blend_common_avx2_h
 #define __blend_common_avx2_h
 
-template<bool has_mask, typename pixel_t, int bits_per_pixel>
+template<bool has_mask, typename pixel_t>
 void overlay_blend_avx2_uint(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
+  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
 
 template<bool has_mask>
 void overlay_blend_avx2_float(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f);
+  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
 
 #endif // __blend_common_avx2_h

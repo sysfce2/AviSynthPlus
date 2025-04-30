@@ -54,8 +54,7 @@ enum {
   OF_SoftLight,
   OF_HardLight,
   OF_Difference,
-  OF_Exclusion,
-  OF_Blend_Compat
+  OF_Exclusion
 };
 
 class OverlayFunction {

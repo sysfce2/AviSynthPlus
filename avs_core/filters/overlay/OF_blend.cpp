@@ -73,7 +73,7 @@ void OL_BlendImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInter
   int planeindex_from = 0;
   int planeindex_to = 0;
 
-  if (of_mode == OF_Blend || of_mode == OF_Blend_Compat) {
+  if (of_mode == OF_Blend) {
     planeindex_from = 0;
     planeindex_to = greyscale ? 0 : 2;
   }
@@ -90,124 +90,57 @@ void OL_BlendImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInter
 
   overlay_blend_plane_masked_opacity_t* blend_fn = nullptr;
 
-  if (of_mode != OF_Blend_Compat || pixelsize == 4) {
-    // independent from full/not full opacity
+  // 32 bit float inside
+  // independent from full/not full opacity
 #ifdef INTEL_INTRINSICS
-    if (pixelsize == 4 && (env->GetCPUFlags() & CPUF_AVX2)) {
-      blend_fn = overlay_blend_avx2_float<true>;
-    }
-    else if (pixelsize == 4 && (env->GetCPUFlags() & CPUF_SSE2)) {
-      blend_fn = overlay_blend_sse2_float<true>;
-    }
-    else if (env->GetCPUFlags() & CPUF_AVX2) {
-      switch (bits_per_pixel) {
-      case 8: blend_fn = overlay_blend_avx2_uint<true, uint8_t, 8>; break;
-      case 10: blend_fn = overlay_blend_avx2_uint<true, uint16_t, 10>; break;
-      case 12: blend_fn = overlay_blend_avx2_uint<true, uint16_t, 12>; break;
-      case 14: blend_fn = overlay_blend_avx2_uint<true, uint16_t, 14>; break;
-      case 16: blend_fn = overlay_blend_avx2_uint<true, uint16_t, 16>; break;
-      }
-    }
-    else if (env->GetCPUFlags() & CPUF_SSE4_1) {
-      switch (bits_per_pixel) {
-      case 8: blend_fn = overlay_blend_sse41_uint<true, uint8_t, 8>; break;
-      case 10: blend_fn = overlay_blend_sse41_uint<true, uint16_t, 10>; break;
-      case 12: blend_fn = overlay_blend_sse41_uint<true, uint16_t, 12>; break;
-      case 14: blend_fn = overlay_blend_sse41_uint<true, uint16_t, 14>; break;
-      case 16: blend_fn = overlay_blend_sse41_uint<true, uint16_t, 16>; break;
-      }
-    }
-    else if (env->GetCPUFlags() & CPUF_SSE2) {
-      switch (bits_per_pixel) {
-      case 8: blend_fn = overlay_blend_sse2_uint<true, uint8_t, 8>; break;
-      case 10: blend_fn = overlay_blend_sse2_uint<true, uint16_t, 10>; break;
-      case 12: blend_fn = overlay_blend_sse2_uint<true, uint16_t, 12>; break;
-      case 14: blend_fn = overlay_blend_sse2_uint<true, uint16_t, 14>; break;
-      case 16: blend_fn = overlay_blend_sse2_uint<true, uint16_t, 16>; break;
-      }
-    }
-    else
-#endif // INTEL_INTRINSICS
-    {
-      // pure C
-      switch (bits_per_pixel) {
-      case 8: blend_fn = overlay_blend_c_uint<true, uint8_t, 8>; break;
-      case 10: blend_fn = overlay_blend_c_uint<true, uint16_t, 10>; break;
-      case 12: blend_fn = overlay_blend_c_uint<true, uint16_t, 12>; break;
-      case 14: blend_fn = overlay_blend_c_uint<true, uint16_t, 14>; break;
-      case 16: blend_fn = overlay_blend_c_uint<true, uint16_t, 16>; break;
-      case 32: blend_fn = overlay_blend_c_float<true>; break;
-      }
-    }
-    // end of new, float precision inside masked overlays
+  if (pixelsize == 4 && (env->GetCPUFlags() & CPUF_AVX2)) {
+    blend_fn = overlay_blend_avx2_float<true>;
   }
-  else if (opacity == 256) {
-    // specialized functions for full opacity
-#ifdef INTEL_INTRINSICS
-    if (pixelsize == 2 && (env->GetCPUFlags() & CPUF_SSE4_1)) {
-      switch (bits_per_pixel) {
-      case 10: blend_fn = overlay_blend_sse41_plane_masked<uint16_t, 10>; break;
-      case 12: blend_fn = overlay_blend_sse41_plane_masked<uint16_t, 12>; break;
-      case 14: blend_fn = overlay_blend_sse41_plane_masked<uint16_t, 14>; break;
-      case 16: blend_fn = overlay_blend_sse41_plane_masked<uint16_t, 16>; break;
-      }
+  else if (pixelsize == 4 && (env->GetCPUFlags() & CPUF_SSE2)) {
+    blend_fn = overlay_blend_sse2_float<true>;
+  }
+  else if (env->GetCPUFlags() & CPUF_AVX2) {
+    switch (bits_per_pixel) {
+    case 8: blend_fn = overlay_blend_avx2_uint<true, uint8_t>; break;
+    case 10:
+    case 12:
+    case 14:
+    case 16: blend_fn = overlay_blend_avx2_uint<true, uint16_t>; break;
     }
-    else if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_SSE2)) {
-      blend_fn = overlay_blend_sse2_plane_masked;
+  }
+  else if (env->GetCPUFlags() & CPUF_SSE4_1) {
+    switch (bits_per_pixel) {
+    case 8: blend_fn = overlay_blend_sse41_uint<true, uint8_t>; break;
+    case 10:
+    case 12:
+    case 14:
+    case 16: blend_fn = overlay_blend_sse41_uint<true, uint16_t>; break;
     }
-    else
-#ifdef X86_32
-      if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_MMX)) {
-        blend_fn = overlay_blend_mmx_plane_masked;
-      }
-      else
-#endif
+  }
+  else if (env->GetCPUFlags() & CPUF_SSE2) {
+    switch (bits_per_pixel) {
+    case 8: blend_fn = overlay_blend_sse2_uint<true, uint8_t>; break;
+    case 10:
+    case 12:
+    case 14:
+    case 16: blend_fn = overlay_blend_sse2_uint<true, uint16_t>; break;
+    }
+  }
+  else
 #endif // INTEL_INTRINSICS
-      {
-        // pure C
-        switch (bits_per_pixel) {
-        case 8: blend_fn = overlay_blend_c_plane_masked<uint8_t, 8>; break;
-        case 10: blend_fn = overlay_blend_c_plane_masked<uint16_t, 10>; break;
-        case 12: blend_fn = overlay_blend_c_plane_masked<uint16_t, 12>; break;
-        case 14: blend_fn = overlay_blend_c_plane_masked<uint16_t, 14>; break;
-        case 16: blend_fn = overlay_blend_c_plane_masked<uint16_t, 16>; break;
-        }
-      }
+  {
+    // pure C
+    switch (bits_per_pixel) {
+    case 8: blend_fn = overlay_blend_c_uint<true, uint8_t>; break;
+    case 10:
+    case 12:
+    case 14:
+    case 16: blend_fn = overlay_blend_c_uint<true, uint16_t>; break;
+    case 32: blend_fn = overlay_blend_c_float<true>; break;
+    }
+  }
 
-  }
-  else {
-    // specialized functions for non-full opacity
-#ifdef INTEL_INTRINSICS
-    if (pixelsize == 2 && (env->GetCPUFlags() & CPUF_SSE4_1)) {
-      switch (bits_per_pixel)
-      {
-      case 10: blend_fn = overlay_blend_sse41_plane_masked_opacity<uint16_t, 10>; break;
-      case 12: blend_fn = overlay_blend_sse41_plane_masked_opacity<uint16_t, 12>; break;
-      case 14: blend_fn = overlay_blend_sse41_plane_masked_opacity<uint16_t, 14>; break;
-      case 16: blend_fn = overlay_blend_sse41_plane_masked_opacity<uint16_t, 16>; break;
-      }
-    }
-    else if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_SSE2)) {
-      blend_fn = overlay_blend_sse2_plane_masked_opacity;
-    }
-    else
-#ifdef X86_32
-      if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_MMX)) {
-        blend_fn = overlay_blend_mmx_plane_masked_opacity;
-      }
-      else
-#endif
-#endif // INTEL_INTRINSICS
-      {
-        switch (bits_per_pixel) {
-        case 8: blend_fn = overlay_blend_c_plane_masked_opacity<uint8_t, 8>; break;
-        case 10:blend_fn = overlay_blend_c_plane_masked_opacity<uint16_t, 10>; break;
-        case 12:blend_fn = overlay_blend_c_plane_masked_opacity<uint16_t, 12>; break;
-        case 14:blend_fn = overlay_blend_c_plane_masked_opacity<uint16_t, 14>; break;
-        case 16:blend_fn = overlay_blend_c_plane_masked_opacity<uint16_t, 16>; break;
-        }
-      }
-  }
+  // end of new, float precision inside masked overlays
 
   if (blend_fn == nullptr)
     env->ThrowError("Blend: no valid internal function");
@@ -215,7 +148,8 @@ void OL_BlendImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInter
   for (int p = planeindex_from; p <= planeindex_to; p++) {
     blend_fn(base->GetPtrByIndex(p), overlay->GetPtrByIndex(p), mask->GetPtrByIndex(p),
       base->GetPitchByIndex(p), overlay->GetPitchByIndex(p), mask->GetPitchByIndex(p),
-      (w >> base->xSubSamplingShifts[p]), h >> base->ySubSamplingShifts[p], opacity, opacity_f);
+      (w >> base->xSubSamplingShifts[p]), h >> base->ySubSamplingShifts[p], opacity, opacity_f,
+      bits_per_pixel);
   }
 }
 
@@ -229,7 +163,7 @@ void OL_BlendImage::BlendImage(ImageOverlayInternal* base, ImageOverlayInternal*
   int planeindex_from = 0;
   int planeindex_to = 0;
 
-  if (of_mode == OF_Blend || of_mode == OF_Blend_Compat) {
+  if (of_mode == OF_Blend) {
     planeindex_from = 0;
     planeindex_to = greyscale ? 0 : 2;
   }
@@ -252,88 +186,54 @@ void OL_BlendImage::BlendImage(ImageOverlayInternal* base, ImageOverlayInternal*
   else {
     overlay_blend_plane_masked_opacity_t* blend_fn = nullptr;
 
-    if (of_mode != OF_Blend_Compat || pixelsize == 4) {
 #ifdef INTEL_INTRINSICS
-      if (pixelsize == 4 && (env->GetCPUFlags() & CPUF_AVX2)) {
-        blend_fn = overlay_blend_avx2_float<false>;
-      }
-      else if (pixelsize == 4 && (env->GetCPUFlags() & CPUF_SSE2)) {
-        blend_fn = overlay_blend_sse2_float<false>;
-      }
-      else if (env->GetCPUFlags() & CPUF_AVX2) {
-        switch (bits_per_pixel) {
-        case 8: blend_fn = overlay_blend_avx2_uint<false, uint8_t, 8>; break;
-        case 10: blend_fn = overlay_blend_avx2_uint<false, uint16_t, 10>; break;
-        case 12: blend_fn = overlay_blend_avx2_uint<false, uint16_t, 12>; break;
-        case 14: blend_fn = overlay_blend_avx2_uint<false, uint16_t, 14>; break;
-        case 16: blend_fn = overlay_blend_avx2_uint<false, uint16_t, 16>; break;
-        }
-      }
-      else if (env->GetCPUFlags() & CPUF_SSE4_1) {
-        switch (bits_per_pixel) {
-        case 8: blend_fn = overlay_blend_sse41_uint<false, uint8_t, 8>; break;
-        case 10: blend_fn = overlay_blend_sse41_uint<false, uint16_t, 10>; break;
-        case 12: blend_fn = overlay_blend_sse41_uint<false, uint16_t, 12>; break;
-        case 14: blend_fn = overlay_blend_sse41_uint<false, uint16_t, 14>; break;
-        case 16: blend_fn = overlay_blend_sse41_uint<false, uint16_t, 16>; break;
-        }
-      }
-      else if (env->GetCPUFlags() & CPUF_SSE2) {
-        switch (bits_per_pixel) {
-        case 8: blend_fn = overlay_blend_sse2_uint<false, uint8_t, 8>; break;
-        case 10: blend_fn = overlay_blend_sse2_uint<false, uint16_t, 10>; break;
-        case 12: blend_fn = overlay_blend_sse2_uint<false, uint16_t, 12>; break;
-        case 14: blend_fn = overlay_blend_sse2_uint<false, uint16_t, 14>; break;
-        case 16: blend_fn = overlay_blend_sse2_uint<false, uint16_t, 16>; break;
-        }
-      }
-      else
-#endif // INTEL_INTRINSICS
-      {
-        // pure C
-        switch (bits_per_pixel) {
-        case 8: blend_fn = overlay_blend_c_uint<false, uint8_t, 8>; break;
-        case 10: blend_fn = overlay_blend_c_uint<false, uint16_t, 10>; break;
-        case 12: blend_fn = overlay_blend_c_uint<false, uint16_t, 12>; break;
-        case 14: blend_fn = overlay_blend_c_uint<false, uint16_t, 14>; break;
-        case 16: blend_fn = overlay_blend_c_uint<false, uint16_t, 16>; break;
-        case 32: blend_fn = overlay_blend_c_float<false>; break;
-        }
-      }
-      // end of new, float precision inside masked overlays
+  if (pixelsize == 4 && (env->GetCPUFlags() & CPUF_AVX2)) {
+    blend_fn = overlay_blend_avx2_float<false>;
+  }
+  else if (pixelsize == 4 && (env->GetCPUFlags() & CPUF_SSE2)) {
+    blend_fn = overlay_blend_sse2_float<false>;
+  }
+  else if (env->GetCPUFlags() & CPUF_AVX2) {
+    switch (bits_per_pixel) {
+    case 8: blend_fn = overlay_blend_avx2_uint<false, uint8_t>; break;
+    case 10:
+    case 12:
+    case 14:
+    case 16: blend_fn = overlay_blend_avx2_uint<false, uint16_t>; break;
     }
-    else {
-      // old routies
-#ifdef INTEL_INTRINSICS
-      if (pixelsize == 2 && (env->GetCPUFlags() & CPUF_SSE4_1)) {
-        switch (bits_per_pixel) {
-        case 10: blend_fn = overlay_blend_sse41_plane_opacity_uint16<10>; break;
-        case 12: blend_fn = overlay_blend_sse41_plane_opacity_uint16<12>; break;
-        case 14: blend_fn = overlay_blend_sse41_plane_opacity_uint16<14>; break;
-        case 16: blend_fn = overlay_blend_sse41_plane_opacity_uint16<16>; break;
-        }
-      }
-      else if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_SSE2)) {
-        blend_fn = overlay_blend_sse2_plane_opacity;
-      }
-      else
-#ifdef X86_32
-        if (pixelsize == 1 && (env->GetCPUFlags() & CPUF_MMX)) {
-          blend_fn = overlay_blend_mmx_plane_opacity;
-        }
-        else
-#endif
-#endif // INTEL_INTRINSICS
-        {
-          switch (bits_per_pixel) {
-          case 8: blend_fn = overlay_blend_c_plane_opacity<uint8_t, 8>; break;
-          case 10: blend_fn = overlay_blend_c_plane_opacity<uint16_t, 10>; break;
-          case 12: blend_fn = overlay_blend_c_plane_opacity<uint16_t, 12>; break;
-          case 14: blend_fn = overlay_blend_c_plane_opacity<uint16_t, 14>; break;
-          case 16: blend_fn = overlay_blend_c_plane_opacity<uint16_t, 16>; break;
-          }
-        }
+  }
+  else if (env->GetCPUFlags() & CPUF_SSE4_1) {
+    switch (bits_per_pixel) {
+    case 8: blend_fn = overlay_blend_sse41_uint<false, uint8_t>; break;
+    case 10:
+    case 12:
+    case 14:
+    case 16: blend_fn = overlay_blend_sse41_uint<false, uint16_t>; break;
     }
+  }
+  else if (env->GetCPUFlags() & CPUF_SSE2) {
+    switch (bits_per_pixel) {
+    case 8: blend_fn = overlay_blend_sse2_uint<false, uint8_t>; break;
+    case 10:
+    case 12:
+    case 14:
+    case 16: blend_fn = overlay_blend_sse2_uint<false, uint16_t>; break;
+    }
+  }
+  else
+#endif // INTEL_INTRINSICS
+  {
+    // pure C
+    switch (bits_per_pixel) {
+    case 8: blend_fn = overlay_blend_c_uint<false, uint8_t>; break;
+    case 10:
+    case 12:
+    case 14:
+    case 16: blend_fn = overlay_blend_c_uint<false, uint16_t>; break;
+    case 32: blend_fn = overlay_blend_c_float<false>; break;
+    }
+  }
+  // end of new, float precision inside masked overlays
 
     if (blend_fn == nullptr)
       env->ThrowError("Blend: no valid internal function");
@@ -343,7 +243,8 @@ void OL_BlendImage::BlendImage(ImageOverlayInternal* base, ImageOverlayInternal*
       blend_fn(
         base->GetPtrByIndex(p), overlay->GetPtrByIndex(p), nullptr,
         base->GetPitchByIndex(p), overlay->GetPitchByIndex(p), 0,
-        (w >> base->xSubSamplingShifts[p]), h >> base->ySubSamplingShifts[p], opacity, opacity_f);
+        (w >> base->xSubSamplingShifts[p]), h >> base->ySubSamplingShifts[p], opacity, opacity_f,
+        bits_per_pixel);
     }
 
   }

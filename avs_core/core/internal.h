@@ -272,6 +272,11 @@ public:
   return _mm_or_si128(_mm_andnot_si128(mask, x), _mm_and_si128(mask, y));
 }
 
+// SSE4.1 simulation for SSE2, same as above, intrisic name is _mm_blendv_epi8
+[[maybe_unused]] static AVS_FORCEINLINE __m128i _MM_BLENDV_EPI8(__m128i const& a, __m128i const& b, __m128i const& selector) {
+  return _mm_or_si128(_mm_andnot_si128(selector, a), _mm_and_si128(selector, b));
+}
+
 // sse2 simulation of SSE4's _mm_min_epu16
 [[maybe_unused]] static AVS_FORCEINLINE __m128i _MM_MIN_EPU16(__m128i x, __m128i y)
 {
