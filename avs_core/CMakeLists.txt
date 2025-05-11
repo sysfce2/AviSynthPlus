@@ -13,6 +13,31 @@ endif()
 # Create library
 project("AvsCore" VERSION "${PROJECT_VERSION}" LANGUAGES CXX)
 Include("Files.cmake")
+
+# Remove AVX512 specific files if it's a 32-bit build
+if(CMAKE_SIZEOF_VOID_P EQUAL 4) # Check for 32-bit
+  list(FILTER AvsCore_Sources EXCLUDE REGEX ".*_avx512\\.(cpp|h)$")
+endif()
+
+# Remove AVX512 specific files for older MSVC versions
+# Check MSVC version for lack of full AVX-512BW mask intrinsics (older than MSVC 19.22)
+if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND MSVC_IDE AND NOT CLANG_IN_VS AND NOT IntelLLVM_IN_VS)
+    string(REGEX MATCH "^19\\.([0-9]+)\\.([0-9]+)" MSVC_VERSION_MATCH "${CMAKE_CXX_COMPILER_VERSION}")
+    if(MSVC_VERSION_MATCH)
+        set(MSVC_MAJOR 19)
+        set(MSVC_MINOR ${CMAKE_MATCH_1})
+        set(MSVC_PATCH ${CMAKE_MATCH_2})
+
+        if(MSVC_MAJOR LESS 19 OR (MSVC_MAJOR EQUAL 19 AND MSVC_MINOR LESS 22)) # Before MSVC 2019 16.2 (19.22)
+            list(FILTER AvsCore_Sources EXCLUDE REGEX ".*_avx512\\.(cpp|h)$")
+            message(WARNING "Detected older native 64-bit MSVC (version ${CMAKE_CXX_COMPILER_VERSION}). AVX-512 files are excluded due to missing AVX512BW mask intrinsics before Visual Studio 2019 16.2.")
+        endif()
+    else()
+        # If version parsing fails, assume potential issues and warn
+        message(WARNING "Could not parse native 64-bit MSVC version. AVX-512 support might be incomplete.")
+    endif()
+endif()
+
 add_library("AvsCore" ${AvsCore_Sources})
 set_target_properties("AvsCore" PROPERTIES "OUTPUT_NAME" "${CoreName}")
 if (NOT WIN32)
@@ -42,49 +67,35 @@ foreach(FILE ${AvsCore_Sources})
   source_group("${GROUP}" FILES "${FILE}")
 endforeach()
 
-if (MSVC_IDE)
-  IF(CLANG_IN_VS STREQUAL "1" OR
-  IntelLLVM_IN_VS STREQUAL "1")
-      # special SSSE3 option for source files with *_ssse3.cpp pattern
-      file(GLOB_RECURSE SRCS_SSSE3 "*_ssse3.cpp")
-      set_source_files_properties(${SRCS_SSSE3} PROPERTIES COMPILE_FLAGS " -mssse3 ")
+function(handle_arch_flags ARCH_SUFFIX GCC_FLAGS MSVC_FLAGS)
+    string(TOLOWER "${ARCH_SUFFIX}" ARCH_SUFFIX_LOWER)
+    file(GLOB_RECURSE SRCS_${ARCH_SUFFIX} "*_${ARCH_SUFFIX_LOWER}.cpp")
+    if(SRCS_${ARCH_SUFFIX})
+        if (MSVC_IDE)
+            IF(CLANG_IN_VS STREQUAL "1" OR IntelLLVM_IN_VS STREQUAL "1")
+                set_source_files_properties(${SRCS_${ARCH_SUFFIX}} PROPERTIES COMPILE_FLAGS "${GCC_FLAGS}")
+            ELSE()
+                # MSVC gives warning in x64 when SSE2 flag is added, it's just required as a minimum
+                if(NOT (CMAKE_SIZEOF_VOID_P EQUAL 8 AND "${MSVC_FLAGS}" STREQUAL " /arch:SSE2 "))
+                    set_source_files_properties(${SRCS_${ARCH_SUFFIX}} PROPERTIES COMPILE_FLAGS "${MSVC_FLAGS}")
+                endif()
+            ENDIF()
+        else()
+            set_source_files_properties(${SRCS_${ARCH_SUFFIX}} PROPERTIES COMPILE_FLAGS "${GCC_FLAGS}")
+        endif()
+        list(APPEND AvsCore_Sources ${SRCS_${ARCH_SUFFIX}})
+    endif()
+endfunction()
 
-      # special SSE4.1 option for source files with *_sse41.cpp pattern
-      file(GLOB_RECURSE SRCS_SSE41 "*_sse41.cpp")
-      set_source_files_properties(${SRCS_SSE41} PROPERTIES COMPILE_FLAGS " -msse4.1 ")
+# gcc/llvm/clang-like flags, MSVC flags
+handle_arch_flags(SSSE3 " -mssse3 " " /arch:SSE2 ") # no special SSSE3 option in MSVC
+handle_arch_flags(SSE41 " -msse4.1 " " /arch:SSE2 ") # no special SSE4.1 option in MSVC
+handle_arch_flags(AVX " -mavx " " /arch:AVX ")
+handle_arch_flags(AVX2 " -mavx2 -mfma " " /arch:AVX2 ")
 
-      # special AVX option for source files with *_avx.cpp pattern
-      file(GLOB_RECURSE SRCS_AVX "*_avx.cpp")
-      set_source_files_properties(${SRCS_AVX} PROPERTIES COMPILE_FLAGS " -mavx ")
-
-      # special AVX2 option for source files with *_avx2.cpp pattern
-      file(GLOB_RECURSE SRCS_AVX2 "*_avx2.cpp")
-      set_source_files_properties(${SRCS_AVX2} PROPERTIES COMPILE_FLAGS " -mavx2 -mfma ")
-  ELSE()
-      # special AVX option for source files with *_avx.cpp pattern
-      file(GLOB_RECURSE SRCS_AVX "*_avx.cpp")
-      set_source_files_properties(${SRCS_AVX} PROPERTIES COMPILE_FLAGS " /arch:AVX ")
-
-      # special AVX2 option for source files with *_avx2.cpp pattern
-      file(GLOB_RECURSE SRCS_AVX2 "*_avx2.cpp")
-      set_source_files_properties(${SRCS_AVX2} PROPERTIES COMPILE_FLAGS " /arch:AVX2 ")
-  ENDIF()
-else()
-  # special SSSE3 option for source files with *_ssse3.cpp pattern
-  file(GLOB_RECURSE SRCS_SSSE3 "*_ssse3.cpp")
-  set_source_files_properties(${SRCS_SSSE3} PROPERTIES COMPILE_FLAGS " -mssse3 ")
-
-  # special SSE4.1 option for source files with *_sse41.cpp pattern
-  file(GLOB_RECURSE SRCS_SSE41 "*_sse41.cpp")
-  set_source_files_properties(${SRCS_SSE41} PROPERTIES COMPILE_FLAGS " -msse4.1 ")
-
-  # special AVX option for source files with *_avx.cpp pattern
-  file(GLOB_RECURSE SRCS_AVX "*_avx.cpp")
-  set_source_files_properties(${SRCS_AVX} PROPERTIES COMPILE_FLAGS -mavx )
-
-  # special AVX2 option for source files with *_avx2.cpp pattern
-  file(GLOB_RECURSE SRCS_AVX2 "*_avx2.cpp")
-  set_source_files_properties(${SRCS_AVX2} PROPERTIES COMPILE_FLAGS "-mavx2 -mfma")
+if(CMAKE_SIZEOF_VOID_P EQUAL 8) # AVX512 exists only on 64-bit
+    handle_arch_flags(AVX512 " -mavx512f -mavx512bw " " /arch:AVX512 ")
+    # though such source patterns were already removed from source list
 endif()
 
 # Specify include directories
