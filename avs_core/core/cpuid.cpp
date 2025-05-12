@@ -185,6 +185,3 @@ int GetCPUFlags() {
   return _CPUFlags::getInstance().GetCPUFlags();
 }
 
-void SetMaxCPU(int new_flags) {
-  _CPUFlags::getInstance().SetCPUFlags(new_flags);
-}
