@@ -81,11 +81,9 @@
 #   define CLANG
 #if defined(_MSC_VER)
 #   define MSVC
-#   define AVS_FORCEINLINE __attribute__((always_inline))
-#else
-#   define AVS_FORCEINLINE __attribute__((always_inline)) inline
 #endif
-#elif   defined(_MSC_VER)
+#   define AVS_FORCEINLINE __attribute__((always_inline)) inline
+#elif defined(_MSC_VER)
 #   define MSVC
 #   define MSVC_PURE
 #   define AVS_FORCEINLINE __forceinline
