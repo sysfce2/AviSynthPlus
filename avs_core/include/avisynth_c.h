@@ -1452,6 +1452,7 @@ AVSC_API(int64_t, avs_get_var_long)(AVS_ScriptEnvironment*, const char* name, in
   FreeLibrary(HMODULE);
 */
 
+#ifndef EXTERNAL_AVS_C_API_LOADER // If external loader is NOT active, then define these helpers
 
 typedef struct AVS_Library AVS_Library;
 
@@ -1962,6 +1963,9 @@ AVSC_INLINE void avs_free_library(AVS_Library *library) {
   FreeLibrary(library->handle);
   free(library);
 }
+
+#endif // EXTERNAL_AVS_C_API_LOADER
+
 #endif
 
 #endif // AVS_WINDOWS
