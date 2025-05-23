@@ -1966,7 +1966,7 @@ AVSC_INLINE void avs_free_library(AVS_Library *library) {
 
 #endif // EXTERNAL_AVS_C_API_LOADER
 
-#endif
+#endif // AVSC_NO_DECLSPEC
 
 #endif // AVS_WINDOWS
 
