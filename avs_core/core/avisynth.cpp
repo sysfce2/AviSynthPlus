@@ -98,6 +98,8 @@
   #define YieldProcessor() __nop(void)
 #endif
 
+class ScriptEnvironment; // forward
+
 /* Global Lock Manager */
 class GlobalLockManager
 {
