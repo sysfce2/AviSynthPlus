@@ -425,7 +425,8 @@ SaveString, Sprintf, VSprintf, Invoke, BitBlt, AtExit, AddFunction,
 MakeWritable, FunctionExists, GetVar, GetVarDef, SetVar, SetGlobalVar,
 PushContext, PopContext, NewVideoFrame, CheckVersion, Subframe,
 SubframePlanar, SetMemoryMax, SetWorkingDir, DeleteScriptEnvironment
-and ApplyMessage. They are described in the following subsections.
+and ApplyMessage and many others They are described in the following 
+subsections.
 
 
 .. _cplusplus_throwerror:
@@ -1710,7 +1711,8 @@ CPP interface (through avisynth.h).
     has_at_least_v8 = avisynth_if_ver >= 8; // frame properties, NewVideoFrameP, other V8 environment functions
     has_at_least_v8_1 = avisynth_if_ver > 8 || (avisynth_if_ver == 8 && avisynth_bugfix_ver >= 1);
     // 8.1: C interface frameprop access fixed, IsPropertyWritable/MakePropertyWritable support, extended GetEnvProperty queries
-    has_at_least_v9 = avisynth_if_ver >= 9; // future
+    has_at_least_v9 = avisynth_if_ver >= 9;
+    has_at_least_v12 = avisynth_if_ver >= 12; // global locks
 
 C interface (through avisynth_c.h)
 
@@ -1734,7 +1736,8 @@ C interface (through avisynth_c.h)
     has_at_least_v8 = avisynth_if_ver >= 8; // frame properties, NewVideoFrameP, other V8 environment functions
     has_at_least_v8_1 = avisynth_if_ver > 8 || (avisynth_if_ver == 8 && avisynth_bugfix_ver >= 1);
     // 8.1: C interface frameprop access fixed, IsPropertyWritable/MakePropertyWritable support, extended GetEnvProperty queries
-    has_at_least_v9 = avisynth_if_ver >= 9; // future
+    has_at_least_v9 = avisynth_if_ver >= 9;
+    has_at_least_v12 = avisynth_if_ver >= 12; // global locks
 
 
 AEP_INTERFACE_BUGFIX (c++) AVS_AEP_INTERFACE_BUGFIX (c)
@@ -1768,6 +1771,24 @@ Allocate, v8
 
 buffer pool allocate.
 
+Primary goal of ``AVS_NORMAL_ALLOC`` was to have the Avisynth-reserved memory 
+counter up-to-date and to take into account this memory area as well. 
+Thus when reaching the MemoryMax limit the core would free up memory from 
+this resource as well (along with frame registry and cache entries).
+Works like a normal _aligned_alloc.
+
+But ``AVS_POOLED_ALLOC`` has (or had) a lot more important benefit. Pooled allocations 
+are meant for filters that don't need the buffers between frames and can free 
+them between calls to ``GetFrame()``. Then multiple filters can use the same buffers 
+instead of each filter unnecessarily clinging onto them even while a different filter 
+is executing. This resulted in tons of memory savings, which was really useful, as most 
+of the complex scripts on HD material used to be memory-bound in that era (around 2015).
+The main reason ``env->Allocate`` and ``env->Free`` were created at all was to support these 
+pooled allocations and memory re-use between filters. Adding ``AVS_NORMAL_ALLOC`` was just a bonus.
+
+The memory savings might not be that important today (as of 2025) since PCs now have a lot 
+more RAM, but the savings are still there.
+
 ::
 
     // IScriptEnvironment Allocate
@@ -1787,7 +1808,7 @@ Free, v8
 
     virtual void __stdcall Free(void* ptr) = 0;
 
-buffer pool free.
+buffer pool free. Pair of ``Allocate``.
 
 
 .. _cplusplus_getvartry:
@@ -1881,6 +1902,258 @@ like MakeWritable but for frame properties only.
 See also 
 - :ref:`IsPropertyWritable <cplusplus_ispropertywritable>` like IsWritable but for frame properties only.
 - :ref:`getFramePropsRW <cplusplus_getframepropsrw>`.
+
+
+.. _cplusplus_acquiregloballock:
+.. _cplusplus_releasegloballock:
+
+AcquireGlobalLock, v12
+^^^^^^^^^^^^^^^^^^^^^^
+ReleaseGlobalLock, v12
+^^^^^^^^^^^^^^^^^^^^^^
+
+::
+
+    // C++ interface (IScriptEnvironment virtual methods)
+    virtual bool __stdcall AcquireGlobalLock(const char* name) = 0;
+    virtual void __stdcall ReleaseGlobalLock(const char* name) = 0;
+
+    // C interface (global avs_ functions)
+    AVS_EXPORT int __stdcall avs_acquire_global_lock(AVS_ScriptEnvironment* env, const char* name);
+    AVS_EXPORT void __stdcall avs_release_global_lock(AVS_ScriptEnvironment* env, const char* name);
+
+These functions provide a global, named mutex mechanism to synchronize access to shared 
+resources across different plugins within the same Avisynth process. This is essential for 
+libraries like fftw3 that have non-thread-safe global state (e.g., their planner functions).
+
+When AcquireGlobalLock (or avs_acquire_global_lock) is called, the calling thread will block 
+until the named lock is available. The lock is then exclusively held by that thread until 
+ReleaseGlobalLock (or avs_release_global_lock) is called.
+
+The name parameter allows for different independent global locks.
+For FFTW, the recommended name is "fftw".
+
+For safe use, set and check ``has_at_least_v12``, see interface version check methods above.
+
+**Example#1 RAII for C++ interface plugins**
+
+C++ plugins, which operate with the IScriptEnvironment* interface, should use a 
+Resource Acquisition Is Initialization (RAII) wrapper. This GlobalLockGuard class example 
+ensures the lock is automatically released when the guarding object goes out of scope,
+even if exceptions occur.
+
+The constructor of this GlobalLockGuard expects an IScriptEnvironment* directly, 
+as C++ plugins will have access to this pointer.
+::
+
+    // FFTW is not thread-safe, need to guard around its functions (except fftw_execute).
+    // http://www.fftw.org/fftw3_doc/Thread-safety.html#Thread-safety
+    // Pre V12, not 100%, does not guard locks from multiple plugins using FFTW at the same time.
+    static std::mutex fftw_legacy_mutex; // defined as static
+
+    // Since Avisynth IF v12 use global lock which handles fftw locks for different plugins which use the same FFTW library.
+    class GlobalLockGuard
+    {
+    public:
+      // env_ptr should be the IScriptEnvironment* received by the plugin's function.
+      // lock_name is the name of the lock (e.g., "fftw").
+      // use_v12_if_available: If true, tries V12. If false or V12 not available, falls back to legacy mutex.
+      GlobalLockGuard(IScriptEnvironment* env_ptr, const char* lock_name, bool use_v12_global_lock)
+        : m_env_ptr(env_ptr), m_lockName(lock_name), m_acquired(false), m_is_legacy_lock(false)
+      {
+        if (!m_env_ptr || !m_lockName) {
+          // Invalid parameters, cannot acquire lock.
+          return;
+        }
+
+        // Attempt to acquire V12 global lock if requested and available.
+        // This assumes IScriptEnvironment provides a way to check its version.
+        if (use_v12_global_lock)
+        {
+          // We must use a try-catch block if AcquireGlobalLock can throw,
+          // or just assume it blocks and returns success/failure.
+          // Assuming it blocks and returns true/false for success.
+          m_acquired = m_env_ptr->AcquireGlobalLock(m_lockName);
+          if (m_acquired) {
+            m_is_legacy_lock = false; // Successfully acquired V12 lock
+            return; // Lock acquired, exit constructor
+          }
+        }
+
+        // If we reach here, V12 lock wasn't used/acquired, fall back to legacy mutex.
+        if (strcmp(m_lockName, "fftw") == 0) {
+          fftw_legacy_mutex.lock(); // Acquire the legacy mutex
+          m_acquired = true;
+          m_is_legacy_lock = true; // Acquired legacy lock
+        }
+        // else { // Handle unrecognized lock_name for legacy fallback if needed }
+      }
+
+      // Destructor releases the lock.
+      ~GlobalLockGuard()
+      {
+        if (m_acquired) // Only attempt to release if successfully acquired
+        {
+          if (m_is_legacy_lock) {
+            fftw_legacy_mutex.unlock(); // Release legacy mutex
+          }
+          else {
+            // Release V12 global lock
+            if (m_env_ptr) { // Safety check
+              m_env_ptr->ReleaseGlobalLock(m_lockName);
+            }
+          }
+        }
+      }
+
+      bool is_acquired() const { return m_acquired; }
+
+      // Disallow copying and assignment to prevent common errors with mutexes.
+      GlobalLockGuard(const GlobalLockGuard&) = delete;
+      GlobalLockGuard& operator=(const GlobalLockGuard&) = delete;
+
+    private:
+      IScriptEnvironment* m_env_ptr; // Store the C++ interface pointer directly
+      const char* m_lockName;
+      bool m_acquired;
+      bool m_is_legacy_lock; // true if legacy mutex was used, false if V12 global lock was used
+    };
+
+**Example for lock, C++ plugin using RAII**
+
+::
+
+    // In a C++ plugin's source file (e.g., fft3dfilter, dfttest.cpp)
+    #include "AvsLockGuard.h" // Assuming GlobalLockGuard is in this header
+
+    // ... plugin setup ...
+
+    // Use a scope to define the critical section for FFTW planning.
+    {
+        // Acquire the global "fftw" lock. It's automatically released when this scope exits.
+        GlobalLockGuard fftw_lock(env, "fftw", has_at_least_v12);
+
+        // --- CRITICAL SECTION START ---
+        // Code here is protected by the global "fftw" lock.
+        // Only one thread across all dynamically linked FFTW plugins
+        // within this process can execute this section concurrently.
+        fftwf_plan my_plan = fftwf_plan_dft_r2c_3d(...); // Perform FFTW planning
+        // --- CRITICAL SECTION END ---
+
+    } // `fftw_lock` goes out of scope here, automatically releasing the lock.
+
+
+Note that when the lock is used in plan destroying, in a class destructror, we don't have
+``env`` as a parameter, so we must use an an ``env_saved`` pointer stored earlier.
+
+**Example#2 RAII for C++ plugins using C-Compatible interface**
+
+C-compatible plugins, which receive an ``AVS_ScriptEnvironment*``, should also use an 
+RAII wrapper for safe lock management. This ``GlobalLockGuardC`` will internally call 
+the ``avs_`` C functions for acquiring and releasing the lock.
+
+::
+
+    // Note: no pre-V12 fallback is shown here
+
+    // It operates on the AVS_ScriptEnvironment* handle and calls the C-interface functions.
+    class GlobalLockGuardC
+    {
+    public:
+        // env_handle should be the AVS_ScriptEnvironment* received by the plugin's function.
+        GlobalLockGuardC(AVS_ScriptEnvironment* env_handle, const char* lock_name)
+            : m_env_handle(env_handle), m_lockName(lock_name), m_acquired(false)
+        {
+            if (m_env_handle && m_lockName)
+            {
+                m_acquired = (avs_acquire_global_lock(m_env_handle, m_lockName) == 1);
+            }
+        }
+
+        // Destructor releases the lock using the C-interface functions.
+        ~GlobalLockGuardC()
+        {
+            if (m_acquired && m_env_handle && m_lockName)
+            {
+                avs_release_global_lock(m_env_handle, m_lockName);
+            }
+        }
+
+        bool is_acquired() const { return m_acquired; }
+
+        // Disallow copying and assignment to prevent common errors with mutexes.
+        GlobalLockGuardC(const GlobalLockGuardC&) = delete;
+        GlobalLockGuardC& operator=(const GlobalLockGuardC&) = delete;
+
+    private:
+        AVS_ScriptEnvironment* m_env_handle; // Store the C-compatible handle
+        const char* m_lockName;
+        bool m_acquired;
+    };
+
+
+
+**Example for lock, C++ interface, with above RAII**
+::
+
+    // In a C-compatible plugin's source file (e.g., myfilter.cpp that uses C++ features)
+    // You'd typically also include the C-compatible RAII wrapper
+
+    // Plugin function signature for C-compatible plugins (receives AVS_ScriptEnvironment*)
+    static AVS_Value AVSC_CC Create_xxxx(AVS_ScriptEnvironment* env, AVS_Value args, void* param)
+    {
+        // ... plugin setup ...
+
+        // Use a scope to define the critical section for FFTW planning.
+        {
+            // Acquire the global "fftw" lock using the C-compatible RAII wrapper.
+            GlobalLockGuardC fftw_lock(env, "fftw");
+
+            // You might want to check if the lock was acquired, though avs_acquire_global_lock
+            // will typically block until successful.
+            // If you need to handle acquisition failure, you would check fftw_lock.is_acquired().
+            // In a pure C plugin, you would return an error AVS_Value.
+
+            // --- CRITICAL SECTION START ---
+            // Code here is protected by the global "fftw" lock.
+            fftwf_plan my_plan = fftwf_plan_dft_r2c_3d(...); // Perform FFTW planning
+            // --- CRITICAL SECTION END ---
+
+        } // `fftw_lock` goes out of scope here, automatically releasing the lock.
+
+        // ... rest of the plugin logic ...
+    }
+
+
+**Example for use from pure C-compatible**
+
+Pure C plugins do not have access to C++ RAII. They must manually call ``avs_acquire_global_lock``
+and ``avs_release_global_lock``, ensuring that every acquisition has a corresponding release.
+
+::
+
+    fftwf_plan my_plan = NULL;
+    int lock_acquired = 0; // Flag to track if lock was acquired
+
+    // Acquire the lock
+    lock_acquired = avs_acquire_global_lock(env, "fftw");
+    if (!lock_acquired) {
+        // Handle error: Return an error AVS_Value.
+        return avs_new_error(clip, "MyCFilter: Failed to acquire global FFTW planner lock!");
+    }
+
+    // --- CRITICAL SECTION START ---
+    // Code here is protected by the global "fftw" lock.
+    my_plan = fftwf_plan_dft_r2c_3d(...); // Perform FFTW planning
+    // --- CRITICAL SECTION END ---
+
+    // Release the lock manually
+    avs_release_global_lock(env, "fftw");
+
+
+
+See also https://github.com/AviSynth/AviSynthPlus/issues/444
+and https://www.fftw.org/doc/Thread-safety.html 
 
 
 .. _cplusplus_pvideoframe:
@@ -2446,4 +2719,4 @@ ____
 
 Back to :doc:`FilterSDK`
 
-$Date: 2025/02/24 13:53:00 $
+$Date: 2025/06/03 08:36:00 $

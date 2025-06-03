@@ -424,6 +424,18 @@ What's new in the API V11
               
           - Add missing ``AVS_MT_xxxx mode`` constants to ``avisynth_c.h`` (similar to c++ ``avisynth.h`` header ``enum MtMode``)
 
+.. _api_v12_whats_new:
+
+What's new in the API V12
+-------------------------
+
+- C and C++ API (AVISYNTH_INTERFACE_VERSION = 12):
+        - Global Lock support: 
+
+          * ``env->AcquireGlobalLock``, ``env->ReleaseGlobalLock`` (C++),
+          * ``avs_acquire_global_lock``, ``avs_release_global_lock`` (C)
+          
+          See :ref:`global lock support<cplusplus_acquiregloballock>`
 
 Some history
 ------------
@@ -452,7 +464,7 @@ License terms
 
 Note: Avisynth Filter SDK parts are under specific :doc:`SDK license <SDKLicense>` terms.
 
-$Date: 2025/02/03 11:11:11 $
+$Date: 2025/06/03 08:30:00 $
 
 Latest online Avisynth+ version is at https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html
 This one is maintained properly.
