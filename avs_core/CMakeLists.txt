@@ -14,28 +14,41 @@ endif()
 project("AvsCore" VERSION "${PROJECT_VERSION}" LANGUAGES CXX)
 Include("Files.cmake")
 
-# Remove AVX512 specific files if it's a 32-bit build
-if(CMAKE_SIZEOF_VOID_P EQUAL 4) # Check for 32-bit
-  list(FILTER AvsCore_Sources EXCLUDE REGEX ".*_avx512\\.(cpp|h)$")
-endif()
+# Initialize a variable to control INTEL_INTRINSICS_AVX512 definition
+# AVX512 support is only available on Intel architectures and 64-bit builds and specific compilers
+set(DEFINE_AVX512 FALSE)
+if(ENABLE_INTEL_SIMD)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8) # 64-bit build
+        if(MSVC_IDE AND NOT CLANG_IN_VS AND NOT IntelLLVM_IN_VS) # Native MSVC, need to check version
+            string(REGEX MATCH "^19\\.([0-9]+)\\.([0-9]+)" MSVC_VERSION_MATCH "${CMAKE_CXX_COMPILER_VERSION}")
+            if(MSVC_VERSION_MATCH)
+                set(MSVC_MAJOR 19)
+                set(MSVC_MINOR ${CMAKE_MATCH_1})
+                set(MSVC_PATCH ${CMAKE_MATCH_2})
 
-# Remove AVX512 specific files for older MSVC versions
-# Check MSVC version for lack of full AVX-512BW mask intrinsics (older than MSVC 19.22)
-if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND MSVC_IDE AND NOT CLANG_IN_VS AND NOT IntelLLVM_IN_VS)
-    string(REGEX MATCH "^19\\.([0-9]+)\\.([0-9]+)" MSVC_VERSION_MATCH "${CMAKE_CXX_COMPILER_VERSION}")
-    if(MSVC_VERSION_MATCH)
-        set(MSVC_MAJOR 19)
-        set(MSVC_MINOR ${CMAKE_MATCH_1})
-        set(MSVC_PATCH ${CMAKE_MATCH_2})
-
-        if(MSVC_MAJOR LESS 19 OR (MSVC_MAJOR EQUAL 19 AND MSVC_MINOR LESS 22)) # Before MSVC 2019 16.2 (19.22)
-            list(FILTER AvsCore_Sources EXCLUDE REGEX ".*_avx512\\.(cpp|h)$")
-            message(WARNING "Detected older native 64-bit MSVC (version ${CMAKE_CXX_COMPILER_VERSION}). AVX-512 files are excluded due to missing AVX512BW mask intrinsics before Visual Studio 2019 16.2.")
+                if(MSVC_MAJOR GREATER_EQUAL 19 AND MSVC_MINOR GREATER_EQUAL 22) # MSVC 2019 16.2 (19.22) or newer
+                    set(DEFINE_AVX512 TRUE)
+                endif()
+            else()
+                message(WARNING "Could not parse native 64-bit MSVC version. AVX-512 support might be incomplete.")
+            endif()
+        else() # Not native old MSVC (likely GCC, Clang, or newer MSVC via Clang/IntelLLVM)
+            # all supports AVX512
+            set(DEFINE_AVX512 TRUE)
         endif()
-    else()
-        # If version parsing fails, assume potential issues and warn
-        message(WARNING "Could not parse native 64-bit MSVC version. AVX-512 support might be incomplete.")
     endif()
+
+    # Add the AVX-512 definition if the flag is TRUE
+    if(DEFINE_AVX512)
+        add_definitions(-DINTEL_INTRINSICS_AVX512)
+    else()
+        # Remove AVX512 specific files if it's a 32-bit build
+        # or not supported compiler version
+        list(FILTER AvsCore_Sources EXCLUDE REGEX ".*_avx512\\.(cpp|h)$")
+    endif()
+
+    # Note: AVX512 related source must be guarded with #ifdef INTEL_INTRINSICS_AVX512 within the
+    # already existing #ifdef INTEL_INTRINSICS
 endif()
 
 add_library("AvsCore" ${AvsCore_Sources})
@@ -93,9 +106,8 @@ handle_arch_flags(SSE41 " -msse4.1 " " /arch:SSE2 ") # no special SSE4.1 option 
 handle_arch_flags(AVX " -mavx " " /arch:AVX ")
 handle_arch_flags(AVX2 " -mavx2 -mfma " " /arch:AVX2 ")
 
-if(CMAKE_SIZEOF_VOID_P EQUAL 8) # AVX512 exists only on 64-bit
+if(DEFINE_AVX512)
     handle_arch_flags(AVX512 " -mavx512f -mavx512bw " " /arch:AVX512 ")
-    # though such source patterns were already removed from source list
 endif()
 
 # Specify include directories
