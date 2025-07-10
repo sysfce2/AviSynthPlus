@@ -302,8 +302,39 @@ From CMake GUI:
 
   (note: for XP this is only the half of the prerequisites)
 
-7. Fill options, Generate
-8. Open the generated solution with Visual Studio GUI, build/debug
+7. Fill options
+
+   - ImageSeq.DLL
+
+     This plugin has external dependencies: DevIL SDK headers and libraries 
+     are no longer included as a copy in Avisynth repo since 2024.
+
+     In order to be able to debug them we'd need to download and set some things manually.
+     
+     Download and extract DevIL SDK into a folder. In our example it is ``C:/avsplus_build_deps/DevIL Windows SDK/``.
+     See :ref:`devil_prebuilt_sdk_section1` and :ref:`devil_prebuilt_sdk_section2` for more details.
+
+     Manually edit CMAKE GUI options (x64 example): 
+
+     * BUILD_IMAGESEQ [X]
+     * ``ILU_LIBRARIES`` ``C:/avsplus_build_deps/DevIL Windows SDK/lib/x64/Release/ILU.lib``
+     * ``IL_INCLUDE_DIR`` ``c:\avsplus_build_deps\DevIL Windows SDK\include\IL``
+     * ``IL_LIBRARIES`` ``C:/avsplus_build_deps/DevIL Windows SDK/lib/x64/Release/DevIL.lib``
+     
+   - TimeStretch.DLL
+   
+     This plugin has external dependencies: SoundTouch project. Its source snapshot is 
+     no longer included as a copy in Avisynth repo since 2024.
+     
+     See the :doc:`avsplus_external_deps_guide_manual` for more details.
+
+     * BUILD_TIMESTRETCH [X]
+     * ``SOUNDTOUCH`` ``... to be filled ...``
+     * ``SOUNDTOUCH_DIR`` ``... to be filled ...``
+
+8. Generate
+
+9. Open the generated solution with Visual Studio GUI, build/debug
 
 Note: you can't have a solution file containing both x86 and x64 configuration at a time.
 

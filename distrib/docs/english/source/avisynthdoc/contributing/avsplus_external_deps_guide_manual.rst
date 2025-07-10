@@ -259,6 +259,8 @@ Compile and install in one step:
         cmake --build . --config Release -j 6 --target install
 
 
+.. _devil_prebuilt_sdk_section1:
+
 DevIL (using prebuilt SDK)
 --------------------------
 
@@ -1252,6 +1254,9 @@ AviSynth+
     mkdir build && cd build
     mkdir x64 x86
 
+
+
+.. _devil_prebuilt_sdk_section2:
 
 Using prebuilt DevIL SDK
 ^^^^^^^^^^^^^^^^^^^^^^^^
