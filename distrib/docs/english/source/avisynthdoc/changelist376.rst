@@ -23,6 +23,12 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix #448: Resolved an issue where MT_MULTI_INSTANCE filters using relative paths 
+  (e.g. "video.mp4" or "../image.png") failed under Prefetch() when used in imported 
+  scripts from different directories. The problem occurred because new thread instances did 
+  not inherit the original working directory, causing path resolution to fail.
+  Now, the current directory is captured at filter instantiation and passed to worker threads, 
+  ensuring consistent path resolution.
 
 Optimizations
 ~~~~~~~~~~~~~

@@ -5038,8 +5038,10 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
           LogMsgOnce(ticket, LOGLEVEL_INFO, "%s() does not have any MT-mode specification. Because it is a source filter, it will use MT_SERIALIZED instead of the default MT mode.", f->canon_name);
         }
 
+        // pass current directory as well, in order to remember it when a MT_MULTI_INSTANCE filter is populated to threads during Prefetch
+        auto current_directory = CWDChanger::GetCurrentWorkingDirectory();
 
-        *result = MTGuard::Create(mtmode, clip, std::move(funcCtor), threadEnv.get());
+        *result = MTGuard::Create(mtmode, clip, std::move(funcCtor), current_directory.c_str(), threadEnv.get());
 
 #ifdef USE_MT_GUARDEXIT
         // 170531: concept introduced in r2069 is not working
