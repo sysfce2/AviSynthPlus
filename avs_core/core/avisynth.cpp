@@ -4979,7 +4979,7 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
   else
   {
 #ifdef _DEBUG
-    Cache *PrevFrontCache = FrontCache;
+    AvsCache *PrevFrontCache = FrontCache;
 #endif
 
     AVSValue fret;
