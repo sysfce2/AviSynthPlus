@@ -55,10 +55,17 @@ enum ChromaLocationMode {
   LEFT_422
 };
 
+typedef struct BBX {
+  uint8_t width; // e.g. 8
+  uint8_t height; // 16
+  int8_t offset_x; // 0
+  int8_t offset_y; // -4
+} BBX;
+
 class PreRendered {
   const bool useHalocolor;
-  const int width;
-  const int height;
+  const int vi_width;
+  const int vi_height;
 
 public:
   int x, y;
@@ -77,12 +84,13 @@ public:
   PreRendered(
     const uint8_t* fonts,
     const int fontline_bytes,
-    const int _width, const int _height,
+    const int _vi_width, const int _vi_height,
     int _x, int _y, // they may change
     std::vector<int>& s, // it may get shortened
+    const std::vector<BBX>& bbx_array,
     const int align,
     const bool _useHalocolor,
-    const int FONT_WIDTH, const int FONT_HEIGHT,
+    const int FONT_WIDTH_notused, const int FONT_HEIGHT,
     const int _safety_bits_x_left,
     const int _safety_bits_x_right
     );
@@ -97,11 +105,12 @@ class BitmapFont {
   std::string font_filename;
 
 public:
-  const int width;
-  const int height;
+  const BBX global_bbx;
+
   const bool bold;
 
   std::vector<uint8_t> font_bitmaps;
+  std::vector<BBX> bbx_array; // FontBoundingBox BBX array, can be individual for each character
   const int fontline_bytes;
 
   std::unordered_map<std::string, int> charReMapUtf8; // utf8 vs. font image index
@@ -112,18 +121,20 @@ public:
     const uint16_t* _src_font_bitmaps_internaluint16, 
     const uint8_t* _src_font_bitmaps, 
     const int _fontline_bytes, 
-    const uint16_t* _codepoints, 
-    int _w, int _h, std::string _font_name, std::string _font_filename, bool _bold, bool debugSave) :
+    const uint16_t* _codepoints,
+    const std::vector<BBX>* bbx_array_ptr,
+    const BBX& _global_bbx,
+    std::string _font_name, std::string _font_filename, bool _bold, bool debugSave) :
     number_of_chars(_number_of_chars),
     font_name(_font_name),
     font_filename(_font_filename),
-    width(_w), height(_h),
+    global_bbx(_global_bbx),
     bold(_bold),
     fontline_bytes(_fontline_bytes)
     //font_bitmaps(_font_bitmaps),
   {
     //fixme: do not copy data
-    const int charline_count = height * number_of_chars;
+    const int charline_count = global_bbx.height * number_of_chars;
     font_bitmaps.resize(charline_count * fontline_bytes);
     if (_src_font_bitmaps != nullptr) 
       std::memcpy(font_bitmaps.data(), _src_font_bitmaps, font_bitmaps.size());
@@ -140,9 +151,31 @@ public:
       }
     }
 
+    // We always display utf8 strings, so the reverse lookup must be utf8 character based,
+    // which returns the index to the font bitmap and bbx array.
     for (int i = 0; i < _number_of_chars; i++) {
       std::string s_utf8 = U16_to_utf8(_codepoints[i]);
       charReMapUtf8[s_utf8] = i;
+    }
+
+
+    // Many East Asian characters—especially CJK (Chinese, Japanese, Korean) ideographs
+    // are typically double-width compared to Latin characters when used in monospaced bitmap
+    // fonts like BDF.
+    // For Avisynth-embedded internal fonts (e.g., Terminus, Info_H), only a fixed global BBX is used,
+    // as these fonts do not include CJK characters, only Latin, Cyrillic, and Greek.
+    // The variable BBX array is optional and is intended for use with external fonts,
+    // such as unifont-16.0.04.bdf, where CJK characters have different BBX values
+    // compared to Latin characters.
+
+    if (bbx_array_ptr != nullptr) {
+      // copy BBX array if provided
+      bbx_array.insert(bbx_array.end(), bbx_array_ptr->begin(), bbx_array_ptr->end());
+    }
+    else {
+      // When no BBX array was provided (bbx_array_ptr is nullptr)
+      // fill bbx_array with constant default global values
+      bbx_array.assign(_number_of_chars, global_bbx);
     }
 
     if (debugSave)

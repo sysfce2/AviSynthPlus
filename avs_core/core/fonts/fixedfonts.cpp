@@ -1,4 +1,4 @@
-﻿/*
+/*
 Font set #1
 -----------
 Copyright (c) 2019 Dimitar Toshkov Zhekov,
@@ -39,12 +39,13 @@ namespace fixed_font_12n {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 6;
   constexpr int HEIGHT = 12;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u12n.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     false // bold
   };
   // font bitmap definitions
@@ -1500,12 +1501,13 @@ namespace fixed_font_12b {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 6;
   constexpr int HEIGHT = 12;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u12b.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     true // bold
   };
   // font bitmap definitions
@@ -1521,12 +1523,13 @@ namespace fixed_font_14n {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 8;
   constexpr int HEIGHT = 14;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u14n.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     false // bold
   };
   // font bitmap definitions
@@ -2982,12 +2985,13 @@ namespace fixed_font_14b {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 8;
   constexpr int HEIGHT = 14;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u14b.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     true // bold
   };
   // font bitmap definitions
@@ -4443,12 +4447,13 @@ namespace fixed_font_16n {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 8;
   constexpr int HEIGHT = 16;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u16n.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     false // bold
   };
   // font bitmap definitions
@@ -5904,12 +5909,13 @@ namespace fixed_font_16b {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 8;
   constexpr int HEIGHT = 16;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u16b.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     true // bold
   };
   // font bitmap definitions
@@ -7365,12 +7371,13 @@ namespace fixed_font_18n {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 10;
   constexpr int HEIGHT = 18;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u18n.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     false // bold
   };
   // font bitmap definitions
@@ -10180,12 +10187,13 @@ namespace fixed_font_18b {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 10;
   constexpr int HEIGHT = 18;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u18b.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     true // bold
   };
   // font bitmap definitions
@@ -12995,12 +13003,13 @@ namespace fixed_font_20n {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 10;
   constexpr int HEIGHT = 20;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u20n.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     false // bold
   };
   // font bitmap definitions
@@ -15810,12 +15819,13 @@ namespace fixed_font_20b {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 10;
   constexpr int HEIGHT = 20;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u20b.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     true // bold
   };
   // font bitmap definitions
@@ -18625,12 +18635,13 @@ namespace fixed_font_22n {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 11;
   constexpr int HEIGHT = 22;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u22n.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     false // bold
   };
   // font bitmap definitions
@@ -21440,12 +21451,13 @@ namespace fixed_font_22b {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 11;
   constexpr int HEIGHT = 22;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u22b.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     true // bold
   };
   // font bitmap definitions
@@ -24255,12 +24267,13 @@ namespace fixed_font_24n {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 12;
   constexpr int HEIGHT = 24;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u24n.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     false // bold
   };
   // font bitmap definitions
@@ -27070,12 +27083,13 @@ namespace fixed_font_24b {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 12;
   constexpr int HEIGHT = 24;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u24b.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     true // bold
   };
   // font bitmap definitions
@@ -29885,12 +29899,13 @@ namespace fixed_font_28n {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 14;
   constexpr int HEIGHT = 28;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u28n.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     false // bold
   };
   // font bitmap definitions
@@ -32700,12 +32715,13 @@ namespace fixed_font_28b {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 14;
   constexpr int HEIGHT = 28;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u28b.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     true // bold
   };
   // font bitmap definitions
@@ -35515,12 +35531,13 @@ namespace fixed_font_32n {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 16;
   constexpr int HEIGHT = 32;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u32n.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     false // bold
   };
   // font bitmap definitions
@@ -38330,12 +38347,13 @@ namespace fixed_font_32b {
   constexpr int CHARCOUNT = 1354;
   constexpr int WIDTH = 16;
   constexpr int HEIGHT = 32;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "Terminus", // font name
     "ter-u32b.bdf", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     true // bold
   };
   // font bitmap definitions
@@ -41145,12 +41163,13 @@ namespace fixed_font_info_h {
   constexpr int CHARCOUNT = 196;
   constexpr int WIDTH = 10;
   constexpr int HEIGHT = 20;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "info_h", // font name
     "info_h", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     false // bold
   };
   // font bitmap definitions
@@ -41573,12 +41592,13 @@ namespace fixed_font_info_h_bold {
   constexpr int CHARCOUNT = 196;
   constexpr int WIDTH = 10;
   constexpr int HEIGHT = 20;
+  constexpr int OFFSET_X = 0;
+  constexpr int OFFSET_Y = 0;
   constexpr FixedFont_info_t fixedfont_info = {
     "info_h", // font name
     "info_h", // font name internal
     CHARCOUNT, // num of chars
-    WIDTH,
-    HEIGHT,
+    WIDTH, HEIGHT, OFFSET_X, OFFSET_Y,
     true // bold
   };
   // font bitmap definitions
