@@ -495,7 +495,7 @@ static AVSValue __cdecl Create_BlankClip(AVSValue args, void*, IScriptEnvironmen
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
 // in text-overlay.cpp
 extern bool GetTextBoundingBox(const char* text, const char* fontname,
-  int size, bool bold, bool italic, int align, int* width, int* height);
+  int size, bool bold, bool italic, int align, int* width, int* height, bool utf8);
 #endif
 
 extern bool GetTextBoundingBoxFixed(const char* text, const char* fontname, int size, bool bold,
@@ -505,6 +505,7 @@ extern bool GetTextBoundingBoxFixed(const char* text, const char* fontname, int 
 PClip Create_MessageClip(const char* message, int width, int height, int pixel_type, bool shrink,
                          int textcolor, int halocolor, int bgcolor,
                          int fps_numerator, int fps_denominator, int num_frames,
+                         bool utf8,
                          IScriptEnvironment* env) {
   int size;
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
@@ -516,7 +517,7 @@ PClip Create_MessageClip(const char* message, int width, int height, int pixel_t
 
   for (size = 24*8; /*size>=9*8*/; size-=4) {
     int text_width, text_height;
-    GetTextBoundingBox(message, "Arial", size, true, false, TA_TOP | TA_CENTER, &text_width, &text_height);
+    GetTextBoundingBox(message, "Arial", size, true, false, TA_TOP | TA_CENTER, &text_width, &text_height, utf8);
     text_width = ((text_width>>3)+8+7) & ~7; // mod 8
     text_height = ((text_height>>3)+8+1) & ~1; // mod 2
     if (size <= 9 * 8 || ((width <= 0 || text_width <= width) && (height <= 0 || text_height <= height))) {
@@ -534,8 +535,6 @@ PClip Create_MessageClip(const char* message, int width, int height, int pixel_t
     int text_width, text_height;
 #ifdef AVS_POSIX
     bool utf8 = true;
-#else
-    bool utf8 = false;
 #endif
     GetTextBoundingBoxFixed(message, "Terminus", size, true, false, 0 /* align */, text_width, text_height, utf8);
     text_width = (text_width + 8 + 7) & ~7; // mod 8
@@ -562,7 +561,7 @@ PClip Create_MessageClip(const char* message, int width, int height, int pixel_t
   vi.num_frames = num_frames > 0 ? num_frames : 240;
 
   PVideoFrame frame = CreateBlankFrame(vi, bgcolor, COLOR_MODE_RGB, nullptr, nullptr, false, env);
-  env->ApplyMessage(&frame, vi, message, size, textcolor, halocolor, bgcolor);
+  env->ApplyMessageEx(&frame, vi, message, size, textcolor, halocolor, bgcolor, utf8);
   PClip clip = new StaticImage(vi, frame, false);
 
   // wrap in OnCPU to support multi devices
@@ -571,10 +570,19 @@ PClip Create_MessageClip(const char* message, int width, int height, int pixel_t
 };
 
 AVSValue __cdecl Create_MessageClip(AVSValue args, void*, IScriptEnvironment* env) {
+  const bool utf8_default =
+#ifdef AVS_POSIX
+    true
+#else
+    false
+#endif
+    ;
+
   return Create_MessageClip(args[0].AsString(), args[1].AsInt(-1),
-      args[2].AsInt(-1), VideoInfo::CS_BGR32, args[3].AsBool(false),
-      args[4].AsInt(0xFFFFFF), args[5].AsInt(0), args[6].AsInt(0),
-      -1, -1, -1, // fps_numerator, fps_denominator, num_frames: auto
+    args[2].AsInt(-1), VideoInfo::CS_BGR32, args[3].AsBool(false),
+    args[4].AsInt(0xFFFFFF), args[5].AsInt(0), args[6].AsInt(0),
+    -1, -1, -1, // fps_numerator, fps_denominator, num_frames: auto
+    args[7].AsBool(utf8_default), // utf8
     env);
 }
 
@@ -2145,12 +2153,10 @@ AVSValue __cdecl Create_Version(AVSValue args, void*, IScriptEnvironment* env) {
   const int fps_denominator = has_clip ? vi_default.fps_denominator : -1; // auto
 
   return Create_MessageClip(
-#ifdef AVS_POSIX
-    AVS_FULLVERSION AVS_DEVELOPMENT_BUILD AVS_DEVELOPMENT_BUILD_GIT AVS_COPYRIGHT_UTF8
-#else
-    AVS_FULLVERSION AVS_DEVELOPMENT_BUILD AVS_DEVELOPMENT_BUILD_GIT AVS_COPYRIGHT
-#endif
-    , w, h, i_pixel_type, shrink, textcolor, halocolor, bgcolor, fps_numerator, fps_denominator, num_frames, env);
+    AVS_FULLVERSION AVS_DEVELOPMENT_BUILD AVS_DEVELOPMENT_BUILD_GIT AVS_COPYRIGHT_UTF8,
+    w, h, i_pixel_type, shrink, textcolor, halocolor, bgcolor, fps_numerator, fps_denominator, num_frames,
+    true, // utf8
+    env);
 }
 
 
@@ -2173,7 +2179,7 @@ extern const AVSFunction Source_filters[] = {
   { "BlankClip", BUILTIN_FUNC_PREFIX, "[]c*[length]i[width]i[height]i[pixel_type]s[fps]f[fps_denominator]i[audio_rate]i[channels]i[sample_type]s[color]i[color_yuv]i[clip]c[colors]f+", Create_BlankClip },
   { "Blackness", BUILTIN_FUNC_PREFIX, "[]c*[length]i[width]i[height]i[pixel_type]s[fps]f[fps_denominator]i[audio_rate]i[stereo]b[sixteen_bit]b[color]i[color_yuv]i[clip]c", Create_BlankClip },
   { "Blackness", BUILTIN_FUNC_PREFIX, "[]c*[length]i[width]i[height]i[pixel_type]s[fps]f[fps_denominator]i[audio_rate]i[channels]i[sample_type]s[color]i[color_yuv]i[clip]c", Create_BlankClip },
-  { "MessageClip", BUILTIN_FUNC_PREFIX, "s[width]i[height]i[shrink]b[text_color]i[halo_color]i[bg_color]i", Create_MessageClip },
+  { "MessageClip", BUILTIN_FUNC_PREFIX, "s[width]i[height]i[shrink]b[text_color]i[halo_color]i[bg_color]i[utf8]b", Create_MessageClip },
   { "ColorBars", BUILTIN_FUNC_PREFIX, "[width]i[height]i[pixel_type]s[staticframes]b", ColorBars::Create, (void*)0 },
   { "ColorBarsHD", BUILTIN_FUNC_PREFIX, "[width]i[height]i[pixel_type]s[staticframes]b", ColorBars::Create, (void*)1 },
   { "Tone", BUILTIN_FUNC_PREFIX, "[length]f[frequency]f[samplerate]i[channels]i[type]s[level]f", Tone::Create },
