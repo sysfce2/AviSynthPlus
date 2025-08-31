@@ -1143,10 +1143,13 @@ called during the destroy as a side effect.
 
 ApplyMessage, v5
 ^^^^^^^^^^^^^^^^
+ApplyMessageEx, v12
+^^^^^^^^^^^^^^^^^^^
 
 ::
 
     virtual void _stdcall ApplyMessage(PVideoFrame* frame, const VideoInfo& vi, const char* message, int size, int textcolor, int halocolor, int bgcolor) = 0;
+    virtual void _stdcall ApplyMessageEx(PVideoFrame* frame, const VideoInfo& vi, const char* message, int size, int textcolor, int halocolor, int bgcolor, bool utf8) = 0;
 
 
 ApplyMessage writes text on a frame. For example:
@@ -1157,6 +1160,9 @@ ApplyMessage writes text on a frame. For example:
     env->MakeWritable(&src);
     sprintf(BUF, "Filter: Frame %d is processed.", n);
     env->ApplyMessage(&src, vi, BUF, vi.width/4, 0xf0f080, 0, 0);
+
+
+With ApplyMessageEx you can use UTF-8 encoded strings on Windows ANSI code pages. On Posix, or on Windows set to "utf8 (beta)" everything is UTF-8 already.
 
 
 .. _cplusplus_getavslinkage:
@@ -2719,4 +2725,4 @@ ____
 
 Back to :doc:`FilterSDK`
 
-$Date: 2025/06/03 08:36:00 $
+$Date: 2025/08/31 18:09:00 $

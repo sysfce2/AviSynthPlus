@@ -8,6 +8,7 @@ error reporting.
 The font face is "Arial". The font size is between 24 points and 9 points - 
 chosen to fit, if possible, in the width by height clip. The pixeltype is RGB32
 and 240 frames in length.
+On non-Windows GDI systems fixed Terminus font is used instead.
 
 
 Syntax and Parameters
@@ -16,7 +17,7 @@ Syntax and Parameters
 ::
 
     MessageClip (string message, int "width", int "height", bool "shrink",
-                 int "text_color", int "halo_color", int "bg_color")
+                 int "text_color", int "halo_color", int "bg_color", bool "utf8")
 
 .. describe:: message
 
@@ -46,6 +47,12 @@ Syntax and Parameters
     
     Default: $FFFFFF, $000000, $000000
 
+.. describe:: utf8
+
+    | If true, message string is interpreted as an utf8 string.
+    | Available since 3.7.6.
+    
+    Default: false on windows GDI systems, true otherwise
 
 Examples
 --------
@@ -56,4 +63,11 @@ Displaying AviSynth+ version information with ``MessageClip``::
     
 .. image:: pictures/messageclip-versionstring.png
 
-$Date: 2022/02/07 21:28:07 $
+
++------------+--------------------------------+
+| Changelog: |                                |
++============+================================+
+| 3.7.6      | Added utf8 parameter           |
++------------+--------------------------------+
+
+$Date: 2025/08/31 17:52:00 $

@@ -437,6 +437,12 @@ What's new in the API V12
           
           See :ref:`global lock support<cplusplus_acquiregloballock>`
 
+- C++ API
+
+          * ``env->ApplyMessageEx`` (C++),
+          
+          see :ref:`ApplyMessageEx<cplusplus_applymessage>`
+
 Some history
 ------------
 

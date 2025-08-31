@@ -9,6 +9,28 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
+20250831 3.7.5.xxxxx
+--------------------
+
+- Build environment, Interface
+
+  * introduce AVS_RESTRICT to avs/config.h (compiler invariant c++ __restrict)
+  * AVX512: CMake to recognize *_avx512.* file pattern, add compiler specific AVX512 compile flags accordingly (foundation and bw extension assumed)
+  * AVX512 support by conditional define. Define INTEL_INTRINSICS_AVX512 if avx512 modules are enabled (The conditional is undefined for non-intel arch., 32 bit, or for pre MSVC 2019 16.2 (19.22))
+  * add .editorconfig
+  * v12 interface: Global Lock support (https://github.com/AviSynth/AviSynthPlus/issues/444), mainly for plugins using common fftw3 library:
+        env->AcquireGlobalLock, env->ReleaseGlobalLock (C++),
+        avs_acquire_global_lock, avs_release_global_lock (C)
+  * v12 interface: ApplyMessageEx supporting utf8 parameter. 
+
+- Bugfixes
+
+  * Fix #448: Resolved an issue where MT_MULTI_INSTANCE filters using relative paths (e.g. "video.mp4" or "../image.png") failed under Prefetch() when used in imported scripts from different directories. The problem occurred because new thread instances did not inherit the original working directory, causing path resolution to fail. Now, the current directory is captured at filter instantiation and passed to worker threads, ensuring consistent path resolution.
+  * Fix #456: "Reverse" corrupts 24-bit audio (https://github.com/AviSynth/AviSynthPlus/issues/456)
+  * Fix BDF font rendering when it contains variable width characters like mixed Latin and CJK. Preparing feature request #446 (https://github.com/AviSynth/AviSynthPlus/issues/446)
+
+- WIP: resampler internals, special cases, avx512
+
 20250427 3.7.5.xxxx
 -------------------
 - SIMD C module added. Non x86 benefits. Integer C code llvm benefits on x86. Float C code benefits even for MSVC.

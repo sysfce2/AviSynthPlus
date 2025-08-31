@@ -19,7 +19,11 @@ Build environment, Interface
 
   * ``env->AcquireGlobalLock``, ``env->ReleaseGlobalLock`` (C++),
   * ``avs_acquire_global_lock``, ``avs_release_global_lock`` (C)
+
   see :ref:`global lock support<cplusplus_acquiregloballock>`
+- v12 interface: ApplyMessageEx supporting utf8 parameter.
+  see :ref:`ApplyMessageEx<cplusplus_applymessage>`
+
 
 Bugfixes
 ~~~~~~~~
@@ -29,6 +33,9 @@ Bugfixes
   not inherit the original working directory, causing path resolution to fail.
   Now, the current directory is captured at filter instantiation and passed to worker threads, 
   ensuring consistent path resolution.
+- Fix #456: "Reverse" corrupts 24-bit audio (https://github.com/AviSynth/AviSynthPlus/issues/456)
+- Fix BDF font rendering when it contains variable width characters like mixed Latin and CJK. 
+  Preparing feature request #446 (https://github.com/AviSynth/AviSynthPlus/issues/446)
 
 Optimizations
 ~~~~~~~~~~~~~
@@ -52,7 +59,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2025/06/03 08:00:00 $
+$Date: 2025/08/31 18:09:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
