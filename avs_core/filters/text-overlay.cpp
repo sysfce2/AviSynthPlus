@@ -51,6 +51,7 @@
 #include <sstream>
 #include <cstdint>
 #include <cmath>
+#include <algorithm>
 #include <avs/minmax.h>
 #include "../core/internal.h"
 #include "../core/info.h"
@@ -3255,40 +3256,75 @@ PVideoFrame __stdcall Compare::GetFrame(int n, IScriptEnvironment* env)
  *******   Helper Functions    ******
  ***********************************/
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-bool GetTextBoundingBox( const char* text, const char* fontname, int size, bool bold,
-                         bool italic, int align, int* width, int* height )
+bool GetTextBoundingBox(const char* text, const char* fontname, int size, bool bold,
+  bool italic, int align, int* width, int* height, bool utf8)
 {
   HFONT hfont = LoadFont(fontname, size, bold, italic);
   if (hfont == NULL)
     return false;
   HDC hdc = GetDC(NULL);
   if (hdc == NULL)
-  return false;
+    return false;
   HFONT hfontDefault = (HFONT)SelectObject(hdc, hfont);
   int old_map_mode = SetMapMode(hdc, MM_TEXT);
   UINT old_text_align = SetTextAlign(hdc, align);
 
-  *height = *width = 8;
+  // Initialize width and height with base value (8 GDI units)
+  *height = 8;
+  *width = 8;
+
   bool success = true;
-  RECT r = { 0, 0, 0, 0 };
-  for (;;) {
-    const char* nl = strchr(text, '\n');
-    if (nl-text) {
-      success &= !!DrawText(hdc, text, nl ? int(nl-text) : (int)lstrlen(text), &r, DT_CALCRECT | DT_NOPREFIX);
-      *width = max(*width, int(r.right+8));
-    }
-    *height += r.bottom;
-    if (nl) {
-      text = nl+1;
-      if (*text)
-        continue;
+  const char* current_text_ptr = text;
+
+  // Handle empty string case immediately
+  if (text == nullptr || *text == '\0') {
+    // Already initialized to 8, so nothing more to do for empty text
+  }
+  else {
+    // Loop through lines
+
+    while (*current_text_ptr != '\0')
+    {
+      const char* nl = strchr(current_text_ptr, '\n');
+      std::unique_ptr<wchar_t[]> wide_line;
+      std::string temp_line; // Used for converting a substring
+
+      if (nl)
+      {
+        // Extract the current line segment
+        temp_line.assign(current_text_ptr, (size_t)(nl - current_text_ptr));
+        wide_line = utf8 ? Utf8ToWideChar(temp_line.c_str()) : AnsiToWideChar(temp_line.c_str());
+      }
       else
+      {
+        // Process the rest of the string as the last line
+        wide_line = utf8 ? Utf8ToWideChar(current_text_ptr) : AnsiToWideChar(current_text_ptr);
+      }
+
+      if (!wide_line) {
+        success = false;
+        break; // Conversion failed
+      }
+
+      RECT r = { 0, 0, 0, 0 };
+      // Use DrawTextW for wide characters with DT_CALCRECT and DT_SINGLELINE
+      success = (DrawTextW(hdc, wide_line.get(), (int)(wcslen(wide_line.get())), &r, DT_CALCRECT | DT_NOPREFIX | DT_SINGLELINE) != 0);
+
+      if (!success)
         break;
-    } else {
-      break;
+
+      // +8 GDI units to the right side (width) as well
+      *width = std::max(*width, (int)r.right + 8); // Update max width encountered
+      *height += r.bottom;                     // Add this line's height
+
+      if (nl)
+        current_text_ptr = nl + 1; // Move past the newline character
+      else
+        break; // No more newlines, end of text
     }
   }
 
+  // Clean up GDI objects
   SetTextAlign(hdc, old_text_align);
   SetMapMode(hdc, old_map_mode);
   SelectObject(hdc, hfontDefault);
@@ -3336,10 +3372,23 @@ bool GetTextBoundingBoxFixed(const char* text, const char* fontname, int size, b
   std::stringstream ss(text);
   while (std::getline(ss, temp, '\n')) {
     // does not recognize combined unicode sequences, 
-    // e.g. U: is len=2 and not len=1 like Ü
-    const size_t real_len = utf8 ? str_utf8_size(temp) : temp.size();
-    max_width = std::max(max_width, real_len * current_font->width);
-    height += current_font->height;
+    // e.g. U: is len=2 and not len=1 like Ãœ
+
+    // We no longer assume fixed width for all chars in BDF, must calculate width by adding each characters' real width
+    // max_width = std::max(max_width, real_len * current_font->global_bbx.width);
+    // cannot do simple len * FONT_WIDTH, because characters can have different widths
+
+    std::string s_utf8 = charToUtf8(temp.c_str(), utf8);
+    // map an utf8 string to a sequence of character map indexes
+    auto s_remapped = current_font->remap(s_utf8); // array of font table indexes
+    size_t total_width = 0;
+    for (int i = 0; i < (int)s_remapped.size(); i++) {
+      // bbx_array is the array of bounding boxes for each character
+      // s[i] is the index to the fontbitmap array
+      total_width += current_font->bbx_array[s_remapped[i]].width;
+    }
+    max_width = std::max(max_width, total_width);
+    height += current_font->global_bbx.height;
   }
 
   width = (int)max_width;
@@ -3347,9 +3396,9 @@ bool GetTextBoundingBoxFixed(const char* text, const char* fontname, int size, b
   return true;
 }
 
-
-void ApplyMessage( PVideoFrame* frame, const VideoInfo& vi, const char* message, int size,
-                   int textcolor, int halocolor, int bgcolor, IScriptEnvironment* env )
+// old ApplyMessage with an extra utf8 parameter
+void ApplyMessageEx(PVideoFrame* frame, const VideoInfo& vi, const char* message, int size,
+  int textcolor, int halocolor, int bgcolor, bool utf8, IScriptEnvironment* env)
 {
   AVS_UNUSED(bgcolor);
   AVS_UNUSED(env);
@@ -3364,12 +3413,15 @@ void ApplyMessage( PVideoFrame* frame, const VideoInfo& vi, const char* message,
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   Antialiaser antialiaser(vi.width, vi.height, "Arial", size, textcolor, halocolor, bold, italic, noaa);
   HDC hdcAntialias = antialiaser.GetDC();
-  if  (hdcAntialias)
+  if (hdcAntialias)
   {
-  RECT r = { 4*8, 4*8, vi.width*8, vi.height*8 };
-  DrawText(hdcAntialias, message, lstrlen(message), &r, DT_NOPREFIX|DT_CENTER);
-  GdiFlush();
-  antialiaser.Apply(vi, frame, (*frame)->GetPitch());
+    RECT r = { 4 * 8, 4 * 8, vi.width * 8, vi.height * 8 };
+
+    auto utf8Message = utf8 ? Utf8ToWideChar(message) : AnsiToWideChar(message);
+    DrawTextW(hdcAntialias, utf8Message.get(), (int)wcslen(utf8Message.get()), &r, DT_NOPREFIX | DT_CENTER);
+
+    GdiFlush();
+    antialiaser.Apply(vi, frame, (*frame)->GetPitch());
   }
 #else
   std::unique_ptr<BitmapFont> current_font;
@@ -3388,11 +3440,7 @@ void ApplyMessage( PVideoFrame* frame, const VideoInfo& vi, const char* message,
       return;
   }
 
-  //env->MakeWritable(&frame);
-  //frame->GetWritePtr(); // Bump sequence_number
-
   // AVS_POSIX: utf8 is always true
-  bool utf8 = false; // fixme: true for new utf8-avs+
   std::string s_utf8 = charToUtf8(message, utf8);
 
   int align = 7;
@@ -3405,3 +3453,10 @@ void ApplyMessage( PVideoFrame* frame, const VideoInfo& vi, const char* message,
 
 #endif
 }
+
+void ApplyMessage(PVideoFrame* frame, const VideoInfo& vi, const char* message, int size,
+  int textcolor, int halocolor, int bgcolor, IScriptEnvironment* env) {
+  // Simply call ApplyMessageEx with utf8=false
+  ApplyMessageEx(frame, vi, message, size, textcolor, halocolor, bgcolor, false /*utf8*/, env);
+}
+
