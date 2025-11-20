@@ -576,6 +576,7 @@ AVSValue AddAlphaPlane::Create(AVSValue args, void*, IScriptEnvironment* env)
 
 AddAlphaPlane::AddAlphaPlane(PClip _child, PClip _alphaClip, float _mask_f, bool isMaskDefined, IScriptEnvironment* env)
   : GenericVideoFilter(_child), alphaClip(_alphaClip)
+  , mask(0), mask_f(0.0f), pixelsize(0), bits_per_pixel(0)
 {
   if(vi.IsYUY2())
     env->ThrowError("AddAlphaPlane: YUY2 is not allowed");

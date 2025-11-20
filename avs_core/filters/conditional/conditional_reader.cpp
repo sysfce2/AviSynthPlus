@@ -615,10 +615,17 @@ Write::Write(PClip _child, const char* _filename, AVSValue args, int _linecheck,
 #ifdef AVS_WINDOWS
   _fullpath(filename, _filename, _MAX_PATH);
 #else
-  realpath(_filename, filename);
+  // Use realpath and handle possible failure to avoid unused-result warning.
+  if (realpath(_filename, filename) == NULL) {
+    // Fallback: copy original input path into filename safely.
+    size_t len = strlen(_filename);
+    if (len >= sizeof(filename)) len = sizeof(filename) - 1;
+    memcpy(filename, _filename, len);
+    filename[len] = '\0';
+  }
 #endif
 
-  fout = fopen(filename, append ? AplusT : WplusT);	//append or purge file
+  fout = fopen(filename, append ? AplusT : WplusT); //append or purge file
   if (!fout) env->ThrowError("Write: File '%s' cannot be opened.", filename);
 
   if (flush) fclose(fout);	//will be reopened in FileOut
