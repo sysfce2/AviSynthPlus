@@ -4,8 +4,8 @@
 # IDE project file generators
 # "Visual Studio 15 2017" optional platform generator Win32 and x64
 # "Visual Studio 16 2019" optional platform generator Win32 and x64. optional toolset "v141_xp"
-# "Visual Studio 17 2022" optional platform generator Win32 and x64. optional toolset "v141_xp"
-# "Visual Studio 17 2022" optional platform generator Win32 and x64. optional toolset "clangcl"
+# "Visual Studio 17 2022" optional platform generator Win32 and x64. optional toolset "v141_xp" or "clangcl"
+# "Visual Studio 18 2026" optional platform generator Win32 and x64. optional toolset "v141_xp" or "clangcl"
 
 # Intel C++ Compilers
 # Minimum Cmake version for Intel C++ Compiler 2023: 3.22.3 (Win) 3.20 (Linux)
@@ -49,6 +49,7 @@ CMAKE_MINIMUM_REQUIRED( VERSION 3.6.2...3.11 )
 # VS2019: 3.14.1
 # Intel 2023: 3.22.3 (Win) 3.20 (Linux)
 # VS2022: 3.21
+# VS2026: 4.2
 
 # Get PROJECT_VERSION property from 'avs_core/core/version.h.in'
 file(READ "avs_core/core/version.h.in" versioning)
@@ -140,7 +141,9 @@ endif()
 
     #1910-1919 = VS 15.0 (v141 toolset) Visual Studio 2017
     #1920-1929 = VS 16.0 (v142 toolset) Visual Studio 2019
-    #1930-1939 = VS 17.0 (v143 toolset) Visual Studio 2022
+    #1930-1949 = VS 17.x (v143 toolset) Visual Studio 2022
+    #  ( 1940-1949 = VS v17.10+: Toolset v143 (Still!) | Compiler 19.4x)
+    #1950-1959 = VS 18.0 (v145 toolset) Visual Studio 2026
 
     # detect if the target is for x86
     string(TOLOWER "${CMAKE_VS_PLATFORM_NAME}" PLATFORMID)
@@ -221,7 +224,7 @@ endif()
           IF(NOT CLANG_IN_VS STREQUAL "1")
             # Setting CMAKE_GENERATOR_TOOLSET here has no effect, only when passed (-T option) or set directly, so we just check it
             IF(CMAKE_GENERATOR_TOOLSET STREQUAL "v141_xp")
-              # v141_xp is still available in Visual Studio 2022
+              # v141_xp is still available in Visual Studio 2022 and 2026.
               message("CMAKE_GENERATOR_TOOLSET is XP compatible: ${CMAKE_GENERATOR_TOOLSET}, extra XP options added")
               # https://connect.microsoft.com/VisualStudio/feedback/details/1789709/visual-c-2015-runtime-broken-on-windows-server-2003-c-11-magic-statics
               add_definitions("/Zc:threadSafeInit-")

@@ -1,4 +1,3 @@
-
 Compiling AviSynth+
 ===================
 
@@ -25,7 +24,7 @@ Note that AviSynth+ is not restricted to Windows.
 
 AviSynth+ can be built by a few different compilers:
 
-* Visual Studio 2019, 2022 or higher. (May work for VS2017)
+* Visual Studio 2019, 2022, 2026 or higher. (May work for VS2017)
   - native msvc or clang-cl
 * Clang 7.0.1 or higher.
 * GCC 7 or higher.
@@ -64,6 +63,20 @@ In mingw32.ini:
 
 Add CMake's bin directory to the system %PATH% manually if the installer won't.
 Also add 7zip and upx to the %PATH%.
+
+
+Visual Studio 2026 Support
+--------------------------
+
+Visual Studio 2026 support was introduced in November 2025. To use it, you must have **CMake 4.2** or higher installed.
+
+The generator name is ``Visual Studio 18 2026``.
+
+**Solution Format (.slnx):**
+The VS 2026 generator creates a **.slnx** file instead of the traditional .sln file. This is a new XML-based solution format. You should open the **.slnx** file in Visual Studio.
+
+**Windows XP Support:**
+Visual Studio 2026 still supports the ``v141_xp`` toolset. If you have the toolset installed, you can generate XP-compatible builds using the new generator.
 
 
 Building with Visual Studio
@@ -185,10 +198,16 @@ Now, we can build AviSynth+.
 Using MSBuild
 .............
 
-Note: depending on your Visual Studio 2019 or 2022 version, choose only one cmake build block.
+Note: depending on your Visual Studio 2019, 2022 or 2026 version, choose only one cmake build block.
+**Reminder:** You need CMake 4.2+ for Visual Studio 2026.
 
 For 32-bit (no XP, SSE2):
 ::
+
+    cmake ../AviSynthPlus -G "Visual Studio 18 2026" -A Win32 -DMSVC_CPU_ARCH:string="SSE2" -DBUILD_DIRECTSHOWSOURCE:bool=on && \
+    cmake --build . --config Release -j $(nproc)
+
+    or
 
     cmake ../AviSynthPlus -G "Visual Studio 17 2022" -A Win32 -DMSVC_CPU_ARCH:string="SSE2" -DBUILD_DIRECTSHOWSOURCE:bool=on && \
     cmake --build . --config Release -j $(nproc)
@@ -201,6 +220,11 @@ For 32-bit (no XP, SSE2):
 
 For 32-bit (XP, SSE):
 ::
+
+    cmake ../AviSynthPlus -G "Visual Studio 18 2026" -A Win32 -T "v141_xp" -DMSVC_CPU_ARCH:string="SSE" -DWINXP_SUPPORT:bool=on -DBUILD_DIRECTSHOWSOURCE:bool=on && \
+    cmake --build . --config Release -j $(nproc)
+
+    or
 
     cmake ../AviSynthPlus -G "Visual Studio 17 2022" -A Win32 -T "v141_xp" -DMSVC_CPU_ARCH:string="SSE" -DWINXP_SUPPORT:bool=on -DBUILD_DIRECTSHOWSOURCE:bool=on && \
     cmake --build . --config Release -j $(nproc)
@@ -235,6 +259,11 @@ Undo the upx packing on the 32-bit copy of DevIL.dll:
 For 64-bit (no XP):
 ::
 
+    cmake ../AviSynthPlus -G "Visual Studio 18 2026" -A x64 -DBUILD_DIRECTSHOWSOURCE:bool=on -DENABLE_PLUGINS:bool=on && \
+    cmake --build . --config Release -j $(nproc)
+
+    or
+
     cmake ../AviSynthPlus -G "Visual Studio 17 2022" -A x64 -DBUILD_DIRECTSHOWSOURCE:bool=on -DENABLE_PLUGINS:bool=on && \
     cmake --build . --config Release -j $(nproc)
 
@@ -247,6 +276,11 @@ For 64-bit (no XP):
 
 For 64-bit (XP):
 ::
+
+    cmake ../AviSynthPlus -G "Visual Studio 18 2026" -A x64 -T "v141_xp" -DWINXP_SUPPORT:bool=on -DBUILD_DIRECTSHOWSOURCE:bool=on -DENABLE_PLUGINS:bool=on && \
+    cmake --build . --config Release -j $(nproc)
+
+    or
 
     cmake ../AviSynthPlus -G "Visual Studio 17 2022" -A x64 -T "v141_xp" -DWINXP_SUPPORT:bool=on -DBUILD_DIRECTSHOWSOURCE:bool=on -DENABLE_PLUGINS:bool=on && \
     cmake --build . --config Release -j $(nproc)
@@ -293,6 +327,7 @@ From CMake GUI:
 3. Press Configure
 4. Choose an available generator:
 
+   - `Visual Studio 18 2026` (requires CMake 4.2+; generates **.slnx** file)
    - `Visual Studio 17 2022` (solution will be generated for VS2022)
    - `Visual Studio 16 2019` (solution will be generated for VS2019)
 5. Choose optional platform generator: default is `x64` when left empty, `Win32` is another option
@@ -300,7 +335,7 @@ From CMake GUI:
 
   - `v141_xp`
 
-  (note: for XP this is only the half of the prerequisites)
+  (note: for XP this is only the half of the prerequisites. Tested and working with VS 2026)
 
 7. Fill options
 
@@ -334,7 +369,7 @@ From CMake GUI:
 
 8. Generate
 
-9. Open the generated solution with Visual Studio GUI, build/debug
+9. Open the generated solution (**slnx for VS2026**, sln for others) with Visual Studio GUI, build/debug
 
 Note: you can't have a solution file containing both x86 and x64 configuration at a time.
 
@@ -343,6 +378,29 @@ Command line
 
 Examples (assuming we are in ``avisynth-build`` folder)
 Config (--config parameter) can be Debug, Release, RelWithDebInfo.
+
+**Visual Studio 2026**
+
+``msvc_2026_win64_cleanfirst.bat``
+
+::
+
+      @rem cd avisynth-build
+      del .\CMakeCache.txt
+      del ..\CMakeCache.txt
+      cmake .. -G "Visual Studio 18 2026" -A x64 -DWINXP_SUPPORT:bool=off -DBUILD_DIRECTSHOWSOURCE:bool=on -DENABLE_PLUGINS:bool=on -DENABLE_INTEL_SIMD:bool=ON
+      cmake --build . --config Release --clean-first
+
+``msvc_2026_win32_xp_sse_cleanfirst.bat`` 
+
+::
+
+      @rem cd avisynth-build
+      del .\CMakeCache.txt
+      del ..\CMakeCache.txt
+      cmake .. -G "Visual Studio 18 2026" -A Win32 -T "v141_xp" -DMSVC_CPU_ARCH:string="SSE" -DWINXP_SUPPORT:bool=on -DBUILD_DIRECTSHOWSOURCE:bool=on -DENABLE_PLUGINS:bool=on -DENABLE_INTEL_SIMD:bool=ON
+      cmake --build . --config Release --clean-first
+
 
 **Visual Studio 2022**
 
@@ -557,6 +615,7 @@ From CMake GUI:
 3. Press Configure
 4. Choose an available generator:
 
+  - `Visual Studio 18 2026` (requires CMake 4.2+, solution generated for VS2026)
   - `Visual Studio 17 2022` (solution will be generated for VS2022)
   - `Visual Studio 16 2019` (solution will be generated for VS2019)
 
@@ -564,7 +623,7 @@ From CMake GUI:
 6. Set ``Optional toolset to use (-T option)``:
 
   - For LLVM based icx:
-  
+   
     - `Intel C++ Compiler 2025` or
     - `Intel C++ Compiler 2024` or
     - `Intel C++ Compiler 2023` or
@@ -685,6 +744,7 @@ Using Cmake GUI:
 3. Press Configure
 4. Choose generator:
 
+   - `Visual Studio 18 2026` (solution will be generated for VS2026)
    - `Visual Studio 17 2022` (solution will be generated for VS2022)
    - `Visual Studio 16 2019` (solution will be generated for VS2019)
 
@@ -697,10 +757,15 @@ Using Cmake GUI:
 
   for native LLVM you may need to specify native compilers (checkbox): browse for the appropriate compiler executable path.
 
-  Hint: How to install Clang-cl in Visual Studio: as it appears in VS2019/2022:
+  Hint: How to install Clang-cl in Visual Studio:
 
   Tools|Get Tools and Features|Add Individual Components|Compilers, build tools, and runtimes
 
+  For VS2026:
+    - [X] C++ Clang compiler for Windows
+    - [X] MSBuild support for LLVM (clang-cl) toolset
+
+  For VS2019/2022:
     - [X] C++ Clang compiler for Windows
     - [X] C++ Clang-cl for v142/v143 build tools (x64/x86)
 
@@ -821,4 +886,4 @@ Packaging:
 
 Back to the :doc:`main page <../../index>`
 
-$ Date: 2023-02-23 15:37:00 +01:00 $
+$ Date: 2025-11-20 16:07:00 +01:00 $
