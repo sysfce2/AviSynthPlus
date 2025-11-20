@@ -9,6 +9,19 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
+20251120 3.7.5.xxxxx
+--------------------
+- Fix #462: Report: "AviSynth scripts don't work in a folder with a Unicode name."
+  Plugin autoload folders are internally stored in UTF-8, regardless of which Windows ANSI codepage is set.
+- AddAutoLoadDir is utf8 friendly
+  Script function: new utf8 bool (false) param, force utf8 input even on ANSI-only process
+- ListAutoLoadDirs: new utf8 bool (false) param, force utf8 input even on ANSI-only process
+- AddAutoLoadDir expands the appropriate UTF8-aware folders in windows SCRIPTDIR, MAINSCRIPTDIR, PROGRAMDIR
+- Internal IScriptEnvironment2 AddAutoLoadDir and ListAutoLoadDirs interface assumes utf8 input and output.
+  These macros: USER_PLUS_PLUGINS, MACHINE_PLUS_PLUGINS, USER_CLASSIC_PLUGINS, MACHINE_CLASSIC_PLUGINS
+  are replaced with the relevant registry content (PluginDir and PluginDir+, etc.), which now can contain
+  non-ANSI folder path characters.
+
 20250831 3.7.5.xxxxx
 --------------------
 

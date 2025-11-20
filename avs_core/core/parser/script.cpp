@@ -294,9 +294,9 @@ extern const AVSFunction Script_functions[] = {
 
   { "PixelType",  BUILTIN_FUNC_PREFIX, "c", PixelType  },
 
-  { "AddAutoloadDir",     BUILTIN_FUNC_PREFIX, "s[toFront]b", AddAutoloadDir  },
+  { "AddAutoloadDir",     BUILTIN_FUNC_PREFIX, "s[toFront]b[utf8]b", AddAutoloadDir  },
   { "ClearAutoloadDirs",  BUILTIN_FUNC_PREFIX, "", ClearAutoloadDirs  },
-  { "ListAutoloadDirs",   BUILTIN_FUNC_PREFIX, "", ListAutoloadDirs },
+  { "ListAutoloadDirs",   BUILTIN_FUNC_PREFIX, "[utf8]b", ListAutoloadDirs },
   { "AutoloadPlugins",    BUILTIN_FUNC_PREFIX, "", AutoloadPlugins  },
   { "FunctionExists",     BUILTIN_FUNC_PREFIX, "s", FunctionExists  },
   { "InternalFunctionExists", BUILTIN_FUNC_PREFIX, "s", InternalFunctionExists  },
@@ -461,9 +461,10 @@ CWDChanger::CWDChanger(const wchar_t* new_cwd)
   Init(new_cwd);
 }
 
-CWDChanger::CWDChanger(const char* new_cwd)
+// utf8 on Windows as well
+CWDChanger::CWDChanger(const char* new_cwd_utf8)
 {
-  auto new_cwd_w = AnsiToWideChar(new_cwd);
+  auto new_cwd_w = Utf8ToWideChar(new_cwd_utf8);
   Init(new_cwd_w.get());
 }
 
@@ -2188,10 +2189,20 @@ AVSValue AvsMax(AVSValue args, void*, IScriptEnvironment* env)
   }
 }
 
+// The "AddAutoloadDir" script function allows supplying a UTF-8 directory path
+// even when the system code page is ANSI.
+// On Windows the Avisynth script typically treats string parameters as ANSI
+// by default, unless we force the interpretation with an optional bool utf8 = true.
+// The directory parameter is converted from ANSI to UTF-8 internally before calling
+// the interface API. This behavior depends on the IScriptEnvironment2 (development)
+// interface, which provides an AddAutoloadDir method that requires now UTF-8 paths.
 AVSValue AddAutoloadDir (AVSValue args, void*, IScriptEnvironment* env)
 {
   IScriptEnvironment2 *env2 = static_cast<IScriptEnvironment2*>(env);
-  env2->AddAutoloadDir(args[0].AsString(), args[1].AsBool(true));
+  const bool utf8 = args[2].AsBool(false); // default ANSI on Windows, n/a (see charToUtf8) on other OSes
+  auto dir_utf8 = charToUtf8(args[0].AsString(), utf8); // takes care of ANSI to UTF8 conversion on Windows if needed
+  env2->AddAutoloadDir(dir_utf8.c_str(), args[1].AsBool(true));
+
   return AVSValue();
 }
 
@@ -2205,7 +2216,17 @@ AVSValue ClearAutoloadDirs (AVSValue args, void*, IScriptEnvironment* env)
 AVSValue ListAutoloadDirs(AVSValue args, void*, IScriptEnvironment* env)
 {
   InternalEnvironment* envi = static_cast<InternalEnvironment*>(env);
-  return AVSValue(envi->ListAutoloadDirs());
+  const char* AutoLoadDirs = envi->ListAutoloadDirs(); // internally uses SaveString
+#if defined(AVS_WINDOWS)
+  const bool utf8 = args[0].AsBool(false); // default ANSI on Windows, n/a on other OSes
+  if (!utf8) {
+    // On Windows the environment uses ANSI by default. When the caller requests ANSI
+    // (utf8 == false), convert the internally stored UTF-8 string to ANSI before returning.
+    // Characters that cannot be represented in ANSI will be replaced with '?'.
+    return AVSValue(env->SaveString(Utf8ToAnsi(AutoLoadDirs).c_str())); // New SaveString needed.
+  }
+#endif
+  return AVSValue(AutoLoadDirs);
 }
 
 

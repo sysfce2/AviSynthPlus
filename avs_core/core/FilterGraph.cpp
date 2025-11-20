@@ -2,6 +2,7 @@
 #include "FilterGraph.h"
 #include "DeviceManager.h"
 #include "InternalEnvironment.h"
+#include "strings.h"
 
 #ifdef AVS_WINDOWS
   #include <avs/win.h>
@@ -412,13 +413,33 @@ public:
   }
 };
 
-void DoDumpGraph(const std::vector<FilterGraphNode*>& roots, const char* path, IScriptEnvironment* env)
+// Helper: open a file whose path is encoded as UTF-8.
+// On Windows convert to wide string and use _wfopen; on POSIX just call fopen.
+static FILE* OpenFileUtf8(const std::string& path_utf8, const char* mode) {
+#ifdef AVS_WINDOWS
+  if (path_utf8.empty() || mode == nullptr) return nullptr;
+
+  // Convert UTF-8 path to wide string using helper from strings.h
+  std::wstring wpath = Utf8ToWideChar(path_utf8.c_str()).get();
+  if (wpath.empty()) return nullptr;
+
+  // Convert mode to wide string. Mode is usually ASCII but convert via Utf8 helper for consistency.
+  std::wstring wmode = Utf8ToWideChar(mode).get();
+  if (wmode.empty()) return nullptr;
+
+  return _wfopen(wpath.c_str(), wmode.c_str());
+#else
+  return fopen(path_utf8.c_str(), mode);
+#endif
+}
+
+void DoDumpGraph(const std::vector<FilterGraphNode*>& roots, const char* path_utf8, IScriptEnvironment* env)
 {
   DotFilterGraph graph;
   graph.Construct(roots, true, true, env);
   std::string ret = graph.GetOutput();
 
-  FILE* fp = fopen(path, "w");
+  FILE* fp = OpenFileUtf8(std::string(path_utf8), "w");
   if (fp == nullptr) {
     env->ThrowError("Could not open output file ...");
   }
@@ -426,7 +447,7 @@ void DoDumpGraph(const std::vector<FilterGraphNode*>& roots, const char* path, I
   fclose(fp);
 }
 
-static void DoDumpGraph(PClip clip, int mode, const char* path, IScriptEnvironment* env)
+static void DoDumpGraph(PClip clip, int mode, const char* path_utf8, IScriptEnvironment* env)
 {
   FilterGraphNode* root = dynamic_cast<FilterGraphNode*>((IClip*)(void*)clip);
 
@@ -446,7 +467,7 @@ static void DoDumpGraph(PClip clip, int mode, const char* path, IScriptEnvironme
     env->ThrowError("Unknown mode (%d)", mode);
   }
 
-  FILE* fp = fopen(path, "w");
+  FILE* fp = OpenFileUtf8(std::string(path_utf8), "w");
   if (fp == nullptr) {
     env->ThrowError("Could not open output file ...");
   }
@@ -456,15 +477,15 @@ static void DoDumpGraph(PClip clip, int mode, const char* path, IScriptEnvironme
 
 class DelayedDump : public GenericVideoFilter
 {
-  std::string outpath;
+  std::string outpath_utf8;
   int mode;
   int nframes;
   bool repeat;
   std::vector<bool> fired;
 public:
-  DelayedDump(PClip clip, const std::string& outpath, int mode, int nframes, bool repeat)
+  DelayedDump(PClip clip, const std::string& outpath_utf8, int mode, int nframes, bool repeat)
     : GenericVideoFilter(clip)
-    , outpath(outpath)
+    , outpath_utf8(outpath_utf8)
     , mode(mode)
     , nframes(nframes)
     , repeat(repeat)
@@ -483,16 +504,14 @@ public:
       int slot = std::max(0, std::min(n / nframes, (int)fired.size() - 1));
       if (fired[slot] == false) {
         fired[slot] = true;
-        char basename[260];
-        strcpy(basename, outpath.c_str());
-        char* extension = strrchr(basename, '.');
-        if (extension) {
-          *extension++ = 0;
-        }
-        std::string path(basename);
-        path = path + "-" + std::to_string(n);
-        if (extension) {
-          path = path + "." + extension;
+        // Build path by inserting "-<n>" before extension (if any), preserve UTF-8
+        std::string basename = outpath_utf8;
+        size_t pos = basename.find_last_of('.');
+        std::string path;
+        if (pos != std::string::npos) {
+          path = basename.substr(0, pos) + "-" + std::to_string(n) + basename.substr(pos);
+        } else {
+          path = basename + "-" + std::to_string(n);
         }
         DoDumpGraph(child, mode, path.c_str(), env);
       }
@@ -500,17 +519,12 @@ public:
     else {
       if (n == nframes && fired[0] == false) {
         fired[0] = true;
-        DoDumpGraph(child, mode, outpath.c_str(), env);
+        DoDumpGraph(child, mode, outpath_utf8.c_str(), env);
       }
     }
     return child->GetFrame(n, env);
   }
 };
-
-static std::string GetFullPathNameWrap(const std::string& f)
-{
-  return fs::absolute(fs::path(f).lexically_normal()).generic_string();
-}
 
 static AVSValue DumpFilterGraph(AVSValue args, void* user_data, IScriptEnvironment* env) {
   PClip clip = args[0].AsClip();
@@ -524,11 +538,26 @@ static AVSValue DumpFilterGraph(AVSValue args, void* user_data, IScriptEnvironme
   int nframes = args[3].AsInt(-1);
   bool repeat = args[4].AsBool(false);
 
+  const bool utf8 = args[5].AsBool(false);
+  // DumpFiltergraph can also support yet forced UTF-8 mode in ANSI-only processes.
+
+  std::string path_utf8;
+#ifdef AVS_WINDOWS
+  // internally use UTF-8 path
+  if (!utf8)
+    path_utf8 = AnsiToUtf8(path).get();
+  else
+    path_utf8 = path;
+#else
+  path_utf8 = path;
+#endif
+
   if (nframes >= 0) {
-    return new DelayedDump(clip, GetFullPathNameWrap(path), mode, nframes, repeat);
+    return new DelayedDump(clip, GetFullPathNameWrapUtf8(path_utf8), mode, nframes, repeat);
   }
 
-  DoDumpGraph(clip, mode, path, env);
+  // For immediate dumps, normalize and let DoDumpGraph handle UTF-8 aware opening.
+  DoDumpGraph(clip, mode, path_utf8.c_str(), env);
 
   return clip;
 }
@@ -541,6 +570,6 @@ static AVSValue __cdecl SetGraphAnalysis(AVSValue args, void* user_data, IScript
 
 extern const AVSFunction FilterGraph_filters[] = {
   { "SetGraphAnalysis", BUILTIN_FUNC_PREFIX, "b", SetGraphAnalysis, nullptr },
-  { "DumpFilterGraph", BUILTIN_FUNC_PREFIX, "c[outfile]s[mode]i[nframes]i[repeat]b", DumpFilterGraph, nullptr },
+  { "DumpFilterGraph", BUILTIN_FUNC_PREFIX, "c[outfile]s[mode]i[nframes]i[repeat]b[utf8]b", DumpFilterGraph, nullptr },
   { 0 }
 };

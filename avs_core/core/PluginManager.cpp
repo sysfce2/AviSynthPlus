@@ -86,37 +86,104 @@ static std::string GetLastErrorText(DWORD nErrorCode)
   }
 }
 
-static bool GetRegString(HKEY rootKey, const char path[], const char entry[], std::string *result) {
-    HKEY AvisynthKey;
+// utf8 output
+static bool GetRegString(HKEY rootKey, const char path[], const char entry[], std::string* result_utf8) {
+  HKEY AvisynthKey;
 
-    if (RegOpenKeyEx(rootKey, path, 0, KEY_READ, &AvisynthKey))
-      return false;
+  // Convert input path/entry (UTF-8/ANSI) to wide char for Unicode registry API
+  auto path_w = Utf8ToWideChar(path);
+  auto entry_w = Utf8ToWideChar(entry);
 
-    DWORD size;
-    if (ERROR_SUCCESS != RegQueryValueEx(AvisynthKey, entry, 0, 0, 0, &size)) {
-      RegCloseKey(AvisynthKey); // Dave Brueck - Dec 2005
-      return false;
-    }
+  if (RegOpenKeyExW(rootKey, path_w.get(), 0, KEY_READ, &AvisynthKey) != ERROR_SUCCESS)
+    return false;
 
-    char* retStr = new(std::nothrow) char[size];
-    if ((retStr == NULL) || (ERROR_SUCCESS != RegQueryValueEx(AvisynthKey, entry, 0, 0, (LPBYTE)retStr, &size))) {
-      delete[] retStr;
-      RegCloseKey(AvisynthKey); // Dave Brueck - Dec 2005
-      return false;
-    }
-    RegCloseKey(AvisynthKey); // Dave Brueck - Dec 2005
+  DWORD type = 0;
+  DWORD sizeBytes = 0;
+  LONG rc = RegQueryValueExW(AvisynthKey, entry_w.get(), NULL, &type, NULL, &sizeBytes);
+  if (rc != ERROR_SUCCESS) {
+    RegCloseKey(AvisynthKey);
+    return false;
+  }
 
-    *result = std::string(retStr);
-    delete[] retStr;
+  // Handle empty value
+  if (sizeBytes == 0) {
+    *result_utf8 = std::string();
+    RegCloseKey(AvisynthKey);
     return true;
+  }
+
+  // If value is stored as wide string, read via wide API and convert to UTF-8
+  if (type == REG_SZ || type == REG_EXPAND_SZ) {
+    // sizeBytes is number of bytes; number of wchar_t elements:
+    size_t wcharCount = (sizeBytes / sizeof(wchar_t));
+    // Ensure space for a terminating wchar_t
+    std::vector<wchar_t> buf(wcharCount + 1);
+    // Initialize to zero for safety
+    buf.assign(wcharCount + 1, L'\0');
+
+    rc = RegQueryValueExW(AvisynthKey, entry_w.get(), NULL, &type,
+      reinterpret_cast<LPBYTE>(buf.data()), &sizeBytes);
+    if (rc != ERROR_SUCCESS) {
+      RegCloseKey(AvisynthKey);
+      return false;
+    }
+
+    // Ensure null-termination (sizeBytes may include or exclude terminator)
+    size_t charsRead = (sizeBytes / sizeof(wchar_t));
+    if (charsRead == 0)
+      buf[0] = L'\0';
+    else
+      buf[std::min(charsRead, buf.size() - 1)] = L'\0';
+
+    auto utf8 = WideCharToUtf8(buf.data());
+    *result_utf8 = std::string(utf8.get());
+
+    RegCloseKey(AvisynthKey);
+    return true;
+  }
+
+  // Fallback: read ANSI data and convert to UTF-8
+  {
+    DWORD sizeA = 0;
+    rc = RegQueryValueExA(AvisynthKey, entry, NULL, NULL, NULL, &sizeA);
+    if (rc != ERROR_SUCCESS) {
+      RegCloseKey(AvisynthKey);
+      return false;
+    }
+
+    std::vector<char> bufA(sizeA + 1);
+    if (sizeA > 0)
+      memset(bufA.data(), 0, sizeA + 1);
+
+    rc = RegQueryValueExA(AvisynthKey, entry, NULL, NULL,
+      reinterpret_cast<LPBYTE>(bufA.data()), &sizeA);
+    if (rc != ERROR_SUCCESS) {
+      RegCloseKey(AvisynthKey);
+      return false;
+    }
+
+    // Ensure null-terminated
+    bufA[std::min<size_t>(sizeA, bufA.size() - 1)] = '\0';
+
+    // Convert ANSI -> wide (system codepage) -> UTF-8
+    int wideLen = MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, bufA.data(), -1, NULL, 0);
+    if (wideLen <= 0) {
+      RegCloseKey(AvisynthKey);
+      return false;
+    }
+    std::vector<wchar_t> wbuf(wideLen + 1);
+    MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, bufA.data(), -1, wbuf.data(), wideLen);
+    wbuf[wideLen] = L'\0';
+
+    auto utf8 = WideCharToUtf8(wbuf.data());
+    *result_utf8 = std::string(utf8.get());
+
+    RegCloseKey(AvisynthKey);
+    return true;
+  }
 }
 
 #endif // AVS_WINDOWS
-
-static std::string GetFullPathNameWrap(const std::string &f)
-{
-  return fs::absolute(fs::path(f).lexically_normal()).generic_string();
-}
 
 // see also: AVSFunction::TypeMatch
 static bool IsParameterTypeSpecifier(char c) {
@@ -503,7 +570,7 @@ struct PluginFile
 };
 
 PluginFile::PluginFile(const std::string &filePath) :
-  FilePath(GetFullPathNameWrap(filePath)), BaseName(), Library(NULL),
+  FilePath(GetFullPathNameWrapUtf8(filePath)), BaseName(), Library(NULL),
   isPluginAvs25(false), isPluginPreV11C(false), isPluginC(false)
 {
   // Turn all '\' into '/'
@@ -559,12 +626,23 @@ void PluginManager::ClearAutoloadDirs()
   AutoloadDirs.clear();
 }
 
-void PluginManager::AddAutoloadDir(const std::string &dirPath, bool toFront)
+static fs::path PathFromUtf8(const std::string& utf8)
+{
+#ifdef AVS_WINDOWS
+  if (utf8.empty()) return fs::path();
+  auto wstr = Utf8ToWideChar(utf8.c_str());
+  return fs::path(wstr.get());
+#else
+  return fs::path(utf8);
+#endif
+}
+
+void PluginManager::AddAutoloadDir(const std::string &dirPath_utf8, bool toFront)
 {
   if (AutoloadExecuted)
     Env->ThrowError("Cannot modify directory list after the autoload procedure has already executed.");
 
-  std::string dir(dirPath);
+  std::string dir(dirPath_utf8);
 
 #if !defined(AVS_BSD)
 // Any use of /proc should be avoided on BSD, since
@@ -576,13 +654,26 @@ void PluginManager::AddAutoloadDir(const std::string &dirPath, bool toFront)
 // as it is on Windows, negating the need for pulling
 // it out programmatically.  Since the macOS and Linux
 // forms of the code still function, leave those alone.
+std::string ExeFilePath;
 #ifdef AVS_WINDOWS
-  // get folder of our executable
-  TCHAR ExeFilePath[AVS_MAX_PATH];
-  memset(ExeFilePath, 0, sizeof(ExeFilePath[0])*AVS_MAX_PATH);  // WinXP does not terminate the result of GetModuleFileName with a zero, so me must zero our buffer
-  GetModuleFileName(NULL, ExeFilePath, AVS_MAX_PATH);
+  // get folder of our executable as wide char and convert to UTF-8
+  {
+    WCHAR ExeFilePathW[AVS_MAX_PATH];
+    // Ensure buffer is zeroed (older Windows may not null-terminate)
+    // e.g. WinXP does not terminate the result of GetModuleFileName with a zero, so me must zero our buffer
+    memset(ExeFilePathW, 0, sizeof(ExeFilePathW));
+    DWORD len = GetModuleFileNameW(NULL, ExeFilePathW, AVS_MAX_PATH);
+    if (len == 0) {
+      // Fallback to empty string on failure
+      ExeFilePath.clear();
+    }
+    else {
+      // Convert wide-char path to UTF-8 for internal use
+      auto exe_utf8 = WideCharToUtf8(ExeFilePathW);
+      ExeFilePath = exe_utf8.get();
+    }
+  }
 #else // AVS_POSIX
-  std::string ExeFilePath;
   char buf[PATH_MAX + 1] {};
 #ifdef AVS_LINUX
   if (readlink("/proc/self/exe", buf, sizeof(buf) - 1) != -1)
@@ -606,36 +697,57 @@ void PluginManager::AddAutoloadDir(const std::string &dirPath, bool toFront)
 #endif // !AVS_BSD
 
   // variable expansion
-  replace_beginning(dir, "SCRIPTDIR", Env->GetVarString("$ScriptDir$", ""));
-  replace_beginning(dir, "MAINSCRIPTDIR", Env->GetVarString("$MainScriptDir$", ""));
+  // now "dir" is utf8, so we can use utf8 variants of macros
+  replace_beginning(dir, "SCRIPTDIR", Env->GetVarString("$ScriptDirUtf8$", ""));
+  replace_beginning(dir, "MAINSCRIPTDIR", Env->GetVarString("$MainScriptDirUtf8$", ""));
 #if !defined(AVS_BSD)
   replace_beginning(dir, "PROGRAMDIR", ExeFileDir);
 #endif
 
+  // further macro expansions on Windows
   std::string plugin_dir;
 #ifdef AVS_WINDOWS
+  // folders are read as utf8, can contain non-ansi characters as well
+  // where registry entry does not exist, delete the whole macro string if it contains only that macro
   #if defined (AVS_WINDOWS_X86)
     #if defined (__GNUC__)
       if (GetRegString(HKEY_CURRENT_USER, RegAvisynthKey, RegPluginDirPlus_GCC, &plugin_dir))
         replace_beginning(dir, "USER_PLUS_PLUGINS", plugin_dir);
+      else
+        replace_beginning(dir, "USER_PLUS_PLUGINS", "");
       if (GetRegString(HKEY_LOCAL_MACHINE, RegAvisynthKey, RegPluginDirPlus_GCC, &plugin_dir))
         replace_beginning(dir, "MACHINE_PLUS_PLUGINS", plugin_dir);
+      else
+        replace_beginning(dir, "MACHINE_PLUS_PLUGINS", "");
     #else
       // note: if e.g HKCU/PluginDir+ does not exist, USER_PLUS_PLUGINS as a string remain in search path
       if (GetRegString(HKEY_CURRENT_USER, RegAvisynthKey, RegPluginDirPlus, &plugin_dir))
         replace_beginning(dir, "USER_PLUS_PLUGINS", plugin_dir);
+      else
+        replace_beginning(dir, "USER_PLUS_PLUGINS", "");
       if (GetRegString(HKEY_LOCAL_MACHINE, RegAvisynthKey, RegPluginDirPlus, &plugin_dir))
         replace_beginning(dir, "MACHINE_PLUS_PLUGINS", plugin_dir);
+      else
+        replace_beginning(dir, "MACHINE_PLUS_PLUGINS", "");
       if (GetRegString(HKEY_CURRENT_USER, RegAvisynthKey, RegPluginDirClassic, &plugin_dir))
         replace_beginning(dir, "USER_CLASSIC_PLUGINS", plugin_dir);
+      else
+        replace_beginning(dir, "USER_CLASSIC_PLUGINS", "");
       if (GetRegString(HKEY_LOCAL_MACHINE, RegAvisynthKey, RegPluginDirClassic, &plugin_dir))
         replace_beginning(dir, "MACHINE_CLASSIC_PLUGINS", plugin_dir);
+      else
+        replace_beginning(dir, "MACHINE_CLASSIC_PLUGINS", "");
     #endif // _GNUC_
   #else
     if (GetRegString(HKEY_CURRENT_USER, RegAvisynthKey, RegPluginDirPlus, &plugin_dir))
       replace_beginning(dir, "USER_PLUS_PLUGINS", plugin_dir);
+    else
+      replace_beginning(dir, "USER_PLUS_PLUGINS", "");
     if (GetRegString(HKEY_LOCAL_MACHINE, RegAvisynthKey, RegPluginDirPlus, &plugin_dir))
       replace_beginning(dir, "MACHINE_PLUS_PLUGINS", plugin_dir);
+    else
+      replace_beginning(dir, "MACHINE_PLUS_PLUGINS", "");
+
   #endif // AVS_WINDOWS_X86
 #endif // AVS_WINDOWS
 
@@ -649,10 +761,12 @@ void PluginManager::AddAutoloadDir(const std::string &dirPath, bool toFront)
   // remove double slashes
   while(replace(dir, "//", "/"));
 
+  if (dir.empty())
+    return;
   if (toFront)
-    AutoloadDirs.insert(AutoloadDirs.begin(), GetFullPathNameWrap(dir));
+    AutoloadDirs.insert(AutoloadDirs.begin(), GetFullPathNameWrapUtf8(dir));
   else
-    AutoloadDirs.push_back(GetFullPathNameWrap(dir));
+    AutoloadDirs.push_back(GetFullPathNameWrapUtf8(dir));
 }
 
 void PluginManager::AutoloadPlugins()
@@ -664,6 +778,7 @@ void PluginManager::AutoloadPlugins()
   Autoloading = true;
 
   // Load binary plugins
+  // AutoLoadDirs are utf8 on Windows as well
   for (const std::string& dir : AutoloadDirs)
   {
     std::error_code ec;
@@ -677,18 +792,36 @@ void PluginManager::AutoloadPlugins()
 #else
     const char* binaryFilter = ".dll";
 #endif
-    for (auto& file : fs::directory_iterator(dir, fs::directory_options::skip_permission_denied | fs::directory_options::follow_directory_symlink, ec))
+
+    // Build platform-native path from UTF-8 directory string
+    fs::path dir_path = PathFromUtf8(dir);
+    if (dir_path.empty())
+      continue;
+
+    for (auto& file : fs::directory_iterator(dir_path, fs::directory_options::skip_permission_denied | fs::directory_options::follow_directory_symlink, ec))
     {
-      const bool extensionsMatch =
 #ifdef AVS_POSIX
-      file.path().extension() == binaryFilter; // case sensitive
+      const bool extensionsMatch =
+        file.path().extension() == binaryFilter; // case sensitive
 #else
-      streqi(file.path().extension().generic_string().c_str(), binaryFilter);  // case insensitive
+      auto ext_w = file.path().extension().wstring();
+      auto ext_utf8 = WideCharToUtf8(ext_w.c_str());
+      const bool extensionsMatch =
+        streqi(ext_utf8.get(), binaryFilter);
 #endif
 
       if (extensionsMatch)
       {
-        PluginFile p(concat(dir, file.path().filename().generic_string()));
+        // Convert filename back to UTF-8 for internal handling (plugin expects UTF-8 strings)
+#ifdef AVS_POSIX
+        std::string filename_utf8 = file.path().filename().generic_string();
+#else
+        auto fn_w = file.path().filename().wstring();
+        auto fn_utf8 = WideCharToUtf8(fn_w.c_str());
+        std::string filename_utf8 = fn_utf8.get();
+#endif
+
+        PluginFile p(concat(dir, filename_utf8)); // utf8 handled
 
         // Search for loaded plugins with the same base name.
         bool same_found = false;
@@ -717,20 +850,35 @@ void PluginManager::AutoloadPlugins()
     }
 
     const char* scriptFilter = ".avsi";
-    for (auto& file : fs::directory_iterator(dir, fs::directory_options::skip_permission_denied | fs::directory_options::follow_directory_symlink, ec)) // and not recursive_directory_iterator
+    // Build platform-native path again (already available as dir_path)
+    for (auto& file : fs::directory_iterator(dir_path, fs::directory_options::skip_permission_denied | fs::directory_options::follow_directory_symlink, ec)) // and not recursive_directory_iterator
     {
       const bool extensionsMatch =
 #ifdef AVS_POSIX
         file.path().extension() == scriptFilter; // case sensitive
 #else
-        streqi(file.path().extension().generic_string().c_str(), scriptFilter);  // case insensitive
+        // Convert extension to UTF-8 for comparison
+        ([](const fs::path &p, const char *filter)->bool {
+          auto ext_w = p.extension().wstring();
+          auto ext_utf8 = WideCharToUtf8(ext_w.c_str());
+          return streqi(ext_utf8.get(), filter);
+        })(file.path(), scriptFilter);
 #endif
 
       if (extensionsMatch)
       {
+        // CWDChanger expects a char*; we keep passing the UTF-8 dir here (as before).
         CWDChanger cwdchange(dir.c_str());
 
-        PluginFile p(concat(dir, file.path().filename().generic_string()));
+#ifdef AVS_POSIX
+        std::string filename_utf8 = file.path().filename().generic_string();
+#else
+        auto fn_w = file.path().filename().wstring();
+        auto fn_utf8 = WideCharToUtf8(fn_w.c_str());
+        std::string filename_utf8 = fn_utf8.get();
+#endif
+
+        PluginFile p(concat(dir, filename_utf8));
 
         // Search for loaded avsi scripts with the same base name.
         bool same_found = false;
@@ -1378,18 +1526,20 @@ AVSValue LoadPlugin(AVSValue args, void*, IScriptEnvironment* env)
   IScriptEnvironment2 *env2 = static_cast<IScriptEnvironment2*>(env);
 
   bool success = true;
+  const bool utf8 = args[1].AsBool(false); // default: false (ANSI on Windows), n/a on other OS
   for (int i = 0; i < args[0].ArraySize(); ++i)
   {
     AVSValue dummy;
-    success &= env2->LoadPlugin(args[0][i].AsString(), true, &dummy);
+    auto path_utf8 = charToUtf8(args[0][i].AsString(), utf8);
+    success &= env2->LoadPlugin(path_utf8.c_str(), true, &dummy); // accepts only utf8 paths on all OS
   }
 
   return AVSValue(success);
 }
 
 extern const AVSFunction Plugin_functions[] = {
-  {"LoadPlugin", BUILTIN_FUNC_PREFIX, "s+", LoadPlugin},
-  {"LoadCPlugin", BUILTIN_FUNC_PREFIX, "s+", LoadPlugin },          // for compatibility with older scripts
-  {"Load_Stdcall_Plugin", BUILTIN_FUNC_PREFIX, "s+", LoadPlugin },  // for compatibility with older scripts
+  {"LoadPlugin", BUILTIN_FUNC_PREFIX, "s+[utf8]b", LoadPlugin},
+  {"LoadCPlugin", BUILTIN_FUNC_PREFIX, "s+[utf8]b", LoadPlugin },          // for compatibility with older scripts
+  {"Load_Stdcall_Plugin", BUILTIN_FUNC_PREFIX, "s+[utf8]b", LoadPlugin },  // for compatibility with older scripts
   { 0 }
 };

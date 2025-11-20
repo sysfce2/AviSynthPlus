@@ -52,8 +52,11 @@ std::unique_ptr<char[]> WideCharToUtf8_maxn(const wchar_t* w_string, size_t maxn
 std::unique_ptr<char[]> WideCharToAnsi_maxn(const wchar_t* w_string, size_t maxn);
 std::unique_ptr<wchar_t[]> AnsiToWideChar(const char* s_ansi);
 std::unique_ptr<wchar_t[]> AnsiToWideCharACP(const char* s_ansi);
-std::unique_ptr<wchar_t[]> Utf8ToWideChar(const char* s_ansi);
+std::unique_ptr<wchar_t[]> Utf8ToWideChar(const char* s_utf8);
+std::string Utf8ToAnsi(const char* s_utf8);
 #endif
+
+std::string GetFullPathNameWrapUtf8(const std::string& f);
 
 size_t str_utf8_size(const std::string& s);
 std::string U16_to_utf8(uint16_t u16);

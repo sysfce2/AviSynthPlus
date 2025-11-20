@@ -56,7 +56,7 @@ public:
   ~PluginManager();
 
   void ClearAutoloadDirs();
-  void AddAutoloadDir(const std::string &dir, bool toFront);
+  void AddAutoloadDir(const std::string &dir_utf8, bool toFront);
 
   bool LoadPlugin(PluginFile &plugin, bool throwOnError, AVSValue *result);
   bool LoadPlugin(const char* path, bool throwOnError, AVSValue *result);

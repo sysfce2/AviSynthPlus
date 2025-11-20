@@ -10,6 +10,23 @@ AviSynth Syntax - Plugins
 With these functions you can add external functions to AviSynth or
 get/set autoload directories.
 
+In general, where applicable:
+
+- ``utf8`` (optional, boolean) - when ``true``, the supplied directory or file name 
+  string is interpreted as UTF-8. When ``false``, on Windows the string is interpreted
+  as ANSI (system code page) and converted internally to UTF-8 before being used.
+- Default behaviour:
+
+  * On non-Windows platforms (POSIX, macOS, Linux) the system uses UTF-8 by default,
+    so the function behaves as UTF-8-only and the ``utf8`` parameter is effectively
+    transparent (default === ``true``).
+  * On Windows the historical default is ANSI. If you do not pass ``utf8`` the
+    function will behave in the legacy ANSI manner (default === ``false``). To pass
+    a UTF-8 encoded directory path from a script on Windows, pass ``utf8=true``.
+  * When the Windows process is built or launched with UTF-8 manifest (making the
+    process use UTF-8 as the default ANSI code page), the behaviour is transparent
+    UTF-8 and supplying ``utf8`` is not required.
+
 Manual plugin loading
 ---------------------
 
@@ -17,11 +34,18 @@ LoadPlugin
 ~~~~~~~~~~
 ::
 
-    LoadPlugin ("filename" [, ...])
+    LoadPlugin ("filename" [, ...] [, bool utf8=false])
 
 Loads one or more external avisynth plugins (DLLs).
 
 Plugins can be either C or C++ plugins, they are autodetected.
+
+Windows historically uses ANSI (system code page) for script string parameters,
+so scripts that need to supply UTF-8 paths must indicate this explicitly. The
+``utf8`` parameter allows a script to unambiguously tell the function that the
+provided filename path is UTF-8 encoded. On UTF-8-native systems (POSIX or Windows
+with UTF-8 manifest) the conversion step is unnecessary and thus transparent, the
+parameter is ignored.
 
 
 LoadVirtualDubPlugin
@@ -87,12 +111,44 @@ AddAutoloadDir
 ~~~~~~~~~~~~~~
 ::
 
-    AddAutoloadDir (string "directory", bool toFront = true)
+    AddAutoloadDir (string "directory", bool toFront = true, bool utf8 = false)
 
 This function appends an extra directory to the autoload directory list. The plugins
 are searched in the order the directories appear in the list. Setting the optional 
 ``toFront`` parameter to false will put the directory at the end of 
 the list (the lowest priority place).
+
+Windows historically uses ANSI (system code page) for script string parameters,
+so scripts that need to supply UTF-8 paths must indicate this explicitly. The
+``utf8`` parameter allows a script to unambiguously tell the function that the
+provided directory path is UTF-8 encoded.
+
+On UTF-8-native systems (POSIX or Windows with UTF-8 manifest) the conversion step
+is unnecessary and thus transparent, the parameter is ignored.
+
+``directory`` parameter can contain macros. These are expanded to their actual values
+during the operation.
+
+- Folder names maintained by Avisynth instance:
+
+  * ``SCRIPTDIR`` from Avisynth variable ``$ScriptDirUtf8$``
+  * ``MAINSCRIPTDIR`` from Avisynth variable ``$MainScriptDirUtf8$``
+  * ``PROGRAMDIR`` the actual folder of the host executable 
+  
+- Windows specific: registry-backed macros that can contain plugin folder paths 
+
+  - x86 (Intel 32 or 64 bit builds)
+
+    * ``USER_PLUS_PLUGINS`` from ``HKCU\Software\Avisynth\PluginDir+`` (or GNU C Build: ``HKCU\Software\Avisynth\PluginDir+GCC``)
+    * ``MACHINE_PLUS_PLUGINS`` from ``HKLM\Software\Avisynth\PluginDir+`` (or GNU C Build:  ``HKLM\Software\Avisynth\PluginDir+GCC``)
+    * ``USER_CLASSIC_PLUGINS`` from ``HKCU\Software\Avisynth\PluginDir2_5``
+    * ``MACHINE_CLASSIC_PLUGINS`` from ``HKLM\Software\Avisynth\PluginDir2_5``
+  
+  - other (e.g. ARM)
+  
+    * ``USER_PLUS_PLUGINS`` from ``HKCU\Software\Avisynth\PluginDir+``
+    * ``MACHINE_PLUS_PLUGINS`` from ``HKLM\Software\Avisynth\PluginDir+``
+
 
 ClearAutoloadDirs
 ~~~~~~~~~~~~~~~~~
@@ -107,10 +163,27 @@ ListAutoloadDirs
 ~~~~~~~~~~~~~~~~
 ::
 
-    ListAutoloadDirs
+    ListAutoloadDirs(bool utf8 = false)
 
 Returns a LF (0x0A, \\n) separated list of the currently set autoload directories.
 The multiline string can be displayed with "Text" or "Subtitle" directly.
+
+Windows historically uses ANSI (system code page) for script string parameters,
+so scripts that need to obtain path in UTF-8 must indicate this explicitly. The
+``utf8`` parameter allows a script to unambiguously tell the function that the
+expected directory path list is UTF-8 encoded. On UTF-8-native systems (POSIX or Windows
+with UTF-8 manifest) the conversion step is unnecessary and thus transparent, the
+parameter is ignored.
+
+::
+
+    # This works for ANSI-only hosts as well
+    AddAutoLoadDir("d:\20251116_Utf8pathImportError_Утка Πάπια\", utf8=true)
+    AddAutoLoadDir("MAINSCRIPTDIR\myplugins")
+    AddAutoLoadDir("SCRIPTDIR\myplugins2")
+    AddAutoLoadDir("PROGRAMDIR\extraplugins")
+    AddAutoLoadDir("MACHINE_PLUS_PLUGINS\myplugins3")
+    SubTitle(ListAutoLoadDirs(utf8=true), align=7, size=20, utf8=true)
 
 AutoloadPlugins
 ~~~~~~~~~~~~~~~
@@ -188,7 +261,18 @@ or with mpeg2dec3.dll (which outputs YV12):
     # using mpeg2source from mpeg2dec3.dll
     mpeg2dec3_mpeg2source("F:\From_hell\from_hell.d2v")
 
-$Date: 2024/12/13 13:54:00 $
+Changelog
+~~~~~~~~~
++----------------+------------------------------------------------------------+
+| Version        | Changes                                                    |
++================+============================================================+
+| Avisynth 3.7.6 | | Added utf8 parameter to AddAutoLoadDir, mention folder   |
+|                |   macros in documentation                                  |
+|                | | Added utf8 parameter to ListAutoLoadDirs                 |
+|                | | Added utf8 parameter to LoadPlugin                       |
++----------------+------------------------------------------------------------+
+
+$Date: 2025/11/18 11:38:00 $
 
 .. _[discussion]: http://forum.doom9.org/showthread.php?s=&threadid=58840
 .. _[AVISynth C API (by kevina20723)]:

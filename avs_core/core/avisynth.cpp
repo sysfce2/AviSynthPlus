@@ -5045,7 +5045,7 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
         }
 
         // pass current directory as well, in order to remember it when a MT_MULTI_INSTANCE filter is populated to threads during Prefetch
-        auto current_directory = CWDChanger::GetCurrentWorkingDirectory();
+        auto current_directory = CWDChanger::GetCurrentWorkingDirectory(); // wstring on Windows, string on POSIX
 
         *result = MTGuard::Create(mtmode, clip, std::move(funcCtor), current_directory.c_str(), threadEnv.get());
 

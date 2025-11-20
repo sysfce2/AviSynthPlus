@@ -37,6 +37,7 @@
 #include <avs/posix.h>
 #include "parser/os/win32_string_compat.h"
 #endif
+#include <avs/filesystem.h>
 
 #include "strings.h"
 #include <cassert>
@@ -211,15 +212,39 @@ std::unique_ptr<wchar_t[]> AnsiToWideCharACP(const char* s_ansi)
   return w_string;
 }
 
-std::unique_ptr<wchar_t[]> Utf8ToWideChar(const char* s_ansi)
+std::unique_ptr<wchar_t[]> Utf8ToWideChar(const char* s_utf8)
 {
-  const size_t wchars_count = MultiByteToWideChar(CP_UTF8, 0, s_ansi, -1, NULL, 0);
+  const size_t wchars_count = MultiByteToWideChar(CP_UTF8, 0, s_utf8, -1, NULL, 0);
   const size_t bufsize = wchars_count + 1;
   auto w_string = std::make_unique<wchar_t[]>(bufsize);
-  MultiByteToWideChar(CP_UTF8, 0, s_ansi, -1, w_string.get(), (int)bufsize);
+  MultiByteToWideChar(CP_UTF8, 0, s_utf8, -1, w_string.get(), (int)bufsize);
   return w_string;
 }
+
+std::string Utf8ToAnsi(const char* s_utf8)
+{
+  std::string s;
+  auto w = Utf8ToWideChar(s_utf8);
+  auto ansi = WideCharToAnsi(w.get()); // replaces out-of-CP chars by ?
+  s = ansi.get();
+  return s;
+}
+
 #endif
+
+std::string GetFullPathNameWrapUtf8(const std::string& f)
+{
+#ifdef AVS_WINDOWS
+  // assume f is utf-8
+  auto f_wide = Utf8ToWideChar(f.c_str());
+  auto p = fs::absolute(fs::path(f_wide.get()).lexically_normal());
+  auto w = p.wstring(); // UTF-16 on Windows
+  auto utf8 = WideCharToUtf8(w.c_str());
+  return std::string(utf8.get());
+#else
+  return fs::absolute(fs::path(f).lexically_normal()).generic_string();
+#endif
+}
 
 size_t str_utf8_size(const std::string& s) {
   // Does not handle combined codepoints, e.g. diacritic mark modifications

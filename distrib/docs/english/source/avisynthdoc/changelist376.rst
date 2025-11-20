@@ -3,7 +3,10 @@ Changes from 3.7.5 to 3.7.6
 
 Additions, changes
 ~~~~~~~~~~~~~~~~~~
-
+- Added utf8 parameter to AddAutoLoadDir
+- Added utf8 parameter to ListAutoLoadDirs
+- Added utf8 parameter to LoadPlugin
+- Added utf8 parameter to DumpFilterGraph
 
 Build environment, Interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -23,7 +26,8 @@ Build environment, Interface
   see :ref:`global lock support<cplusplus_acquiregloballock>`
 - v12 interface: ApplyMessageEx supporting utf8 parameter.
   see :ref:`ApplyMessageEx<cplusplus_applymessage>`
-
+- the internal IScriptEnvironment2 methods AddAutoLoadDir and ListAutoLoadDirs explicitely
+  work in UTF-8.
 
 Bugfixes
 ~~~~~~~~
@@ -36,6 +40,17 @@ Bugfixes
 - Fix #456: "Reverse" corrupts 24-bit audio (https://github.com/AviSynth/AviSynthPlus/issues/456)
 - Fix BDF font rendering when it contains variable width characters like mixed Latin and CJK. 
   Preparing feature request #446 (https://github.com/AviSynth/AviSynthPlus/issues/446)
+- Fix #462: Report: "AviSynth scripts don't work in a folder with a Unicode name."
+  Plugin autoload folders are internally stored in UTF-8, regardless of which Windows ANSI codepage is set.
+
+  * Folder names used in macros in AddAutoLoadDir (SCRIPTDIR, MAINSCRIPTDIR, PROGRAMDIR) and no longer 
+    restricted to contain ANSI-only characters
+  * Registry-backed macros that can contain plugin folder paths (USER_PLUS_PLUGINS, MACHINE_PLUS_PLUGINS, 
+    USER_CLASSIC_PLUGINS, MACHINE_CLASSIC_PLUGINS) are read in Unicode friendly way as well. 
+- Fix: Not existing registry entries won't appear as a macro string in auto-load path.
+  E.g. Avisynth would automatically add ``USER_CLASSIC_PLUGINS`` at the beginning, but if no such entry
+  exist, it kept being in the folder list as ``<current_directory>\USER_CLASSIC_PLUGINS\``. 
+  Now this false entry is removed.
 
 Optimizations
 ~~~~~~~~~~~~~
@@ -54,12 +69,13 @@ Documentation
   describes linux builds process.
 - Extend ``env->Allocate/Free`` see at :ref:`Allocate <cplusplus_allocate>`
 - Interface V12 changes: see :ref:`api_v12_whats_new` for more details.
+- Add folder macro description to AddAutoLoadPlugins
 
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2025/08/31 18:09:00 $
+$Date: 2025/11/18 12:53:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
