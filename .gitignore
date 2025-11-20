@@ -74,6 +74,7 @@ plugins/VFAPIFilter/release/*
 
 #cmake generated files
 *.sln
+*.slnx
 *.vcxproj
 *.vcxproj.filters
 arch.c
