@@ -19,7 +19,10 @@ Include("Files.cmake")
 set(DEFINE_AVX512 FALSE)
 if(ENABLE_INTEL_SIMD)
     if(CMAKE_SIZEOF_VOID_P EQUAL 8) # 64-bit build
-        if(MSVC_IDE AND NOT CLANG_IN_VS AND NOT IntelLLVM_IN_VS) # Native MSVC, need to check version
+        if(MSVC_IDE AND 
+           NOT CLANG_IN_VS AND 
+           NOT IntelLLVM_IN_VS AND 
+           NOT IntelClassic_IN_VS) # Native MSVC, need to check version
             string(REGEX MATCH "^19\\.([0-9]+)\\.([0-9]+)" MSVC_VERSION_MATCH "${CMAKE_CXX_COMPILER_VERSION}")
             if(MSVC_VERSION_MATCH)
                 set(MSVC_MAJOR 19)
@@ -49,6 +52,8 @@ if(ENABLE_INTEL_SIMD)
 
     # Note: AVX512 related source must be guarded with #ifdef INTEL_INTRINSICS_AVX512 within the
     # already existing #ifdef INTEL_INTRINSICS
+    # Though INTEL_INTRINSICS conditional directive can exist for 32 bit 
+    # but INTEL_INTRINSICS_AVX512 exists only on x64 platforms.
 endif()
 
 add_library("AvsCore" ${AvsCore_Sources})
@@ -85,7 +90,7 @@ function(handle_arch_flags ARCH_SUFFIX GCC_FLAGS MSVC_FLAGS)
     file(GLOB_RECURSE SRCS_${ARCH_SUFFIX} "*_${ARCH_SUFFIX_LOWER}.cpp")
     if(SRCS_${ARCH_SUFFIX})
         if (MSVC_IDE)
-            IF(CLANG_IN_VS STREQUAL "1" OR IntelLLVM_IN_VS STREQUAL "1")
+            IF(CLANG_IN_VS STREQUAL "1" OR IntelLLVM_IN_VS STREQUAL "1" OR IntelClassic_IN_VS STREQUAL "1")
                 set_source_files_properties(${SRCS_${ARCH_SUFFIX}} PROPERTIES COMPILE_FLAGS "${GCC_FLAGS}")
             ELSE()
                 # MSVC gives warning in x64 when SSE2 flag is added, it's just required as a minimum
@@ -107,7 +112,7 @@ handle_arch_flags(AVX " -mavx " " /arch:AVX ")
 handle_arch_flags(AVX2 " -mavx2 -mfma " " /arch:AVX2 ")
 
 if(DEFINE_AVX512)
-    handle_arch_flags(AVX512 " -mavx512f -mavx512bw " " /arch:AVX512 ")
+    handle_arch_flags(AVX512 " -mavx512f -mavx512bw -mfma " " /arch:AVX512 ")
 endif()
 
 # Specify include directories
@@ -191,7 +196,8 @@ if (MSVC_IDE)
     COMMAND xcopy /Y \"$(TargetPath)\" \"${CMAKE_BINARY_DIR}/Output\"
   )
   IF(NOT CLANG_IN_VS STREQUAL "1" AND
-  NOT IntelLLVM_IN_VS STREQUAL "1")
+     NOT IntelLLVM_IN_VS STREQUAL "1" AND 
+     NOT IntelClassic_IN_VS STREQUAL "1")
     # LLVM does not generate exp or don't know how to do it
     add_custom_command(
       TARGET AvsCore

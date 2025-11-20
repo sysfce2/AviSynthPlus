@@ -175,7 +175,9 @@ endif()
       cmake_gentoolset_lower STREQUAL "intel c++ compiler 2022" OR
       cmake_gentoolset_lower STREQUAL "intel c++ compiler 2023" OR
       cmake_gentoolset_lower STREQUAL "intel c++ compiler 2024" OR
-      cmake_gentoolset_lower STREQUAL "intel c++ compiler 2025")
+      cmake_gentoolset_lower STREQUAL "intel c++ compiler 2025" OR
+      cmake_gentoolset_lower STREQUAL "intel c++ compiler 2026"
+      )
         # IntelLLVM
         set(IntelLLVM_IN_VS "1")
       ELSEIF(cmake_gentoolset_lower STREQUAL "intel c++ compiler 19.2")
