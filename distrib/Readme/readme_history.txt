@@ -9,8 +9,8 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
-20251120 3.7.5.xxxxx
---------------------
+20251122 3.7.5.xxxxx (pre 3.7.6)
+--------------------------------
 - Fix #462: Report: "AviSynth scripts don't work in a folder with a Unicode name."
   Plugin autoload folders are internally stored in UTF-8, regardless of which Windows ANSI codepage is set.
 - AddAutoLoadDir is utf8 friendly
@@ -21,6 +21,12 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   These macros: USER_PLUS_PLUGINS, MACHINE_PLUS_PLUGINS, USER_CLASSIC_PLUGINS, MACHINE_CLASSIC_PLUGINS
   are replaced with the relevant registry content (PluginDir and PluginDir+, etc.), which now can contain
   non-ANSI folder path characters.
+- Overlay: native RGB support for add/subtract
+- Overlay: 32-bit float support for add/subtract
+- Overlay: provide error message when 32-bit float is not supported for the specific mode.
+- rstdoc: update Overlay and change log
+- add Visual Studio 2026's new solution format ".slnx" to .gitignore
+- rstdoc: add build instructions for Visual Studio 2026
 
 20250831 3.7.5.xxxxx
 --------------------

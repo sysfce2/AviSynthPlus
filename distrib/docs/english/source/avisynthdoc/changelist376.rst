@@ -3,6 +3,8 @@ Changes from 3.7.5 to 3.7.6
 
 Additions, changes
 ~~~~~~~~~~~~~~~~~~
+- Overlay: "add" and "subtract" direct RGB mode
+- Overlay: "add" and "subtract" supports 32-bit float.
 - Added utf8 parameter to AddAutoLoadDir
 - Added utf8 parameter to ListAutoLoadDirs
 - Added utf8 parameter to LoadPlugin
@@ -16,7 +18,7 @@ Build environment, Interface
 - AVX512 support by conditional define.
   Define `INTEL_INTRINSICS_AVX512` if avx512 modules are enabled 
   (The conditional is undefined for non-intel arch., 32 bit, or for pre MSVC 2019 16.2 (19.22))
-- add ``.editorconfig``
+- add ``.editorconfig``, update .gitignore to include the new .slnx format of Visual Studio 2026
 - v12 interface: Global Lock support (https://github.com/AviSynth/AviSynthPlus/issues/444), 
   mainly for plugins using common fftw3 library:
 
@@ -51,6 +53,7 @@ Bugfixes
   E.g. Avisynth would automatically add ``USER_CLASSIC_PLUGINS`` at the beginning, but if no such entry
   exist, it kept being in the folder list as ``<current_directory>\USER_CLASSIC_PLUGINS\``. 
   Now this false entry is removed.
+- Fix: Overlay specific modes give proper error message if 32-bit float is not supported
 
 Optimizations
 ~~~~~~~~~~~~~
@@ -70,6 +73,7 @@ Documentation
 - Extend ``env->Allocate/Free`` see at :ref:`Allocate <cplusplus_allocate>`
 - Interface V12 changes: see :ref:`api_v12_whats_new` for more details.
 - Add folder macro description to AddAutoLoadPlugins
+- Update :doc:`Overlay <./corefilters/overlay>` 
 
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+

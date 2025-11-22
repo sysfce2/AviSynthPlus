@@ -1,4 +1,3 @@
-
 Overlay
 =======
 
@@ -8,8 +7,15 @@ with optional ``x``, ``y`` positioning, ``mask`` operation and ``opacity``.
 * In some modes the input clips (``base``, ``overlay`` and ``mask``) are converted 
   to 4:4:4 internally. The output is re-converted to the input colorspace (or to the 
   ``output`` colorspace, if specified). 
-  But, if possible, original colorspace if preserved during the processing, such as 
-  in "blend", "luma" and "chroma" modes; see ``use444``, below.
+  But, if possible, original colorspace is preserved during the processing, such as 
+  in "blend", "luma" and "chroma" modes; or RGB in "add" and "subtract". See ``use444``, 
+  below.
+* Only specific modes like "blend", "luma", "chroma", "add", and "subtract" support 32-bit float input. 
+  For these modes, 32-bit float input is natively supported, and the behavior is consistent 
+  with other formats, but clamping is not necessarily done.
+* "add" and "subtract" modes also support conversionless RGB processing without the internal
+  conversion to 4:4:4. This means that for RGB sources, the overlay operation is 
+  performed directly in the RGB domain, avoiding unnecessary colorspace conversions.
 * In general all clips are treated as full-range values. This means that numbers will 
   not be clipped at TV range; you may use :doc:`Limiter <limiter>` for this task afterwards. 
   If your ``mask`` is TV-range, you should convert it to full-range, or the mask will 
@@ -80,7 +86,7 @@ Syntax and Parameters
 +===========+=======================================================+=======================================================================================================+
 | Blend     |  .. image:: ./pictures/Layer-base-Lena.png            | This is the default mode. When opacity is 1.0 and there is no mask the                                |
 |           |  .. image:: ./pictures/Layer-over-grad.png            | overlay image will be copied on top of the original. Ordinary transparent blending is used otherwise. |
-|           |  .. image:: ./pictures/Overlay-example-blend.png      |                                                                                                       |
+|           |  .. image:: ./pictures/Overlay-example-blend.png      | Supports float input and RGB input natively, without conversion to 4:4:4.                             |
 |           |                                                       |                                                                                                       |
 |           |                                                       |                                                                                                       |
 |           |                                                       |                                                                                                       |
@@ -93,13 +99,23 @@ Syntax and Parameters
 |           |                                                       |                                                                                                       |
 |           |                                                       |                                                                                                       |
 |           |                                                       |                                                                                                       |
-|           |                                                       |                                                                                                       |
+|           |                                                       | y                                                                                                     |
 +-----------+-------------------------------------------------------+-------------------------------------------------------------------------------------------------------+
 | Add       |  .. image:: ./pictures/Overlay-example-add.png        | This will add the overlay video to the base video, making the video                                   |
-|           |                                                       | brighter. To make this as comparable to RGB, overbright luma areas are                                |
-|           |                                                       | influencing chroma and making them more white.                                                        |
+|           |                                                       | brighter. In YUV, "add" and "subtract" are not just per-channel math. The luma (Y) is added or        |
+|           |                                                       | subtracted (see "Subtract"), but if the result overflows (Y > max) or underflows (Y < 0), the chroma  |
+|           |                                                       | (U/V) is "pulled" toward neutral (gray/white) to mimic how RGB overbright/underbright behaves         |
+|           |                                                       | visually. In RGB, adding two bright colors can result in "white" (all channels maxed). In YUV, if you |
+|           |                                                       | just add Y, U, and V, we can get weird color shifts. The code compensates by blending U/V toward      |
+|           |                                                       | neutral when Y is out of range, making the result look more like RGB addition.                        |
+|           |                                                       | For RGB, a simple per-channel add/subtract (with clamping for 8-16-bit, or no clamping for float) is  |
+|           |                                                       | done. RGB input is processed natively, without conversion to 4:4:4.                                   |
+|           |                                                       | In 32 bit float with YUV, overshoot (Y > 1.0f) and undershoot (Y < 0.0f) are used and clamping occurs.|
 +-----------+-------------------------------------------------------+-------------------------------------------------------------------------------------------------------+
-| Subtract  |  .. image:: ./pictures/Overlay-example-subtract.png   | The opposite of Add. This will make the areas darker.                                                 |
+| Subtract  |  .. image:: ./pictures/Overlay-example-subtract.png   | The opposite of Add. This will make the areas darker. In YUV, subtracting can cause undershoot        |
+|           |                                                       | (Y < 0.0f), see description at "Add".                                                                 |
+|           |                                                       | For RGB, subtraction is performed directly on the channels, without conversion.                       |
+|           |                                                       | "subtract" supports float input and RGB input natively, without conversion to 4:4:4.                  |
 +-----------+-------------------------------------------------------+-------------------------------------------------------------------------------------------------------+
 | Multiply  |  .. image:: ./pictures/Overlay-example-multiply.png   | This will also darken the image, but it works different than subtract.                                |
 +-----------+-------------------------------------------------------+-------------------------------------------------------------------------------------------------------+
@@ -163,10 +179,15 @@ Syntax and Parameters
 
 .. describe:: pc_range
 
-    When set to true, this will make all internal RGB→YUV →RGB conversions assume that 
+    When set to true, this will make all internal RGB→YUV→RGB conversions assume that 
     YUV sources are full-range instead of the default TV range. It is only recommended
-    to change this setting if you know what you are doing. See RGB considerations below. 
-    
+    to change this setting if you know what you are doing. See RGB considerations below.
+
+    Planned on the roadmap: when frame property _ColorRange is supported in Avisynth, Overlay 
+    will be able to automatically detect the range of the input clips, and adjust accordingly.
+    Only when pc_range is intentionally given, would it override the automatic detection.
+    But this is not yet implemented.
+
     Default: false
 
 .. describe:: use444
@@ -180,7 +201,8 @@ Syntax and Parameters
     * false when mode="blend" and format is RGB 
     * false when mode="blend", "luma" or "chroma" and format is YUV420/YUV422 (YV12/YV16). 
       Original format is kept throughout the whole process, no 4:4:4 conversion occurs. 
-    * true for all other cases (input is converted internally to 4:4:4)     
+    * false when mode="add" or mode="subtract" and format is RGB 
+    * true for all other cases (input is converted internally to 4:4:4)
 
 .. describe:: condvarsuffix
 
@@ -227,14 +249,16 @@ used by all Avisynth converters) to 0-255. There are some cases where enabling
 ``pc_range`` is a good idea:
 
 * When overlaying an RGB clip using the ``add``, ``subtract`` or ``multiply`` modes,
-  the range of the overlay clip is better, if it is 0-255, since this will enable 
-  completely dark areas not to influence the result (instead of adding 16 to every value).
+  the range of the overlay clip is better, if it is full range (PC range), since this 
+  will enable completely dark areas not to influence the result (instead of adding 16 
+  to every value; since 16 is the "limited" range lowest nominal value).
 * When NOT doing a colorspace conversion on output. If the output colorspace 
   (RGB vs. YUV) is different from the input, the scale will be wrong. If 
   ``pc_range=true``, and input is RGB, while output is YV16, the YV16 will have an 
   invalid range, and not CCIR-601 range.
 * Planar RGB formats are also supported besides 8 bit packed RGB formats plus RGB48/RGB64.
-* "blend" mode keeps original RGB format, no YUV intermediate conversion is used. 
+* "blend", "add", and "subtract" modes keep original RGB format, no YUV intermediate 
+  conversion is used for RGB input.
 
 **Outputting RGB**
 
@@ -252,6 +276,8 @@ If you use a greyscale ``mask``, or if you leave ``greymask=true``, you will get
 the result you would expect. Note that mask values are never scaled, so it 
 will automatically be in full-range, directly copied from the RGB values.
 Traditionally, the mask is retrieved from channel "B" (Blue).
+The maximum mask value is bit depth dependent, 255 for 8 bit, 65535 for 16 bit,
+and 1.0 for 32-bit float formats.
 
 **Using RGB32, RGB64 or planar RGBA alpha channel**
 
@@ -264,12 +290,12 @@ See also :doc:`Extract filters <extract>` and :doc:`ShowAlpha <showalpha>`.
 
 **Repeated overlays on RGB base clip**
 
-When doing repeated partial overlays on an RGB base clip, the unchanged parts 
-of the base clip may undergo a RGB→YV24→RGB conversion for each call to 
-Overlay, producing a progressive loss of color accuracy. In these situations, 
-it is better to convert the base clip to 4:4:4 format (e.g. YV24) before doing 
-the overlays and convert back to RGB afterwards. Remember, that "Blend" does 
-not convert from RGB.
+For modes, where RGB is not directly supported, when doing repeated partial 
+overlays on an RGB base clip, the unchanged parts of the base clip may 
+undergo a RGB→YV24→RGB conversion for each call to Overlay, producing a progressive 
+loss of color accuracy. In these situations, it is better to convert the base 
+clip to 4:4:4 format (e.g. YV24) before doing the overlays and convert back to 
+RGB afterwards. Remember, that "blend", "add", and "subtract" do not convert from RGB.
 
 Conditional Variables
 ---------------------
@@ -433,12 +459,66 @@ And the same with using ``condvarsuffix``:
     ConditionalReader("yoffset.txt", "ol_y_offset", false, condvarsuffix="a")
 
 
+Test script for different bit depths with and without masks
+
+::
+
+    # Prepares some sources.
+    bg = ColorBars(512,384).ConvertToYV16() # or ConvertToYUV444()
+    text = BlankClip(bg).Subtitle("Colorbars", size=92, 
+    \          text_color=$ffffff).ColorYUV(levels="tv->pc").ConvertToYV16()
+    mask = BlankClip(bg).Subtitle("I am the Mask", size=62, 
+    \          text_color=$ffffff).ColorYUV(levels="tv->pc")
+    
+    # use these two lines for RGB tests instead of YUV
+    bg = bg.ConvertToRGB32().ConvertToPlanarRGB()
+    text = text.ConvertToRGB32().ConvertToPlanarRGB()
+    
+    mask = mask.GreyScale().ConvertToYV16()
+    
+    # tests for 8-10-16-32 bits
+    
+    #add no mask
+    ov8 = Overlay(bg,text, x=50, y=120, mode="subtract", opacity=0.5).Info()
+    ov10 = Overlay(bg.ConvertBits(10),text.ConvertBits(10), x=50, y=120, mode="subtract", opacity=0.5).Info().ConvertBits(8)
+    ov16 = Overlay(bg.ConvertBits(16),text.ConvertBits(16), x=50, y=120, mode="subtract", opacity=0.5).Info().ConvertBits(8)
+    ov32 = Overlay(bg.ConvertBits(32),text.ConvertBits(32), x=50, y=120, mode="subtract", opacity=0.5).Info().ConvertBits(8)
+    
+    #add with mask
+    ov8m = Overlay(bg,text, x=50, y=120, mode="subtract", opacity=0.5, mask=mask).Info()
+    ov10m = Overlay(bg.ConvertBits(10),text.ConvertBits(10), x=50, y=120, mode="subtract", opacity=0.5, mask=mask.ConvertBits(10)).Info().ConvertBits(8)
+    ov16m = Overlay(bg.ConvertBits(16),text.ConvertBits(16), x=50, y=120, mode="subtract", opacity=0.5, mask=mask.ConvertBits(16)).Info().ConvertBits(8)
+    ov32m = Overlay(bg.ConvertBits(32),text.ConvertBits(32), x=50, y=120, mode="subtract", opacity=0.5, mask=mask.ConvertBits(32)).Info().ConvertBits(8)
+    /*
+    opacity 1.0
+    #add no mask
+    ov8 = Overlay(bg,text, x=50, y=120, mode="subtract", opacity=1.0).Info()
+    ov10 = Overlay(bg.ConvertBits(10),text.ConvertBits(10), x=50, y=120, mode="subtract", opacity=1.0).Info().ConvertBits(8)
+    ov16 = Overlay(bg.ConvertBits(16),text.ConvertBits(16), x=50, y=120, mode="subtract", opacity=1.0).Info().ConvertBits(8)
+    ov32 = Overlay(bg.ConvertBits(32),text.ConvertBits(32), x=50, y=120, mode="subtract", opacity=1.0).Info().ConvertBits(8)
+    
+    #add with mask
+    ov8m = Overlay(bg,text, x=50, y=120, mode="subtract", opacity=0.5, mask=mask).Info()
+    ov10m = Overlay(bg.ConvertBits(10),text.ConvertBits(10), x=50, y=120, mode="subtract", opacity=1.0, mask=mask.ConvertBits(10)).Info().ConvertBits(8)
+    ov16m = Overlay(bg.ConvertBits(16),text.ConvertBits(16), x=50, y=120, mode="subtract", opacity=1.0, mask=mask.ConvertBits(16)).Info().ConvertBits(8)
+    ov32m = Overlay(bg.ConvertBits(32),text.ConvertBits(32), x=50, y=120, mode="subtract", opacity=1.0, mask=mask.ConvertBits(32)).Info().ConvertBits(8)
+    */
+    
+    return StackHorizontal(\
+    Stackvertical(ov8,ov10,ov16,ov32),\ 
+    Stackvertical(ov8m,ov10m,ov16m,ov32m)\
+    ).ConvertToRGB32()
+
   
 +-----------+------------------------------------------------------------------------+
 | Changelog |                                                                        |
 +===========+========================================================================+
+| 3.7.6     | | "add", and "subtract" supports 32-bit float input.                   |
+|           | | "add" and "subtract" support RGB input without 4:4:4 conversion.     |
+|           | | Check for unsupported 32-bit float, such modes give error.           |
++-----------+------------------------------------------------------------------------+
 | 3.7.2     | Address issue #255: "blend": now using accurate formula using float    |
-|           | calculation.                                                           |
+|           | calculation internally.                                                |
 +-----------+------------------------------------------------------------------------+
 | 3.7.1     | Overlay mode "multiply": overlay clip is not converted to 4:4:4        |
 |           | when when 420 or 422, since only Y is used from it (speed).            |
@@ -467,6 +547,6 @@ And the same with using ``condvarsuffix``:
 | v2.54     | Initial Release                                                        |
 +-----------+------------------------------------------------------------------------+
 
-$Date: 2025/03/15 21:16:50 $
+$Date: 2025/11/22 10:35:50 $
 
 .. _here: http://forum.doom9.org/showthread.php?s=&threadid=28438
