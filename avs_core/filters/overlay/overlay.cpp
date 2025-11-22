@@ -176,6 +176,13 @@ GenericVideoFilter(_child) {
       env->ThrowError("Overlay: output bitdepth should be the same as input's!");
   }
 
+  if (bits_per_pixel == 32) {
+    if (_stricmp(name, "Blend") != 0 && _stricmp(name, "Luma") != 0 && _stricmp(name, "Chroma") != 0
+      && _stricmp(name, "Add") != 0 && _stricmp(name, "Subtract") != 0) {
+      env->ThrowError("Overlay: only Blend, Luma, Chroma, Add and Subtract modes are supported for 32-bit float video");
+    }
+  }
+
   if (vi.Is444())
     use444 = true; // 444 is conversionless by default
 
