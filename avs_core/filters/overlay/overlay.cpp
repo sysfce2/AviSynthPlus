@@ -90,7 +90,7 @@ static int getPixelTypeWithoutAlpha(VideoInfo& vi)
 }
 
 Overlay::Overlay(PClip _child, AVSValue args, IScriptEnvironment *env) :
-GenericVideoFilter(_child) {
+GenericVideoFilter(_child), child444(nullptr) {
 
   // child here is always planar: no packed RGB or YUY2 allowed
 
@@ -200,6 +200,12 @@ GenericVideoFilter(_child) {
   {
     use444 = false; // default false for modes capable handling of use444==false, and valid formats
   }
+  else if (!use444_defined &&
+    (vi.IsRGB()) &&
+    (_stricmp(name, "Add") == 0 || _stricmp(name, "Subtract") == 0))
+  {
+    use444 = false; // native RGB support for Add/Subtract
+  }
 
   if (!use444) {
     // check if we can work in conversionless mode
@@ -209,7 +215,8 @@ GenericVideoFilter(_child) {
       env->ThrowError("Overlay: use444=false is allowed only for greyscale, 4:2:0, 4:2:2 or any RGB video formats");
     //if (output_pixel_format_override && outputVi->pixel_type != vi.pixel_type)
     //  env->ThrowError("Overlay: use444=false is allowed only when no output pixel format is specified");
-    if (_stricmp(name, "Blend") != 0 && _stricmp(name, "Luma") != 0 && _stricmp(name, "Chroma") != 0)
+    if (_stricmp(name, "Blend") != 0 && _stricmp(name, "Luma") != 0 && _stricmp(name, "Chroma") != 0 &&
+      (_stricmp(name, "Add") != 0 && _stricmp(name, "Subtract") != 0) && !vi.IsRGB())
       env->ThrowError("Overlay: cannot specify use444=false for this overlay mode: %s", name);
   }
 
@@ -280,6 +287,27 @@ GenericVideoFilter(_child) {
   isInternal422 = viInternalWorkingFormat.Is422();
   isInternal420 = viInternalWorkingFormat.Is420();
 
+#if 0
+  // FIXME but left here: When this one is here and not in GetFrame, it's much slower.
+  // base clip conversion to internal 444 working format
+  if (inputVi.pixel_type != viInternalWorkingFormat.pixel_type &&
+    isInternal444)
+  {
+    // these two has special quick conversion in GetFrame
+    if (!inputVi.Is420() && !inputVi.Is422()) {
+      // convert input to 444
+      if (inputVi.IsRGB()) {
+        AVSValue new_args[3] = { child, false, full_range ? "PC.601" : "rec601" }; // clip, interlaced, matrix
+        child444 = env->Invoke("ConvertToYUV444", AVSValue(new_args, 3)).AsClip();
+      }
+      else {
+        // Y, 411?
+        AVSValue new_args[2] = { child, false };
+        child444 = env->Invoke("ConvertToYUV444", AVSValue(new_args, 2)).AsClip();
+      }
+    }
+  }
+#endif
   // more format match of overlay
   if (overlayVi.IsRGB()) {
     if (isInternalGrey) {
@@ -429,7 +457,7 @@ Overlay::~Overlay() {
 
 PVideoFrame __stdcall Overlay::GetFrame(int n, IScriptEnvironment *env) {
   // fixme: do all necessary conversions in filter creation, not in GetFrame!
-  // 20201208 almost done
+  // 20251122: tried but for some reason it's slower!
   int op_offset;
   float op_offset_f;
   int con_x_offset;
@@ -447,18 +475,20 @@ PVideoFrame __stdcall Overlay::GetFrame(int n, IScriptEnvironment *env) {
   }
   else if (isInternal444) {
     if (inputVi.Is420()) {
-      // use blazing fast YV12 -> YV24 converter
+      // use blazing fast YV12 -> YV24 converter, not exact chroma placement though
       PVideoFrame Inframe = child->GetFrame(n, env);
       frame = env->NewVideoFrameP(viInternalWorkingFormat, &Inframe);
       // no fancy options for chroma resampler, etc.. simply fast
       Convert444FromYV12(Inframe, frame, pixelsize, bits_per_pixel, env);
     }
     else if (inputVi.Is422()) {
-      // use blazing fast YV16 -> YV24 converter
+      // use blazing fast YV16 -> YV24 converter, not exact chroma placement though
       PVideoFrame Inframe = child->GetFrame(n, env);
       frame = env->NewVideoFrameP(viInternalWorkingFormat, &Inframe);
       Convert444FromYV16(Inframe, frame, pixelsize, bits_per_pixel, env);
     }
+#if 1
+    // FIXME but left here: When this one is NOT here in GetFrame, but in ctor, it's much slower.
     else if (inputVi.IsRGB()) {
       AVSValue new_args[3] = { child, false, full_range ? "PC.601" : "rec601" };
       child2 = env->Invoke("ConvertToYUV444", AVSValue(new_args, 3)).AsClip();
@@ -469,25 +499,19 @@ PVideoFrame __stdcall Overlay::GetFrame(int n, IScriptEnvironment *env) {
       child2 = env->Invoke("ConvertToYUV444", AVSValue(new_args, 2)).AsClip();
       frame = child2.AsClip()->GetFrame(n, env);
     }
+#else
+    else {
+      frame = child444->GetFrame(n, env);
+      // from non 420/422 such as RGB, the conversion happened already in constructor
+      // (FIXME note: slower)
+    }
+#endif
   }
   else if (isInternalRGB) {
     if(inputVi.IsYUV()) {
       // Just for the sake of completeness.
       // when input is YUV, internal working format is never RGB
       env->ThrowError("Overlay: internal error; isInternalRGB but input is YUV");
-      /*
-      if (viInternalWorkingFormat.IsPlanarRGB()) {
-        // clip, matrix, interlaced
-        AVSValue new_args[3] = { child, full_range ? "PC.601" : "rec601", false };
-        child2 = env->Invoke("ConvertToPlanarRGB", AVSValue(new_args, 3)).AsClip();
-        frame = child2.AsClip()->GetFrame(n, env);
-      }
-      else if (viInternalWorkingFormat.IsPlanarRGBA()) {
-        AVSValue new_args[3] = { child, full_range ? "PC.601" : "rec601", false };
-        child2 = env->Invoke("ConvertToPlanarRGBA", AVSValue(new_args, 3)).AsClip();
-        frame = child2.AsClip()->GetFrame(n, env);
-      }
-      */
     }
   }
 
@@ -767,7 +791,7 @@ OverlayFunction* Overlay::SelectFunction()
   switch (of_mode) {
   case OF_Blend: return new OL_BlendImage();
   case OF_Add: return new OL_AddImage();
-  case OF_Subtract: return new OL_AddImage(); // common with Add    //return new OL_SubtractImage();
+  case OF_Subtract: return new OL_AddImage(); // common with Add
   case OF_Multiply: return new OL_MultiplyImage();
   case OF_Chroma: return new OL_BlendImage(); // Common with BlendImage. plane range differs of_mode checked inside
   case OF_Luma: return new OL_BlendImage(); // Common with BlendImage. plane range differs of_mode checked inside

@@ -96,10 +96,14 @@ private:
 class OL_AddImage : public OverlayFunction {
   void DoBlendImage(ImageOverlayInternal* base, ImageOverlayInternal* overlay);
   void DoBlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
-  //template<typename pixel_t>
-  //void BlendImage(Image444* base, Image444* overlay);
   template<typename pixel_t, bool maskMode, bool of_add>
   void BlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
+  template<bool maskMode, bool of_add>
+  void BlendImageMask_float(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
+  template<typename pixel_t, bool maskMode, bool of_add>
+  void BlendImageMask_RGB(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
+  template<bool maskMode, bool of_add>
+  void BlendImageMask_RGB_float(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask);
 };
 
 class OL_MultiplyImage : public OverlayFunction {
