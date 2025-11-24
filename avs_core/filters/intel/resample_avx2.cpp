@@ -365,7 +365,7 @@ static void internal_resizer_h_avx2_generic_uint8_16_t(BYTE* dst8, const BYTE* s
   dst_pitch /= sizeof(pixel_t);
   src_pitch /= sizeof(pixel_t);
 
-  const int w_safe_mod8 = (program->overread_possible ? program->source_overread_beyond_targetx : width) / 8 * 8;
+  const int w_safe_mod8 = (program->safelimit_filter_size_aligned.overread_possible ? program->safelimit_filter_size_aligned.source_overread_beyond_targetx : width) / 8 * 8;
 
   for (int y = 0; y < height; y++) {
     const short* AVS_RESTRICT current_coeff_base = program->pixel_coefficient;
@@ -586,7 +586,7 @@ static void internal_resizer_h_avx2_generic_float(BYTE* dst8, const BYTE* src8, 
   dst_pitch = dst_pitch / sizeof(float);
   src_pitch = src_pitch / sizeof(float);
 
-  const int w_safe_mod8 = (program->overread_possible ? program->source_overread_beyond_targetx : width) / 8 * 8;
+  const int w_safe_mod8 = (program->safelimit_filter_size_aligned.overread_possible ? program->safelimit_filter_size_aligned.source_overread_beyond_targetx : width) / 8 * 8;
 
   for (int y = 0; y < height; y++) {
     float* current_coeff_base = program->pixel_coefficient_float;
