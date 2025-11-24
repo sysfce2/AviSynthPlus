@@ -627,8 +627,11 @@ void resizer_h_avx2_generic_float(BYTE* dst8, const BYTE* src8, int dst_pitch, i
 // end of H float
 
 //-------- 256 bit Verticals
-/*
-void resize_v_avx2_planar_uint8_t(BYTE* AVS_RESTRICT dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+// On x86-32 keep the 1×16 (or 2-lane/16-pixel) kernel
+// On x86-64 use the 2×16 (4-lane/32-pixel) kernel.
+// On 32-bit fewer YMM registers are available, 2x16 kernel causes register pressure issues.
+
+static void resize_v_avx2_planar_uint8_pix16(BYTE* AVS_RESTRICT dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
 {
   AVS_UNUSED(bits_per_pixel);
   int filter_size = program->filter_size;
@@ -702,9 +705,8 @@ void resize_v_avx2_planar_uint8_t(BYTE* AVS_RESTRICT dst, const BYTE* src, int d
     current_coeff += filter_size;
   }
 }
-*/
 
-void resize_v_avx2_planar_uint8_t(BYTE* AVS_RESTRICT dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+static void resize_v_avx2_planar_uint8_pix32(BYTE* AVS_RESTRICT dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
 {
     AVS_UNUSED(bits_per_pixel);
     int filter_size = program->filter_size;
@@ -720,8 +722,8 @@ void resize_v_avx2_planar_uint8_t(BYTE* AVS_RESTRICT dst, const BYTE* src, int d
         const BYTE* AVS_RESTRICT src_ptr = src + offset * src_pitch;
 
         // 32 byte 32 pixel
-        // no need wmod16, alignment is safe at least 32
-        for (int x = 0; x < width; x += 32) { // was +=16
+        // alignment is safe till 64
+        for (int x = 0; x < width; x += 32) {
 
             __m256i result_single_lo = rounder;
             __m256i result_single_hi = rounder;
@@ -822,6 +824,29 @@ void resize_v_avx2_planar_uint8_t(BYTE* AVS_RESTRICT dst, const BYTE* src, int d
         current_coeff += filter_size;
     }
 }
+
+#if defined(X86_64)
+static void resize_v_avx2_planar_impl(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pitch,
+  ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+{
+  resize_v_avx2_planar_uint8_pix32(dst8, src, dst_pitch, src_pitch, program, width, target_height, bits_per_pixel);
+}
+#elif defined(X86_32)
+static void resize_v_avx2_planar_impl(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pitch,
+  ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+{
+  resize_v_avx2_planar_uint8_pix16(dst8, src, dst_pitch, src_pitch, program, width, target_height, bits_per_pixel);
+}
+#else
+#error Unsupported target for resize_v_avx2_planar_uint8_t
+#endif
+
+void resize_v_avx2_planar_uint8_t(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pitch,
+  ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+{
+  resize_v_avx2_planar_impl(dst8, src, dst_pitch, src_pitch, program, width, target_height, bits_per_pixel);
+}
+
 
 template<bool lessthan16bit>
 void resize_v_avx2_planar_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)

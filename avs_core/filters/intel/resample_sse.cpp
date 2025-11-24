@@ -152,8 +152,13 @@ void resize_v_mmx_planar(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitc
 }
 #endif
 
-/*
-void resize_v_sse2_planar(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+// On x86-32 keep the 1×8 (or 2-lane/8-pixel) kernel
+// On x86-64 use the 2×8 (4-lane/16-pixel) kernel.
+// On 32-bit the only 8 XMM registers are available, 2x8 kernel causes register pressure issues.
+
+// 1x8 pixel kernel, hoped to have less register pressure on x86-32 thus slower, but the 2x8 is faster anyway.
+// Left here for reference.
+void resize_v_sse2_planar_pix8(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
 {
   AVS_UNUSED(bits_per_pixel);
 
@@ -172,7 +177,8 @@ void resize_v_sse2_planar(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pi
     const int offset = program->pixel_offset[y];
     const BYTE* src_ptr = src + offset * src_pitch;
 
-    // no need wmod8, alignment is safe at least 32
+    // alignment is safe till 64 bytes
+    // 8 pixels at a time
     for (int x = 0; x < width; x += 8) {
       __m128i result_single_lo = rounder;
       __m128i result_single_hi = rounder;
@@ -226,9 +232,10 @@ void resize_v_sse2_planar(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pi
     current_coeff += filter_size;
   }
 }
-*/
 
-void resize_v_sse2_planar(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+// 2x8 (4-lane/16-pixel) kernel.
+// For some reason, this is actually faster even on x86-32 contrary to the register pressure worries.
+void resize_v_sse2_planar_pix16(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
 {
     AVS_UNUSED(bits_per_pixel);
 
@@ -247,8 +254,9 @@ void resize_v_sse2_planar(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pi
         const int offset = program->pixel_offset[y];
         const BYTE* src_ptr = src + offset * src_pitch;
 
-        // no need wmod8, alignment is safe at least 32
-        for (int x = 0; x < width; x += 16) { // +=8
+        // alignment is safe till 64
+        // 16 pixels at a time
+        for (int x = 0; x < width; x += 16) {
             __m128i result_single_lo = rounder;
             __m128i result_single_hi = rounder;
 
@@ -339,6 +347,30 @@ void resize_v_sse2_planar(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pi
         dst += dst_pitch;
         current_coeff += filter_size;
     }
+}
+
+#if defined(X86_64)
+static void resize_v_sse2_planar_impl(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pitch,
+  ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+{
+  resize_v_sse2_planar_pix16(dst8, src, dst_pitch, src_pitch, program, width, target_height, bits_per_pixel);
+}
+#elif defined(X86_32)
+static void resize_v_sse2_planar_impl(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pitch,
+  ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+{
+  // Use the 2x8 kernel even on x86-32 as it is faster despite register pressure concerns.
+  resize_v_sse2_planar_pix16(dst8, src, dst_pitch, src_pitch, program, width, target_height, bits_per_pixel);
+  //resize_v_sse2_planar_pix8(dst8, src, dst_pitch, src_pitch, program, width, target_height, bits_per_pixel);
+}
+#else
+#error Unsupported target for resize_v_sse2_planar
+#endif
+
+void resize_v_sse2_planar(BYTE* dst8, const BYTE* src, int dst_pitch, int src_pitch,
+  ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
+{
+  resize_v_sse2_planar_impl(dst8, src, dst_pitch, src_pitch, program, width, target_height, bits_per_pixel);
 }
 
 // like the AVX2 version, but only 8 pixels at a time
