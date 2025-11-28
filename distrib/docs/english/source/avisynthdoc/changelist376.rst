@@ -28,6 +28,13 @@ Build environment, Interface
   see :ref:`global lock support<cplusplus_acquiregloballock>`
 - v12 interface: ApplyMessageEx supporting utf8 parameter.
   see :ref:`ApplyMessageEx<cplusplus_applymessage>`
+- v12 interface: inform plugins about the effective thread count after Prefetch()
+  via cache hints:
+
+  * ``CachePolicyHint::CACHE_INFORM_NUM_THREADS`` (C++)
+  * ``AVS_CACHE_INFORM_NUM_THREADS`` (C)
+
+  See :ref:`SetCacheHints<cplusplus_setcachehints>` .
 - the internal IScriptEnvironment2 methods AddAutoLoadDir and ListAutoLoadDirs explicitely
   work in UTF-8.
 
@@ -62,7 +69,7 @@ Optimizations
   * introduce a SIMD-like C header (avs_simd_c.h) for smart auto-vectorizing compilers.
   * restore vertical float performance (3.7.4 was slower than 3.7.3) + SSE2 special optimization
   * further optimize verticals, use ``AVS_RESTRICT``
-  * (Work In Progress) optimize horizontal resampler for small (<=4) kernel sizes.
+  * optimize AVX2 horizontal resampler for 32-bit float for small (<=4) kernel sizes.
   * (Work In Progress) add AVX512 code path
   * (Work In Progress) unifify horizontal and vertical place processing flow
 

@@ -2328,10 +2328,117 @@ SetCacheHints
     int __stdcall SetCacheHints(int cachehints, int frame_range) = 0 ;
     // We do not pass cache requests upwards, only to the next filter.
 
-Avisynth+: frame cacheing was completely rewritten compared to Avisynth 5 or 6.
-Specifying cache ranges are no longer relevant.
 
-Historical part, up to Avisynth 2.6:
+See ``CachePolicyHint`` enum in ``avisynth.h`` for possible cachehints values,
+or AVS_CACHE_* defines in avisynth_c.h for C interface.
+
+Some use cases from the filter side:
+
+
+CACHE_GET_MTMODE
+................
+
+Filter specifies its required MT (multithread) mode.
+
+A filter when requested with CACHE_GET_MTMODE can return its 
+multithreaded model to the core. MT_NICE_FILTER (fully reentrant), 
+MT_MULTI_INSTANCE and MT_SERIALIZED (not MT friendly) can be returned.
+
+::
+
+    class ConvertToRGB : public GenericVideoFilter {
+      ...
+    int __stdcall SetCacheHints(int cachehints, int frame_range) override {
+      AVS_UNUSED(frame_range);
+      return cachehints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
+    }
+
+::
+
+    enum MtMode
+    {
+      MT_INVALID = 0,
+      MT_NICE_FILTER = 1,
+      MT_MULTI_INSTANCE = 2,
+      MT_SERIALIZED = 3,
+      MT_SPECIAL_MT = 4, // do not use, test only
+      MT_MODE_COUNT = 5
+    }; 
+
+
+CACHE_INFORM_NUM_THREADS
+........................
+
+Filter is informed about about the number or threads which was set by Prefetch.
+
+Since v12.
+
+Avisynth core uses the ``CachePolicyHint::CACHE_INFORM_NUM_THREADS`` enum to inform the filter 
+about the number of threads by ``SetCacheHints`` when ``Prefetch`` is applied to that script section.
+
+The parameter specifies the thread count.
+
+For ``MT_MULTI_INSTANCE`` filters it is called for each instance.
+For ``MT_NICE_FILTER`` or ``MT_SERIALIZED`` only once.
+Not called if no ``Prefetch`` is used for that script section.
+
+Possible use cases: 
+
+- filter may disable its internal MT if received thread count > 1.
+- for ``num_threads`` > 1, in Intel intrinsics optimization, the code can 
+  use ``_mm_stream_si128`` which does not pollute caches, when writing output frames. 
+  For ``num_threads`` = 1 your code version can use functions optimized for single thread 
+  and can use ``_mm_store_si128``.
+
+::
+
+    class ConvertToRGB : public GenericVideoFilter {
+      private:
+        int num_threads; // initialize it, since CACHE_INFORM_NUM_THREADS is not called if no Prefetch is used
+      ...
+      int __stdcall SetCacheHints(int cachehints, int frame_range) override {
+        if (cachehints == CACHE_GET_MTMODE) return MT_NICE_FILTER;
+        if (cachehints == CACHE_INFORM_NUM_THREADS) {
+          num_threads = frame_range;
+        }
+        return 0;
+      }
+
+
+CACHE_DONT_CACHE_ME
+...................
+
+Filter specifies that it needs no caching.
+
+Filter returns 1 to the CACHE_DONT_CACHE_ME query.
+
+::
+
+    int __stdcall NonCachedGenericVideoFilter::SetCacheHints(int cachehints, int frame_range)
+    {
+      switch(cachehints)
+      {
+        case CACHE_DONT_CACHE_ME:
+          return 1;
+        case CACHE_GET_MTMODE:
+          return MT_NICE_FILTER;
+
+        case CACHE_GET_DEV_TYPE:
+          return (child->GetVersion() >= 5) ? child->SetCacheHints(CACHE_GET_DEV_TYPE, 0) : 0;
+
+        default:
+          return GenericVideoFilter::SetCacheHints(cachehints, frame_range);
+      }
+    }
+
+
+
+Old, up to Avisynth 2.6
+-----------------------
+
+In Avisynth+ frame cacheing was completely rewritten compared to Avisynth 5 or 6.
+Specifying cache ranges are no longer relevant. The following part describes
+the old behaviour for historical reasons only.
 
 SetCacheHints could be used in filters that request multiple frames
 from any single PClip source per input GetFrame call. frame_range is
@@ -2363,30 +2470,6 @@ for frame 100 and you in turn then ask for frames 98, 99, 100, 101 and
 Frames outside the specified radius are candidate for normal LRU
 caching.
 
-Avisynth+: A filter when requested with CACHE_GET_MTMODE can return its 
-multithreaded model to the core. MT_NICE_FILTER (fully reentrant), 
-MT_MULTI_INSTANCE and MT_SERIALIZED (not MT friendly) can be returned.
-
-::
-
-    class ConvertToRGB : public GenericVideoFilter {
-      ...
-    int __stdcall SetCacheHints(int cachehints, int frame_range) override {
-      AVS_UNUSED(frame_range);
-      return cachehints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
-    }
-
-::
-
-    enum MtMode
-    {
-      MT_INVALID = 0,
-      MT_NICE_FILTER = 1,
-      MT_MULTI_INSTANCE = 2,
-      MT_SERIALIZED = 3,
-      MT_SPECIAL_MT = 4, // do not use, test only
-      MT_MODE_COUNT = 5
-    }; 
 
 .. _cplusplus_getvideoinfo:
 

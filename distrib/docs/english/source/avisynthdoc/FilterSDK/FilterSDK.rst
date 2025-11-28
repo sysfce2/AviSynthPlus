@@ -437,6 +437,11 @@ What's new in the API V12
           
           See :ref:`global lock support<cplusplus_acquiregloballock>`
 
+        - new ``CachePolicyHint::CACHE_INFORM_NUM_THREADS`` enum to inform the filter about the 
+          number of threads by ``SetCacheHints`` (C interface: ``AVS_CACHE_INFORM_NUM_THREADS`` 
+          and ``avs_set_cache_hints``).
+          See :ref:`SetCacheHints<cplusplus_setcachehints>` .
+
 - C++ API
 
           * ``env->ApplyMessageEx`` (C++),
@@ -470,7 +475,7 @@ License terms
 
 Note: Avisynth Filter SDK parts are under specific :doc:`SDK license <SDKLicense>` terms.
 
-$Date: 2025/06/03 08:30:00 $
+$Date: 2025/11/27 08:30:00 $
 
 Latest online Avisynth+ version is at https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html
 This one is maintained properly.

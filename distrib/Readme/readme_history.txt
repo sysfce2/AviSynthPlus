@@ -9,6 +9,13 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
+20251127 3.7.5.xxxxx (pre 3.7.6)
+--------------------------------
+- v12 interface: inform plugins about the effective thread count after Prefetch() via cache hints:
+  * ``CachePolicyHint::CACHE_INFORM_NUM_THREADS`` (C++)
+  * ``AVS_CACHE_INFORM_NUM_THREADS`` (C)
+  See https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/Cplusplus_api.html#cplusplus-setcachehints
+
 20251122 3.7.5.xxxxx (pre 3.7.6)
 --------------------------------
 - Fix #462: Report: "AviSynth scripts don't work in a folder with a Unicode name."
