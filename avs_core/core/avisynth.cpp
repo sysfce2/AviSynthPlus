@@ -4290,16 +4290,6 @@ void* ScriptEnvironment::ManageCache(int key, void* data) {
   {
     MTGuard* guard = reinterpret_cast<MTGuard*>(data);
 
-    // If we already have a prefetcher, enable MT on the guard
-#ifdef OLD_PREFETCH
-    // FIXME: MTGuardRegistry is processed when creating thread pools for Prefetch() as well
-    // Why is it needed here?
-    if (ThreadPoolRegistry.size() > 0)
-    {
-      guard->EnableMT(nMaxFilterInstances);
-    }
-#endif
-
     MTGuardRegistry.push_back(guard);
 
     break;
@@ -4911,9 +4901,6 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
   const bool chainedCtor = invoke_stack.size() > 0;
 
   MtModeEvaluator mthelper;
-#ifdef USE_MT_GUARDEXIT
-  std::vector<MTGuardExit*> GuardExits;
-#endif
 
   bool foundClipArgument = false;
   for (int i = argbase; i < (int)args2.size(); ++i)
@@ -4935,14 +4922,6 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
 #endif
         mthelper.AddChainedFilter(clip, this->DefaultMtMode);
       }
-
-#ifdef USE_MT_GUARDEXIT
-      // Wrap this input parameter into a guard exit, which is used when
-      // the new clip created later below is MT_SERIALIZED.
-      MTGuardExit *ge = new MTGuardExit(argx.AsClip(), name);
-      GuardExits.push_back(ge);
-      argx = ge;
-#endif
     }
   }
   bool isSourceFilter = !foundClipArgument;
@@ -5048,25 +5027,6 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
         auto current_directory = CWDChanger::GetCurrentWorkingDirectory(); // wstring on Windows, string on POSIX
 
         *result = MTGuard::Create(mtmode, clip, std::move(funcCtor), current_directory.c_str(), threadEnv.get());
-
-#ifdef USE_MT_GUARDEXIT
-        // 170531: concept introduced in r2069 is not working
-        // Mutex of serialized filters are unlocked and allow to call
-        // such filters as MT_NICE_FILTER in a reentrant way
-        // Kept for reference, but put in USE_MT_GUARDEXIT define.
-
-        // Activate the guard exists. This allows us to exit the critical
-        // section encompassing the filter when execution leaves its routines
-        // to call other filters.
-        if (MT_SERIALIZED == mtmode)
-        {
-          for (auto &ge : GuardExits)
-          {
-            _RPT3(0, "ScriptEnvironment::Invoke.ActivateGuard %s thread %d\n", name, GetCurrentThreadId());
-            ge->Activate(guard);
-          }
-        }
-#endif
 
         IClip *clip_raw = (IClip*)((void*)clip);
         ClipDataStore *data = this->ClipData(clip_raw);
@@ -5764,55 +5724,19 @@ ThreadPool* ScriptEnvironment::NewThreadPool(size_t nThreads)
   // Prefetch(4) will create 8 instances
   // Prefetch(9) will still create 16 instances, of which 7 is not accessed at all
 
-#ifdef OLD_PREFETCH
-  if (nMaxFilterInstances < nThreads + 1) {
-    // make 2^n
-    nMaxFilterInstances = 1;
-    while (nThreads + 1 > (nMaxFilterInstances <<= 1));
-
-    // Why: 
-    // Check assert on Reason #1.
-    // void MTGuard::EnableMT(size_t nThreads)
-    //  assert((nThreads & (nThreads - 1)) == 0); // must be 2^n
-      // 2^N: needed because of directly accessing a masked array
-      // PVideoFrame __stdcall MTGuard::GetFrame
-      // envI->GetThreadId() & (nThreads - 1)
-
-    // Real reason #1.
-    // PVideoFrame __stdcall MTGuard::GetFrame(int n, IScriptEnvironment* env)
-    // auto& child = ChildFilters[envI->GetThreadId() & (nThreads - 1)];
-
-  }
-#else
   nMaxFilterInstances = nThreads; // really n/a
-  // FIXME: 
   // AEP_FILTERCHAIN_THREADS environment property ID returns this value. Unlikely if someone used it
   // for meaningful purposes.
-  // Avisynth does not use that internally.
-#endif
+  // Avisynth does not use that internally, and called from a filter preceesing another Prefetch,
+  // only the last Prefetch's value is effectively returned, belonging to the actual 'env'.
 
   // Since this method basically enables MT operation,
   // upgrade all MTGuards to MT-mode.
   for (MTGuard* guard : MTGuardRegistry)
   {
     if (guard != NULL)
-      guard->EnableMT(
-#ifndef OLD_PREFETCH
-        nThreads
-#else
-        nMaxFilterInstances
-#endif
-);
+      guard->EnableMT(nThreads);
   }
-
-#if 0
-  // For OLD_PREFETCH this assignment healed the Prefetch value kept issue
-  // but it finally was not needed in the solution.
-  nMaxFilterInstances = 1;
-  // After Prefetch reset to 1,
-  // or else a filter chain ended with a smaller thread count (on multiple Prefetch) or no Prefetch
-  // will remember the latest Prefetch number when it is bigger than the latest Prefetch's value
-#endif
 
   return pool;
 }

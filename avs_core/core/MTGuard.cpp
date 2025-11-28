@@ -56,9 +56,7 @@ MTGuard::MTGuard(PClip firstChild, MtMode mtmode, std::unique_ptr<const FilterCo
 #endif
   Env(env),
   nThreads(1),
-#ifndef OLD_PREFETCH
   mt_enabled(false),
-#endif
   FilterCtor(std::move(funcCtor)),
 #ifdef AVS_WINDOWS
   CurrentDirectory(current_directory ? current_directory : L""),
@@ -84,12 +82,6 @@ MTGuard::~MTGuard()
 void MTGuard::EnableMT(size_t nThreads)
 {
   assert(nThreads >= 1);
-#ifdef OLD_PREFETCH
-  assert((nThreads & (nThreads - 1)) == 0); // must be 2^n
-  // 2^N: needed because of directly accessing a masked array
-  // PVideoFrame __stdcall MTGuard::GetFrame
-  // envI->GetThreadId() & (nThreads - 1)
-#endif
 
   if (nThreads > 1)
   {
@@ -103,12 +95,8 @@ void MTGuard::EnableMT(size_t nThreads)
     case MT_MULTI_INSTANCE:
     {
       // creates the extra filter instances needed for the actual thread count
-#ifdef OLD_PREFETCH
-      if (this->nThreads < nThreads) {
-#else
       // set only when unset
       if (!this->mt_enabled) {
-#endif
         auto newchilds = std::unique_ptr<MTGuardChildFilter[]>(new MTGuardChildFilter[nThreads]);
         // copy existing
         for (size_t i = 0; i < this->nThreads; ++i) {
@@ -147,14 +135,10 @@ void MTGuard::EnableMT(size_t nThreads)
     }
   }
 
-#ifdef OLD_PREFETCH
-  this->nThreads = std::max(this->nThreads, nThreads);
-#else
   if (!this->mt_enabled) {
     this->nThreads = std::max(this->nThreads, nThreads);
     this->mt_enabled = true;
   }
-#endif
 
   // We don't need the stored parameters any more,
   // free their memory.
@@ -187,7 +171,7 @@ PVideoFrame __stdcall MTGuard::GetFrame(int n, IScriptEnvironment* env_)
   case MT_MULTI_INSTANCE:
   {
     // When called from thread pool then thread IDs are one-to-one mapped to ChildFilters array.
-    // 'binary and' mask (old method) or 'modulo' method ensures that no over-addressing can happen.
+    // 'modulo' method ensures that no over-addressing can happen.
     // The number of filter instances are created in EnableMT as such.
     // Thread pool thread IDs are consecutive numbers, starting with 1.
     // Prefetch threads are consecutive numbers, starting with 0.
@@ -197,14 +181,7 @@ PVideoFrame __stdcall MTGuard::GetFrame(int n, IScriptEnvironment* env_)
     //   the mapping is not ideal. It can be less or more than the actual instance count.
     //   E.g. when mapping a thread on a CPU with 8 logical cores 
     //   to a instance count of 3 (nThread=3) the mapping is uneven (modulo example): [0,3,6]->[0] [1,4,7]->[1] [2,5]->[2]
-    // Resolution: do not use OLD_PREFETCH source part (kept just for knowledge)
-#ifdef OLD_PREFETCH
-    auto myThreadID = IEnv->GetThreadId();
-    assert((nThreads & (nThreads - 1)) == 0); // must be 2^n
-    size_t clipIndex = myThreadID & (nThreads - 1);
-#else
     size_t clipIndex = IEnv->GetThreadId() % nThreads;
-#endif
     auto& child = ChildFilters[clipIndex];
     std::lock_guard<std::mutex> lock(child.mutex);
     frame = child.filter->GetFrame(n, env);
@@ -213,29 +190,8 @@ PVideoFrame __stdcall MTGuard::GetFrame(int n, IScriptEnvironment* env_)
   case MT_SERIALIZED:
   {
     std::lock_guard<std::mutex> lock(ChildFilters[0].mutex);
-    /*
-    // Debug lines left here intentionally: allow maximum of 4000ms for obtaining the lock.
-    // Invoke-GetFrame deadlock situation detection.
-    // When GetFrame(0) was called from an Invoke (more exactly from a filter constructor to read
-    // frame properties of 0th frame), which operated on a Clip AVSValue variable
-    // resulted by a previous Eval operation (which had Prefetch inside).
-    // Invoke put a lock a memory_mutex and called a GetFrame(0).
-    // But the existing Prefetch of the Eval'd script had already running a GetFrame(0) from
-    // another thread and thus would also like to obtain a lock on the common memory_mutex
-    // (for expanding the frame registry).
-    // This was solved in 3.7.2 by separating memory_mutex from invoke_mutex.
-    // Solving part#2: mutex may be needed even for single threaded mode, see above.
-    std::lock_guard<std::timed mutex> lock(ChildFilters[0].mutex);
-    while(!ChildFilters[0].mutex.try_lock_for(std::chrono::milliseconds(4000)))
-    {
-      _RPT3(0, "MTGuard::GetFrame lock DEADLOCK %d w=%d p=%p\n", n, ChildFilters[0].filter->GetVideoInfo().width, (void*)&ChildFilters[0].mutex);
-      envI->ThrowError("Deadlock!");
-      break;
-    }
-    // possible frame registry expansion thus memory mutex requiration here:
-    frame = ChildFilters[0].filter->GetFrame(n, env);
-    ChildFilters[0].mutex.unlock();
-    */
+    // Deadlock situation when GetFrame(0) was called from an Invoke
+    // solved in 3.7.2 by separating memory_mutex from invoke_mutex.
     frame = ChildFilters[0].filter->GetFrame(n, env);
     break;
   }
@@ -278,13 +234,7 @@ void __stdcall MTGuard::GetAudio(void* buf, int64_t start, int64_t count, IScrip
     }
   case MT_MULTI_INSTANCE:
     {
-#ifdef OLD_PREFETCH
-      auto myThreadID = envI->GetThreadId();
-      assert((nThreads & (nThreads - 1)) == 0); // must be 2^n
-      size_t clipIndex = myThreadID & (nThreads - 1);
-#else
       size_t clipIndex = IEnv->GetThreadId() % nThreads;
-#endif
       auto& child = ChildFilters[clipIndex];
       std::lock_guard<std::mutex> lock(child.mutex);
       child.filter->GetAudio(buf, start, count, env);
@@ -377,73 +327,3 @@ PClip MTGuard::Create(MtMode mode, PClip filterInstance, std::unique_ptr<const F
         return new MTGuard(filterInstance, MT_SERIALIZED, nullptr, nullptr, env);
     }
 }
-
-#ifdef USE_MT_GUARDEXIT
-// 170531 Optimizing concept introduced in r2069 temporarily disabled by this define
-
-// ---------------------------------------------------------------------
-//                      MTGuardExit
-// ---------------------------------------------------------------------
-
-template <class T>
-class reverse_lock {
-public:
-    reverse_lock(T *mutex) : mutex_(mutex) {
-        if (mutex_) {
-            mutex_->unlock();
-        }
-    }
-
-    ~reverse_lock() {
-        if (mutex_) {
-            mutex_->lock();
-        }
-    }
-
-    reverse_lock(const reverse_lock&) = delete;
-    reverse_lock& operator=(const reverse_lock&) = delete;
-
-private:
-    T *mutex_;
-};
-
-MTGuardExit::MTGuardExit(const PClip &clip, const char *_name) :
-    NonCachedGenericVideoFilter(clip),
-  name(_name)
-{}
-
-void MTGuardExit::Activate(PClip &with_guard)
-{
-    assert(MTGuard::IsMTGuard(with_guard));
-    this->guard = (MTGuard*)((void*)with_guard);
-}
-
-PVideoFrame __stdcall MTGuardExit::GetFrame(int n, IScriptEnvironment* env)
-{
-    std::mutex *m = (nullptr == guard) ? nullptr : guard->GetMutex();
-#ifdef DEBUG
-    if(nullptr != guard)
-      _RPT3(0, "MTGuardExit::GetFrame %d name=%s (before unlock ) thread=%d\n", n, name.c_str(), GetCurrentThreadId());
-#endif
-    reverse_lock<std::mutex> unlock_guard(m);
-#ifdef DEBUG
-    if (nullptr != guard)
-      _RPT3(0, "MTGuardExit::GetFrame %d name=%s (unlock ok     ) thread=%d\n", n, name.c_str(), GetCurrentThreadId());
-#endif
-    PVideoFrame result = child->GetFrame(n, env);
-#ifdef DEBUG
-    if (nullptr != guard)
-      _RPT3(0, "MTGuardExit::GetFrame %d name=%s (lock again    ) thread=%d\n", n, name.c_str(), GetCurrentThreadId());
-#endif
-    // 170531. problem: in real life MTGuardExit unlocks and allows MT_SERIALIZED filters to be called again
-    // even if they are still in work, make them to be called in a reentant way like in NICE_FILTER mode
-    return result;
-}
-
-void __stdcall MTGuardExit::GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env)
-{
-    std::mutex *m = (nullptr == guard) ? nullptr : guard->GetMutex();
-    reverse_lock<std::mutex> unlock_guard(m);
-    return child->GetAudio(buf, start, count, env);
-}
-#endif
