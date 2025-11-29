@@ -37,6 +37,8 @@ Build environment, Interface
   See :ref:`SetCacheHints<cplusplus_setcachehints>` .
 - the internal IScriptEnvironment2 methods AddAutoLoadDir and ListAutoLoadDirs explicitely
   work in UTF-8.
+- Add CPUF_AVX512VNNI to CpuFlags, AVS_CPUF_AVX512VNNI to avisynth_c.h,
+  Optimize AVX512 features display in Info()
 
 Bugfixes
 ~~~~~~~~

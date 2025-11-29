@@ -126,6 +126,8 @@ static int CPUCheckForExtensions()
         result |= CPUF_AVX512VL;
       if (IS_BIT_SET(cpuinfo[2], 1)) // [2]!
         result |= CPUF_AVX512VBMI;
+      if (IS_BIT_SET(cpuinfo[2], 11))
+        result |= CPUF_AVX512VNNI;
     }
 #else
     result |= CPUF_FORCE;

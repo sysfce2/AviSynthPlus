@@ -3007,9 +3007,9 @@ void ScriptEnvironment::SetMaxCPU(const char* features)
     else ThrowError("SetMaxCPU error: cpu level must be empty or none, mmx, sse, sse2, sse3, ssse3, sse4 or sse4.1, sse4.2, avx or avx2! (%s)", t);
 
     if (0 == mode) { // limit
-      if (cpulevel <= CL_AVX2)
+      if (cpulevel <= CL_AVX2) // just disable all avx512
         cpu_flags &= ~(CPUF_AVX512BW | CPUF_AVX512CD | CPUF_AVX512DQ |
-          CPUF_AVX512ER | CPUF_AVX512F | CPUF_AVX512IFMA | CPUF_AVX512PF | CPUF_AVX512VBMI | CPUF_AVX512VL);
+          CPUF_AVX512ER | CPUF_AVX512F | CPUF_AVX512IFMA | CPUF_AVX512PF | CPUF_AVX512VBMI | CPUF_AVX512VL | CPUF_AVX512VNNI);
       if (cpulevel <= CL_AVX)
         cpu_flags &= ~(CPUF_AVX2 | CPUF_FMA3 | CPUF_FMA4 | CPUF_F16C);
       if (cpulevel <= CL_SSE4_2)

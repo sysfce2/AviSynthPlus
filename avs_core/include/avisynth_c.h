@@ -1253,7 +1253,8 @@ enum {
   AVS_CPUF_AVX512BW   = 0x2000000, // AVX-512 BW (Byte/Word granular) Instructions
   AVS_CPUF_AVX512VL   = 0x4000000, // AVX-512 VL (128/256 Vector Length) Extensions
   AVS_CPUF_AVX512IFMA = 0x8000000, // AVX-512 IFMA integer 52 bit
-  AVS_CPUF_AVX512VBMI = 0x10000000 // AVX-512 VBMI
+  AVS_CPUF_AVX512VBMI = 0x10000000, // AVX-512 VBMI
+  AVS_CPUF_AVX512VNNI = 0x20000000 // AVX-512 VNNI accumulated dot product on 8/16 bit integers
 };
 
 
