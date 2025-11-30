@@ -72,7 +72,7 @@
 
 
 static void checkAndSetOverread(int end_pos, SafeLimit& safelimit, int start_pos, int i, int source_size) {
-  if (end_pos > source_size) {
+  if (end_pos >= source_size) {
     if (!safelimit.overread_possible) {
       safelimit.overread_possible = true;
       safelimit.source_overread_offset = start_pos;
@@ -89,6 +89,7 @@ void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int fi
   p->safelimit_8_pixels.overread_possible = false;
   p->safelimit_16_pixels.overread_possible = false;
   p->safelimit_32_pixels.overread_possible = false;
+  p->safelimit_8_pixels_each8th_target.overread_possible = false;
 
   // note: filter_size_real was the max(kernel_sizes[])
   int filter_size_aligned = AlignNumber(p->filter_size_real, p->filter_size_alignment);
@@ -135,6 +136,11 @@ void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int fi
     const int last_coeff_index = offset + p->filter_size_real - 1;
     const int shift_needed = last_coeff_index > last_line ? p->filter_size_real - kernel_size : 0;
 
+    // In order to be able to read 'filter_size_real' number of coefficients safely at the
+    // image boundaries, we right-align the actual coefficients within the allocated filter
+    // size. This will require adjusting (shifting) the pixel offsets as well, and increasing
+    // the kernel sizes, to reflect the new effective size: filter_size_real.
+
     // Copy coefficients with appropriate shift
     if (p->bits_per_pixel == 32) {
       float* dst = (float*)new_coeff + i * filter_size_aligned;
@@ -179,18 +185,24 @@ void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int fi
     checkAndSetOverread(start_pos + 8 - 1, p->safelimit_8_pixels, start_pos, i, p->source_size);
     checkAndSetOverread(start_pos + 16 - 1, p->safelimit_16_pixels, start_pos, i, p->source_size);
     checkAndSetOverread(start_pos + 32 - 1, p->safelimit_32_pixels, start_pos, i, p->source_size);
+    // for permutex-based AVX2 ks4 float H resizers, where we read 8 pixels at a time exactly from
+    // start_pos of each Nth pixel output block
+    if (i % 8 == 0)
+      checkAndSetOverread(start_pos + 8 - 1, p->safelimit_8_pixels_each8th_target, start_pos, i, p->source_size);
+
       }
 
   // Fill the extra offset after target_size with fake values.
   // Our aim is to have a safe, up to 8-32 pixels/cycle simd loop for V and specific H resizers.
   // Their coeffs will be 0, so they don't count if such coeffs
-  // are multiplied with invalid pixels.
+  // are multiplied with invalid, though existing pixels.
   if (p->target_size < target_size_aligned) {
     p->kernel_sizes.resize(target_size_aligned);
     p->pixel_offset.resize(target_size_aligned);
+    int last_offset = p->pixel_offset[p->target_size - 1];
     for (int i = p->target_size; i < target_size_aligned; ++i) {
       p->kernel_sizes[i] = p->filter_size_real;
-      p->pixel_offset[i] = 0; // 0th pixel offset makes no harm
+      p->pixel_offset[i] = last_offset; // repeat last valid offset, helps permutex-based H resizers
       // even if this ensures the in-line safety, alternative H resizer implementations must
       // not read beyond last line, where y>=height.
     }

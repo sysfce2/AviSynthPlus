@@ -94,6 +94,7 @@ struct ResamplingProgram {
   SafeLimit safelimit_8_pixels = { false, -1, -1 };
   SafeLimit safelimit_16_pixels = { false, -1, -1 };
   SafeLimit safelimit_32_pixels = { false, -1, -1 };
+  SafeLimit safelimit_8_pixels_each8th_target = { false, -1, -1 };
 
   ResamplingProgram(int filter_size, int source_size, int target_size, double crop_start, double crop_size, int bits_per_pixel, IScriptEnvironment* env)
     : Env(env), source_size(source_size), target_size(target_size), crop_start(crop_start), crop_size(crop_size), filter_size(filter_size), filter_size_real(filter_size),
