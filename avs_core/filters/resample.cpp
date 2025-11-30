@@ -1614,10 +1614,24 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
   else { //if (pixelsize == 4)
 #ifdef INTEL_INTRINSICS
     if (CPU & CPUF_AVX2) {
-      return resizer_h_avx2_generic_float;
+      // up to 4 coeffs it can be highly optimized with transposes, gather/permutex choice
+      switch (program->filter_size_real) {
+      case 1: return resize_h_planar_float_avx2_gather_permutex_vstripe_ks4<1>; break;
+      case 2: return resize_h_planar_float_avx2_gather_permutex_vstripe_ks4<2>; break;
+      case 3: return resize_h_planar_float_avx2_gather_permutex_vstripe_ks4<3>; break;
+      case 4: return resize_h_planar_float_avx2_gather_permutex_vstripe_ks4<0>; break;
+      default: return resizer_h_avx2_generic_float;
+      }
     }
     if (CPU & CPUF_SSSE3) {
-      return resizer_h_ssse3_generic_float;
+      // up to 4 coeffs it can be highly optimized with transposes
+      switch (program->filter_size_real) {
+      case 1: return resize_h_planar_float_sse_transpose_vstripe_ks4<1>; break;
+      case 2: return resize_h_planar_float_sse_transpose_vstripe_ks4<2>; break;
+      case 3: return resize_h_planar_float_sse_transpose_vstripe_ks4<3>; break;
+      case 4: return resize_h_planar_float_sse_transpose_vstripe_ks4<0>; break;
+      default: return resizer_h_ssse3_generic_float;
+      }
     }
 #endif
     return resize_h_c_planar<float, 0>;
@@ -1818,7 +1832,8 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
     {
 #ifdef INTEL_INTRINSICS
       if (CPU & CPUF_AVX2) {
-        return resize_v_avx2_planar_float;
+        return resize_v_avx2_planar_float_w_sr;
+        // a memory-optimized version of resize_v_avx2_planar_float
       }
       if (CPU & CPUF_SSE2) {
         return resize_v_sse2_planar_float;
