@@ -1309,6 +1309,58 @@ template void resize_h_planar_float_avx_transpose_vstripe_ks4<1>(BYTE* dst8, con
 template void resize_h_planar_float_avx_transpose_vstripe_ks4<2>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 template void resize_h_planar_float_avx_transpose_vstripe_ks4<3>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 
+/*
+ * Analyse input resampling program to select method of processing.
+ *
+ * This check determines whether the AVX2 permutex optimization is valid for a block of 8 output pixels.
+ * In the permutex path, we load 8 consecutive source floats starting at program->pixel_offset[x + 0] ('begin1').
+ * Each output pixel's convolution window is indexed using perm_0..perm_3, which are offsets relative to begin1.
+ * These permutation indices span from begin1 (program->pixel_offset[x + 0]) up to begin8 + 3 (program->pixel_offset[x + 7] + 3).
+ * For the permute to be safe, ALL indices accessed (from begin1 to begin8 + 3) must fit within the loaded 8-float block.
+ * This is guaranteed if (program->pixel_offset[x + 7] + 3 - program->pixel_offset[x + 0]) < 8.
+ * In order the check work for the right edge, pixel_offset entries padded till target_size_aligned must repeat the last
+ * valid offset, and not 0 (see in resize_prepare_coeffs).
+ *
+ * If the span is not in the 0-7 range, some required source pixels for the convolution will fall outside
+ * the loaded block, and the permutex method cannot be used; we must fall back to gather.
+ * This logic relies on the assumption that pixel_offset[] is strictly increasing (or non-decreasing).
+ * We check the maximum index accessed by the permutation logic, and since we use a fixed 4 coefficients
+ * per output pixel, not just the filter_size_real, we add 3 to the last offset.
+ *
+ * It is ensured during the resampling program setup (resize_prepare_coeffs) that pixel_offsets will
+ * not only contain valid source offsets, but so that (pixel_offsets[x] + filter_size_real - 1) still
+ * indexes valid source pixels.
+ * On the right side of the image, this means that the end-of-line coefficients are shifted leftwards
+ * during the pre-calculation so that the filter kernel will never read beyond the coefficient array
+ * nor past the source buffer.
+ * Out of bounds target pixels coefficients are padded with zeros up to program->filter_size_alignment.
+*/
+
+// returns true if gather method is needed, false if permutex method can be used
+bool resize_h_planar_float_avx2_gather_permutex_vstripe_ks4_check(ResamplingProgram* program)
+{
+  // 'target_size_alignment' ensures we can safely access pixel_offset[] entries using offsets like
+  // pixel_offset[x + 0] to pixel_offset[x + 7] per 8-pixel block processing
+  assert(program->target_size_alignment >= 8);
+
+  // Ensure that coefficient loading is safe for 4 float loads
+  assert(program->filter_size_alignment >= 4);
+
+  for (int x = 0; x < program->target_size; x += 8)
+  {
+    int start_off = program->pixel_offset[x + 0];
+    // program->pixel_offset[x + 7] is still valid, since program->target_size_alignment >= 8
+    // and pixel_offset[] values for x >= target_size are the same as for x=target_size-1.
+    // This is ensured during the resampling program setup in resize_prepare_coeffs()
+    int end_off = program->pixel_offset[x + 7] + 3;
+    if ((end_off - start_off) >= 8) {
+      return true; // gather
+    }
+  }
+  return false; // permute is OK.
+}
+
+
 /* Universal function supporting 2 ways of processing depending on the max offset of the source samples to read in the resampling program :
 1. For high upsampling ratios it uses low read (single 8 float source samples) and permute-transpose before V-fma
 2. For downsample and no-resize convolution - use each input sequence gathering by direct addressing
@@ -1346,25 +1398,9 @@ void resize_h_planar_float_avx2_gather_permutex_vstripe_ks4(BYTE* dst8, const BY
   assert(program->filter_size_alignment >= 4);
 
   bool bDoGather = false;
+
   // Analyse input resampling program to select method of processing
-  for (int x = 0; x < width - 8; x += 8) // -8 to save from vector overrread at program->pixel_offset[x + 7 + 3]; ?
-  {
-    int start_off = program->pixel_offset[x + 0];
-    int end_off = program->pixel_offset[x + 7];
-    if ((end_off - start_off) + (program->filter_size_real - 1) > 8) bDoGather = true;
-
-    start_off = program->pixel_offset[x + 1];
-    end_off = program->pixel_offset[x + 7 + 1];
-    if ((end_off - start_off) + (program->filter_size_real - 1) > 8) bDoGather = true;
-
-    start_off = program->pixel_offset[x + 2];
-    end_off = program->pixel_offset[x + 7 + 2];
-    if ((end_off - start_off) + (program->filter_size_real - 1) > 8) bDoGather = true;
-
-    start_off = program->pixel_offset[x + 3];
-    end_off = program->pixel_offset[x + 7 + 3];
-    if ((end_off - start_off) + (program->filter_size_real - 1) > 8) bDoGather = true;
-  }
+  bDoGather = resize_h_planar_float_avx2_gather_permutex_vstripe_ks4_check(program);
 
   if (bDoGather)
   {
@@ -1478,26 +1514,29 @@ void resize_h_planar_float_avx2_gather_permutex_vstripe_ks4(BYTE* dst8, const BY
       _MM_TRANSPOSE8_LANE4_PS(coef_0, coef_1, coef_2, coef_3);
 
       // convert resampling program in H-form into permuting indexes for src transposition in V-form
-      int iStart = program->pixel_offset[x + 0];
+      const int begin1 = program->pixel_offset[x + 0];
+      const int begin2 = program->pixel_offset[x + 1];
+      const int begin3 = program->pixel_offset[x + 2];
+      const int begin4 = program->pixel_offset[x + 3];
+      const int begin5 = program->pixel_offset[x + 4];
+      const int begin6 = program->pixel_offset[x + 5];
+      const int begin7 = program->pixel_offset[x + 6];
+      const int begin8 = program->pixel_offset[x + 7];
 
-      __m256i perm_0 = _mm256_set_epi32(
-        program->pixel_offset[x + 7] - iStart,
-        program->pixel_offset[x + 6] - iStart,
-        program->pixel_offset[x + 5] - iStart,
-        program->pixel_offset[x + 4] - iStart,
-        program->pixel_offset[x + 3] - iStart,
-        program->pixel_offset[x + 2] - iStart,
-        program->pixel_offset[x + 1] - iStart,
-        0);
+      __m256i offset_start = _mm256_set1_epi32(begin1); // all permute offsets relative to this start offset
+
+      __m256i perm_0 = _mm256_set_epi32(begin8, begin7, begin6, begin5, begin4, begin3, begin2, begin1);
+      perm_0 = _mm256_sub_epi32(perm_0, offset_start); // begin8_rel, begin7_rel, ... begin2_rel, begin1_rel
+
       __m256i one_epi32 = _mm256_set1_epi32(1);
-      __m256i perm_1 = _mm256_add_epi32(perm_0, one_epi32);
-      one_epi32 = _mm256_set1_epi32(program->pixel_offset[x + 2] - program->pixel_offset[x + 1]);
-      __m256i perm_2 = _mm256_add_epi32(perm_1, one_epi32);
-      one_epi32 = _mm256_set1_epi32(program->pixel_offset[x + 3] - program->pixel_offset[x + 2]);
-      __m256i perm_3 = _mm256_add_epi32(perm_2, one_epi32);
+      __m256i perm_1 = _mm256_add_epi32(perm_0, one_epi32); // begin8_rel+1, begin7_rel+1, ... begin2_rel+1, begin1_rel+1
+      __m256i perm_2 = _mm256_add_epi32(perm_1, one_epi32); // begin8_rel+2, begin7_rel+2, ... begin2_rel+2, begin1_rel+2
+      __m256i perm_3 = _mm256_add_epi32(perm_2, one_epi32); // begin8_rel+3, begin7_rel+3, ... begin2_rel+3, begin1_rel+3
+      // These indexes are guaranteed to be 0..7 due to the earlier analysis,
+      // and can be used for the indexing parameter in _mm256_permutevar8x32_ps
 
       float* AVS_RESTRICT dst_ptr = dst + x;
-      const float* src_ptr = src + program->pixel_offset[x + 0]; // all permute offsets relative to this start offset
+      const float* src_ptr = src + begin1; // all permute offsets relative to this start offset
 
       for (int y = 0; y < height; y++)
       {
