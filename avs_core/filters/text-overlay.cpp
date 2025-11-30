@@ -2294,24 +2294,37 @@ std::string GetCpuMsg(IScriptEnvironment * env, bool avx512)
       ss << "F16C ";
   }
   else {
+    const int all_avx512 =
+      CPUF_AVX512F | CPUF_AVX512PF |
+      CPUF_AVX512BW | CPUF_AVX512CD | CPUF_AVX512DQ |
+      CPUF_AVX512VL |
+      CPUF_AVX512ER |
+      CPUF_AVX512IFMA | CPUF_AVX512VBMI |
+      CPUF_AVX512VNNI;
+
+    if (flags & all_avx512)
+      ss << "AVX512: ";
+
     if (flags & CPUF_AVX512F)
-      ss << "AVX512F ";
-    if (flags & CPUF_AVX512DQ)
-      ss << "AVX512DQ ";
+      ss << "F ";
     if (flags & CPUF_AVX512PF)
-      ss << "AVX512PF ";
-    if (flags & CPUF_AVX512ER)
-      ss << "AVX512ER ";
-    if (flags & CPUF_AVX512CD)
-      ss << "AVX512CD ";
+      ss << "PF ";
     if (flags & CPUF_AVX512BW)
-      ss << "AVX512BW ";
+      ss << "BW ";
+    if (flags & CPUF_AVX512CD)
+      ss << "CD ";
+    if (flags & CPUF_AVX512DQ)
+      ss << "DQ ";
     if (flags & CPUF_AVX512VL)
-      ss << "AVX512VL ";
+      ss << "VL ";
+    if (flags & CPUF_AVX512ER)
+      ss << "ER ";
     if (flags & CPUF_AVX512IFMA)
-      ss << "AVX512IFMA ";
+      ss << "IFMA ";
     if (flags & CPUF_AVX512VBMI)
-      ss << "AVX512VBMI ";
+      ss << "VBMI ";
+    if (flags & CPUF_AVX512VNNI)
+      ss << "VNNI ";
   }
   return ss.str();
 }
