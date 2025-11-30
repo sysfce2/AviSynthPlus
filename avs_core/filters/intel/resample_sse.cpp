@@ -1051,6 +1051,30 @@ template void resize_v_sse2_planar_uint16_t<false>(BYTE* dst8, const BYTE* src8,
 template void resize_v_sse2_planar_uint16_t<true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel);
 
 
+// Safe partial load with SSE2
+// Read exactly N pixels, avoiding
+// - reading beyond the end of the source buffer.
+// - avoid NaN contamination, since event with zero coefficients NaN * 0 = NaN
+template <int Nmod4>
+AVS_FORCEINLINE static __m128 load_partial_safe_sse2(const float* src_ptr_offsetted) {
+  switch (Nmod4) {
+  case 1:
+    return _mm_set_ps(0.0f, 0.0f, 0.0f, src_ptr_offsetted[0]);
+    // ideally: movss
+  case 2:
+    return _mm_set_ps(0.0f, 0.0f, src_ptr_offsetted[1], src_ptr_offsetted[0]);
+    // ideally: movsd
+  case 3:
+    return _mm_set_ps(0.0f, src_ptr_offsetted[2], src_ptr_offsetted[1], src_ptr_offsetted[0]);
+    // ideally: movss + movsd + shuffle or movsd + insert
+  case 0:
+    return _mm_set_ps(src_ptr_offsetted[3], src_ptr_offsetted[2], src_ptr_offsetted[1], src_ptr_offsetted[0]);
+    // ideally: movups
+  default:
+    return _mm_setzero_ps(); // n/a cannot happen
+  }
+}
+
 // Processes a horizontal resampling kernel of up to four coefficients for float pixel types.
 // Supports BilinearResize, BicubicResize, or sinc with up to 2 taps (filter size <= 4).
 // SSE2 optimization loads and processes four float coefficients and pixels simultaneously.
@@ -1072,6 +1096,13 @@ void resize_h_planar_float_sse_transpose_vstripe_ks4(BYTE* dst8, const BYTE* src
 
   constexpr int PIXELS_AT_A_TIME = 4; // Process four pixels in parallel using SSE2
 
+  // 'source_overread_beyond_targetx' indicates if the filter kernel can read beyond the target width.
+  // Even if the filter alignment allows larger reads, our safety boundary for unaligned loads starts at 4 pixels back
+  // from the target width, as we load 4 floats at once with '_mm_loadu_ps'.
+  // In AVX2 we process two lanes, so any of the 8 offsets cannot be safely used, fallback to the unsafe case.
+  // This is why then safelimit_4_pixels is used combined with safelimit_4 / PIXELS_AT_A_TIME * PIXELS_AT_A_TIME.
+  const int width_safe_mod = (program->safelimit_4_pixels.overread_possible ? program->safelimit_4_pixels.source_overread_beyond_targetx : width) / PIXELS_AT_A_TIME * PIXELS_AT_A_TIME;
+
   // Preconditions:
   assert(program->filter_size_real <= 4); // We preload all relevant coefficients (up to 4) before the height loop.
 
@@ -1084,8 +1115,8 @@ void resize_h_planar_float_sse_transpose_vstripe_ks4(BYTE* dst8, const BYTE* src
 
   int x = 0;
 
-  for (; x < width; x += PIXELS_AT_A_TIME) {
-
+  // This 'auto' lambda construct replaces the need of templates
+  auto do_h_float_core = [&](auto partial_load) {
     // Load up to 4 coefficients at once before the height loop.
     // Pre-loading and transposing coefficients keeps register usage efficient.
     // Assumes 'filter_size_aligned' is at least 4.
@@ -1100,6 +1131,7 @@ void resize_h_planar_float_sse_transpose_vstripe_ks4(BYTE* dst8, const BYTE* src
     const float* src_ptr = src;
 
     // Pixel offsets for the current target x-positions.
+    // Even for x >= width, these offsets are guaranteed to be within the allocated 'target_size_alignment'.
     const int begin1 = program->pixel_offset[x + 0];
     const int begin2 = program->pixel_offset[x + 1];
     const int begin3 = program->pixel_offset[x + 2];
@@ -1111,11 +1143,37 @@ void resize_h_planar_float_sse_transpose_vstripe_ks4(BYTE* dst8, const BYTE* src
       __m128 data_2;
       __m128 data_3;
       __m128 data_4;
+      if constexpr (partial_load) {
+        // In the potentially unsafe zone (near the right edge of the image), we use a safe loading function
+        // to prevent reading beyond the allocated source scanline. This handles cases where loading 4 floats
+        // starting from 'src_ptr + beginX' might exceed the source buffer.
 
+        // Example of the unsafe scenario: If target width is 320, a naive load at src_ptr + 317
+        // would attempt to read floats at indices 317, 318, 319, and 320, potentially going out of bounds.
+
+        // Two main issues in the unsafe zone:
+        // 1.) Out-of-bounds memory access: Reading beyond the allocated memory for the source scanline can
+        //     lead to access violations and crashes. '_mm_loadu_ps' attempts to load 16 bytes, so even if
+        //     the starting address is within bounds, subsequent reads might not be.
+        // 2.) Garbage or NaN values: Even if a read doesn't cause a crash, accessing uninitialized or
+        //     out-of-bounds memory (especially for float types) can result in garbage data, including NaN.
+        //     Multiplying by a valid coefficient and accumulating this NaN can contaminate the final result.
+
+        // 'load_partial_safe_sse2' safely loads up to 'filter_size_real' pixels and pads with zeros if needed,
+        // preventing out-of-bounds reads and ensuring predictable results even near the image edges.
+
+        data_1 = load_partial_safe_sse2<filtersizemod4>(src_ptr + begin1);
+        data_2 = load_partial_safe_sse2<filtersizemod4>(src_ptr + begin2);
+        data_3 = load_partial_safe_sse2<filtersizemod4>(src_ptr + begin3);
+        data_4 = load_partial_safe_sse2<filtersizemod4>(src_ptr + begin4);
+      }
+      else {
+        // In the safe zone, we can directly load 4 pixels at a time using unaligned loads.
         data_1 = _mm_loadu_ps(src_ptr + begin1);
         data_2 = _mm_loadu_ps(src_ptr + begin2);
         data_3 = _mm_loadu_ps(src_ptr + begin3);
         data_4 = _mm_loadu_ps(src_ptr + begin4);
+      }
 
       _MM_TRANSPOSE4_PS(data_1, data_2, data_3, data_4);
 
@@ -1130,6 +1188,18 @@ void resize_h_planar_float_sse_transpose_vstripe_ks4(BYTE* dst8, const BYTE* src
       src_ptr += src_pitch;
     } // y
     current_coeff += filter_size * 4; // Move to the next set of coefficients for the next 4 output pixels
+    }; // end of lambda
+
+  // Process the 'safe zone' where direct full unaligned loads are acceptable.
+  for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
+  {
+    do_h_float_core(std::false_type{}); // partial_load == false, use direct _mm_loadu_ps
+  }
+
+  // Process the potentially 'unsafe zone' near the image edge, using safe loading.
+  for (; x < width; x += PIXELS_AT_A_TIME)
+  {
+    do_h_float_core(std::true_type{}); // partial_load == true, use the safer 'load_partial_safe_sse2'
   }
 }
 
