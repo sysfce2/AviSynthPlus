@@ -630,6 +630,7 @@ void resizer_h_avx2_generic_float(BYTE* dst8, const BYTE* src8, int dst_pitch, i
 // On x86-32 keep the 1×16 (or 2-lane/16-pixel) kernel
 // On x86-64 use the 2×16 (4-lane/32-pixel) kernel.
 // On 32-bit fewer YMM registers are available, 2x16 kernel causes register pressure issues.
+// 10% performance loss on x86-32 with 2x16 kernel.
 
 static void resize_v_avx2_planar_uint8_pix16(BYTE* AVS_RESTRICT dst, const BYTE* src, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel)
 {
@@ -1125,3 +1126,53 @@ template void resizer_h_avx2_generic_uint16_t<true>(BYTE* dst8, const BYTE* src8
 template void resize_v_avx2_planar_uint16_t<false>(BYTE* dst0, const BYTE* src0, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel);
 // avx2 10-14bit
 template void resize_v_avx2_planar_uint16_t<true>(BYTE* dst0, const BYTE* src0, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel);
+
+// process kernel size from up to 4 - BilinearResize, BicubicResize or sinc up to taps=2
+void resize_h_planar_float_avx_transpose_vstripe_ks4(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
+  int filter_size = program->filter_size;
+
+  const float* AVS_RESTRICT current_coeff;
+
+  src_pitch = src_pitch / sizeof(float);
+  dst_pitch = dst_pitch / sizeof(float);
+
+  float* src = (float*)src8;
+  float* dst = (float*)dst8;
+
+  current_coeff = (const float* AVS_RESTRICT)program->pixel_coefficient_float;
+
+  for (int x = 0; x < width; x += 8)
+  {
+    __m256 coef_1_coef_5 = _mm256_load_2_m128(current_coeff + filter_size * 0, current_coeff + filter_size * 4);
+    __m256 coef_2_coef_6 = _mm256_load_2_m128(current_coeff + filter_size * 1, current_coeff + filter_size * 5);
+    __m256 coef_3_coef_7 = _mm256_load_2_m128(current_coeff + filter_size * 2, current_coeff + filter_size * 6);
+    __m256 coef_4_coef_8 = _mm256_load_2_m128(current_coeff + filter_size * 3, current_coeff + filter_size * 7);
+
+    _MM_TRANSPOSE8_LANE4_PS(coef_1_coef_5, coef_2_coef_6, coef_3_coef_7, coef_4_coef_8);
+
+    float* AVS_RESTRICT dst_ptr = dst + x;
+    const float* src_ptr = src;
+
+    for (int y = 0; y < height; y++)
+    {
+      __m256 data_1_data_5 = _mm256_loadu_2_m128(src_ptr + program->pixel_offset[x + 0], src_ptr + program->pixel_offset[x + 4]);
+      __m256 data_2_data_6 = _mm256_loadu_2_m128(src_ptr + program->pixel_offset[x + 1], src_ptr + program->pixel_offset[x + 5]);
+      __m256 data_3_data_7 = _mm256_loadu_2_m128(src_ptr + program->pixel_offset[x + 2], src_ptr + program->pixel_offset[x + 6]);
+      __m256 data_4_data_8 = _mm256_loadu_2_m128(src_ptr + program->pixel_offset[x + 3], src_ptr + program->pixel_offset[x + 7]);
+
+      _MM_TRANSPOSE8_LANE4_PS(data_1_data_5, data_2_data_6, data_3_data_7, data_4_data_8);
+
+      __m256 result = _mm256_mul_ps(data_1_data_5, coef_1_coef_5);
+      result = _mm256_fmadd_ps(data_2_data_6, coef_2_coef_6, result);
+      result = _mm256_fmadd_ps(data_3_data_7, coef_3_coef_7, result);
+      result = _mm256_fmadd_ps(data_4_data_8, coef_4_coef_8, result);
+
+      _mm256_store_ps(dst_ptr, result);
+
+      dst_ptr += dst_pitch;
+      src_ptr += src_pitch;
+    }
+    current_coeff += filter_size * 8;
+  }
+
+}
