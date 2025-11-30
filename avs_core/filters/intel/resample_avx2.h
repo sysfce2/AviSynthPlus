@@ -54,6 +54,7 @@ void resize_v_avx2_planar_float(BYTE* dst0, const BYTE* src0, int dst_pitch, int
 
 void resize_v_avx2_planar_float_w_sr(BYTE* dst0, const BYTE* src0, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int target_height, int bits_per_pixel);
 
+template<int filtersizemod4>
 void resize_h_planar_float_avx_transpose_vstripe_ks4(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 
 // Transpose 4x4 blocks within each lane
