@@ -1309,6 +1309,70 @@ template void resize_h_planar_float_avx_transpose_vstripe_ks4<1>(BYTE* dst8, con
 template void resize_h_planar_float_avx_transpose_vstripe_ks4<2>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 template void resize_h_planar_float_avx_transpose_vstripe_ks4<3>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 
+
+/**
+ * resize_h_planar_float_avx2_gather_permutex_vstripe_ks4 with per-frame check or
+ * distinct checker, gather, permutex methods
+ *
+ * AVX2-optimized horizontal resampler for float planar images with small kernel sizes (filter_size_real <= 4).
+ * Supports both upsampling and downsampling scenarios, automatically selecting the most efficient SIMD strategy.
+ * (For larger kernels, use resizer_h_avx2_generic_float or other specialized functions.)
+ *
+ * Algorithm:
+ *   - Analyzes the resampling program's pixel offset pattern to choose between two SIMD strategies.
+ *     The upsampling scenario is divided into sub-cases, and the decision is made by analyzing the pixel offset pattern in the resampling program.
+ *     The code checks, for each group of 8 output pixels, how far apart the corresponding source pixel offsets are.
+ *
+ *     If the span of source pixels (end_off - start_off) plus the kernel size (max filter_size_real - 1, that is 3)
+ *     exceeds 8, it goes to gather based method: the required source pixels are not all within a single 8-float block.
+ *
+ *     If the span is <= 8, the function can use a single 8-float block load and permute (which is faster).
+ *
+ *     For "high upsampling ratio" (output much larger than input, so output pixels are close together in input),
+ *     the offsets are usually contiguous, and the permute-transpose path is used.
+ *
+ *     1. Gather-based: For downsampling (or no-resize convolution) or non-contiguous pixel offsets, uses AVX2
+ *        gather instructions to fetch each required source pixel.
+ *     2. Permutex-based: For upsampling or contiguous pixel offsets, loads a block of 8 source floats and uses
+ *        AVX2 permute instructions for fast access.
+ *
+ *   - Handles edge cases and buffer boundaries safely, using partial loads to avoid out-of-bounds memory access.
+ *   - Processes 8 output pixels in parallel for high throughput.
+ *
+ * Assumes that resampling program provides sufficient alignment and padding for safe SIMD loads.
+ *
+ * Typical dispatcher usage:
+ *   switch (program->filter_size_real) {
+ *     case 1: return resize_h_planar_float_avx2_gather_permutex_vstripe_ks4<1>;
+ *     case 2: return resize_h_planar_float_avx2_gather_permutex_vstripe_ks4<2>;
+ *     case 3: return resize_h_planar_float_avx2_gather_permutex_vstripe_ks4<3>;
+ *     case 4: return resize_h_planar_float_avx2_gather_permutex_vstripe_ks4<0>;
+ *     default: return resizer_h_avx2_generic_float;
+ *   }
+ *
+ * See also:
+ * - resize_h_planar_float_avx2_gather_vstripe_ks4
+ * - resize_h_planar_float_avx2_permutex_vstripe_ks4
+ * - resize_h_planar_float_avx_transpose_vstripe_ks4
+ * - resizer_h_avx2_generic_float
+ 
+ */
+
+// Test script for the ks<=4 gather/permutex horizontal, float resampler cases
+/*
+SetMaxCPU("AVX2")
+BlankClip(width=640, height=480, pixel_type="YUV444PS")
+#BlankClip(width=640-1, height=480, pixel_type="YUV444PS") # -1 to -7 to test partial loads
+Expr("sx 2 % 1.0 * ", "0", "0") # vertical stripes
+BicubicResize(width*2,height) # permute, H kernel size 4
+or
+LanczosResize(width*2, height, taps=1) # permute, H kernel size 2
+or
+LanczosResize(int(width*0.5), height, taps=1) # gather, H kernel size 4
+or
+BilinearResize(int(width*0.97), height) # gather, H kernel size 3
+*/
+
 /*
  * Analyse input resampling program to select method of processing.
  * 
@@ -1493,6 +1557,30 @@ void resize_h_planar_float_avx2_gather_vstripe_ks4(BYTE* dst8, const BYTE* src8,
   }
 }
 
+// Helper for permutex style horizontal resampling 32 bit float
+// Safe partial load for 1-7 floats, padding with zeros to avoid NaN contamination
+static __m256 _mm256_load_partial_safe(const float* src_ptr, int floats_to_load) {
+  if (floats_to_load == 1)
+    return _mm256_setr_ps(src_ptr[0], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+  if (floats_to_load == 2)
+    return _mm256_setr_ps(src_ptr[0], src_ptr[1], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+  if (floats_to_load == 3)
+    return _mm256_setr_ps(src_ptr[0], src_ptr[1], src_ptr[2], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+  if (floats_to_load == 4)
+    return _mm256_setr_ps(src_ptr[0], src_ptr[1], src_ptr[2], src_ptr[3], 0.0f, 0.0f, 0.0f, 0.0f);
+  if (floats_to_load == 5)
+    return _mm256_setr_ps(src_ptr[0], src_ptr[1], src_ptr[2], src_ptr[3], src_ptr[4], 0.0f, 0.0f, 0.0f);
+  if (floats_to_load == 6)
+    return _mm256_setr_ps(src_ptr[0], src_ptr[1], src_ptr[2], src_ptr[3], src_ptr[4], src_ptr[5], 0.0f, 0.0f);
+  if (floats_to_load == 7)
+    return _mm256_setr_ps(src_ptr[0], src_ptr[1], src_ptr[2], src_ptr[3], src_ptr[4], src_ptr[5], src_ptr[6], 0.0f);
+  if (floats_to_load == 8)
+    return _mm256_loadu_ps(src_ptr); // n/a cannot happen
+  else
+    return _mm256_setzero_ps(); // n/a cannot happen
+}
+
+
 // resize_h_planar_float_avx2_xxx_vstripe_ks4 method #2: permutex-based
 void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
@@ -1507,6 +1595,24 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
   const float* AVS_RESTRICT current_coeff = (const float* AVS_RESTRICT)program->pixel_coefficient_float;
 
   constexpr int PIXELS_AT_A_TIME = 8; // Process eight pixels in parallel in AVX2
+
+  // Pre-checked for permutex-based upsampling: the source pixels will surely fit within single 8 float loads
+  // The right edge handling will be done via safe partial loads when needed, loading 8 pixels at once
+  // may not be safe there.
+
+  // 'source_overread_beyond_targetx' marks the x position in the target (output) scanline where,
+  // if we process N pixels at a time (e.g., 8 for AVX2), the filter kernel may overread the source
+  // buffer near the right edge due to kernel size and pixel offsets. Beyond this value, it is no
+  // longer safe to read N source pixels at once from pixel_offset[].
+
+  // For x positions < source_overread_beyond_targetx, it is safe to load N source pixels at once.
+  // For x positions >= source_overread_beyond_targetx, we must use a safer loading method (e.g.,
+  // partial loads with padding) to avoid out-of-bounds memory access.
+
+  // permutex is even more special: the safety analysis is performed only for the beginning of each
+  // block of 8 pixels processed at a time, so only the source loads for the offset position of
+  // every 8th target pixel are considered. This is 'safelimit_8_pixels_each8th_target'.
+  // The program's safe limits are pre-calculated during program setup.
 
   const int width_safe_mod = (program->safelimit_8_pixels_each8th_target.overread_possible ? program->safelimit_8_pixels_each8th_target.source_overread_beyond_targetx : width) / PIXELS_AT_A_TIME * PIXELS_AT_A_TIME;
 
@@ -1523,7 +1629,8 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
 
   int x = 0;
 
-  for (; x < width_safe_mod; x += PIXELS_AT_A_TIME) {
+  // This 'auto' lambda construct replaces the need of templates
+  auto do_h_float_core = [&](auto partial_load) {
     // Assumes 'filter_size_alignment' <= 4, 'target_size_alignment' >= 8
     // Prepare 4 coefs per pixel for 8 pixels in transposed V-form at once before the height loop.
     __m256 coef_0 = _mm256_load_2_m128(current_coeff + filter_size * 0, current_coeff + filter_size * 4);
@@ -1558,12 +1665,29 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
     float* AVS_RESTRICT dst_ptr = dst + x;
     const float* src_ptr = src + begin1; // all permute offsets relative to this start offset
 
+    // for partial_load only
+    const int remaining =  program->source_size - begin1;
+    const int floats_to_load = remaining >= 8 ? 8 : remaining;
+
     for (int y = 0; y < height; y++)
     {
       __m256 data_src;
       // We'll need exactly 8 floats starting from src+begin1
-      data_src = _mm256_loadu_ps(src_ptr); // load 8 source pixels, can contain garbage beyond the right edge in the last loop
+      if constexpr (partial_load) {
+        // In the potentially unsafe zone (near the right edge of the image), we use a safe loading function
+        // to prevent reading beyond the allocated source scanline. This handles cases where loading 8 floats
+        // starting from 'src_ptr + beginX' might exceed the source buffer.
+        data_src = _mm256_load_partial_safe(src_ptr, floats_to_load);
+      }
+      else {
+        data_src = _mm256_loadu_ps(src_ptr); // load 8 source pixels, can contain garbage beyond the right edge in the last loop
+      }
 
+      // After we load 8 source pixels starting from begin1, we can be sure, that pixel_offset[x+0] .. pixel_offset[x+7] + 3 is
+      // within valid source range. Pre-check chooses permutex method only if all needed pixels fit within these 8 loaded pixels.
+
+      // perm_0 .. perm_3 contain the indexes to permute data_src into the correct order
+      // for each of the 8 output pixels so they index into 0..7 (guaranteed) range of the source data loaded above
       __m256 data_0 = _mm256_permutevar8x32_ps(data_src, perm_0);
       __m256 data_1 = _mm256_permutevar8x32_ps(data_src, perm_1);
       __m256 data_2 = _mm256_permutevar8x32_ps(data_src, perm_2);
@@ -1581,6 +1705,18 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
       src_ptr += src_pitch;
     }
     current_coeff += filter_size * 8;
+    }; // end of lambda
+
+  // Process the 'safe zone' where direct full unaligned loads are acceptable.
+  for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
+  {
+    do_h_float_core(std::false_type{}); // partial_load == false, use direct _mm_loadu_ps
+  }
+
+  // Process the potentially 'unsafe zone' near the image edge, using safe loading.
+  for (; x < width; x += PIXELS_AT_A_TIME)
+  {
+    do_h_float_core(std::true_type{}); // partial_load == true, use the safer '_mm256_load_partial_safe'
   }
 
 }
