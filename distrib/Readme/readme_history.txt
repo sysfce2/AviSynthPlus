@@ -9,12 +9,16 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
-20251127 3.7.5.xxxxx (pre 3.7.6)
+20251130 3.7.5.xxxxx (pre 3.7.6)
 --------------------------------
 - v12 interface: inform plugins about the effective thread count after Prefetch() via cache hints:
   * ``CachePolicyHint::CACHE_INFORM_NUM_THREADS`` (C++)
   * ``AVS_CACHE_INFORM_NUM_THREADS`` (C)
   See https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/Cplusplus_api.html#cplusplus-setcachehints
+- Add CPUF_AVX512VNNI to CpuFlags, AVS_CPUF_AVX512VNNI to avisynth_c.h, optimize AVX512 features display in Info()
+- Resamplers: optimize 32-bit float, kernel size <= 4 optimized H resampling by DTL2020
+- Resamplers: optimizer 32-bit float vertical avx2 by DTL2020
+- Update Russian GPL notice in UTF-8 format
 
 20251122 3.7.5.xxxxx (pre 3.7.6)
 --------------------------------
