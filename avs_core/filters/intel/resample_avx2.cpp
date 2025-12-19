@@ -434,7 +434,7 @@ void resizer_h_avx2_generic_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch
 // AVX2 Horizontal float
 
 // 2x8 pixels of two consecutive offset entries.
-AVS_FORCEINLINE static void process_two_8pixels_h_float_core(const float* src, int begin1, int begin2, int i, float* current_coeff, int filter_size, __m256& result1, __m256& result2) {
+AVS_FORCEINLINE static void process_pix2_coeff8_h_float_core(const float* src, int begin1, int begin2, int i, float* current_coeff, int filter_size, __m256& result1, __m256& result2) {
   __m256 data_1 = _mm256_loadu_ps(src + begin1 + i);
   __m256 data_2 = _mm256_loadu_ps(src + begin2 + i);
   __m256 coeff_1 = _mm256_load_ps(current_coeff); // 8 coeffs
@@ -457,7 +457,7 @@ AVS_FORCEINLINE static void process_two_pixels_h_float(const float* src_ptr, int
 
   // Process 8 elements at a time
   for (; i < ksmod8; i += 8) {
-    process_two_8pixels_h_float_core(src_ptr, begin1, begin2, i, current_coeff + i, filter_size, result1, result2);
+    process_pix2_coeff8_h_float_core(src_ptr, begin1, begin2, i, current_coeff + i, filter_size, result1, result2);
   }
 
   if constexpr (!safe_aligned_mode) {
@@ -590,7 +590,7 @@ static void internal_resizer_h_avx2_generic_float(BYTE* dst8, const BYTE* src8, 
   dst_pitch = dst_pitch / sizeof(float);
   src_pitch = src_pitch / sizeof(float);
 
-  const int w_safe_mod8 = (program->safelimit_filter_size_aligned.overread_possible ? program->safelimit_filter_size_aligned.source_overread_beyond_targetx : width) / 8 * 8;
+  const int w_safe_mod8 = (program->safelimit_8_pixels.overread_possible ? program->safelimit_8_pixels.source_overread_beyond_targetx : width) / 8 * 8;
 
   for (int y = 0; y < height; y++) {
     float* current_coeff_base = program->pixel_coefficient_float;
@@ -612,6 +612,7 @@ static void internal_resizer_h_avx2_generic_float(BYTE* dst8, const BYTE* src8, 
   }
 }
 
+// here we cover filter sizes up to 32 (4x8) efficiently through template specialization
 void resizer_h_avx2_generic_float(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
   const int filter_size = program->filter_size;
   assert(program->filter_size_alignment == 8);
@@ -1507,7 +1508,7 @@ static int detect_optimal_scanline(int src_width, int tgt_width, size_t l2_cache
 
 // resize_h_planar_float_avx2_xxx_vstripe_ks4 method #1: gather-based
 template<int filtersizemod4>
-void resize_h_planar_float_avx2_gather_vstripe_ks4(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
+void resize_h_planar_float_avx2_transpose_vstripe_ks4(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
   assert(filtersizemod4 >= 0 && filtersizemod4 <= 3);
 
@@ -1518,8 +1519,6 @@ void resize_h_planar_float_avx2_gather_vstripe_ks4(BYTE* dst8, const BYTE* src8,
 
   float* src = (float*)src8;
   float* dst = (float*)dst8;
-
-  const float* AVS_RESTRICT current_coeff = (const float* AVS_RESTRICT)program->pixel_coefficient_float;
 
   constexpr int PIXELS_AT_A_TIME = 8; // Process eight pixels in parallel using AVX2 (2x4 using m128 lanes)
 
@@ -1540,6 +1539,21 @@ void resize_h_planar_float_avx2_gather_vstripe_ks4(BYTE* dst8, const BYTE* src8,
   // Ensure that coefficient loading beyond the valid target size is safe for 4x4 float loads.
   assert(program->filter_size_alignment >= 4);
 
+  // Split to H-stripes to make better source data locality in L2 cache (if L2 present per core ?)
+  constexpr int STRIPE_ALIGN = 8;  // this must be multiple of PIXELS_AT_A_TIME 
+
+  const size_t cache_size_L2 = program->cache_size_L2;
+  int max_scanlines = detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2)
+    / STRIPE_ALIGN * STRIPE_ALIGN;
+  //max_scanlines = program->target_size; // test
+  if (max_scanlines < STRIPE_ALIGN) max_scanlines = STRIPE_ALIGN;
+
+  for (auto y_from = 0; y_from < height; y_from += max_scanlines) {
+    size_t y_to = std::min(y_from + max_scanlines, height);
+
+    // Reset current_coeff for the start of the stripe
+    const float* AVS_RESTRICT current_coeff = program->pixel_coefficient_float; // +iYstart * filter_size;
+
   int x = 0;
 
   // This 'auto' lambda construct replaces the need of templates
@@ -1556,9 +1570,6 @@ void resize_h_planar_float_avx2_gather_vstripe_ks4(BYTE* dst8, const BYTE* src8,
 
     _MM_TRANSPOSE8_LANE4_PS(coef_1_coef_5, coef_2_coef_6, coef_3_coef_7, coef_4_coef_8);
 
-    float* AVS_RESTRICT dst_ptr = dst + x;
-    const float* src_ptr = src;
-
     // Pixel offsets for the current target x-positions.
     // Even for x >= width, these offsets are guaranteed to be within the allocated 'target_size_alignment'.
     const int begin1 = program->pixel_offset[x + 0];
@@ -1570,8 +1581,14 @@ void resize_h_planar_float_avx2_gather_vstripe_ks4(BYTE* dst8, const BYTE* src8,
     const int begin7 = program->pixel_offset[x + 6];
     const int begin8 = program->pixel_offset[x + 7];
 
-    for (int y = 0; y < height; y++)
-    {
+      size_t y = y_from;
+
+      float* AVS_RESTRICT dst_ptr = dst + y * dst_pitch + x;
+      const float* src_ptr = src + y * src_pitch;
+      for (; y < y_to; ++y) {
+        //float* AVS_RESTRICT dst_ptr = dst + y * dst_pitch + x;
+        //const float* src_ptr = src + y * src_pitch;
+
       __m256 data_1_data_5;
       __m256 data_2_data_6;
       __m256 data_3_data_7;
@@ -1616,8 +1633,7 @@ void resize_h_planar_float_avx2_gather_vstripe_ks4(BYTE* dst8, const BYTE* src8,
       result = _mm256_fmadd_ps(data_3_data_7, coef_3_coef_7, result);
       result = _mm256_fmadd_ps(data_4_data_8, coef_4_coef_8, result);
 
-      _mm256_store_ps(dst_ptr, result);
-
+        _mm256_stream_ps(dst_ptr, result);
       dst_ptr += dst_pitch;
       src_ptr += src_pitch;
     } // y
@@ -1627,13 +1643,14 @@ void resize_h_planar_float_avx2_gather_vstripe_ks4(BYTE* dst8, const BYTE* src8,
   // Process the 'safe zone' where direct full unaligned loads are acceptable.
   for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
   {
-    do_h_float_core(std::false_type{}); // partial_load == false, use direct _mm_loadu_ps
+      do_h_float_core(std::false_type{}); // partial_load == false, use direct _mm256_loadu_ps
   }
 
   // Process the potentially 'unsafe zone' near the image edge, using safe loading.
   for (; x < width; x += PIXELS_AT_A_TIME)
   {
-    do_h_float_core(std::true_type{}); // partial_load == true, use the safer '_mm256_load_partial_safe_2_m128'
+      do_h_float_core(std::true_type{}); // partial_load == true, use the safer _mm256_load_partial_safe_2_m128
+    }
   }
 }
 
