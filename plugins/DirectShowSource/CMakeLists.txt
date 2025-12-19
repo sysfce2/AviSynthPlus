@@ -34,12 +34,12 @@ target_link_libraries(${ProjectName} "Winmm.lib" "Quartz.lib" "Ole32.lib" "User3
 # Include directories
 target_include_directories(${ProjectName} PRIVATE ${AvsCore_SOURCE_DIR} ${DSHOWSRC_BASECLASSES_PATH})
 
-if (MSVC_IDE)
-  # Old v7 SDK code won't compile otherwise
-  set(DELETE_THIS "/permissive-")
-  STRING( REPLACE "${DELETE_THIS}" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
-  STRING( REPLACE "${DELETE_THIS}" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+# Mark this target for skipping /permissive- 
+# Old v7 SDK code won't compile otherwise, DirectShow Base Classes use non-conformant C++.
+# High-level CMakeLists.txt checks this property and won't inject the flag.
+set_target_properties(${ProjectName} PROPERTIES SKIP_PERMISSIVE_FLAG ON)
 
+if (MSVC_IDE)
   # Copy output to a common folder for easy deployment
   add_custom_command(
     TARGET ${ProjectName}
