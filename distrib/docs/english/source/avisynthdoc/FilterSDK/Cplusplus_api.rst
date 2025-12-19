@@ -450,23 +450,74 @@ of the video clip they were expecting:
 
 
 .. _cplusplus_getcpuflags:
+.. _cplusplus_getcpuflagsex:
 
 GetCPUFlags
 ^^^^^^^^^^^
+GetCPUFlagsEx (v12)
+^^^^^^^^^^^^^^^^^^^
 
 ::
 
-    virtual long GetCPUFlags();
+    virtual int GetCPUFlags();
+    virtual int64_t GetCPUFlagsEx();
 
 
-GetCPUFlags returns the instruction set of your CPU. To find out if
-you're running for example on a CPU that supports MMX, test:
+GetCPUFlagsEx (and the old GetCPUFlags) returns the instruction set of your CPU. 
+Interface V12 introduced the Ex version which returns 64 bit flags.
+Reason: the many Intel AVX512 subfeatures did not fit in the 32 bits int returned by the original function.
+
+** Intel architecture flags: **
+
+Though individual AVX512 features can be tested, the recommended way is to
+test for group of features. Avisynth supports the following AVX512 group feature flags:
+CPUF_AVX512_BASE, CPUF_AVX512_FAST, and later probably: CPUF_AVX10 with version>=2.
+
+The GetCPUFlags() - the old 32 bit version - is still usable up to AVX512_FAST group feature set.
+Other future group features and individual flags will only be available through GetCPUFlagsEx.
+
+For features up to AVX2 and some AVX512 exensions, both functions return the same flags.
+
+To find out if you're running for example on a CPU that supports AVX2, test:
 ::
 
-    env->GetCPUFlags() & CPUF_MMX
+    env->GetCPUFlags() & CPUF_AVX2
+
+To test against the default Avisynth+ "fast" flags, test:
+::
+
+    if ((env->GetCPUFlags() & CPUF_AVX512_FAST) == CPUF_AVX512_FAST) {
+        // all "fast" AVX512 features supported
+        // function dispatch here
+    } else if (env->GetCPUFlags() & CPUF_AVX2) {
+        // AVX2 path
+    } else if (env->GetCPUFlags() & CPUF_SSE2) {
+        // SSE2 path
+    } else {
+        // simple C++ path
+    }
+
+In Avisynth - as of end of 2025 -, the AVX512 function dispatchers check for CPUF_AVX512_FAST for calling function from ``*_avx512.cpp`` files.
+Compiler flags for ``*_avx512.cpp`` files are automatically set for MSVC as /arch:AVX512.
+For gcc or LLVM (clang-cl) builds the relevant flags in CMakeLists.txt are set
+as ``"-mfma -mavx512f -mavx512cd -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mavx512vbmi -mavx512vbmi2 -mavx512bitalg -mavx512vpopcntdq "`` .
+
+The relevant CPU features for the "Fast" group are: FMA3, AVX512_BASE (F, CD, BW, DQ, Vl) and the "fast avx512" criteria.
+AVX512 is considered to be "Fast" when either 
+- pre AVX10, and minimum Ice Lake architecture is found (VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ and three crypto flags).
+- or AVX10 (any version) is found.
+
+Ice Lake and AVX10 common flags are: VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ; this is what you can expect from CPUF_AVX512_FAST feature flag.
+
+** ARMv8-A architecture flags: **
+
+See :ref:`ARMv8-A SIMD tiers<armv8_simd_tiers>` for details about ARM CPU feature flags.
 
 
-There's a complete list of flags in avisynth.h.
+
+There's a complete list of flags in ``avs/cpuid.h`` (C++) or in ``avisynth_c.h`` (C).
+
+See also :ref:`CPU Feature Flags<cplusplus_cpufeatureflags>`.
 
 
 .. _cplusplus_savestring:
@@ -1667,6 +1718,7 @@ Query to ask for various system (not frame!) properties.
       AEP_HOST_SYSTEM_ENDIANNESS = 7, // V9
       AEP_INTERFACE_VERSION = 8, // V9
       AEP_INTERFACE_BUGFIX = 9,  // V9
+      AEP_CACHESIZE_L2 = 10, // v13
 
       // Neo additionals
       AEP_NUM_DEVICES = 901,
@@ -1677,11 +1729,14 @@ Query to ask for various system (not frame!) properties.
       AEP_GETFRAME_RECURSIVE = 922,
     };
 
+
 AEP_HOST_SYSTEM_ENDIANNESS (c++) AVS_AEP_HOST_SYSTEM_ENDIANNESS (c)
+...................................................................
 
 Populated by 'little', 'big', or 'middle' based on what GCC and/or Clang report at compile time.
 
 AEP_INTERFACE_VERSION (c++) AVS_AEP_INTERFACE_VERSION (c)
+.........................................................
 
 For requesting actual interface (main) version. An long awaited function. 
 So far the actual interface version could be queried only indirectly, with trial and error, by starting from e.g. 10 then
@@ -1719,6 +1774,7 @@ CPP interface (through avisynth.h).
     // 8.1: C interface frameprop access fixed, IsPropertyWritable/MakePropertyWritable support, extended GetEnvProperty queries
     has_at_least_v9 = avisynth_if_ver >= 9;
     has_at_least_v12 = avisynth_if_ver >= 12; // global locks
+    has_at_least_v13 = avisynth_if_ver >= 13; // GetCPUFlagsEx, query L2 cache size
 
 C interface (through avisynth_c.h)
 
@@ -1744,9 +1800,11 @@ C interface (through avisynth_c.h)
     // 8.1: C interface frameprop access fixed, IsPropertyWritable/MakePropertyWritable support, extended GetEnvProperty queries
     has_at_least_v9 = avisynth_if_ver >= 9;
     has_at_least_v12 = avisynth_if_ver >= 12; // global locks
+    has_at_least_v13 = avisynth_if_ver >= 13; // avs_get_cpu_flags_ex, query L2 cache size
 
 
 AEP_INTERFACE_BUGFIX (c++) AVS_AEP_INTERFACE_BUGFIX (c)
+.......................................................
 
 Denotes situations where there isn't a breaking change to the API,
 but we need to identify when a particular change, fix or addition
@@ -1764,6 +1822,21 @@ itself would require it, but also because it's intended to signify
 the fix to the C interface allowing frame properties to be read
 back (which was the situation that spurred this define to exist
 in the first place).
+
+
+AEP_CACHESIZE_L2 (c++) AVS_AEP_CACHESIZE_L2 (c)
+...............................................
+
+Since V13. Returns the size of the L2 CPU cache in bytes.
+
+::
+
+    size_t l2_cache_size = env->GetEnvProperty(AEP_CACHESIZE_L2);
+    // or in C interface
+    size_t l2_cache_size = avs_get_env_property(env, AVS_AEP_CACHESIZE_L2);
+    if (env->error == 0) {
+      // l2_cache_size is valid
+    }
 
 
 .. _cplusplus_allocate:
@@ -2434,7 +2507,7 @@ Filter returns 1 to the CACHE_DONT_CACHE_ME query.
 
 
 Old, up to Avisynth 2.6
------------------------
+.......................
 
 In Avisynth+ frame cacheing was completely rewritten compared to Avisynth 5 or 6.
 Specifying cache ranges are no longer relevant. The following part describes
@@ -2760,53 +2833,314 @@ The following constants are defined in avisynth.h:
     };  
 
 
-::
+.. _cplusplus_cpufeatureflags:
 
-    // For GetCPUFlags.  These are backwards-compatible with those in VirtualDub.
-    // ending with SSE4_2
-    // For emulation see https://software.intel.com/en-us/articles/intel-software-development-emulator
-    enum {
-                        /* oldest CPU to support extension */
-      CPUF_FORCE        =  0x01,   //  N/A
-      CPUF_FPU          =  0x02,   //  386/486DX
-      CPUF_MMX          =  0x04,   //  P55C, K6, PII
-      CPUF_INTEGER_SSE  =  0x08,   //  PIII, Athlon
-      CPUF_SSE          =  0x10,   //  PIII, Athlon XP/MP
-      CPUF_SSE2         =  0x20,   //  PIV, K8
-      CPUF_3DNOW        =  0x40,   //  K6-2
-      CPUF_3DNOW_EXT    =  0x80,   //  Athlon
-      CPUF_X86_64       =  0xA0,   //  Hammer (note: equiv. to 3DNow + SSE2, which
-                                   //          only Hammer will have anyway)
-      CPUF_SSE3         = 0x100,   //  PIV+, K8 Venice
-      CPUF_SSSE3        = 0x200,   //  Core 2
-      CPUF_SSE4         = 0x400,
-      CPUF_SSE4_1       = 0x400,   //  Penryn, Wolfdale, Yorkfield
-      CPUF_AVX          = 0x800,   //  Sandy Bridge, Bulldozer
-      CPUF_SSE4_2       = 0x1000,  //  Nehalem
-      // AVS+
-      CPUF_AVX2         = 0x2000,   //  Haswell
-      CPUF_FMA3         = 0x4000,
-      CPUF_F16C         = 0x8000,
-      CPUF_MOVBE        = 0x10000,  // Big Endian move
-      CPUF_POPCNT       = 0x20000,
-      CPUF_AES          = 0x40000,
-      CPUF_FMA4         = 0x80000,
+CPU Feature Flags
+-----------------
 
-      CPUF_AVX512F      = 0x100000,  // AVX-512 Foundation.
-      CPUF_AVX512DQ     = 0x200000,  // AVX-512 DQ (Double/Quad granular) Instructions
-      CPUF_AVX512PF     = 0x400000,  // AVX-512 Prefetch
-      CPUF_AVX512ER     = 0x800000,  // AVX-512 Exponential and Reciprocal
-      CPUF_AVX512CD     = 0x1000000, // AVX-512 Conflict Detection
-      CPUF_AVX512BW     = 0x2000000, // AVX-512 BW (Byte/Word granular) Instructions
-      CPUF_AVX512VL     = 0x4000000, // AVX-512 VL (128/256 Vector Length) Extensions
-      CPUF_AVX512IFMA   = 0x8000000, // AVX-512 IFMA integer 52 bit
-      CPUF_AVX512VBMI   = 0x10000000,// AVX-512 VBMI
-      CPUF_AVX512VNNI   = 0x20000000,// AVX-512 VNNI, accumulated dot product on 8/16 bit integers
-    };
- 
+In ``avs/cpuid.h`` (C++) or in ``avisynth_c.h`` (C).
+The ``LL`` suffix indicates these are 64-bit values; at least the last ones exceed 32 bits.
+
+From Interface version V13 you can use :ref:`GetCPUFlagsEx<cplusplus_getcpuflagsex>` which returns a 64-bit integer
+with all CPU feature flags, unlike GetCPUFlags() which returns only a 32-bit integer, thus missing some AVX512 flags.
+
+See also :ref:`SetMaxCPU <setmaxcpu>`.
+
+Intel x86 and AMD64 CPU feature flags
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. table:: CPU Feature Flags (used in Avisynth+ for optimized code paths)
+   :align: center
+
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | C++ name                     | Flag value         | Remark                                                                                                                    |
+   +==============================+====================+===========================================================================================================================+
+   | ``CPUF_SSE2``                | ``0x20``           | PIV, K8                                                                                                                   |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_SSE3``                | ``0x100``          | PIV+, K8 Venice                                                                                                           |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_SSSE3``               | ``0x200``          | Core 2                                                                                                                    |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_SSE4``                | ``0x400``          |                                                                                                                           |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_SSE4_1``              | ``0x400``          | Penryn, Wolfdale, Yorkfield                                                                                               |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX``                 | ``0x800``          | Sandy Bridge, Bulldozer                                                                                                   |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_SSE4_2``              | ``0x1000``         | Nehalem                                                                                                                   |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX2``                | ``0x2000``         | Haswell                                                                                                                   |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_FMA3``                | ``0x4000``         |                                                                                                                           |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_F16C``                | ``0x8000``         |                                                                                                                           |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_MOVBE``               | ``0x10000``        | Big Endian move                                                                                                           |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_POPCNT``              | ``0x20000``        |                                                                                                                           |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AES``                 | ``0x40000``        |                                                                                                                           |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_FMA4``                | ``0x80000``        |                                                                                                                           |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512F``             | ``0x00100000``     | AVX-512 Foundation.                                                                                                       |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512DQ``            | ``0x00200000``     | AVX-512 DQ (Double/Quad granular) Instructions                                                                            |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512PF``            | ``0x00400000``     | AVX-512 Prefetch                                                                                                          |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512ER``            | ``0x00800000``     | AVX-512 Exponential and Reciprocal                                                                                        |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512CD``            | ``0x01000000``     | AVX-512 Conflict Detection                                                                                                |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512BW``            | ``0x02000000``     | AVX-512 BW (Byte/Word granular) Instructions                                                                              |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512VL``            | ``0x04000000``     | AVX-512 VL (128/256 Vector Length) Extensions                                                                             |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512IFMA``          | ``0x08000000``     | AVX-512 IFMA integer 52 bit                                                                                               |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512VBMI``          | ``0x10000000``     | AVX-512 VBMI, byte/word shuffling, sign/zero extension, and general pixel manipulation                                    |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512_BASE``         | ``0x20000000``     | AVX-512 Base group feature set. When F, CD, BW, DQ, VL flags exist                                                        |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512_FAST``         | ``0x40000000``     | Base + VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ. Spec detection logic excludes older/throttling models that also have these   |
+   |                              |                    | features                                                                                                                  |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX10`` (?)           | ``0x80000000LL``   | RFU: AVX10 group feature set: version query not from flags                                                                |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512VNNI``          | ``0x00100000000LL``| VNNI, accumulated dot product on 8/16 bit integers                                                                        |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512VBMI2``         | ``0x00200000000LL``| VBMI2: Byte/word load, store, & concatenation with shift for unaligned memory and packed data re-arrangement.             |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512BITALG``        | ``0x00400000000LL``| BITALG, Bit Manipulation Instructions                                                                                     |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512VPOPCNTDQ``     | ``0x00800000000LL``| VPOPCNTDQ, Vector Population Count Double/Quadword                                                                        |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512FP16``          | ``0x01000000000LL``| FP16, Half-precision floating-point operations                                                                            |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512BF16``          | ``0x02000000000LL``| Bfloat16 floating-point operations                                                                                        |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+
+AVX-512 features are grouped into two categories:
+
+- CPUF_AVX512_BASE: Base (F, CD, BW, DQ, VL)
+- CPUF_AVX512_FAST: The "usable" AVX-512, starting with Intel's 10th gen Ice Lake, incl. AMD Zen4/5. The features Base + (VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ) are guaranteed.
+
+"Fast" means a usable AVX-512 implementation without severe throttling penalties on client CPUs. It basically guarantees a feature set 
+similar to Intel Ice Lake/Rocket Lake and AMD Zen4/Zen5 and excludes older AVX-512 implementations (Skylake-X, Cascade Lake, Ice Lake-SP) 
+which have severe throttling issues on client CPUs.
+
+The categorization "Fast" mainly follows the ffmpeg project's "ICL" (Ice Lake arch.) approach.
+
+Besides the group feature flags Avisynth provides detailed individual flags as well, some of them accessible only via GetCPUFlagsEx() due to
+the shortage of 32 bits in GetCPUFlags().
+
+Regarding the CMake-based build process: compiler flags for ``*_avx512.cpp`` files are automatically set to match with "CPUF_AVX512_FAST" for gcc 
+or LLVM (clang-cl) builds in CMakeLists.txt. These are equivalent to using the following flags:
+as ``"-mfma -mavx512f -mavx512cd -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mavx512vbmi -mavx512vbmi2 -mavx512bitalg -mavx512vpopcntdq "`` .
+
+Due to the large number of AVX-512 sub-features, the following group and composite flags are defined (mentioned already in the full list above):
+
+.. table:: AVX-512 Group Feature Flags
+   :align: center
+
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512_BASE``         | ``0x20000000``     | AVX-512 Base group feature set. When F, CD, BW, DQ, VL flags exist                                                        |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+   | ``CPUF_AVX512_FAST``         | ``0x40000000``     | AVX-512 Advance group FAST (Ice Lake/Rocket Lake/Zen4/Zen5) feature set: Base + VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ.     |
+   +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
+
+.. note::
+
+    **Usability of AVX-512 and Throttling**
+
+    While AVX-512 features were first introduced with Skylake-SP (Intel Xeon), the earliest client CPUs
+    to implement a *truly usable* 512-bit wide vector unit were **Ice Lake (10th Generation Mobile) and 
+    Rocket Lake (11th Generation Desktop)**. These later microarchitectures significantly reduced the severe 
+    clock-speed throttling penalty and the voltage/frequency impact (AVX-512 down-binning) that plagued 
+    earlier implementations.
+
+    For this reason, high-performance projects like **FFmpeg** often use feature checks similar to ``"avx512fast"`` 
+    to classify a processor as having "good" or "usable" AVX-512 support. Like ICL CPU feature flag in ffmpeg.
+    Compiling code solely with checking only ``"avx512base"`` (which often only implies first-generation AVX-512) 
+    can lead to poor performance due to aggressive clock throttling on older hardware.
+
+    Developers should generally use ``"avx512fast"`` group as a minimum for realistic performance testing of 512-bit code paths.
+
+
+.. note::
+
+    **The transition to AVX10.1 and standardization with AVX10.2**
+
+    Intel Advanced Vector Extensions 10 (Intel AVX10) is the successor to AVX-512, aiming to address the very 
+    performance and consistency issues noted above. The new ISA is designed to create a **converged vector ISA** supported 
+    consistently across all future Intel cores, including **Performance-cores (P-cores) and Efficient-cores (E-cores)** 
+    For video filter developers, this means simplifying the instruction set selection process.
+
+    * **AVX10.1: The Transitional Version (Server-focused):** This initial version was announced in 2023 and first 
+        supported by server processors (e.g., 6th Generation Intel Xeon "Granite Rapids"). It is primarily a 
+        transitional layer, and **does not provide the key performance guarantee** sought by desktop/client developers.
+        As of late 2025, no consumer CPUs currently support AVX10.1 in general availability. It also does not natively 
+        include the new FP8/BF16 data types or the full feature set of AVX10.2.
+
+    * **AVX10.2: The Standardized Converged ISA (Future Client/Server):** The significant standardization that 
+        removes frequency throttling uncertainty, is found in **AVX10.2**. This version mandates **512-bit vector length (VLEN)** support 
+        for all cores (P-core and E-core) on a processor that reports AVX10.2 capability.
+
+        This standardization ensures:
+
+        1.  **Reliable Performance (Predictable Latency):** It addresses the AVX-512 hybrid core issue by forcing a consistent 512-bit 
+            execution environment across all supported cores. This consistency is vital for real-time video processing and 
+            decoding/encoding pipelines.
+        2.  **Standardization and Modern Features:** It establishes the new, clean vector programming model. 
+            AVX10.2 is designed to be binary-compatible with existing AVX-512 code, though recompilation is recommended to leverage new 
+            features and the simplified CPUID check. It also introduces new instructions and data types, such as those for FP8 and BFloat16 conversions,
+            beneficial for AI-driven filters and specialized media processing.
+        3.  **Targeting:** Developers should target AVX10.2 as the minimum version for future consistent, 
+            high-performance 512-bit code paths.
+
+    * **Current Outlook:** The first consumer desktop CPUs (e.g., "Nova Lake") supporting the standardized 
+        **AVX10.2** are generally expected in the **late 2026** timeframe. For the current Avisynth user base, 
+        existing robust AVX-512 checks (like ``"avx512fast"``) remain the relevant method for detecting modern 
+        vector capability.
+
+
+.. table:: CPU Feature Flags (obsolete ones)
+   :align: center
+
+   +--------------------------+--------------------+------------------------------+
+   | C++ name                 |  Flag value        | Remark                       |
+   +==========================+====================+==============================+
+   | ``CPUF_FORCE``           |  ``0x01``          | N/A                          |
+   +--------------------------+--------------------+------------------------------+
+   | ``CPUF_FPU``             |  ``0x02``          | 386/486DX                    |
+   +--------------------------+--------------------+------------------------------+
+   | ``CPUF_MMX``             |  ``0x04``          | P55C, K6, PII                |
+   +--------------------------+--------------------+------------------------------+
+   | ``CPUF_INTEGER_SSE``     |  ``0x08``          | PIII, Athlon                 |
+   +--------------------------+--------------------+------------------------------+
+   | ``CPUF_SSE``             |  ``0x10``          | PIII, Athlon XP/MP           |
+   +--------------------------+--------------------+------------------------------+
+   | ``CPUF_3DNOW``           |  ``0x40``          | K6-2                         |
+   +--------------------------+--------------------+------------------------------+
+   | ``CPUF_3DNOW_EXT``       |  ``0x80``          | Athlon                       |
+   +--------------------------+--------------------+------------------------------+
+   | ``CPUF_X86_64``          |  ``0xA0``          | Hammer                       |
+   +--------------------------+--------------------+------------------------------+
+
+Note: "C" interface names are the same but with ``AVS_CPUF_`` prefix instead of ``CPUF_``.
+They are defined in ``avisynth_c.h``.
+
+.. _armv8_simd_tiers:
+
+Avisynth ARMv8 SIMD Feature Tiers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+(Preliminary ARMv8-A NEON / SVE2 feature flags (work in progress)
+
+Avisynth defines three primary categories for ARMv8 (AArch64) SIMD support, allowing for feature-based dispatch similar 
+to the x86 SSE/AVX tiers. This categorization prioritizes performance uplift in video processing and codec-related 
+assembly over granular individual instruction checks.
+
+The implementation relies on runtime detection of hardware capabilities (e.g., Linux's ``getauxval`` and ``hwcap``, or macOS's ``sysctl``) 
+as AArch64 mandates a feature-based approach rather than relying solely on CPU model strings.
+
+ARMv8 Versioning Scheme (v8.x-A)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+ARMv8 (AArch64) is a living standard. Key features are introduced in minor revisions:
+
+* **ARMv8.0-A:** The baseline for AArch64. **NEON is mandatory.**
+* **ARMv8.2-A:** Introduces ``DOTPROD`` (Dot Product) and optional SVE (Scalable Vector Extension).
+* **ARMv8.4-A:** Introduces extensions like ``Flag Manipulation Instructions`` and enhanced integer support.
+* **ARMv8.5-A:** Introduces **SVE2** (Scalable Vector Extension 2).
+
+These minor revisions are crucial because they define the feature-level groupings used in Avisynth.
+
+Avisynth ARM SIMD Tiers
+^^^^^^^^^^^^^^^^^^^^^^^
+
+
+- CPUF_ARM_NEON (Baseline SIMD)
+
+    This is the foundational level required for any optimized Avisynth kernel on ARM.
+
+    * **Minimum Requirement:** ARMv8.0-A (AArch64).
+    * **Register Width:** Fixed **128-bit** (V-registers V0-V31).
+    * **x86 Analogy:** Comparable to **SSE2**. It establishes 128-bit wide floating-point and 
+      integer vector processing.
+    * **Usable Instruction Sets:** All basic NEON operations (addition, subtraction, multiplication, 
+      shuffle, load/store).
+    * **Video Processing Relevance:** Used for basic planar operations, simple resizing, and the 
+      vast majority of non-specialized routines in older codecs.
+
+- CPUF_ARM_DOTPROD (Advanced 128-bit)
+
+    This tier represents the first major performance jump for modern video encoding and processing. It is 
+    defined by the availability of specialized multiply-accumulate instructions.
+
+    * **Minimum Requirement:** ARMv8.2-A (specifically, the **DOTPROD** feature flag).
+    * **Register Width:** Still fixed **128-bit** (V-registers).
+    * **x86 Analogy:** Comparable to **AVX2** in terms of **instruction versatility and performance uplift**, but **not register size**.
+        * **Analogy:** Both AVX2 and ARM's DOTPROD unlock highly efficient hardware routines for inner loops.
+        * **Difference:** AVX2 *doubled* the register width (128-bit to 256-bit). This ARM tier provides the *instructions* without changing the physical register width.
+    * **Usable Instruction Sets:** The **DOTPROD** instructions (e.g., ``SDOT`` and ``UDOT``) for integer dot product operations.
+    * **Video Processing Relevance:** Absolutely critical for accelerating modern video codecs (HEVC/VVC/AV1) by providing highly efficient paths for:
+        * Motion Compensation
+        * Intra-Prediction
+        * Integer Matrix Operations (analogous to x86's VNNI).
+
+- CPUF_ARM_SVE2 (Scalable Vector Extension)
+
+    This is the highest tier, representing the leap to scalable vector architecture.
+
+    * **Minimum Requirement:** ARMv8.5-A (SVE2 feature flag).
+    * **Register Width:** **Scalable Vector Length (SVL)**. This register length is defined by the hardware 
+      (e.g., 256-bit or 512-bit) and is uniform across a single processor.
+    * **x86 Analogy:** Comparable to **AVX-512** or **AVX10.2**. Both represent a significant shift to 
+      very wide vector processing.
+    * **Usable Instruction Sets:** All SVE2 instructions, which extend SVE with NEON-style operations, 
+      providing masked, predicated, and full vector operations.
+    * **Video Processing Relevance:** Designed for maximum performance in HPC and deep learning workloads, 
+      this tier offers the largest data throughput per clock cycle for highly parallel operations like 
+      convolutions.
+
+Real-World Use Case: FFmpeg Categorization
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Projects like FFmpeg and libx265 use similar feature checks to manage their optimized assembly code paths.
+FFmpeg primarily checks for individual ``hwcap`` bits, which map directly to our tiers:
+
+1.  **Baseline:** Determined by the presence of **NEON** (mandatory).
+2.  **Advanced 128-bit:** Primarily determined by the **DOTPROD** flag.
+3.  **SVE/SVE2:** Checked via dedicated **SVE** and **SVE2** flags.
+
+The **DOTPROD** flag is often the most important threshold for enabling the fastest H.264/HEVC/VVC assembly functions.
+
+Raspberry Pi Feature Support
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For common single-board computers, the support is as follows:
+
+* **Raspberry Pi 4 (Broadcom BCM2711):** * **CPU:** Quad-core Arm Cortex-A72.
+    * **Architecture:** Supports **ARMv8.2-A**.
+    * **Extensions:** It supports the **DOTPROD** (Dot Product) extension.
+    * **Category:** Belongs to **CPUF_ARM_DOTPROD**.
+
+* **Raspberry Pi 5 (Broadcom BCM2712):**
+    * **CPU:** Quad-core Arm Cortex-A76.
+    * **Architecture:** Supports **ARMv8.2-A** up to **ARMv8.5-A** features.
+    * **SVE/SVE2 Support:** **The Cortex-A76 core does not support SVE/SVE2.** 
+      It supports **DOTPROD** and other extensions that are part of the newer ARMv8.x standards.
+    * **Category:** Belongs to **CPUF_ARM_DOTPROD**, but **NOT CPUF_ARM_SVE2**.
+
+This confirms that the **CPUF_ARM_DOTPROD** tier is a highly relevant, modern category that 
+covers key devices like the RPi 4 and RPi 5. **CPUF_ARM_SVE2** should only be targeted for 
+processors specifically documented to support SVE2 (like Arm Cortex-A710/X1/X2/X4 cores).
+
 
 ____
 
 Back to :doc:`FilterSDK`
 
-$Date: 2025/08/31 18:09:00 $
+$Date: 2025/12/17 10:23:00 $

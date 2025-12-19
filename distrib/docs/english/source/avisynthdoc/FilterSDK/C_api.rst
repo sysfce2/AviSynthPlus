@@ -411,6 +411,8 @@ Quick list
 +-------------------------------------+-----------------------+-------+
 | avs_add_function_r                  | AVS_ScriptEnvironment | 11    |
 +-------------------------------------+-----------------------+-------+
+| avs_get_cpu_flags_ex                | AVS_ScriptEnvironment | 12    |
++-------------------------------------+-----------------------+-------+
 
 
 Reference
@@ -618,6 +620,13 @@ avs_get_cpu_flags
 
 See also: :ref:`cplusplus_getcpuflags`
 
+.. _c_avs_get_cpu_flags_ex:
+
+avs_get_cpu_flags_ex
+--------------------
+
+See also: :ref:`cplusplus_getcpuflagsex`
+
 .. _c_avs_get_frame:
 
 avs_get_frame
@@ -656,7 +665,7 @@ See also: :ref:`cplusplus_getversion`
 avs_get_video_info
 ------------------
 
-See also: :ref:`cplusplus_getvideoinfo`
+See also: :ref:`GetVideoInfo<cplusplus_getvideoinfo>`
 
 .. _c_avs_invoke:
 

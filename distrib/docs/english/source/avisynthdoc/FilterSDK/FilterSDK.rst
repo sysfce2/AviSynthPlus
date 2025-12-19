@@ -442,6 +442,25 @@ What's new in the API V12
           and ``avs_set_cache_hints``).
           See :ref:`SetCacheHints<cplusplus_setcachehints>` .
 
+        - wider GetCPUFlagsEx() 
+
+          * ``env->GetCPUFlagsEx`` (C++),
+          * ``avs_get_cpu_flags_ex`` (C)
+
+          See :ref:`Getting CPU Flags<cplusplus_getcpuflags>`
+
+        - L2 query with new ``AvsEnvProperty``:
+        
+          * ``AEP_CACHESIZE_L2`` (C++), 
+          * ``AVS_AEP_CACHESIZE_L2`` (C) 
+          
+          to query L2 cache size in bytes by ``IScriptEnvironment->GetEnvProperty()``.
+          x86/x64 architecture only for now. See :ref:`AvsEnvProperty<cplusplus_getenvproperty>` .
+
+          See :ref:`GetEnvProperty<cplusplus_getenvproperty>` .
+
+        - ARM64 (aarch64) CPU flags
+
 - C++ API
 
           * ``env->ApplyMessageEx`` (C++),
@@ -475,7 +494,7 @@ License terms
 
 Note: Avisynth Filter SDK parts are under specific :doc:`SDK license <SDKLicense>` terms.
 
-$Date: 2025/11/27 08:30:00 $
+$Date: 2025/12/02 15:36:00 $
 
 Latest online Avisynth+ version is at https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/FilterSDK/FilterSDK.html
 This one is maintained properly.

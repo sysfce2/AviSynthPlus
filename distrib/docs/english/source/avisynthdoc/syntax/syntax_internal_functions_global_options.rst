@@ -62,6 +62,10 @@ Available values:
 *   0 or ``CACHE_FAST_START``: start up time and size balanced mode (default)
 *   1 or ``CACHE_OPTIMAL_SIZE`` slow start up but optimal speed and cache size 
 
+
+.. _setmaxcpu:
+
+
 SetMaxCPU
 ~~~~~~~~~
 ::
@@ -71,23 +75,55 @@ SetMaxCPU
 A debug control method. Intel processor specific.
 
 Limits the CPU capabilities which AviSynth reports to its core and thus for external plugins and filters
-through :ref:`env->GetCPUFlags <cplusplus_getcpuflags>`.
+through :ref:`env->GetCPUFlags <cplusplus_getcpuflags>` or :ref:`env->GetCPUFlagsEx <cplusplus_getcpuflags>`.
 
-Available values:
+Available values (**Intel** CPU features):
 
 *   ``""`` or ``"none"`` for zero SIMD support, no processor flags are reported
 *   ``"mmx"``, ``"sse"``, ``"sse2"``, ``"sse3"``, ``"ssse3"``, ``"sse4"`` or ``"sse4.1"``,
-    ``"sse4.2"``, ``"avx"``, ``"avx2"`` 
+    ``"sse4.2"``, ``"avx"``, ``"avx2"``, ``"avx512base"``, ``"avx512fast"`` 
+
+Available values (**ARM64** (aarch64) CPU features):
+
+*   ``""`` or ``"none"`` for zero SIMD support, no processor flags are reported
+*   ``"neon"``, ``"dotprod"``, ``"sve2"``
 
 Parameters are case insensitive. 
-
-Note: ``"avx2"`` triggers FMA3 flag as well. 
 
 * Processor options w/o any modifier will limit the CPU flag report to at most the processor level.
 * When "feature" is ended by '+', relevant processor feature flag will be switched on
 * When "feature" is ended by '-', relevant processor feature flag will be removed. 
 
+Notes:
+* ``"avx2"`` triggers FMA3 flag as well.
+* ``"avx512base"`` enables all AVX-512 base features, as a group (F, CD, BW, DQ, VL).
+* ``"avx512fast"`` enables all Ice Lake AVX-512 features, as a group (VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ) without 
+the Avisynth-irrelevant and AVX10 not-required cryptographic flags (VAES, VPCLMULQDQ, GFNI).
+* The cryptographic flags (VAES, VPCLMULQDQ, GFNI) are not vital for Avisynth algorithms, they are only checked for
+distinguishing the Ice Lake generation from the earlier Skylake-X and Cascade Lake (slow AVX-512) server processors.
+
 Multiple options can be put in a comma separated list. They will evaluate in that order. 
+
+The ``"avx512base"`` and ``"avx512fast"`` cover a group of feature flags. Internal Avisynth+ codes test for 
+``CPUF_AVX512_FAST`` in internal AVX-512 optimized paths, not the base CPUF_AVX512_BASE one.
+
+.. note::
+
+    **Usability of AVX-512 and Throttling**
+
+    While AVX-512 features were first introduced with Skylake-SP (Intel Xeon), the earliest client CPUs
+    to implement a *truly usable* 512-bit wide vector unit were **Ice Lake (10th Generation Mobile) and 
+    Rocket Lake (11th Generation Desktop)**. These later microarchitectures significantly reduced the severe 
+    clock-speed throttling penalty and the voltage/frequency impact (AVX-512 down-binning) that plagued 
+    earlier implementations.
+
+    For this reason, high-performance projects like **FFmpeg** often use feature checks similar to ``"avx512fast"`` 
+    (CPU flag ICL - Ice Lake in their naming) to classify a processor as having "good" or "usable" AVX-512 support. 
+    Compiling and testing code solely with ``"avx512base"`` (which often only implies first-generation AVX-512) can 
+    lead to **misleadingly poor performance** due to aggressive clock throttling on older hardware.
+
+    Developers should generally use the ``"avx512fast"`` group for realistic performance testing of 512-bit code paths.
+
 
 *Examples:*
 ::
@@ -351,6 +387,8 @@ Changelog
 +----------------+------------------------------------------------------------+
 | Version        | Changes                                                    |
 +================+============================================================+
+| Avisynth 3.7.6 | Add "avx512base" and "avx512cli" to SetMaxCPU              |
++----------------+------------------------------------------------------------+
 | Avisynth 3.6.1 | | Added "SetCacheMode" (Neo addition)                      |
 |                | | Added "SetMemoryMax" type and index options              |
 +----------------+------------------------------------------------------------+
@@ -362,7 +400,7 @@ Changelog
 Back to :doc:`Internal functions <syntax_internal_functions>`.
 
 
-$Date: 2025-02-25 15:25:59-05:00 $
+$Date: 2025-12-14 21:02:00 $
 
 .. _planar: http://avisynth.nl/index.php/Planar
 .. _memory alignment used in the AVIFile output emulation (not yet written):
