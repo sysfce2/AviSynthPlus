@@ -80,47 +80,4 @@ _mm512_insertf32x4(_mm512_insertf32x4(_mm512_insertf32x4(_mm512_castps128_ps512(
 _mm512_insertf32x4(_mm512_insertf32x4(_mm512_insertf32x4(_mm512_castps128_ps512(_mm_load_ps(addr1)), _mm_load_ps(addr2), 1), _mm_load_ps(addr3), 2), _mm_load_ps(addr4), 3)
 #endif
 
-// Transpose 4x4 blocks within each lane
-#define _MM_TRANSPOSE8_LANE4_PS(row0, row1, row2, row3) \
-  do { \
-    __m256 __t0, __t1, __t2, __t3; \
-    __t0 = _mm256_unpacklo_ps(row0, row1); \
-    __t1 = _mm256_unpackhi_ps(row0, row1); \
-    __t2 = _mm256_unpacklo_ps(row2, row3); \
-    __t3 = _mm256_unpackhi_ps(row2, row3); \
-    row0 = _mm256_shuffle_ps(__t0, __t2, _MM_SHUFFLE(1, 0, 1, 0)); \
-    row1 = _mm256_shuffle_ps(__t0, __t2, _MM_SHUFFLE(3, 2, 3, 2)); \
-    row2 = _mm256_shuffle_ps(__t1, __t3, _MM_SHUFFLE(1, 0, 1, 0)); \
-    row3 = _mm256_shuffle_ps(__t1, __t3, _MM_SHUFFLE(3, 2, 3, 2)); \
-  } while (0)
-
-// a 256-bit version of transpose16 but not quicker than the full 512-bit version
-#define _MM_TRANSPOSE16_LANE4_PS_256(row0, row1, row2, row3) \
-  do { \
-    /* Low Half (256-bit): Use cast for ZMM[0:255]. This is typically a zero-latency register rename on Intel. */ \
-    __m256 row0_low = _mm512_castps512_ps256(row0); \
-    __m256 row1_low = _mm512_castps512_ps256(row1); \
-    __m256 row2_low = _mm512_castps512_ps256(row2); \
-    __m256 row3_low = _mm512_castps512_ps256(row3); \
-\
-    /* 1. Transpose the LOW (left half) using the efficient AVX2 macro (parallel ports) */ \
-    _MM_TRANSPOSE8_LANE4_PS(row0_low, row1_low, row2_low, row3_low); \
-\
-    /* High Half (256-bit): Assemble ZMM[256:511] by extracting the two high 128-bit chunks (index 2 and 3) */ \
-    __m256 row0_high = _mm256_insertf32x4(_mm256_castps128_ps256(_mm512_extractf32x4_ps(row0, 2)), _mm512_extractf32x4_ps(row0, 3), 1); \
-    __m256 row1_high = _mm256_insertf32x4(_mm256_castps128_ps256(_mm512_extractf32x4_ps(row1, 2)), _mm512_extractf32x4_ps(row1, 3), 1); \
-    __m256 row2_high = _mm256_insertf32x4(_mm256_castps128_ps256(_mm512_extractf32x4_ps(row2, 2)), _mm512_extractf32x4_ps(row2, 3), 1); \
-    __m256 row3_high = _mm256_insertf32x4(_mm256_castps128_ps256(_mm512_extractf32x4_ps(row3, 2)), _mm512_extractf32x4_ps(row3, 3), 1); \
-\
-    /* 2. Transpose the HIGH (right half) using the efficient AVX2 macro (parallel ports) */ \
-    _MM_TRANSPOSE8_LANE4_PS(row0_high, row1_high, row2_high, row3_high); \
-\
-    /* 3. Re-assemble the results back into the 512-bit output vectors. */ \
-    row0 = _mm512_insertf32x8(_mm512_castps256_ps512(row0_low), row0_high, 1); \
-    row1 = _mm512_insertf32x8(_mm512_castps256_ps512(row1_low), row1_high, 1); \
-    row2 = _mm512_insertf32x8(_mm512_castps256_ps512(row2_low), row2_high, 1); \
-    row3 = _mm512_insertf32x8(_mm512_castps256_ps512(row3_low), row3_high, 1); \
-\
-  } while (0)
-
 #endif // __Resample_AVX512_H__

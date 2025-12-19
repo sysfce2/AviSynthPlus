@@ -1480,7 +1480,7 @@ bool resize_h_planar_float_avx2_gather_permutex_vstripe_ks4_pix16_check(Resampli
  */
 static constexpr double CACHE_RESERVE_FACTOR = 0.75;
 
-static int detect_optimal_scanline(int src_width, int tgt_width, size_t l2_cache_size_bytes) {
+int resampler_h_float_detect_optimal_scanline(int src_width, int tgt_width, size_t l2_cache_size_bytes) {
   // sizeof(float) is 4 bytes
   constexpr size_t PIXEL_SIZE = sizeof(float);
 
@@ -1543,7 +1543,7 @@ void resize_h_planar_float_avx2_transpose_vstripe_ks4(BYTE* dst8, const BYTE* sr
   constexpr int STRIPE_ALIGN = 8;  // this must be multiple of PIXELS_AT_A_TIME 
 
   const size_t cache_size_L2 = program->cache_size_L2;
-  int max_scanlines = detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2)
+  int max_scanlines = resampler_h_float_detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2)
     / STRIPE_ALIGN * STRIPE_ALIGN;
   //max_scanlines = program->target_size; // test
   if (max_scanlines < STRIPE_ALIGN) max_scanlines = STRIPE_ALIGN;
@@ -1724,7 +1724,7 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
 
   // e.g. i7-11700 typical L2 if 512K per core.
   const size_t cache_size_L2 = program->cache_size_L2;
-  int max_scanlines = detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2);
+  int max_scanlines = resampler_h_float_detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2);
 
   for (int y_from = 0; y_from < height; y_from += max_scanlines) {
     int y_to = std::min(y_from + max_scanlines, height);

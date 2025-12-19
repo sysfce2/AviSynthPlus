@@ -39,6 +39,7 @@
 #include <avs/minmax.h>
 
 #include "check_avx512.h" // compiler avx512 directives check, basic f and bw is required
+#include "resample_avx2.h"
 #include "resample_avx512.h"
 
 // Functions in this file are dispatched by AVS_CPUF_AVX512_FAST group feature flag.
@@ -155,7 +156,7 @@ void resize_h_planar_float_avx512_transpose_vstripe_ks4(BYTE* dst8, const BYTE* 
   constexpr int STRIPE_ALIGN = 16;
 
   const size_t cache_size_L2 = program->cache_size_L2;
-  int max_scanlines = detect_optimal_scanline(program->source_size, program->target_size, program->filter_size, cache_size_L2)
+  int max_scanlines = resampler_h_float_detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2)
     / STRIPE_ALIGN * STRIPE_ALIGN;
 
   if (max_scanlines < STRIPE_ALIGN) max_scanlines = STRIPE_ALIGN;
