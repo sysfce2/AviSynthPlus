@@ -39,7 +39,11 @@
 
 #include <immintrin.h> // includes AVX, AVX2, FMA3, AVX512F, AVX512BW, etc. for MSVC, Clang, and GCC
 
-// compiler feature checks and error handling
+// GCC/clang compiler flags for matching CPUF_AVX512_FAST:
+// " -mfma -mavx512f -mavx512cd -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mavx512vbmi -mavx512vbmi2 -mavx512bitalg -mavx512vpopcntdq "
+
+// Compiler feature checks and error handling
+// Here we only check for F and BW as sanity check, Avisynth's CMakeLists.txt should ensure proper flags are set.
 #if defined(__clang__) && !defined(_MSC_VER)
 #if !defined(__AVX512F__) || !defined(__AVX512BW__)
 #error "This code requires a compiler that supports AVX-512F and AVX-512BW.  Use compiler flags -mavx512f -mavx512bw."
