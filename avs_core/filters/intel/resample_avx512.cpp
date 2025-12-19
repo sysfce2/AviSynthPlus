@@ -96,8 +96,30 @@ AVS_FORCEINLINE static __m512 _mm512_load_partial_safe_4_m128(const float* src_p
   return result;
 }
 
+// same as resize_h_planar_float_avx2_gather_permutex_vstripe_ks4_pix16_check
+// returns true if only transpose method is allowed, false if permutex method can be used
+bool resize_h_planar_float_avx512_gather_permutex_vstripe_ks4_check(ResamplingProgram* program)
+{
+  // 'target_size_alignment' ensures we can safely access pixel_offset[] entries using offsets like
+  // pixel_offset[x + 0] to pixel_offset[x + 15] per 16-pixel block processing
+  assert(program->target_size_alignment >= 16);
 
+  // Ensure that coefficient loading is safe for 4 float loads
+  assert(program->filter_size_alignment >= 4);
 
+  for (int x = 0; x < program->target_size; x += 16)
+  {
+    int start_off = program->pixel_offset[x + 0];
+    // program->pixel_offset[x + 15] is still valid, since program->target_size_alignment >= 8
+    // and pixel_offset[] values for x >= target_size are the same as for x=target_size-1.
+    // This is ensured during the resampling program setup in resize_prepare_coeffs()
+    int end_off = program->pixel_offset[x + 15] + 3;
+    if ((end_off - start_off) >= 16) {
+      return true; // only transpose is allowed
+    }
+  }
+  return false; // permute is OK.
+}
 
 // Processes a horizontal resampling kernel of up to four coefficients for float pixel types.
 // Supports BilinearResize, BicubicResize, or sinc with up to 2 taps (filter size <= 4).

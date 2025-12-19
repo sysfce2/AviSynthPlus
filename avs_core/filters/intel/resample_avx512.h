@@ -38,6 +38,7 @@
 #include <avisynth.h>
 #include "../resample_functions.h"
 
+bool resize_h_planar_float_avx512_gather_permutex_vstripe_ks4_check(ResamplingProgram* program);
 // useful macros
 
 // Full 512-bit version of transpose16
