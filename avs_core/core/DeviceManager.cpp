@@ -156,14 +156,19 @@ public:
   virtual BYTE* Allocate(size_t size, int margin)
   {
     size += margin;
+    // Allocate a bit more, so we can safely use a 64 byte (512 bits AVX512) load even from
+    // the last pixel of VideoFrameBuffer. Note: NaN contamination over valid scanlines are still a concern
+    // when using 32-bit float data.
+    // Pre 3.7.6 used only 16 bytes (SSE2)
+    constexpr size_t SIMD_OVERREAD_EXTRA_SAFETY = 64;
 #ifdef _DEBUG
-    BYTE* data = new BYTE[size + 16];
-    int *pInt = (int *)(data + size);
-    pInt[0] = 0xDEADBEEF;
-    pInt[1] = 0xDEADBEEF;
-    pInt[2] = 0xDEADBEEF;
-    pInt[3] = 0xDEADBEEF;
-
+    BYTE* data = new BYTE[size + SIMD_OVERREAD_EXTRA_SAFETY];
+    // fill extra space with recognizable pattern
+    for (auto i = 0; i < SIMD_OVERREAD_EXTRA_SAFETY / 8; ++i) {
+      ((uint64_t*)(data + size))[i] = 0xDEADBEEFDEADBEEF;
+    }
+    // fill allocated memory with recognizable pattern
+    // AllOCA7ED, uneven 5-byte pattern to catch overruns
     static const BYTE filler[] = { 0x0A, 0x11, 0x0C, 0xA7, 0xED };
     BYTE* pByte = data;
     BYTE* q = pByte + size / 5 * 5;
@@ -177,7 +182,7 @@ public:
     }
     return data;
 #else
-    return new BYTE[size + 16];
+    return new BYTE[size + SIMD_OVERREAD_EXTRA_SAFETY];
 #endif
   }
 
@@ -250,6 +255,10 @@ public:
       ? cudaHostAllocPortable : cudaHostAllocDefault;
     BYTE* data = nullptr;
     size += margin;
+
+    // FIXME check: is extra safety needed for pinned memory like CPUDevice::Allocate
+    // adds extra 64 bytes for SIMD overread safety instead of 16 bytes?
+
 #ifdef _DEBUG
     CUDA_CHECK(cudaHostAlloc((void**)&data, size + 16, flags));
     int *pInt = (int *)(data + size);
