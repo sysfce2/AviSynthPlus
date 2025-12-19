@@ -1520,7 +1520,7 @@ PVideoFrame __stdcall ShowSMPTE::GetFrame(int n, IScriptEnvironment* env)
   }
   }
 
-  char text[16];
+  char text[32];
 
   if (rate > 0) {
     int frames = n % rate;
@@ -2245,10 +2245,28 @@ const char* const t_ABFF="Assumed Bottom Field First ";
 const char* const t_STFF="Top Field (Separated)      ";
 const char* const t_SBFF="Bottom Field (Separated)   ";
 
+#if defined(X86_32) || defined(X86_64)
+static std::string GetCacheInfo(IScriptEnvironment* env)
+{
+  std::stringstream ss;
+  size_t l2_cache_size = env->GetEnvProperty(AEP_CACHESIZE_L2);
+  if (l2_cache_size > 0)
+    ss << "L2 Cache Size: " << l2_cache_size << " bytes";
+  return ss.str();
+}
+#else
+// display is unsupported on non-x86 architectures
+std::string GetCacheInfo(IScriptEnvironment* env)
+{
+  std::stringstream ss;
+  return ss.str(); 
+}
+#endif
+
 #ifdef INTEL_INTRINSICS
 std::string GetCpuMsg(IScriptEnvironment * env, bool avx512)
 {
-  int flags = env->GetCPUFlags();
+  int64_t flags = env->GetCPUFlagsEx();
   std::stringstream ss;
 
   if (!avx512) {
@@ -2294,38 +2312,69 @@ std::string GetCpuMsg(IScriptEnvironment * env, bool avx512)
       ss << "F16C ";
   }
   else {
-    const int all_avx512 =
-      CPUF_AVX512F | CPUF_AVX512PF |
-      CPUF_AVX512BW | CPUF_AVX512CD | CPUF_AVX512DQ |
-      CPUF_AVX512VL |
-      CPUF_AVX512ER |
-      CPUF_AVX512IFMA | CPUF_AVX512VBMI |
-      CPUF_AVX512VNNI;
 
-    if (flags & all_avx512)
-      ss << "AVX512: ";
+    if (flags & CPUF_AVX512_MASK)
+      ss << "AVX512 ";
+    // Core AVX-512 Extensions as a distinct flag (F, CD, BW, DQ, VL)
+    if (flags & CPUF_AVX512_BASE)
+      ss << "BASE (";
 
-    if (flags & CPUF_AVX512F)
-      ss << "F ";
-    if (flags & CPUF_AVX512PF)
-      ss << "PF ";
-    if (flags & CPUF_AVX512BW)
-      ss << "BW ";
-    if (flags & CPUF_AVX512CD)
-      ss << "CD ";
-    if (flags & CPUF_AVX512DQ)
-      ss << "DQ ";
-    if (flags & CPUF_AVX512VL)
-      ss << "VL ";
-    if (flags & CPUF_AVX512ER)
-      ss << "ER ";
-    if (flags & CPUF_AVX512IFMA)
-      ss << "IFMA ";
-    if (flags & CPUF_AVX512VBMI)
-      ss << "VBMI ";
-    if (flags & CPUF_AVX512VNNI)
-      ss << "VNNI ";
+    // Base part (F, CD, BW, DQ, VL)
+    if (flags & CPUF_AVX512F) ss << "F ";
+    if (flags & CPUF_AVX512CD) ss << "CD ";
+    if (flags & CPUF_AVX512BW) ss << "BW ";
+    if (flags & CPUF_AVX512DQ) ss << "DQ ";
+    if (flags & CPUF_AVX512VL) {
+      if (flags & CPUF_AVX512_BASE)
+        ss << "VL) ";
+      else
+        ss << "VL ";
+    }
+
+    // ICL part as a distinct flag:
+    if (flags & CPUF_AVX512_FAST) // Ice Lake/Rocket Lake extensions; usable avx-512
+      ss << "FAST (";
+    if (flags & CPUF_AVX512VNNI) ss << "VNNI ";
+    if (flags & CPUF_AVX512VBMI) ss << "VBMI ";
+    if (flags & CPUF_AVX512VBMI2) ss << "VBMI2 ";
+    if (flags & CPUF_AVX512BITALG) ss << "BITALG ";
+    if (flags & CPUF_AVX512VPOPCNTDQ) {
+      if (flags & CPUF_AVX512_FAST)
+        ss << "VPOPCNTDQ) ";
+      else
+        ss << "VPOPCNTDQ ";
+    }
+
+    // rest of AVX-512 extensions:
+    if (flags & CPUF_AVX512IFMA) ss << "IFMA ";
+    if (flags & CPUF_AVX512BF16) ss << "BF16 ";
+    if (flags & CPUF_AVX512FP16) ss << "FP16 ";
+    if (flags & CPUF_AVX512PF) ss << "PF ";
+    if (flags & CPUF_AVX512ER) ss << "ER ";
+
+    // Crypto (VAES, VPCLMULQDQ, GFNI) and deprecated (VP2INTERSECT, 4VNNIW, 4FMAPS) extensions excluded
   }
+  return ss.str();
+}
+#elif defined(ARM64)
+// aarch64 ARMv8-A flags
+std::string GetCpuMsg(IScriptEnvironment* env)
+{
+  int64_t flags = env->GetCPUFlagsEx();
+  std::stringstream ss;
+
+  // Tier 1: CPUF_ARM_NEON (Baseline)
+  if (flags & CPUF_ARM_NEON)
+    ss << "NEON ";
+
+  // Tier 2: CPUF_ARM_DOTPROD (Dot Product, AVX2-like features on 128-bit)
+  if (flags & CPUF_ARM_DOTPROD)
+    ss << "DOTPROD ";
+
+  // Tier 3: CPUF_ARM_SVE2 (Scalable Vector, 256/512-bits)
+  if (flags & CPUF_ARM_SVE2)
+    ss << "SVE2 ";
+
   return ss.str();
 }
 #else
@@ -2469,11 +2518,19 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
       std::string avx512 = GetCpuMsg(env, true);
       if (avx512.length() > 0) {
         tlen += snprintf(text + tlen, sizeof(text) - tlen,
-          "     %s\n"
+          "%s\n"
           , avx512.c_str()
         );
       }
 #endif
+      // Cache size info in new line
+      std::string cache_info = GetCacheInfo(env);
+      if (cache_info.length() > 0) {
+        tlen += snprintf(text + tlen, sizeof(text) - tlen,
+          "%s\n",
+          cache_info.c_str()
+        );
+      }
     } // show cpu capabilities
 
     // Windows GDI: aligns the whole box, its content is kept top left aligned
