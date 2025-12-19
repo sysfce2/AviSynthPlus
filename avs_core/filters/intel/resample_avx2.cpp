@@ -1356,7 +1356,7 @@ template void resize_h_planar_float_avx_transpose_vstripe_ks4<3>(BYTE* dst8, con
  *   }
  *
  * See also:
- * - resize_h_planar_float_avx2_gather_vstripe_ks4
+ * - resize_h_planar_float_avx2_transpose_vstripe_ks4
  * - resize_h_planar_float_avx2_permutex_vstripe_ks4
  * - resize_h_planar_float_avx_transpose_vstripe_ks4
  * - resizer_h_avx2_generic_float
@@ -1689,8 +1689,6 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
   float* src = (float*)src8;
   float* dst = (float*)dst8;
 
-  const float* AVS_RESTRICT current_coeff = (const float* AVS_RESTRICT)program->pixel_coefficient_float;
-
   constexpr int PIXELS_AT_A_TIME = 8; // Process eight pixels in parallel in AVX2
 
   // Pre-checked for permutex-based upsampling: the source pixels will surely fit within single 8 float loads
@@ -1723,6 +1721,15 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
   // Ensure that coefficient loading is safe for 4 float loads,
   // if less than 4, padded with zeros till filter_size_alignment.
   assert(program->filter_size_alignment >= 4);
+
+  // e.g. i7-11700 typical L2 if 512K per core.
+  const size_t cache_size_L2 = program->cache_size_L2;
+  int max_scanlines = detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2);
+
+  for (int y_from = 0; y_from < height; y_from += max_scanlines) {
+    int y_to = std::min(y_from + max_scanlines, height);
+    // Reset current_coeff for the start of the stripe
+    const float* AVS_RESTRICT current_coeff = program->pixel_coefficient_float; // +iYstart * filter_size;
 
   int x = 0;
 
@@ -1758,16 +1765,16 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
     __m256i perm_3 = _mm256_add_epi32(perm_2, one_epi32); // begin8_rel+3, begin7_rel+3, ... begin2_rel+3, begin1_rel+3
     // These indexes are guaranteed to be 0..7 due to the earlier analysis,
     // and can be used for the indexing parameter in _mm256_permutevar8x32_ps
-
-    float* AVS_RESTRICT dst_ptr = dst + x;
-    const float* src_ptr = src + begin1; // all permute offsets relative to this start offset
+      float* AVS_RESTRICT dst_ptr = dst + x + y_from * dst_pitch;
+      const float* src_ptr = src + begin1 + y_from * src_pitch;
 
     // for partial_load only
-    const int remaining =  program->source_size - begin1;
+      const int remaining = program->source_size - begin1;
     const int floats_to_load = remaining >= 8 ? 8 : remaining;
 
-    for (int y = 0; y < height; y++)
-    {
+      for (int y = y_from; y < y_to; ++y) {
+
+        // process scanline y
       __m256 data_src;
       // We'll need exactly 8 floats starting from src+begin1
       if constexpr (partial_load) {
@@ -1796,7 +1803,8 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
       result0 = _mm256_fmadd_ps(data_1, coef_1, result0);
       result1 = _mm256_fmadd_ps(data_3, coef_3, result1);
 
-      _mm256_store_ps(dst_ptr, _mm256_add_ps(result0, result1));
+        // this must be stream until partial tile interface done
+        _mm256_stream_ps(dst_ptr, _mm256_add_ps(result0, result1));
 
       dst_ptr += dst_pitch;
       src_ptr += src_pitch;
@@ -1815,6 +1823,8 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
   {
     do_h_float_core(std::true_type{}); // partial_load == true, use the safer '_mm256_load_partial_safe'
   }
+  }
+}
 
 }
 
