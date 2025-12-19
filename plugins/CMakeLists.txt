@@ -1,10 +1,16 @@
 include_directories(${AvsCore_SOURCE_DIR}/include)
 
-if (WIN32)
 # These plugins are for Windows only
-option(BUILD_DIRECTSHOWSOURCE "Build DirectShowSource plugin" OFF)
-option(BUILD_VDUBFILTER "Build VDubFilter plugin" ON)
-#option(BUILD_VFAPIFILTER "Build VFAPIFilter plugin" ON)
+if (WIN32)
+  # VDubFilter is x86/x64-only, so default to OFF unless target is x86/x64.
+  set(VDUBFILTER_DEFAULT "OFF")
+  if (CMAKE_VS_PLATFORM_NAME STREQUAL "Win32" OR CMAKE_VS_PLATFORM_NAME STREQUAL "x64")
+       set(VDUBFILTER_DEFAULT "ON")
+  endif()
+
+  option(BUILD_VDUBFILTER "Build VDubFilter plugin" ${VDUBFILTER_DEFAULT})
+  option(BUILD_VDUBFILTER "Build VDubFilter plugin" ON)
+  #option(BUILD_VFAPIFILTER "Build VFAPIFilter plugin" ON)
 endif()
 
 include(FindDevIL)
