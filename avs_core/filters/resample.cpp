@@ -1642,7 +1642,10 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
           case 4: return resize_h_planar_float_avx512_transpose_vstripe_ks4<0>; break;
           }
         }
-        return resize_h_planar_float_avx512_permutex_vstripe_ks4;
+        // FIXME: make it safe + correct, like the avx2 counterpart
+        // return resize_h_planar_float_avx512_permutex_vstripe_ks4;
+        // until then:
+        return resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16;
       }
 #endif
       return resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16;

@@ -270,7 +270,7 @@ template void resize_h_planar_float_avx512_transpose_vstripe_ks4<1>(BYTE* dst8, 
 template void resize_h_planar_float_avx512_transpose_vstripe_ks4<2>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 template void resize_h_planar_float_avx512_transpose_vstripe_ks4<3>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 
-
+// FIXME: make it safe + correct, like the avx2 counterpart
 void resize_h_planar_float_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
   assert(filtersizemod4 >= 0 && filtersizemod4 <= 3);
@@ -306,7 +306,7 @@ void resize_h_planar_float_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
 
   int x = 0;
 
-  for (int x = 0; x < width; x += 16)
+  for (x = 0; x < width; x += 16)
   {
     // prepare coefs in transposed V-form
     __m512 coef_r0 = _mm512_load_4_m128(current_coeff + filter_size * 0, current_coeff + filter_size * 4, current_coeff + filter_size * 8, current_coeff + filter_size * 12);
