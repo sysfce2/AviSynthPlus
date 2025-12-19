@@ -61,7 +61,11 @@ public:
 
   int __stdcall SetCacheHints(int cachehints, int frame_range) override {
     AVS_UNUSED(frame_range);
-    return cachehints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
+    if (cachehints == CACHE_GET_MTMODE) return MT_NICE_FILTER;
+    if (cachehints == CACHE_INFORM_NUM_THREADS) {
+      num_threads = frame_range;
+    }
+    return 0;
   }
 
   static ResamplerH GetResampler(int CPU, int pixelsize, int bits_per_pixel, ResamplingProgram* program, IScriptEnvironment* env);
@@ -86,6 +90,8 @@ private:
   ResamplerV resampler_chroma;
 
   TurnFuncPtr turn_left, turn_right;
+
+  int num_threads; // set by MTGuard by calling SetCacheHints(CACHE_INFORM_NUM_THREADS, n)
 };
 
 

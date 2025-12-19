@@ -1287,7 +1287,8 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
   : GenericVideoFilter(_child),
   resampling_program_luma(nullptr), resampling_program_chroma(nullptr), 
   resampler_h_luma(nullptr), resampler_h_chroma(nullptr),
-  resampler_luma(nullptr), resampler_chroma(nullptr)
+  resampler_luma(nullptr), resampler_chroma(nullptr),
+  num_threads(0)
 
 {
   src_width = vi.width;
