@@ -39,6 +39,8 @@
 #include "../resample_functions.h"
 
 bool resize_h_planar_float_avx512_gather_permutex_vstripe_ks4_check(ResamplingProgram* program);
+void resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16(BYTE * dst8, const BYTE * src8, int dst_pitch, int src_pitch, ResamplingProgram * program, int width, int height, int bits_per_pixel);
+
 // useful macros
 
 // Full 512-bit version of transpose16
