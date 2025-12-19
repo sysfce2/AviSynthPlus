@@ -94,7 +94,7 @@ void MTGuard::EnableMT(size_t nThreads)
     {
       // already created single instance, just set the thread count
       if (!this->mt_enabled)
-        ChildFilters[0].filter->SetCacheHints(CACHE_INFORM_NUM_THREADS, nThreads);
+        ChildFilters[0].filter->SetCacheHints(CACHE_INFORM_NUM_THREADS, (int)nThreads);
       break;
     }
     case MT_MULTI_INSTANCE:
@@ -125,7 +125,7 @@ void MTGuard::EnableMT(size_t nThreads)
         }
         // inform all filter instances about the threading
         for (size_t i = 0; i < nThreads; ++i)
-          newchilds[i].filter->SetCacheHints(CACHE_INFORM_NUM_THREADS, nThreads);
+          newchilds[i].filter->SetCacheHints(CACHE_INFORM_NUM_THREADS, (int)nThreads);
         ChildFilters = std::move(newchilds);
       }
       break;
