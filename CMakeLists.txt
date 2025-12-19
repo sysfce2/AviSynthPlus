@@ -223,6 +223,22 @@ if(NOT HEADERS_ONLY)
       MESSAGE(FATAL_ERROR "Visual C++ 2017 or newer required.")
     ENDIF()
 
+    # Milestones
+    # C++17 COMPLETENESS: Compiler versions 19.10-19.19 (VS 2017) had incomplete C++17 support.
+    # Full C++17 support: starting with compiler version 19.20 (VS 2019 RTM).
+    # C++20 COMPLETENESS: Compiler version 19.29 (VS 2019 v16.10+): full C++20 standard library support.
+    # VS 2022 (v19.30+) is generally recommended for best C++20 stability and language feature compliance.
+    
+    # Damn XP support prevents defining a minimum.
+    # When v141_xp toolset is used, MSVC_VERSION is 1916
+    # So we temporarily inactivate the minimum version check:
+    IF(FALSE)
+        IF( MSVC_VERSION VERSION_LESS 1929 )
+          message("--MSVC_VERSION is (${MSVC_VERSION})")
+          MESSAGE(FATAL_ERROR "Visual C++ 2019 (v16.10+) or newer is required for C++20 support. Recommended: Visual Studio 2022.")
+        ENDIF()
+    ENDIF()
+
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/Output/plugins")
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/Output/system")
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/Output/c_api")
