@@ -36,27 +36,50 @@ if(ENABLE_INTEL_SIMD)
                 message(WARNING "Could not parse native 64-bit MSVC version. AVX-512 support might be incomplete.")
             endif()
         else() # Not native old MSVC (likely GCC, Clang, or newer MSVC via Clang/IntelLLVM)
-            # all supports AVX512
-            set(DEFINE_AVX512 TRUE)
-        endif()
-    endif()
-
-    # Add the AVX-512 definition if the flag is TRUE
-    if(DEFINE_AVX512)
-        add_definitions(-DINTEL_INTRINSICS_AVX512)
-    else()
-        # Remove AVX512 specific files if it's a 32-bit build
-        # or not supported compiler version
-        list(FILTER AvsCore_Sources EXCLUDE REGEX ".*_avx512\\.(cpp|h)$")
+            if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+                # GCC 9.0 is a reasonable safe minimum for VNNI/VBMI/VBMI2/BITALG
+                if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 9.0)
+                    set(DEFINE_AVX512 TRUE)
+                else()
+                    message(STATUS "Disabling AVX-512: GCC version ${CMAKE_CXX_COMPILER_VERSION} is too old (requires 9.0+).")
+                endif()
+            elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+                # Clang 9.0 is a reasonable safe minimum for VNNI/VBMI/VBMI2/BITALG
+                if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 9.0)
+                    set(DEFINE_AVX512 TRUE)
+                else()
+                    message(STATUS "Disabling AVX-512: Clang version ${CMAKE_CXX_COMPILER_VERSION} is too old (requires 9.0+).")
+                endif()
+            elseif(CMAKE_CXX_COMPILER_ID MATCHES "Intel")
+                # Assume modern Intel compilers (icc, icx) support it
+                set(DEFINE_AVX512 TRUE)
+            else()
+                # Default case for unknown/other compilers (like Clang/Intel in VS)
+                # Since we exclude native MSVC, we assume modern compiler support.
+                set(DEFINE_AVX512 TRUE)
+            endif()
+       endif()
     endif()
 
     # Note: AVX512 related source must be guarded with #ifdef INTEL_INTRINSICS_AVX512 within the
     # already existing #ifdef INTEL_INTRINSICS
-    # Though INTEL_INTRINSICS conditional directive can exist for 32 bit 
-    # but INTEL_INTRINSICS_AVX512 exists only on x64 platforms.
+    # Though INTEL_INTRINSICS conditional directive can exist for 32 bit and old compiler versions,
+    # but INTEL_INTRINSICS_AVX512 exists only on x64 platforms for compilers supporting AVX512 features required by Avisynth
+endif()
+
+if(NOT DEFINE_AVX512)
+    # Remove AVX512 specific files if it's a 32-bit build
+    # or not supported compiler version
+    list(FILTER AvsCore_Sources EXCLUDE REGEX ".*_avx512\\.(cpp|h)$")
 endif()
 
 add_library("AvsCore" ${AvsCore_Sources})
+
+if(DEFINE_AVX512)
+    # dont' use add_definitions(-DINTEL_INTRINSICS_AVX512)
+    target_compile_definitions("AvsCore" PRIVATE INTEL_INTRINSICS_AVX512)
+endif()
+
 set_target_properties("AvsCore" PROPERTIES "OUTPUT_NAME" "${CoreName}")
 if (NOT WIN32)
   set_target_properties("AvsCore" PROPERTIES VERSION "${PROJECT_VERSION}" SOVERSION "${AVISYNTH_INTERFACE_VERSION}")
@@ -112,7 +135,18 @@ handle_arch_flags(AVX " -mavx " " /arch:AVX ")
 handle_arch_flags(AVX2 " -mavx2 -mfma " " /arch:AVX2 ")
 
 if(DEFINE_AVX512)
-    handle_arch_flags(AVX512 " -mavx512f -mavx512bw -mfma " " /arch:AVX512 ")
+    # The CPUF_AVX512_FAST feature flag in Avisynth guarantees a modern, low-throttling architecture (ICL/RKL/AVX10.2).
+    # This feature set is the minimal intersection of ICL and AVX10.1's guaranteed features 
+    # (F, CD, BW, DQ, VL, VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ).
+    # Function used from *_avx512.cpp files should be dispatched on CPUF_AVX512_FAST to match these compile flags.
+    set(AVX512_FAST_GCC_FLAGS
+        #" -march=icelake-client "  # PF test
+        #" -march=graniterapids " # PF test avx10.1
+        " -mfma -mavx512f -mavx512cd -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mavx512vbmi -mavx512vbmi2 -mavx512bitalg -mavx512vpopcntdq "
+    )
+    # Note: MSVC's /arch:AVX512 enables the basic F, CD, ... and does not have individual flags for VBMI, VBMI2, etc.
+    # GCC/Clang/Intel compilers use the -mavx512... flags inside handle_arch_flags when running in MSVC_IDE
+    handle_arch_flags(AVX512 "${AVX512_FAST_GCC_FLAGS}" " /arch:AVX512 ")
 endif()
 
 # Specify include directories
