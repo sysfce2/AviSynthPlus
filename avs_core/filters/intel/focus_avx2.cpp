@@ -32,22 +32,19 @@
 // which is not derived from or based on Avisynth, such as 3rd-party filters,
 // import and export plugins, or graphical user interfaces.
 
-#include "focus_sse.h"
-#include <cmath>
-#include <vector>
-#include <avs/alignment.h>
-#include <avs/minmax.h>
+#include <avs/config.h>
+#include <avs/types.h>
+#include <cstdint>
+#include <type_traits>
 #include "../core/internal.h"
-#include <stdint.h>
 
-// experimental simd includes for avx2 compiled files
-#if defined (__GNUC__) && ! defined (__INTEL_COMPILER)
-#include <x86intrin.h>
-// x86intrin.h includes header files for whatever instruction
-// sets are specified on the compiler command line, such as: xopintrin.h, fma4intrin.h
-#else
+// Intrinsics base header + really required extension headers
+#if defined(_MSC_VER)
+#include <intrin.h> // MSVC, Clang-CL, and Intel C++ (in MSVC mode)
 #include <immintrin.h> // MS version of immintrin.h covers AVX, AVX2 and FMA3
-#endif // __GNUC__
+#else 
+#include <x86intrin.h> // GCC/MinGW, Clang (Linux/GNU mode), and Intel C++ (in non-MSVC mode) (__GNUC__, __clang__, __INTEL_COMPILER, etc.)
+#endif
 
 #if !defined(__FMA__)
 // Assume that all processors that have AVX2 also have FMA3

@@ -36,14 +36,15 @@
 #include <avisynth.h>
 #include "internal.h"
 #ifdef INTEL_INTRINSICS
-#ifdef AVS_WINDOWS
-#include <intrin.h>
-#else
-#include <x86intrin.h>
+// Intrinsics base header + really required extension headers
+#if defined(_MSC_VER)
+#include <intrin.h> // MSVC, Clang-CL, and Intel C++ (in MSVC mode)
+#else 
+#include <x86intrin.h> // GCC/MinGW, Clang (Linux/GNU mode), and Intel C++ (in non-MSVC mode) (__GNUC__, __clang__, __INTEL_COMPILER, etc.)
 #endif
+#include <emmintrin.h> // SSE2
+#include <tmmintrin.h> // SSSE3
 #include <smmintrin.h> // SSE4.1
-#include <emmintrin.h>
-#include <tmmintrin.h>
 #endif
 
 int AviHelper_ImageSize(const VideoInfo *vi, bool AVIPadScanlines, bool v210, bool v410, bool r210, bool R10k, bool v308, bool v408, bool Y410) {

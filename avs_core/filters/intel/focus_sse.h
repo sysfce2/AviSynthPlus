@@ -35,7 +35,9 @@
 #ifndef __Focus_SSE_H__
 #define __Focus_SSE_H__
 
-#include <avisynth.h>
+#include <avs/config.h>
+#include <avs/types.h>
+#include <cstdint>
 
 #ifdef X86_32
 void af_vertical_mmx(BYTE* line_buf, BYTE* dstp, int height, int pitch, int width, int amount);

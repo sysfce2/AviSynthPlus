@@ -33,7 +33,17 @@
 // import and export plugins, or graphical user interfaces.
 
 #include "convert_sse.h"
-#include <emmintrin.h>
+
+// Intrinsics base header + really required extension headers
+#if defined(_MSC_VER)
+#include <intrin.h> // MSVC, Clang-CL, and Intel C++ (in MSVC mode)
+#else 
+#include <x86intrin.h> // GCC/MinGW, Clang (Linux/GNU mode), and Intel C++ (in non-MSVC mode) (__GNUC__, __clang__, __INTEL_COMPILER, etc.)
+#endif
+#include <emmintrin.h> // SSE2
+#include <tmmintrin.h> // SSSE3
+#include <smmintrin.h> // SSE4.1
+
 
 template<int rgb_size>
 static AVS_FORCEINLINE __m128i convert_yuy2_to_rgb_sse2_core(const __m128i& src_luma_scaled, const __m128i& src_chroma, const __m128i &alpha,

@@ -38,9 +38,16 @@
 
 #include "../resample.h"
 
-// Intrinsics for SSE4.1, SSSE3, SSE3, SSE2, ISSE and MMX
-#include <emmintrin.h>
-#include <smmintrin.h>
+// Intrinsics base header + really required extension headers
+#if defined(_MSC_VER)
+#include <intrin.h> // MSVC, Clang-CL, and Intel C++ (in MSVC mode)
+#else 
+#include <x86intrin.h> // GCC/MinGW, Clang (Linux/GNU mode), and Intel C++ (in non-MSVC mode) (__GNUC__, __clang__, __INTEL_COMPILER, etc.)
+#endif
+#include <emmintrin.h> // SSE2
+#include <tmmintrin.h> // SSSE3
+#include <smmintrin.h> // SSE4.1
+
 #include "../../core/internal.h"
 
 

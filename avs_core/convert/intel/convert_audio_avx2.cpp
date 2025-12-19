@@ -8,7 +8,15 @@
 
 #include <avs/types.h>
 #include <avs/config.h>
-#include <immintrin.h> // AVX2 at most
+
+// Intrinsics base header + really required extension headers
+#if defined(_MSC_VER)
+#include <intrin.h> // MSVC, Clang-CL, and Intel C++ (in MSVC mode)
+#else 
+#include <x86intrin.h> // GCC/MinGW, Clang (Linux/GNU mode), and Intel C++ (in non-MSVC mode) (__GNUC__, __clang__, __INTEL_COMPILER, etc.)
+#endif
+#include <immintrin.h> // AVX2
+
 
 // Easy: 32-16, 16-32
 // Float: 8/16/32-FLT, FLT-8/16/32

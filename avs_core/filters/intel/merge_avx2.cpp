@@ -39,14 +39,14 @@
 // iSSE code by Ian Brabham
 
 
-// experimental simd includes for avx2 compiled files
-#if defined(__GNUC__) && !defined(__INTEL_COMPILER)
-#include <x86intrin.h>
-// x86intrin.h includes header files for whatever instruction
-// sets are specified on the compiler command line, such as: xopintrin.h, fma4intrin.h
-#else
+// Intrinsics base header + really required extension headers
+#if defined(_MSC_VER)
+#include <intrin.h> // MSVC, Clang-CL, and Intel C++ (in MSVC mode)
 #include <immintrin.h> // MS version of immintrin.h covers AVX, AVX2 and FMA3
-#endif // __GNUC__
+#else 
+#include <x86intrin.h> // GCC/MinGW, Clang (Linux/GNU mode), and Intel C++ (in non-MSVC mode) (__GNUC__, __clang__, __INTEL_COMPILER, etc.)
+#endif
+
 
 #if !defined(__FMA__)
 // Assume that all processors that have AVX2 also have FMA3
@@ -63,8 +63,9 @@
 #endif // __FMA__
 
 #include "merge_avx2.h"
-#include "avs/alignment.h"
-#include <stdint.h>
+#include <avisynth.h>
+#include <avs/types.h>
+#include <cstdint>
 
 #ifndef _mm256_set_m128i
 #define _mm256_set_m128i(v0, v1) _mm256_insertf128_si256(_mm256_castsi128_si256(v1), (v0), 1)
