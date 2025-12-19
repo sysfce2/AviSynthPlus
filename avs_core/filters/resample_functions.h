@@ -80,6 +80,8 @@ struct ResamplingProgram {
   std::vector<short> kernel_sizes; 
   // 3.7.4- can be different for each line but then they get equalized and aligned.
 
+  size_t cache_size_L2; // in bytes, for possible use in resizers
+
   // In H resizers, when using SIMD loads for speed, these is a "danger zone".
   // If SIMD load from source pixels (src+offset) over reads beyond the allocated
   // source buffer (image scanline width), it can cause access violation.
@@ -95,6 +97,7 @@ struct ResamplingProgram {
   SafeLimit safelimit_16_pixels = { false, -1, -1 };
   SafeLimit safelimit_32_pixels = { false, -1, -1 };
   SafeLimit safelimit_8_pixels_each8th_target = { false, -1, -1 };
+  SafeLimit safelimit_16_pixels_each16th_target = { false, -1, -1 };
 
   ResamplingProgram(int filter_size, int source_size, int target_size, double crop_start, double crop_size, int bits_per_pixel, IScriptEnvironment* env)
     : Env(env), source_size(source_size), target_size(target_size), crop_start(crop_start), crop_size(crop_size), filter_size(filter_size), filter_size_real(filter_size),
@@ -119,6 +122,8 @@ struct ResamplingProgram {
       Env->Free(pixel_coefficient_float);
       Env->ThrowError("ResamplingProgram: Could not reserve memory.");
     }
+
+    cache_size_L2 = env->GetEnvProperty(AEP_CACHESIZE_L2);
 
   };
 

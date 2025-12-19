@@ -90,6 +90,7 @@ void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int fi
   p->safelimit_16_pixels.overread_possible = false;
   p->safelimit_32_pixels.overread_possible = false;
   p->safelimit_8_pixels_each8th_target.overread_possible = false;
+  p->safelimit_16_pixels_each16th_target.overread_possible = false;
 
   // note: filter_size_real was the max(kernel_sizes[])
   int filter_size_aligned = AlignNumber(p->filter_size_real, p->filter_size_alignment);
@@ -189,6 +190,8 @@ void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int fi
     // start_pos of each Nth pixel output block
     if (i % 8 == 0)
       checkAndSetOverread(start_pos + 8 - 1, p->safelimit_8_pixels_each8th_target, start_pos, i, p->source_size);
+    if (i % 16 == 0)
+      checkAndSetOverread(start_pos + 16 - 1, p->safelimit_16_pixels_each16th_target, start_pos, i, p->source_size);
 
       }
 
