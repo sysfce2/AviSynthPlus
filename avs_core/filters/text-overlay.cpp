@@ -3355,25 +3355,41 @@ bool GetTextBoundingBox(const char* text, const char* fontname, int size, bool b
 
     while (*current_text_ptr != '\0')
     {
-      const char* nl = strchr(current_text_ptr, '\n');
-      std::unique_ptr<wchar_t[]> wide_line;
-      std::string temp_line; // Used for converting a substring
+      // Find the end of the current line segment (first CR or LF)
+      const char* line_end_ptr = current_text_ptr;
+      while (*line_end_ptr != '\0' && *line_end_ptr != '\r' && *line_end_ptr != '\n') {
+        line_end_ptr++;
+      }
 
-      if (nl)
+      const char* next_segment_start;
+      std::unique_ptr<wchar_t[]> wide_line; // Used for converting a substring
+      std::string temp_line;
+
+      if (*line_end_ptr != '\0') // Found a line break character
       {
         // Extract the current line segment
-        temp_line.assign(current_text_ptr, (size_t)(nl - current_text_ptr));
+        temp_line.assign(current_text_ptr, (size_t)(line_end_ptr - current_text_ptr));
         wide_line = utf8 ? Utf8ToWideChar(temp_line.c_str()) : AnsiToWideChar(temp_line.c_str());
+
+        // Advance pointer past the line break(s)
+        next_segment_start = line_end_ptr;
+        if (*next_segment_start == '\r' && *(next_segment_start + 1) == '\n') {
+          next_segment_start += 2;
+        }
+        else {
+          next_segment_start += 1;
+        }
       }
-      else
+      else // End of string
       {
         // Process the rest of the string as the last line
         wide_line = utf8 ? Utf8ToWideChar(current_text_ptr) : AnsiToWideChar(current_text_ptr);
+        next_segment_start = current_text_ptr + strlen(current_text_ptr);
       }
 
       if (!wide_line) {
         success = false;
-        break; // Conversion failed
+        break;
       }
 
       RECT r = { 0, 0, 0, 0 };
@@ -3387,8 +3403,8 @@ bool GetTextBoundingBox(const char* text, const char* fontname, int size, bool b
       *width = std::max(*width, (int)r.right + 8); // Update max width encountered
       *height += r.bottom;                     // Add this line's height
 
-      if (nl)
-        current_text_ptr = nl + 1; // Move past the newline character
+      if (*next_segment_start != '\0')
+        current_text_ptr = next_segment_start;// Move past the newline character
       else
         break; // No more newlines, end of text
     }
