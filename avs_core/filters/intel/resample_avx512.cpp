@@ -274,8 +274,6 @@ template void resize_h_planar_float_avx512_transpose_vstripe_ks4<3>(BYTE* dst8, 
 // FIXME: make it safe + correct, like the avx2 counterpart
 void resize_h_planar_float_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
-  assert(filtersizemod4 >= 0 && filtersizemod4 <= 3);
-
   const int filter_size = program->filter_size; // aligned, practically the coeff table stride
 
   src_pitch /= sizeof(float);
