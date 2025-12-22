@@ -68,7 +68,7 @@ public:
     return 0;
   }
 
-  static ResamplerH GetResampler(int CPU, int pixelsize, int bits_per_pixel, ResamplingProgram* program, IScriptEnvironment* env);
+  static ResamplerH GetResampler(int CPU, int pixelsize, int bits_per_pixel, ResamplingProgram* program, ResamplerH& resampler_h_alternative_for_mt, IScriptEnvironment* env);
 
 private:
   // Resampling
@@ -84,6 +84,11 @@ private:
 
   ResamplerH resampler_h_luma;
   ResamplerH resampler_h_chroma;
+  // if the base version performs poorly, we decide to use MT version
+  // Unfortunately the information about number of threads is not available at construction time
+  // we get num_threads later via SetCacheHints callback with constants CACHE_INFORM_NUM_THREADS.
+  ResamplerH resampler_h_luma_mt;
+  ResamplerH resampler_h_chroma_mt;
   bool fast_resize;
 
   ResamplerV resampler_luma;
