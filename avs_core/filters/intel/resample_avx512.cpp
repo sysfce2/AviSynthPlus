@@ -89,14 +89,14 @@ AVS_FORCEINLINE static void _MM_TRANSPOSE8x16_PS(
 
   // --- Stage 2: Unpack 64-bit (Quads of rows) ---
   // Uses _mm512_unpacklo/hi_pd for 64-bit (double) to interleave pairs of __m512 floats
-  __m512 u0 = reinterpret_cast<__m512>(_mm512_unpacklo_pd(reinterpret_cast<__m512d>(t0), reinterpret_cast<__m512d>(t2)));
-  __m512 u1 = reinterpret_cast<__m512>(_mm512_unpackhi_pd(reinterpret_cast<__m512d>(t0), reinterpret_cast<__m512d>(t2)));
-  __m512 u2 = reinterpret_cast<__m512>(_mm512_unpacklo_pd(reinterpret_cast<__m512d>(t1), reinterpret_cast<__m512d>(t3)));
-  __m512 u3 = reinterpret_cast<__m512>(_mm512_unpackhi_pd(reinterpret_cast<__m512d>(t1), reinterpret_cast<__m512d>(t3)));
-  __m512 u4 = reinterpret_cast<__m512>(_mm512_unpacklo_pd(reinterpret_cast<__m512d>(t4), reinterpret_cast<__m512d>(t6)));
-  __m512 u5 = reinterpret_cast<__m512>(_mm512_unpackhi_pd(reinterpret_cast<__m512d>(t4), reinterpret_cast<__m512d>(t6)));
-  __m512 u6 = reinterpret_cast<__m512>(_mm512_unpacklo_pd(reinterpret_cast<__m512d>(t5), reinterpret_cast<__m512d>(t7)));
-  __m512 u7 = reinterpret_cast<__m512>(_mm512_unpackhi_pd(reinterpret_cast<__m512d>(t5), reinterpret_cast<__m512d>(t7)));
+  __m512 u0 = _mm512_castpd_ps(_mm512_unpacklo_pd(_mm512_castps_pd(t0), _mm512_castps_pd(t2)));
+  __m512 u1 = _mm512_castpd_ps(_mm512_unpackhi_pd(_mm512_castps_pd(t0), _mm512_castps_pd(t2)));
+  __m512 u2 = _mm512_castpd_ps(_mm512_unpacklo_pd(_mm512_castps_pd(t1), _mm512_castps_pd(t3)));
+  __m512 u3 = _mm512_castpd_ps(_mm512_unpackhi_pd(_mm512_castps_pd(t1), _mm512_castps_pd(t3)));
+  __m512 u4 = _mm512_castpd_ps(_mm512_unpacklo_pd(_mm512_castps_pd(t4), _mm512_castps_pd(t6)));
+  __m512 u5 = _mm512_castpd_ps(_mm512_unpackhi_pd(_mm512_castps_pd(t4), _mm512_castps_pd(t6)));
+  __m512 u6 = _mm512_castpd_ps(_mm512_unpacklo_pd(_mm512_castps_pd(t5), _mm512_castps_pd(t7)));
+  __m512 u7 = _mm512_castpd_ps(_mm512_unpackhi_pd(_mm512_castps_pd(t5), _mm512_castps_pd(t7)));
 
   // --- Stage 3: Shuffle 128-bit lanes (Octets of rows) ---
   // _mm512_shuffle_f32x4 shuffles the 128-bit (f32x4) sub-vectors within and between two __m512 vectors.
