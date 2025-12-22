@@ -1635,17 +1635,18 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
         // up to 4 coeffs it can be highly optimized with transposes, gather/permutex choice
         out_resampler_h_alternative_for_mt = resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16; // jolly joker
         if (resize_h_planar_float_avx512_gather_permutex_vstripe_ks4_check(program)) {
-          switch (program->filter_size_real) {
-          case 1: return resize_h_planar_float_avx512_transpose_vstripe_ks4<1>; break;
-          case 2: return resize_h_planar_float_avx512_transpose_vstripe_ks4<2>; break;
-          case 3: return resize_h_planar_float_avx512_transpose_vstripe_ks4<3>; break;
-          case 4: return resize_h_planar_float_avx512_transpose_vstripe_ks4<0>; break;
-          }
+          return resize_h_planar_float_avx512_transpose_vstripe_ks4;
         }
-        // FIXME: make it safe + correct, like the avx2 counterpart
-        // return resize_h_planar_float_avx512_permutex_vstripe_ks4;
-        // until then:
-        return resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16;
+        return resize_h_planar_float_avx512_permutex_vstripe_ks4;
+          }
+
+      if (program->filter_size_real <= 8) {
+        // up to 8 coeffs it can be highly optimized with transposes, gather/permutex choice
+        out_resampler_h_alternative_for_mt = resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16; // jolly joker
+        if (resize_h_planar_float_avx512_gather_permutex_vstripe_ks8_check(program)) {
+          return resize_h_planar_float_avx512_transpose_vstripe_ks8; // no template
+        }
+        return resize_h_planar_float_avx512_permutex_vstripe_ks8;
       }
 
 
@@ -1893,8 +1894,11 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
 #ifdef INTEL_INTRINSICS
 #ifdef INTEL_INTRINSICS_AVX512
       if ((CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST) {
-        return resize_v_avx512_planar_float; // quicker than avx2 version
-        // return resize_v_avx512_planar_float_w_sr; // ! Unlike avx2 version, this one is not faster. 198 fps vx 205 fps
+        //return resize_v_avx512_planar_float; // Old, base version, quicker than avx2 version
+        // This one is about equal to avx2 version, but only with clang,
+        // clang is probably unrolls it out-of-box better than MSVC.
+        // With MSVC its no-brainer to use avx512
+        return resize_v_avx512_planar_float_w_sr;
       }
 #endif
       if (CPU & CPUF_AVX2) {

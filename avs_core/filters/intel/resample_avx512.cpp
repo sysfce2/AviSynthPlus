@@ -38,9 +38,13 @@
 #include <avs/alignment.h>
 #include <avs/minmax.h>
 
-#include "check_avx512.h" // compiler avx512 directives check, basic f and bw is required
+#include "check_avx512.h" // compiler avx512 directives check
 #include "resample_avx2.h"
 #include "resample_avx512.h"
+#include <type_traits>
+
+#include <immintrin.h> // Includes AVX-512 intrinsics
+
 // H-Float-Resampler: 16 pixels, filter size 4, transpose 4x (4x_m128) to 4x_m512
 // Transposes a 4x4 matrix of 4-float vectors (16x16 float matrix effectively).
 // Input/Output: Four 512-bit vectors (16 floats each) passed by reference.
@@ -65,6 +69,77 @@ AVS_FORCEINLINE static void _MM_TRANSPOSE16_LANE4_PS(__m512& row0, __m512& row1,
   // Result: row3 = columns 12, 13, 14, 15
   row3 = _mm512_shuffle_ps(t1, t3, _MM_SHUFFLE(3, 2, 3, 2));
 }
+
+// H-float-resampler: 16 pixels, filter size 8, transpose 8x (2x_m256) to 8x_m512
+// Transposes an 8x8 matrix of 2-float vectors (16x16 float matrix).
+// Input/Output: Eight 512-bit vectors (16 floats each) passed by reference.
+AVS_FORCEINLINE static void _MM_TRANSPOSE8x16_PS(
+  __m512& r0, __m512& r1, __m512& r2, __m512& r3,
+  __m512& r4, __m512& r5, __m512& r6, __m512& r7)
+{
+  // --- Stage 1: Unpack 32-bit (Pairs of rows) ---
+  __m512 t0 = _mm512_unpacklo_ps(r0, r1);
+  __m512 t1 = _mm512_unpackhi_ps(r0, r1);
+  __m512 t2 = _mm512_unpacklo_ps(r2, r3);
+  __m512 t3 = _mm512_unpackhi_ps(r2, r3);
+  __m512 t4 = _mm512_unpacklo_ps(r4, r5);
+  __m512 t5 = _mm512_unpackhi_ps(r4, r5);
+  __m512 t6 = _mm512_unpacklo_ps(r6, r7);
+  __m512 t7 = _mm512_unpackhi_ps(r6, r7);
+
+  // --- Stage 2: Unpack 64-bit (Quads of rows) ---
+  // Uses _mm512_unpacklo/hi_pd for 64-bit (double) to interleave pairs of __m512 floats
+  __m512 u0 = _mm512_unpacklo_pd(t0, t2);
+  __m512 u1 = _mm512_unpackhi_pd(t0, t2);
+  __m512 u2 = _mm512_unpacklo_pd(t1, t3);
+  __m512 u3 = _mm512_unpackhi_pd(t1, t3);
+  __m512 u4 = _mm512_unpacklo_pd(t4, t6);
+  __m512 u5 = _mm512_unpackhi_pd(t4, t6);
+  __m512 u6 = _mm512_unpacklo_pd(t5, t7);
+  __m512 u7 = _mm512_unpackhi_pd(t5, t7);
+
+  // --- Stage 3: Shuffle 128-bit lanes (Octets of rows) ---
+  // _mm512_shuffle_f32x4 shuffles the 128-bit (f32x4) sub-vectors within and between two __m512 vectors.
+  // 0x88 = (10001000)_2: selects lane 0 from first input and lane 0 from second input for lo/hi 256 bits.
+  // 0xDD = (11011101)_2: selects lane 3 from first input and lane 3 from second input for lo/hi 256 bits.
+  __m512 v0 = _mm512_shuffle_f32x4(u0, u4, 0x88); // Col 0, 4 (interleaved)
+  __m512 v1 = _mm512_shuffle_f32x4(u0, u4, 0xDD); // Col 1, 5 (interleaved)
+  __m512 v2 = _mm512_shuffle_f32x4(u1, u5, 0x88); // Col 2, 6 (interleaved)
+  __m512 v3 = _mm512_shuffle_f32x4(u1, u5, 0xDD); // Col 3, 7 (interleaved)
+  __m512 v4 = _mm512_shuffle_f32x4(u2, u6, 0x88); // Col 8, 12 (interleaved)
+  __m512 v5 = _mm512_shuffle_f32x4(u2, u6, 0xDD); // Col 9, 13 (interleaved)
+  __m512 v6 = _mm512_shuffle_f32x4(u3, u7, 0x88); // Col 10, 14 (interleaved)
+  __m512 v7 = _mm512_shuffle_f32x4(u3, u7, 0xDD); // Col 11, 15 (interleaved)
+
+  // --- Stage 4: Permute to Linearize Indices ---
+  // Corrects the order of the 128-bit lanes to linearize the columns.
+  // The columns are currently: (0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15)
+  // The required order is: (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
+  __m512i idx = _mm512_setr_epi32(
+    0, 4, 1, 5,    /* Lane 0: Rows 0, 1, 2, 3 */
+    2, 6, 3, 7,    /* Lane 1: Rows 4, 5, 6, 7 */
+    8, 12, 9, 13, /* Lane 2: Rows 8, 9, 10, 11 */
+    10, 14, 11, 15 /* Lane 3: Rows 12, 13, 14, 15 */
+  );
+
+  // --- Final Assignment with Correct Mapping ---
+  // Maps the permuted vector components back to the original row variables (now columns).
+  r0 = _mm512_permutexvar_ps(idx, v0); // Col 0
+  r1 = _mm512_permutexvar_ps(idx, v2); // Col 1
+  r2 = _mm512_permutexvar_ps(idx, v4); // Col 2
+  r3 = _mm512_permutexvar_ps(idx, v6); // Col 3
+  r4 = _mm512_permutexvar_ps(idx, v1); // Col 4
+  r5 = _mm512_permutexvar_ps(idx, v3); // Col 5
+  r6 = _mm512_permutexvar_ps(idx, v5); // Col 6
+  r7 = _mm512_permutexvar_ps(idx, v7); // Col 7
+}
+
+// Loads two 256-bit float vectors from registers (__m256) into a single 512-bit register.
+// Equivalent to _mm512_insertf32x8(_mm512_castps256_ps512(lo), hi, 1)
+AVS_FORCEINLINE static __m512 _mm512_insert_2_m256(__m256 lo, __m256 hi) {
+  return _mm512_insertf32x8(_mm512_castps256_ps512(lo), hi, 1);
+}
+
 // Loads four 128-bit float vectors (unaligned) into a single 512-bit register.
 AVS_FORCEINLINE static __m512 _mm512_loadu_4_m128(
   /* __m128 const* */ const float* addr1,
@@ -101,12 +176,56 @@ AVS_FORCEINLINE static __m512 _mm512_load_4_m128(
 
 //------- 512 bit float Horizontals
 
+// Safe quad lane partial load with AVX512 using masks.
+// Replaces scalar set_ps sequences with hardware-masked loads.
+// Requires AVX-512VL (standard on Rocket Lake, Zen 4/5).
+AVS_FORCEINLINE static __m512 _mm512_load_partial_safe_4_m128(const float* src_ptr_offsetted1, const float* src_ptr_offsetted2, const float* src_ptr_offsetted3, const float* src_ptr_offsetted4, int floats_to_load) {
+  // Example: N=3 -> (1<<3)-1 = 7 (binary 0111) -> Loads floats 0, 1, 2.
+  const __mmask8 k = (1 << floats_to_load) - 1;
+
+  // perform masked loads.
+  // _mm_maskz_loadu_ps(k, ptr):
+  // - Loads 'valid_pixels' floats from memory.
+  // - Zeros out the remaining upper floats in the XMM register (z-masking).
+  // - FAULT SUPPRESSION: Hardware guarantees no page fault for masked-off elements.
+  //   Thought Avisynth frame buffers are overallocated to avoid OOB reads, this adds extra safety.
+  __m128 s1 = _mm_maskz_loadu_ps(k, src_ptr_offsetted1);
+  __m128 s2 = _mm_maskz_loadu_ps(k, src_ptr_offsetted2);
+  __m128 s3 = _mm_maskz_loadu_ps(k, src_ptr_offsetted3);
+  __m128 s4 = _mm_maskz_loadu_ps(k, src_ptr_offsetted4);
+
+  // Combine into ZMM
+  __m512 result = _mm512_castps128_ps512(s1);      // Free (register aliasing)
+  result = _mm512_insertf32x4(result, s2, 1);      // vinsertf32x4
+  result = _mm512_insertf32x4(result, s3, 2);
+  result = _mm512_insertf32x4(result, s4, 3);
+
+  return result;
+}
+
+AVS_FORCEINLINE static __m512 _mm512_load_partial_safe_2_m256(const float* src_ptr_offsetted1, const float* src_ptr_offsetted2, int floats_to_load) {
+  // Calculate the mask. 
+  const __mmask8 k = (1U << floats_to_load) - 1;
+
+  // _mm256_maskz_loadu_ps provides fault suppression for masked-off elements,
+  // ensuring no page faults occur even if the pointer is near a boundary.
+  __m256 s1 = _mm256_maskz_loadu_ps(k, src_ptr_offsetted1);
+  __m256 s2 = _mm256_maskz_loadu_ps(k, src_ptr_offsetted2);
+
+  // Combine into ZMM.
+  __m512 result = _mm512_castps256_ps512(s1);
+  result = _mm512_insertf32x8(result, s2, 1);
+
+  return result;
+}
+
+#if 0
 // Safe quad lane partial load with AVX512
 // Read exactly N pixels (where N mod 4 is the template parameter), avoiding
 // - reading beyond the end of the source buffer.
 // - avoid NaN contamination by padding with zeros.
 template <int Nmod4>
-AVS_FORCEINLINE static __m512 _mm512_load_partial_safe_4_m128(const float* src_ptr_offsetted1, const float* src_ptr_offsetted2, const float* src_ptr_offsetted3, const float* src_ptr_offsetted4) {
+AVS_FORCEINLINE static __m512 _mm512_load_partial_safe_4_m128_avx2like(const float* src_ptr_offsetted1, const float* src_ptr_offsetted2, const float* src_ptr_offsetted3, const float* src_ptr_offsetted4) {
   __m128 s1, s2, s3, s4;
   switch (Nmod4) {
   case 1:
@@ -149,6 +268,7 @@ AVS_FORCEINLINE static __m512 _mm512_load_partial_safe_4_m128(const float* src_p
   result = _mm512_insertf32x4(result, s4, 3); // Insert the fourth __m128 at position 3
   return result;
 }
+#endif
 
 // same as resize_h_planar_float_avx2_gather_permutex_vstripe_ks4_pix16_check
 // returns true if only transpose method is allowed, false if permutex method can be used
@@ -175,16 +295,41 @@ bool resize_h_planar_float_avx512_gather_permutex_vstripe_ks4_check(ResamplingPr
   return false; // permute is OK.
 }
 
+// 8 coeff version of resize_h_planar_float_avx512_gather_permutex_vstripe_ks4_check
+// returns true if only transpose method is allowed, false if permutex method can be used
+bool resize_h_planar_float_avx512_gather_permutex_vstripe_ks8_check(ResamplingProgram* program)
+{
+  // 'target_size_alignment' ensures we can safely access pixel_offset[] entries using offsets like
+  // pixel_offset[x + 0] to pixel_offset[x + 15] per 16-pixel block processing
+  assert(program->target_size_alignment >= 16);
+
+  // Ensure that coefficient loading is safe for 4 float loads
+  assert(program->filter_size_alignment >= 8);
+
+  for (int x = 0; x < program->target_size; x += 16)
+  {
+    int start_off = program->pixel_offset[x + 0];
+    // program->pixel_offset[x + 15] is still valid, since program->target_size_alignment >= 8
+    // and pixel_offset[] values for x >= target_size are the same as for x=target_size-1.
+    // This is ensured during the resampling program setup in resize_prepare_coeffs()
+    int end_off = program->pixel_offset[x + 15] + 7;
+    if ((end_off - start_off) >= 16) {
+      return true; // only transpose is allowed
+    }
+  }
+  return false; // permute is OK.
+}
+
 // Processes a horizontal resampling kernel of up to four coefficients for float pixel types.
 // Supports BilinearResize, BicubicResize, or sinc with up to 2 taps (filter size <= 4).
 // AVX512 optimization loads and processes four float coefficients and sixteen pixels simultaneously.
-// The 'filtersizemod4' template parameter (0-3) helps optimize for different filter sizes modulo 4.
 // This AVX512 requires only filter_size_alignment of 4.
-template<int filtersizemod4>
 void resize_h_planar_float_avx512_transpose_vstripe_ks4(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  assert(filtersizemod4 >= 0 && filtersizemod4 <= 3);
 
   const int filter_size = program->filter_size; // aligned, practically the coeff table stride
+  // needed for partial load
+  const int Nmod4 = program->filter_size_real % 4;
+  const int floats_to_load = (Nmod4 == 0) ? 4 : Nmod4;
 
   src_pitch /= sizeof(float);
   dst_pitch /= sizeof(float);
@@ -221,7 +366,7 @@ void resize_h_planar_float_avx512_transpose_vstripe_ks4(BYTE* dst8, const BYTE* 
     // Reset current_coeff for the start of the stripe
     const float* AVS_RESTRICT current_coeff = program->pixel_coefficient_float;
 
-    int x = 0;
+    size_t x = 0;
 
     // Lambda for 512-bit Core
     auto do_h_float_core = [&](auto partial_load) {
@@ -272,21 +417,19 @@ void resize_h_planar_float_avx512_transpose_vstripe_ks4(BYTE* dst8, const BYTE* 
       if constexpr (partial_load) {
         // In the potentially unsafe zone (near the right edge of the image), we use a safe loading function
         // to prevent reading beyond the allocated source scanline.
-
-        data_1_5_9_13 = _mm512_load_partial_safe_4_m128<filtersizemod4>(src_ptr + begin1, src_ptr + begin5, src_ptr + begin9, src_ptr + begin13);
-        data_2_6_10_14 = _mm512_load_partial_safe_4_m128<filtersizemod4>(src_ptr + begin2, src_ptr + begin6, src_ptr + begin10, src_ptr + begin14);
-        data_3_7_11_15 = _mm512_load_partial_safe_4_m128<filtersizemod4>(src_ptr + begin3, src_ptr + begin7, src_ptr + begin11, src_ptr + begin15);
-        data_4_8_12_16 = _mm512_load_partial_safe_4_m128<filtersizemod4>(src_ptr + begin4, src_ptr + begin8, src_ptr + begin12, src_ptr + begin16);
+          data_1_5_9_13 = _mm512_load_partial_safe_4_m128(src_ptr + begin1, src_ptr + begin5, src_ptr + begin9, src_ptr + begin13, floats_to_load);
+          data_2_6_10_14 = _mm512_load_partial_safe_4_m128(src_ptr + begin2, src_ptr + begin6, src_ptr + begin10, src_ptr + begin14, floats_to_load);
+          data_3_7_11_15 = _mm512_load_partial_safe_4_m128(src_ptr + begin3, src_ptr + begin7, src_ptr + begin11, src_ptr + begin15, floats_to_load);
+          data_4_8_12_16 = _mm512_load_partial_safe_4_m128(src_ptr + begin4, src_ptr + begin8, src_ptr + begin12, src_ptr + begin16, floats_to_load);
       }
       else {
-        // In the safe zone, we can directly load 4 pixels at a time for each of the four lanes.
+          // In the safe zone, we can directly load 4 source pixels at a time for each of the 16 lanes.
         data_1_5_9_13 = _mm512_loadu_4_m128(src_ptr + begin1, src_ptr + begin5, src_ptr + begin9, src_ptr + begin13);
         data_2_6_10_14 = _mm512_loadu_4_m128(src_ptr + begin2, src_ptr + begin6, src_ptr + begin10, src_ptr + begin14);
         data_3_7_11_15 = _mm512_loadu_4_m128(src_ptr + begin3, src_ptr + begin7, src_ptr + begin11, src_ptr + begin15);
         data_4_8_12_16 = _mm512_loadu_4_m128(src_ptr + begin4, src_ptr + begin8, src_ptr + begin12, src_ptr + begin16);
       }
 
-        // note: 256 bit simulation is slower
       _MM_TRANSPOSE16_LANE4_PS(data_1_5_9_13, data_2_6_10_14, data_3_7_11_15, data_4_8_12_16);
 
       __m512 result = _mm512_mul_ps(data_1_5_9_13, coef_1_5_9_13);
@@ -318,13 +461,203 @@ void resize_h_planar_float_avx512_transpose_vstripe_ks4(BYTE* dst8, const BYTE* 
   }
 }
 
-//instatiate
-template void resize_h_planar_float_avx512_transpose_vstripe_ks4<0>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_float_avx512_transpose_vstripe_ks4<1>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_float_avx512_transpose_vstripe_ks4<2>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_float_avx512_transpose_vstripe_ks4<3>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
 
-// FIXME: make it safe + correct, like the avx2 counterpart
+void resize_h_planar_float_avx512_transpose_vstripe_ks8(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
+
+  const int filter_size = program->filter_size; // aligned, practically the coeff table stride
+
+  src_pitch /= sizeof(float);
+  dst_pitch /= sizeof(float);
+
+  float* src = (float*)src8;
+  float* dst = (float*)dst8;
+
+  constexpr int PIXELS_AT_A_TIME = 16; // Process sixteen pixels in parallel using AVX512 (4x4 using m128 lanes)
+
+  // 'source_overread_beyond_targetx' indicates if the filter kernel can read beyond the target width.
+  // Even if the filter alignment allows larger reads, our safety boundary for unaligned loads starts at 4 pixels back
+  // from the target width, as we load 4 floats at once conceptually with our safe load.
+  const int width_safe_mod = (program->safelimit_4_pixels.overread_possible ? program->safelimit_4_pixels.source_overread_beyond_targetx : width) / PIXELS_AT_A_TIME * PIXELS_AT_A_TIME;
+
+  // Preconditions:
+  assert(program->filter_size_real <= 8);
+  assert(program->target_size_alignment >= 16); // Must align for 16 pixel offsets
+  assert(program->filter_size_alignment >= 8);
+  assert(FRAME_ALIGN >= 64); // Adjusted for 16 pixels AviSynth+ default
+
+  // Vertical stripe alignment
+  constexpr int STRIPE_ALIGN = 16; // this must be multiple of PIXELS_AT_A_TIME 
+
+  const size_t cache_size_L2 = program->cache_size_L2;
+  int max_scanlines = resampler_h_float_detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2)
+    / STRIPE_ALIGN * STRIPE_ALIGN;
+
+  if (max_scanlines < STRIPE_ALIGN) max_scanlines = STRIPE_ALIGN;
+
+  // --- outer loop: vertical stripes ---
+  for (auto y_from = 0; y_from < height; y_from += max_scanlines) {
+    size_t y_to = std::min(y_from + max_scanlines, height);
+
+    // Reset current_coeff for the start of the stripe
+    const float* AVS_RESTRICT current_coeff = program->pixel_coefficient_float;
+
+    size_t x = 0;
+
+    // Lambda for 512-bit Core
+    auto do_h_float_core = [&](auto partial_load) {
+
+      // Load to 8 coefficients per source pixel at once before the height loop.
+      // Pre-loading and transposing coefficients keeps register usage efficient.
+      // Assumes 'filter_size_aligned' is at least 8.
+
+      __m256 coef0 = _mm256_loadu_ps(current_coeff + filter_size * 0);
+      __m256 coef1 = _mm256_loadu_ps(current_coeff + filter_size * 1);
+      __m512 coef01 = _mm512_insert_2_m256(coef0, coef1);
+
+      __m256 coef2 = _mm256_loadu_ps(current_coeff + filter_size * 2);
+      __m256 coef3 = _mm256_loadu_ps(current_coeff + filter_size * 3);
+      __m512 coef23 = _mm512_insert_2_m256(coef2, coef3);
+
+      __m256 coef4 = _mm256_loadu_ps(current_coeff + filter_size * 4);
+      __m256 coef5 = _mm256_loadu_ps(current_coeff + filter_size * 5);
+      __m512 coef45 = _mm512_insert_2_m256(coef4, coef5);
+
+      __m256 coef6 = _mm256_loadu_ps(current_coeff + filter_size * 6);
+      __m256 coef7 = _mm256_loadu_ps(current_coeff + filter_size * 7);
+      __m512 coef67 = _mm512_insert_2_m256(coef6, coef7);
+
+      __m256 coef8 = _mm256_loadu_ps(current_coeff + filter_size * 8);
+      __m256 coef9 = _mm256_loadu_ps(current_coeff + filter_size * 9);
+      __m512 coef89 = _mm512_insert_2_m256(coef8, coef9);
+
+      __m256 coef10 = _mm256_loadu_ps(current_coeff + filter_size * 10);
+      __m256 coef11 = _mm256_loadu_ps(current_coeff + filter_size * 11);
+      __m512 coef1011 = _mm512_insert_2_m256(coef10, coef11);
+
+      __m256 coef12 = _mm256_loadu_ps(current_coeff + filter_size * 12);
+      __m256 coef13 = _mm256_loadu_ps(current_coeff + filter_size * 13);
+      __m512 coef1213 = _mm512_insert_2_m256(coef12, coef13);
+
+      __m256 coef14 = _mm256_loadu_ps(current_coeff + filter_size * 14);
+      __m256 coef15 = _mm256_loadu_ps(current_coeff + filter_size * 15);
+      __m512 coef1415 = _mm512_insert_2_m256(coef14, coef15);
+
+      // Before: 8x_m512 as 8x2x_m256 holding 16*8 coefficients each for 16 pixels
+      // coef01:   0.0 ... 0.7 | 1.0 ... 1.7
+      // coef23:   2.0 ... 2.7 | 3.0 ... 3.7
+      // coef45:   4.0 ... 4.7 | 5.0 ... 5.7
+      // coef67:   6.0 ... 6.7 | 7.0 ... 7.7
+      // coef89:   8.0 ... 8.7 | 9.0 ... 9.7
+      // coef1011: A.0 ... A.7 | B.0 ... B.7
+      // coef1213: C.0 ... C.7 | D.0 ... D.7
+      // coef1415: E.0 ... E.7 | F.0 ... F.7
+
+      _MM_TRANSPOSE8x16_PS(coef01, coef23, coef45, coef67, coef89, coef1011, coef1213, coef1415);
+
+      // After: 8x _m512 holding 16 coefficients, each for 16 pixels
+      // result0, as old_coef01 : 0.0 .. 7.0 | 8.0 .. F.0
+      // result1, as old_coef23 : 0.1 .. 7.1 | 8.1 .. F.1
+      // result2, as old_coef45 : 0.2 .. 7.2 | 8.2 .. F.2
+      // result3, as old_coef67 : 0.3 .. 7.3 | 8.3 .. F.3
+      // result4, as old_coef89 : 0.4 .. 7.4 | 8.4 .. F.4
+      // result5, as old_coef1011: 0.5 .. 7.5 | 8.5 .. F.5
+      // result6, as old_coef1213: 0.6 .. 7.6 | 8.6 .. F.6
+      // result7, as old_coef1415: 0.7 .. 7.7 | 8.7 .. F.7
+
+      // Pixel offsets for the current target x-positions.
+      // Even for x >= width, these offsets are guaranteed to be within the allocated 'target_size_alignment'.
+      const int begin1 = program->pixel_offset[x + 0];
+      const int begin2 = program->pixel_offset[x + 1];
+      const int begin3 = program->pixel_offset[x + 2];
+      const int begin4 = program->pixel_offset[x + 3];
+      const int begin5 = program->pixel_offset[x + 4];
+      const int begin6 = program->pixel_offset[x + 5];
+      const int begin7 = program->pixel_offset[x + 6];
+      const int begin8 = program->pixel_offset[x + 7];
+      const int begin9 = program->pixel_offset[x + 8];
+      const int begin10 = program->pixel_offset[x + 9];
+      const int begin11 = program->pixel_offset[x + 10];
+      const int begin12 = program->pixel_offset[x + 11];
+      const int begin13 = program->pixel_offset[x + 12];
+      const int begin14 = program->pixel_offset[x + 13];
+      const int begin15 = program->pixel_offset[x + 14];
+      const int begin16 = program->pixel_offset[x + 15];
+
+      int y = y_from;
+
+      // Calculate pointers ONCE before the inner loop (Optimization from AVX2 version)
+      float* AVS_RESTRICT dst_ptr = dst + y * dst_pitch + x;
+      const float* src_ptr = src + y * src_pitch;
+
+      // only needed for partial load
+      const int Nmod8 = program->filter_size_real % 8;
+      const int floats_to_load = Nmod8 == 0 ? 8 : Nmod8;
+
+      for (; y < y_to; ++y) {
+
+        __m512 data01, data23, data45, data67, data89, data1011, data1213, data1415;
+
+        if constexpr (partial_load) {
+          // In the potentially unsafe zone (near the right edge of the image), we use a safe loading function
+          // to prevent reading beyond the allocated source scanline.
+          data01 = _mm512_load_partial_safe_2_m256(src_ptr + begin1, src_ptr + begin2, floats_to_load);
+          data23 = _mm512_load_partial_safe_2_m256(src_ptr + begin3, src_ptr + begin4, floats_to_load);
+          data45 = _mm512_load_partial_safe_2_m256(src_ptr + begin5, src_ptr + begin6, floats_to_load);
+          data67 = _mm512_load_partial_safe_2_m256(src_ptr + begin7, src_ptr + begin8, floats_to_load);
+          data89 = _mm512_load_partial_safe_2_m256(src_ptr + begin9, src_ptr + begin10, floats_to_load);
+          data1011 = _mm512_load_partial_safe_2_m256(src_ptr + begin11, src_ptr + begin12, floats_to_load);
+          data1213 = _mm512_load_partial_safe_2_m256(src_ptr + begin13, src_ptr + begin14, floats_to_load);
+          data1415 = _mm512_load_partial_safe_2_m256(src_ptr + begin15, src_ptr + begin16, floats_to_load);
+        }
+        else {
+          // In the safe zone, we can directly load 8 source pixels at a time for each of the 16 lanes.
+          data01 = _mm512_insert_2_m256(_mm256_loadu_ps(src_ptr + begin1), _mm256_loadu_ps(src_ptr + begin2));
+          data23 = _mm512_insert_2_m256(_mm256_loadu_ps(src_ptr + begin3), _mm256_loadu_ps(src_ptr + begin4));
+          data45 = _mm512_insert_2_m256(_mm256_loadu_ps(src_ptr + begin5), _mm256_loadu_ps(src_ptr + begin6));
+          data67 = _mm512_insert_2_m256(_mm256_loadu_ps(src_ptr + begin7), _mm256_loadu_ps(src_ptr + begin8));
+          data89 = _mm512_insert_2_m256(_mm256_loadu_ps(src_ptr + begin9), _mm256_loadu_ps(src_ptr + begin10));
+          data1011 = _mm512_insert_2_m256(_mm256_loadu_ps(src_ptr + begin11), _mm256_loadu_ps(src_ptr + begin12));
+          data1213 = _mm512_insert_2_m256(_mm256_loadu_ps(src_ptr + begin13), _mm256_loadu_ps(src_ptr + begin14));
+          data1415 = _mm512_insert_2_m256(_mm256_loadu_ps(src_ptr + begin15), _mm256_loadu_ps(src_ptr + begin16));
+        }
+
+        _MM_TRANSPOSE8x16_PS(data01, data23, data45, data67, data89, data1011, data1213, data1415);
+
+        __m512 result = _mm512_mul_ps(data01, coef01);
+        result = _mm512_fmadd_ps(data23, coef23, result);
+        result = _mm512_fmadd_ps(data45, coef45, result);
+        result = _mm512_fmadd_ps(data67, coef67, result);
+        result = _mm512_fmadd_ps(data89, coef89, result);
+        result = _mm512_fmadd_ps(data1011, coef1011, result);
+        result = _mm512_fmadd_ps(data1213, coef1213, result);
+        result = _mm512_fmadd_ps(data1415, coef1415, result);
+
+        _mm512_stream_ps(dst_ptr, result);
+
+        dst_ptr += dst_pitch;
+        src_ptr += src_pitch;
+      } // y
+
+      // Move to the next set of coefficients for the next 16 output pixels
+      current_coeff += filter_size * 16;
+      }; // lambda
+
+    // Process the 'safe zone' where direct full unaligned loads are acceptable.
+    for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
+    {
+      do_h_float_core(std::false_type{});  // partial_load == false, use direct _mm512_loadu_ps
+    }
+
+    // Process the potentially 'unsafe zone' near the image edge, using safe loading.
+    for (; x < width; x += PIXELS_AT_A_TIME)
+    {
+      do_h_float_core(std::true_type{}); // partial_load == true, use the safer _mm512_load_partial_safe_2_m256
+    }
+  }
+}
+
+// Similar to AVX2 resize_h_planar_float_avx512_permutex_vstripe_ks4
+// but doing 16 pixels at a time with AVX512 permutex instructions.
 void resize_h_planar_float_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
   const int filter_size = program->filter_size; // aligned, practically the coeff table stride
@@ -335,20 +668,15 @@ void resize_h_planar_float_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
   float* src = (float*)src8;
   float* dst = (float*)dst8;
 
-  const float* AVS_RESTRICT current_coeff = (const float* AVS_RESTRICT)program->pixel_coefficient_float;
-
   constexpr int PIXELS_AT_A_TIME = 16; // Process sixteen pixels in parallel using AVX512 (4x4 using m128 lanes)
 
   // 'source_overread_beyond_targetx' indicates if the filter kernel can read beyond the target width.
-  // Even if the filter alignment allows larger reads, our safety boundary for unaligned loads starts at 4 pixels back
-  // from the target width, as we load 4 floats at once conceptually with our safe load.
   const int width_safe_mod = (program->safelimit_4_pixels.overread_possible ? program->safelimit_4_pixels.source_overread_beyond_targetx : width) / PIXELS_AT_A_TIME * PIXELS_AT_A_TIME;
 
   // Preconditions:
   assert(program->filter_size_real <= 4); // We preload all relevant coefficients (up to 4) before the height loop.
 
   // 'target_size_alignment' ensures we can safely access coefficients using offsets like
-  // 'filter_size * 7' when processing 8 H pixels at a time or
   // 'filter_size * 15' when processing 16 H pixels at a time
   assert(program->target_size_alignment >= 16); // Adjusted for 16 pixels
   assert(FRAME_ALIGN >= 64); // Adjusted for 16 pixels AviSynth+ default
@@ -356,17 +684,182 @@ void resize_h_planar_float_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
   // Ensure that coefficient loading beyond the valid target size is safe for 4x4 float loads.
   assert(program->filter_size_alignment >= 4);
 
+  // e.g. i7-11700 typical L2 if 512K per core.
+  const size_t cache_size_L2 = program->cache_size_L2;
+  int max_scanlines = resampler_h_float_detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2);
+
+  // Vertical stripe loop for L2 cache optimization
+  for (int y_from = 0; y_from < height; y_from += max_scanlines)
+  {
+    int y_to = std::min(y_from + max_scanlines, height);
+
+    // Reset current_coeff for the start of the stripe (points to start of row's coeffs)
+    const float* AVS_RESTRICT current_coeff = (const float* AVS_RESTRICT)program->pixel_coefficient_float;
+
   int x = 0;
 
-  for (x = 0; x < width; x += 16)
+    // Lambda to handle both safe (fast) and unsafe (masked/partial) loading paths
+    auto do_h_float_core = [&](auto partial_load) {
+
+      // prepare coefs in transposed V-form
+      // We load 4 coefficients sets (for 4 pixels) into 4 lanes of a zmm register
+      __m512 coef_r0 = _mm512_load_4_m128(current_coeff + filter_size * 0, current_coeff + filter_size * 4, current_coeff + filter_size * 8, current_coeff + filter_size * 12);
+      __m512 coef_r1 = _mm512_load_4_m128(current_coeff + filter_size * 1, current_coeff + filter_size * 5, current_coeff + filter_size * 9, current_coeff + filter_size * 13);
+      __m512 coef_r2 = _mm512_load_4_m128(current_coeff + filter_size * 2, current_coeff + filter_size * 6, current_coeff + filter_size * 10, current_coeff + filter_size * 14);
+      __m512 coef_r3 = _mm512_load_4_m128(current_coeff + filter_size * 3, current_coeff + filter_size * 7, current_coeff + filter_size * 11, current_coeff + filter_size * 15);
+
+      _MM_TRANSPOSE16_LANE4_PS(coef_r0, coef_r1, coef_r2, coef_r3);
+
+      // convert resampling program in H-form into permuting indexes for src transposition in V-form
+      int iStart = program->pixel_offset[x + 0];
+
+      __m512i perm_0 = _mm512_set_epi32(
+        program->pixel_offset[x + 15] - iStart,
+        program->pixel_offset[x + 14] - iStart,
+        program->pixel_offset[x + 13] - iStart,
+        program->pixel_offset[x + 12] - iStart,
+        program->pixel_offset[x + 11] - iStart,
+        program->pixel_offset[x + 10] - iStart,
+        program->pixel_offset[x + 9] - iStart,
+        program->pixel_offset[x + 8] - iStart,
+        program->pixel_offset[x + 7] - iStart,
+        program->pixel_offset[x + 6] - iStart,
+        program->pixel_offset[x + 5] - iStart,
+        program->pixel_offset[x + 4] - iStart,
+        program->pixel_offset[x + 3] - iStart,
+        program->pixel_offset[x + 2] - iStart,
+        program->pixel_offset[x + 1] - iStart,
+        0);
+
+      // Taps are contiguous (0, 1, 2, 3), so we increment perm indexes by 1.
+      __m512i one_epi32 = _mm512_set1_epi32(1);
+      __m512i perm_1 = _mm512_add_epi32(perm_0, one_epi32);
+      __m512i perm_2 = _mm512_add_epi32(perm_1, one_epi32);
+      __m512i perm_3 = _mm512_add_epi32(perm_2, one_epi32);
+
+      float* AVS_RESTRICT dst_ptr = dst + x + y_from * dst_pitch;
+      const float* src_ptr = src + iStart + y_from * src_pitch; // all permute offsets relative to this start offset
+
+      // Calculate remaining pixels for bounds checking in partial_load mode
+      const int remaining = program->source_size - iStart;
+
+      for (int y = y_from; y < y_to; y++)
+      {
+        __m512 data_src, data_src2;
+
+        if constexpr (partial_load) {
+          // Safe masked loads for the image edge
+          // Load first 16 floats
+          int rem1 = std::max(0, std::min(16, remaining));
+          __mmask16 k1 = (1U << rem1) - 1;
+          data_src = _mm512_maskz_loadu_ps(k1, src_ptr);
+
+          // Load next 16 floats (offset by 16)
+          int rem2 = std::max(0, std::min(16, remaining - 16));
+          __mmask16 k2 = (1U << rem2) - 1;
+          data_src2 = _mm512_maskz_loadu_ps(k2, src_ptr + 16);
+        }
+        else {
+          // Fast unaligned loads for the safe zone
+          data_src = _mm512_loadu_ps(src_ptr);
+          data_src2 = _mm512_loadu_ps(src_ptr + 16);
+        }
+
+        __m512 data_0 = _mm512_permutex2var_ps(data_src, perm_0, data_src2);
+        __m512 data_1 = _mm512_permutex2var_ps(data_src, perm_1, data_src2);
+        __m512 data_2 = _mm512_permutex2var_ps(data_src, perm_2, data_src2);
+        __m512 data_3 = _mm512_permutex2var_ps(data_src, perm_3, data_src2);
+
+        __m512 result0 = _mm512_mul_ps(data_0, coef_r0);
+        __m512 result1 = _mm512_mul_ps(data_2, coef_r2);
+
+        result0 = _mm512_fmadd_ps(data_1, coef_r1, result0);
+        result1 = _mm512_fmadd_ps(data_3, coef_r3, result1);
+
+        _mm512_stream_ps(dst_ptr, _mm512_add_ps(result0, result1));
+
+        dst_ptr += dst_pitch;
+        src_ptr += src_pitch;
+      }
+
+      current_coeff += filter_size * 16;
+      };
+
+    // Process the 'safe zone' where direct full unaligned loads are acceptable.
+    for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
   {
+      do_h_float_core(std::false_type{});
+    }
+
+    // Process the potentially 'unsafe zone' near the image edge, using safe masked loading.
+    for (; x < width; x += PIXELS_AT_A_TIME)
+    {
+      do_h_float_core(std::true_type{});
+    }
+  }
+}
+
+// Similar to resize_h_planar_float_avx512_permutex_vstripe_ks4 but for kernel size up to 8
+// 16 target pixels at a time with AVX512 permutex instructions.
+void resize_h_planar_float_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
+{
+  const int filter_size = program->filter_size; // aligned, practically the coeff table stride
+
+  src_pitch /= sizeof(float);
+  dst_pitch /= sizeof(float);
+
+  float* src = (float*)src8;
+  float* dst = (float*)dst8;
+
+  constexpr int PIXELS_AT_A_TIME = 16; // Process sixteen pixels in parallel using AVX512 (4x4 using m128 lanes)
+
+  // 'source_overread_beyond_targetx' indicates if the filter kernel can read beyond the target width.
+  const int width_safe_mod = (program->safelimit_8_pixels.overread_possible ? program->safelimit_8_pixels.source_overread_beyond_targetx : width) / PIXELS_AT_A_TIME * PIXELS_AT_A_TIME;
+
+  // Preconditions:
+  assert(program->filter_size_real <= 8); // We preload all relevant coefficients (up to 8) before the height loop.
+
+  // 'target_size_alignment' ensures we can safely access coefficients using offsets like
+  // 'filter_size * 15' when processing 16 H pixels at a time
+  assert(program->target_size_alignment >= 16); // Adjusted for 16 pixels
+  assert(FRAME_ALIGN >= 64); // Adjusted for 16 pixels AviSynth+ default
+
+  // Ensure that coefficient loading beyond the valid target size is safe for 4x8 float loads.
+  assert(program->filter_size_alignment >= 8);
+
+  // e.g. i7-11700 typical L2 if 512K per core.
+  const size_t cache_size_L2 = program->cache_size_L2;
+  int max_scanlines = resampler_h_float_detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2);
+
+  // Vertical stripe loop for L2 cache optimization
+  for (int y_from = 0; y_from < height; y_from += max_scanlines)
+  {
+    int y_to = std::min(y_from + max_scanlines, height);
+
+    // Reset current_coeff for the start of the stripe (points to start of row's coeffs)
+    const float* AVS_RESTRICT current_coeff = (const float* AVS_RESTRICT)program->pixel_coefficient_float;
+
+    int x = 0;
+
+    // Lambda to handle both safe (fast) and unsafe (masked/partial) loading paths
+    auto do_h_float_core = [&](auto partial_load) {
+
     // prepare coefs in transposed V-form
+      // 4 coefficients sets (for 4 pixels) into 4 lanes of a zmm register
     __m512 coef_r0 = _mm512_load_4_m128(current_coeff + filter_size * 0, current_coeff + filter_size * 4, current_coeff + filter_size * 8, current_coeff + filter_size * 12);
     __m512 coef_r1 = _mm512_load_4_m128(current_coeff + filter_size * 1, current_coeff + filter_size * 5, current_coeff + filter_size * 9, current_coeff + filter_size * 13);
     __m512 coef_r2 = _mm512_load_4_m128(current_coeff + filter_size * 2, current_coeff + filter_size * 6, current_coeff + filter_size * 10, current_coeff + filter_size * 14);
     __m512 coef_r3 = _mm512_load_4_m128(current_coeff + filter_size * 3, current_coeff + filter_size * 7, current_coeff + filter_size * 11, current_coeff + filter_size * 15);
 
+      const float* AVS_RESTRICT current_coeff_47 = current_coeff + 4;
+
+      __m512 coef_r4 = _mm512_load_4_m128(current_coeff_47 + filter_size * 0, current_coeff_47 + filter_size * 4, current_coeff_47 + filter_size * 8, current_coeff_47 + filter_size * 12);
+      __m512 coef_r5 = _mm512_load_4_m128(current_coeff_47 + filter_size * 1, current_coeff_47 + filter_size * 5, current_coeff_47 + filter_size * 9, current_coeff_47 + filter_size * 13);
+      __m512 coef_r6 = _mm512_load_4_m128(current_coeff_47 + filter_size * 2, current_coeff_47 + filter_size * 6, current_coeff_47 + filter_size * 10, current_coeff_47 + filter_size * 14);
+      __m512 coef_r7 = _mm512_load_4_m128(current_coeff_47 + filter_size * 3, current_coeff_47 + filter_size * 7, current_coeff_47 + filter_size * 11, current_coeff_47 + filter_size * 15);
+
     _MM_TRANSPOSE16_LANE4_PS(coef_r0, coef_r1, coef_r2, coef_r3);
+      _MM_TRANSPOSE16_LANE4_PS(coef_r4, coef_r5, coef_r6, coef_r7);
 
     // convert resampling program in H-form into permuting indexes for src transposition in V-form
     int iStart = program->pixel_offset[x + 0];
@@ -389,39 +882,86 @@ void resize_h_planar_float_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
       program->pixel_offset[x + 1] - iStart,
       0);
 
+      // Taps are contiguous (0, 1, 2, 3 .. 7), so we increment perm indexes by 1.
     __m512i one_epi32 = _mm512_set1_epi32(1);
     __m512i perm_1 = _mm512_add_epi32(perm_0, one_epi32);
-    one_epi32 = _mm512_set1_epi32(program->pixel_offset[x + 2] - program->pixel_offset[x + 1]);
     __m512i perm_2 = _mm512_add_epi32(perm_1, one_epi32);
-    one_epi32 = _mm512_set1_epi32(program->pixel_offset[x + 3] - program->pixel_offset[x + 2]);
     __m512i perm_3 = _mm512_add_epi32(perm_2, one_epi32);
+      __m512i perm_4 = _mm512_add_epi32(perm_3, one_epi32);
+      __m512i perm_5 = _mm512_add_epi32(perm_4, one_epi32);
+      __m512i perm_6 = _mm512_add_epi32(perm_5, one_epi32);
+      __m512i perm_7 = _mm512_add_epi32(perm_6, one_epi32);
 
-    float* AVS_RESTRICT dst_ptr = dst + x;
-    const float* src_ptr = src + program->pixel_offset[x + 0]; // all permute offsets relative to this start offset
+      float* AVS_RESTRICT dst_ptr = dst + x + y_from * dst_pitch;
+      const float* src_ptr = src + iStart + y_from * src_pitch; // all permute offsets relative to this start offset
 
-    for (int y = 0; y < height; y++) // single row proc
+      // Calculate remaining pixels for bounds checking in partial_load mode
+      const int remaining = program->source_size - iStart;
+
+      for (int y = y_from; y < y_to; y++)
     {
-      __m512 data_src = _mm512_loadu_ps(src_ptr);
-      __m512 data_src2 = _mm512_loadu_ps(src_ptr + 16); // not always needed for upscale also can cause end of buffer overread - need to add limitation (special end of buffer processing ?)
+        __m512 data_src, data_src2;
+
+        if constexpr (partial_load) {
+          // Safe masked loads for the image edge
+          // Load first 16 floats
+          int rem1 = std::max(0, std::min(16, remaining));
+          __mmask16 k1 = (1U << rem1) - 1;
+          data_src = _mm512_maskz_loadu_ps(k1, src_ptr);
+
+          // Load next 16 floats (offset by 16)
+          int rem2 = std::max(0, std::min(16, remaining - 16));
+          __mmask16 k2 = (1U << rem2) - 1;
+          data_src2 = _mm512_maskz_loadu_ps(k2, src_ptr + 16);
+        }
+        else {
+          // Fast unaligned loads for the safe zone
+          data_src = _mm512_loadu_ps(src_ptr);
+          data_src2 = _mm512_loadu_ps(src_ptr + 16);
+        }
 
       __m512 data_0 = _mm512_permutex2var_ps(data_src, perm_0, data_src2);
       __m512 data_1 = _mm512_permutex2var_ps(data_src, perm_1, data_src2);
       __m512 data_2 = _mm512_permutex2var_ps(data_src, perm_2, data_src2);
       __m512 data_3 = _mm512_permutex2var_ps(data_src, perm_3, data_src2);
+        __m512 data_4 = _mm512_permutex2var_ps(data_src, perm_4, data_src2);
+        __m512 data_5 = _mm512_permutex2var_ps(data_src, perm_5, data_src2);
+        __m512 data_6 = _mm512_permutex2var_ps(data_src, perm_6, data_src2);
+        __m512 data_7 = _mm512_permutex2var_ps(data_src, perm_7, data_src2);
 
       __m512 result0 = _mm512_mul_ps(data_0, coef_r0);
       __m512 result1 = _mm512_mul_ps(data_2, coef_r2);
+        __m512 result2 = _mm512_mul_ps(data_4, coef_r4);
+        __m512 result3 = _mm512_mul_ps(data_6, coef_r6);
 
       result0 = _mm512_fmadd_ps(data_1, coef_r1, result0);
       result1 = _mm512_fmadd_ps(data_3, coef_r3, result1);
+        result2 = _mm512_fmadd_ps(data_5, coef_r5, result2);
+        result3 = _mm512_fmadd_ps(data_7, coef_r7, result3);
 
-      _mm512_store_ps(dst_ptr, _mm512_add_ps(result0, result1));
+        __m512i result01 = _mm512_add_ps(result0, result1);
+        __m512i result23 = _mm512_add_ps(result2, result3);
+        __m512i result0123 = _mm512_add_ps(result01, result23);
+        _mm512_stream_ps(dst_ptr, result0123);
 
       dst_ptr += dst_pitch;
       src_ptr += src_pitch;
     }
 
     current_coeff += filter_size * 16;
+      };
+
+    // Process the 'safe zone' where direct full unaligned loads are acceptable.
+    for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
+    {
+      do_h_float_core(std::false_type{});
+    }
+
+    // Process the potentially 'unsafe zone' near the image edge, using safe masked loading.
+    for (; x < width; x += PIXELS_AT_A_TIME)
+    {
+      do_h_float_core(std::true_type{});
+    }
   }
 }
 
@@ -464,8 +1004,8 @@ void resize_v_avx512_planar_float(BYTE* dst8, const BYTE* src8, int dst_pitch, i
         __m512 coeff_even = _mm512_set1_ps(current_coeff[i]);
         __m512 coeff_odd = _mm512_set1_ps(current_coeff[i + 1]);
 
-        __m512 src_even = _mm512_loadu_ps(src2_ptr);
-        __m512 src_odd = _mm512_loadu_ps(src2_ptr + src_pitch);
+        __m512 src_even = _mm512_load_ps(src2_ptr);
+        __m512 src_odd = _mm512_load_ps(src2_ptr + src_pitch);
 
         result_single = _mm512_fmadd_ps(src_even, coeff_even, result_single);
         result_single_2 = _mm512_fmadd_ps(src_odd, coeff_odd, result_single_2);
@@ -478,11 +1018,11 @@ void resize_v_avx512_planar_float(BYTE* dst8, const BYTE* src8, int dst_pitch, i
       // Process the last odd row if needed
       if (notMod2) {
         __m512 coeff = _mm512_set1_ps(current_coeff[i]);
-        __m512 src_val = _mm512_loadu_ps(src2_ptr);
+        __m512 src_val = _mm512_load_ps(src2_ptr);
         result_single = _mm512_fmadd_ps(src_val, coeff, result_single);
       }
 
-      _mm512_store_ps(dst + x, result_single);
+      _mm512_stream_ps(dst + x, result_single);
     }
 
     dst += dst_pitch;
@@ -865,7 +1405,7 @@ AVS_FORCEINLINE static void process_four_pixels_h_float_pix4of16_ks_4_8_16(
     // Coeffs are zero padded, reading them is no problem.
     // But if we read past the end of source then we can get possible NaN contamination.
     // Handle the remainder: 1 to 7 source/coefficient elements.
-    // real_kernel_size is used here, it's guaranteed that reading real_kernel_size elements
+    // unaligned_kernel_size is used here, it's guaranteed that reading unaligned_kernel_size elements
     // from any pixel_offset[] is safe and ends within the source buffer.
     // Optional 4-2-1 processing loop.
 
