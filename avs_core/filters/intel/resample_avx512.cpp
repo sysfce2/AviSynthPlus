@@ -1036,29 +1036,30 @@ void resize_v_avx512_planar_float_w_sr(BYTE* dst8, const BYTE* src8, int dst_pit
   AVS_UNUSED(bits_per_pixel);
 
   const int filter_size = program->filter_size;
-  const float* AVS_RESTRICT current_coeff = program->pixel_coefficient_float;
+  const float* AVS_RESTRICT current_coeff = (const float* AVS_RESTRICT)program->pixel_coefficient_float;
 
   const float* src = (const float*)src8;
   float* AVS_RESTRICT dst = (float*)dst8;
-  dst_pitch = dst_pitch / sizeof(float);
-  src_pitch = src_pitch / sizeof(float);
 
-  const int kernel_size = program->filter_size_real; // not the aligned
-  const int kernel_size_mod2 = (kernel_size / 2) * 2; // Process pairs of rows for better efficiency
+  const int dst_stride_float = dst_pitch / sizeof(float);
+  const int src_stride_float = src_pitch / sizeof(float);
+
+  const int kernel_size = program->filter_size_real;
+  // Pre-calculate Mod2 size for the remainder loop
+  const int kernel_size_mod2 = (kernel_size / 2) * 2;
   const bool notMod2 = kernel_size_mod2 < kernel_size;
 
   for (int y = 0; y < target_height; y++) {
     int offset = program->pixel_offset[y];
-    const float* src_ptr = src + offset * src_pitch;
+    const float* src_row_start = src + offset * src_stride_float;
 
     int x = 0;
 
-    // 128-64-32 pixels prelude
-    // we spare some coeff reload per unrolled loop
-    // Perhaps for an i7-11700 which has only 1x512 as 2x256 fma unit, not ideal.
-
-    // Process by 8x 512 (8 x 16 floats) to make memory read/write linear streams longer
-    // 32x512 bit registers should be enough
+    // -----------------------------------------------------------------------
+    // 128 pixels (512 bytes) per iteration
+    // Uses ~17 ZMM registers. Safe for x64 (32 regs available).
+    // Provides 8 independent dependency chains to hide FMA latency.
+    // -----------------------------------------------------------------------
     const int width_mod128 = (width / 128) * 128;
     for (; x < width_mod128; x += 128) {
       __m512 result_1 = _mm512_setzero_ps();
@@ -1070,19 +1071,21 @@ void resize_v_avx512_planar_float_w_sr(BYTE* dst8, const BYTE* src8, int dst_pit
       __m512 result_7 = _mm512_setzero_ps();
       __m512 result_8 = _mm512_setzero_ps();
 
-      const float* AVS_RESTRICT src2_ptr = src_ptr + x;
-      int i = 0;
-      for (; i < kernel_size; i++) {
+      const float* AVS_RESTRICT src2_ptr = src_row_start + x;
+
+      for (int i = 0; i < kernel_size; i++) {
         __m512 coeff = _mm512_set1_ps(current_coeff[i]);
 
-        __m512 src_1 = _mm512_load_ps(src2_ptr);
-        __m512 src_2 = _mm512_load_ps(src2_ptr + 16);
+        // Loading 512 bytes contiguous memory (8 cache lines)
+        __m512 src_1 = _mm512_load_ps(src2_ptr);       // 0..15
+        __m512 src_2 = _mm512_load_ps(src2_ptr + 16);  // 16..31 (offset in floats)
         __m512 src_3 = _mm512_load_ps(src2_ptr + 32);
         __m512 src_4 = _mm512_load_ps(src2_ptr + 48);
         __m512 src_5 = _mm512_load_ps(src2_ptr + 64);
         __m512 src_6 = _mm512_load_ps(src2_ptr + 80);
         __m512 src_7 = _mm512_load_ps(src2_ptr + 96);
         __m512 src_8 = _mm512_load_ps(src2_ptr + 112);
+
         result_1 = _mm512_fmadd_ps(src_1, coeff, result_1);
         result_2 = _mm512_fmadd_ps(src_2, coeff, result_2);
         result_3 = _mm512_fmadd_ps(src_3, coeff, result_3);
@@ -1092,20 +1095,22 @@ void resize_v_avx512_planar_float_w_sr(BYTE* dst8, const BYTE* src8, int dst_pit
         result_7 = _mm512_fmadd_ps(src_7, coeff, result_7);
         result_8 = _mm512_fmadd_ps(src_8, coeff, result_8);
 
-        src2_ptr += src_pitch;
+        src2_ptr += src_stride_float;
       }
 
-      _mm512_store_ps(dst + x, result_1);
-      _mm512_store_ps(dst + x + 16, result_2);
-      _mm512_store_ps(dst + x + 32, result_3);
-      _mm512_store_ps(dst + x + 48, result_4);
-      _mm512_store_ps(dst + x + 64, result_5);
-      _mm512_store_ps(dst + x + 80, result_6);
-      _mm512_store_ps(dst + x + 96, result_7);
-      _mm512_store_ps(dst + x + 112, result_8);
+      _mm512_stream_ps(dst + x, result_1);
+      _mm512_stream_ps(dst + x + 16, result_2);
+      _mm512_stream_ps(dst + x + 32, result_3);
+      _mm512_stream_ps(dst + x + 48, result_4);
+      _mm512_stream_ps(dst + x + 64, result_5);
+      _mm512_stream_ps(dst + x + 80, result_6);
+      _mm512_stream_ps(dst + x + 96, result_7);
+      _mm512_stream_ps(dst + x + 112, result_8);
     }
 
-    // Process by 4x512 (4 x 16 floats) to make memory read/write linear streams longer
+    // -----------------------------------------------------------------------
+    // 64 pixels per iteration
+    // -----------------------------------------------------------------------
     const int width_mod64 = (width / 64) * 64;
     for (; x < width_mod64; x += 64) {
       __m512 result_1 = _mm512_setzero_ps();
@@ -1113,10 +1118,9 @@ void resize_v_avx512_planar_float_w_sr(BYTE* dst8, const BYTE* src8, int dst_pit
       __m512 result_3 = _mm512_setzero_ps();
       __m512 result_4 = _mm512_setzero_ps();
 
-      const float* AVS_RESTRICT src2_ptr = src_ptr + x;
+      const float* AVS_RESTRICT src2_ptr = src_row_start + x;
 
-      int i = 0;
-      for (; i < kernel_size; i++) {
+      for (int i = 0; i < kernel_size; i++) {
         __m512 coeff = _mm512_set1_ps(current_coeff[i]);
 
         __m512 src_1 = _mm512_load_ps(src2_ptr);
@@ -1129,25 +1133,26 @@ void resize_v_avx512_planar_float_w_sr(BYTE* dst8, const BYTE* src8, int dst_pit
         result_3 = _mm512_fmadd_ps(src_3, coeff, result_3);
         result_4 = _mm512_fmadd_ps(src_4, coeff, result_4);
 
-        src2_ptr += src_pitch;
+        src2_ptr += src_stride_float;
       }
 
-      _mm512_store_ps(dst + x, result_1);
-      _mm512_store_ps(dst + x + 16, result_2);
-      _mm512_store_ps(dst + x + 32, result_3);
-      _mm512_store_ps(dst + x + 48, result_4);
+      _mm512_stream_ps(dst + x, result_1);
+      _mm512_stream_ps(dst + x + 16, result_2);
+      _mm512_stream_ps(dst + x + 32, result_3);
+      _mm512_stream_ps(dst + x + 48, result_4);
     }
 
-    // Process by 2x512 (2 x 16 floats) to make memory read/write linear streams longer,
+    // -----------------------------------------------------------------------
+    // 32 pixels per iteration
+    // -----------------------------------------------------------------------
     const int width_mod32 = (width / 32) * 32;
     for (; x < width_mod32; x += 32) {
       __m512 result_1 = _mm512_setzero_ps();
       __m512 result_2 = _mm512_setzero_ps();
 
-      const float* AVS_RESTRICT src2_ptr = src_ptr + x;
+      const float* AVS_RESTRICT src2_ptr = src_row_start + x;
 
-      int i = 0;
-      for (; i < kernel_size; i++) {
+      for (int i = 0; i < kernel_size; i++) {
         __m512 coeff = _mm512_set1_ps(current_coeff[i]);
 
         __m512 src_1 = _mm512_load_ps(src2_ptr);
@@ -1156,36 +1161,39 @@ void resize_v_avx512_planar_float_w_sr(BYTE* dst8, const BYTE* src8, int dst_pit
         result_1 = _mm512_fmadd_ps(src_1, coeff, result_1);
         result_2 = _mm512_fmadd_ps(src_2, coeff, result_2);
 
-        src2_ptr += src_pitch;
+        src2_ptr += src_stride_float;
       }
 
-      _mm512_store_ps(dst + x, result_1);
-      _mm512_store_ps(dst + x + 16, result_2);
+      _mm512_stream_ps(dst + x, result_1);
+      _mm512_stream_ps(dst + x + 16, result_2);
     }
 
-    // Process 1x512 dual
-    // 64 byte 16 floats (AVX512 register holds 16 floats)
-    // row alignment is 64 bytes - so it is safe to load mod16 of float32.
+    // -----------------------------------------------------------------------
+    // Remainder loop (16 pixels)
+    // Uses vertical loop unrolling (pairs of taps) to hide FMA latency
+    // because we don't have enough horizontal data to do it spatially.
+    // -----------------------------------------------------------------------
+    const int src_stride_2 = src_stride_float * 2;
+
     for (; x < width; x += 16) {
       __m512 result_single = _mm512_setzero_ps();
       __m512 result_single_2 = _mm512_setzero_ps();
 
-      const float* AVS_RESTRICT src2_ptr = src_ptr + x;
-
-      // Process pairs of rows for better efficiency (2 coeffs/cycle)
-      // two result variables for potential parallel operation
+      const float* AVS_RESTRICT src2_ptr = src_row_start + x;
       int i = 0;
+
+      // Process pairs of rows
       for (; i < kernel_size_mod2; i += 2) {
         __m512 coeff_even = _mm512_set1_ps(current_coeff[i]);
         __m512 coeff_odd = _mm512_set1_ps(current_coeff[i + 1]);
 
         __m512 src_even = _mm512_load_ps(src2_ptr);
-        __m512 src_odd = _mm512_load_ps(src2_ptr + src_pitch);
+        __m512 src_odd = _mm512_load_ps(src2_ptr + src_stride_float);
 
         result_single = _mm512_fmadd_ps(src_even, coeff_even, result_single);
         result_single_2 = _mm512_fmadd_ps(src_odd, coeff_odd, result_single_2);
 
-        src2_ptr += 2 * src_pitch;
+        src2_ptr += src_stride_2;
       }
 
       result_single = _mm512_add_ps(result_single, result_single_2);
@@ -1197,11 +1205,10 @@ void resize_v_avx512_planar_float_w_sr(BYTE* dst8, const BYTE* src8, int dst_pit
         result_single = _mm512_fmadd_ps(src_val, coeff, result_single);
       }
 
-      _mm512_store_ps(dst + x, result_single);
+      _mm512_stream_ps(dst + x, result_single);
     }
 
-
-    dst += dst_pitch;
+    dst += dst_stride_float;
     current_coeff += filter_size;
   }
 }

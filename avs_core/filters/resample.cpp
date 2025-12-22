@@ -1894,9 +1894,10 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
 #ifdef INTEL_INTRINSICS
 #ifdef INTEL_INTRINSICS_AVX512
       if ((CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST) {
-        //return resize_v_avx512_planar_float; // Old, base version, quicker than avx2 version
+        // return resize_v_avx512_planar_float; // Old, base version, quicker than avx2 version
         // This one is about equal to avx2 version, but only with clang,
-        // clang is probably unrolls it out-of-box better than MSVC.
+        // it seems that clang is too good and, probably unrolls the old function version
+        // out-of-box so much better than MSVC, that it competes with the _w_sr version.
         // With MSVC its no-brainer to use avx512
         return resize_v_avx512_planar_float_w_sr;
       }

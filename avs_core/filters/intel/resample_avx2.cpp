@@ -1069,12 +1069,12 @@ void resize_v_avx2_planar_float_w_sr(BYTE* dst8, const BYTE* src8, int dst_pitch
 
         src2_ptr += src_pitch;
       }
-      // here we use store instead of stream store; in multithreading stream is better;
+      // here we use stream instead of store; in multithreading stream is better;
       // consider two templated versions if needed depending on actual MT usage
-      _mm256_store_ps(dst + x, result_1);
-      _mm256_store_ps(dst + x + 8, result_2);
-      _mm256_store_ps(dst + x + 16, result_3);
-      _mm256_store_ps(dst + x + 24, result_4);
+      _mm256_stream_ps(dst + x, result_1);
+      _mm256_stream_ps(dst + x + 8, result_2);
+      _mm256_stream_ps(dst + x + 16, result_3);
+      _mm256_stream_ps(dst + x + 24, result_4);
     } // width_mod32
 
     // Part #2: process remaining. 32 byte 8 floats (AVX2 register holds 8 floats)
@@ -1287,7 +1287,7 @@ void resize_h_planar_float_avx_transpose_vstripe_ks4(BYTE* dst8, const BYTE* src
       result = _mm256_fmadd_ps(data_3_data_7, coef_3_coef_7, result);
       result = _mm256_fmadd_ps(data_4_data_8, coef_4_coef_8, result);
 
-      _mm256_store_ps(dst_ptr, result);
+      _mm256_stream_ps(dst_ptr, result);
 
       dst_ptr += dst_pitch;
       src_ptr += src_pitch;
@@ -2218,8 +2218,8 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4_pix16(BYTE* dst8, const BYT
         // 4. Store
         // ---------------------------------------------------------------------------
 
-        _mm256_store_ps(dst_ptr, final_result_L);     // dst[0..7]
-        _mm256_store_ps(dst_ptr + 8, final_result_H); // dst[8..15]
+        _mm256_stream_ps(dst_ptr, final_result_L);     // dst[0..7]
+        _mm256_stream_ps(dst_ptr + 8, final_result_H); // dst[8..15]
 
         dst_ptr += dst_pitch;
         src_ptr += src_pitch;
