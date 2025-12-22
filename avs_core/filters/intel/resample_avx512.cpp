@@ -41,6 +41,59 @@
 #include "check_avx512.h" // compiler avx512 directives check, basic f and bw is required
 #include "resample_avx2.h"
 #include "resample_avx512.h"
+// H-Float-Resampler: 16 pixels, filter size 4, transpose 4x (4x_m128) to 4x_m512
+// Transposes a 4x4 matrix of 4-float vectors (16x16 float matrix effectively).
+// Input/Output: Four 512-bit vectors (16 floats each) passed by reference.
+AVS_FORCEINLINE static void _MM_TRANSPOSE16_LANE4_PS(__m512& row0, __m512& row1, __m512& row2, __m512& row3) {
+  // Stage 1: Interleave 32-bit (float) elements within 128-bit chunks (lanes)
+  // t0 = (r0_lo, r1_lo) | t1 = (r0_hi, r1_hi)
+  // t2 = (r2_lo, r3_lo) | t3 = (r2_hi, r3_hi)
+  __m512 t0 = _mm512_unpacklo_ps(row0, row1);
+  __m512 t1 = _mm512_unpackhi_ps(row0, row1);
+  __m512 t2 = _mm512_unpacklo_ps(row2, row3);
+  __m512 t3 = _mm512_unpackhi_ps(row2, row3);
+
+  // Stage 2: Shuffle 128-bit chunks (lanes) to complete the transpose
+  // We use _mm512_shuffle_ps which shuffles 64-bit blocks across the 512-bit register.
+  // _MM_SHUFFLE(w, z, y, x) applies to the 64-bit pairs (4 floats) within each 128-bit lane.
+  // Result: row0 = columns 0, 1, 2, 3
+  row0 = _mm512_shuffle_ps(t0, t2, _MM_SHUFFLE(1, 0, 1, 0));
+  // Result: row1 = columns 4, 5, 6, 7
+  row1 = _mm512_shuffle_ps(t0, t2, _MM_SHUFFLE(3, 2, 3, 2));
+  // Result: row2 = columns 8, 9, 10, 11
+  row2 = _mm512_shuffle_ps(t1, t3, _MM_SHUFFLE(1, 0, 1, 0));
+  // Result: row3 = columns 12, 13, 14, 15
+  row3 = _mm512_shuffle_ps(t1, t3, _MM_SHUFFLE(3, 2, 3, 2));
+}
+// Loads four 128-bit float vectors (unaligned) into a single 512-bit register.
+AVS_FORCEINLINE static __m512 _mm512_loadu_4_m128(
+  /* __m128 const* */ const float* addr1,
+  /* __m128 const* */ const float* addr2,
+  /* __m128 const* */ const float* addr3,
+  /* __m128 const* */ const float* addr4)
+{
+  // The cast is needed for the first insertion to make the target a 512-bit register
+  __m512 v = _mm512_castps128_ps512(_mm_loadu_ps(addr1));
+  v = _mm512_insertf32x4(v, _mm_loadu_ps(addr2), 1);
+  v = _mm512_insertf32x4(v, _mm_loadu_ps(addr3), 2);
+  v = _mm512_insertf32x4(v, _mm_loadu_ps(addr4), 3);
+  return v;
+}
+
+// Loads four 128-bit float vectors (aligned) into a single 512-bit register.
+AVS_FORCEINLINE static __m512 _mm512_load_4_m128(
+  /* __m128 const* */ const float* addr1,
+  /* __m128 const* */ const float* addr2,
+  /* __m128 const* */ const float* addr3,
+  /* __m128 const* */ const float* addr4)
+{
+  // The cast is needed for the first insertion to make the target a 512-bit register
+  __m512 v = _mm512_castps128_ps512(_mm_load_ps(addr1));
+  v = _mm512_insertf32x4(v, _mm_load_ps(addr2), 1);
+  v = _mm512_insertf32x4(v, _mm_load_ps(addr3), 2);
+  v = _mm512_insertf32x4(v, _mm_load_ps(addr4), 3);
+  return v;
+}
 
 // Functions in this file are dispatched by AVS_CPUF_AVX512_FAST group feature flag.
 // Assumes F, CD, BW, DQ, VL, VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ

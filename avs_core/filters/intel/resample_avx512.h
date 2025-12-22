@@ -48,36 +48,4 @@ void resize_v_avx512_planar_float_w_sr(BYTE* dst8, const BYTE* src8, int dst_pit
 
 void resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16(BYTE * dst8, const BYTE * src8, int dst_pitch, int src_pitch, ResamplingProgram * program, int width, int height, int bits_per_pixel);
 
-// useful macros
-
-// Full 512-bit version of transpose16
-#define _MM_TRANSPOSE16_LANE4_PS(row0, row1, row2, row3) \
-  do { \
-    __m512 __t0, __t1, __t2, __t3; \
-    __t0 = _mm512_unpacklo_ps(row0, row1); \
-    __t1 = _mm512_unpackhi_ps(row0, row1); \
-    __t2 = _mm512_unpacklo_ps(row2, row3); \
-    __t3 = _mm512_unpackhi_ps(row2, row3); \
-    row0 = _mm512_shuffle_ps(__t0, __t2, _MM_SHUFFLE(1, 0, 1, 0)); \
-    row1 = _mm512_shuffle_ps(__t0, __t2, _MM_SHUFFLE(3, 2, 3, 2)); \
-    row2 = _mm512_shuffle_ps(__t1, __t3, _MM_SHUFFLE(1, 0, 1, 0)); \
-    row3 = _mm512_shuffle_ps(__t1, __t3, _MM_SHUFFLE(3, 2, 3, 2)); \
-  } while (0)
-
-#ifndef _mm512_loadu_4_m128
-#define _mm512_loadu_4_m128(/* __m128 const* */ addr1, \
-                            /* __m128 const* */ addr2, \
-                            /* __m128 const* */ addr3, \
-                            /* __m128 const* */ addr4) \
-_mm512_insertf32x4(_mm512_insertf32x4(_mm512_insertf32x4(_mm512_castps128_ps512(_mm_loadu_ps(addr1)), _mm_loadu_ps(addr2), 1), _mm_loadu_ps(addr3), 2), _mm_loadu_ps(addr4), 3)
-#endif
-
-#ifndef _mm512_load_4_m128
-#define _mm512_load_4_m128(/* __m128 const* */ addr1, \
-                            /* __m128 const* */ addr2, \
-                            /* __m128 const* */ addr3, \
-                            /* __m128 const* */ addr4) \
-_mm512_insertf32x4(_mm512_insertf32x4(_mm512_insertf32x4(_mm512_castps128_ps512(_mm_load_ps(addr1)), _mm_load_ps(addr2), 1), _mm_load_ps(addr3), 2), _mm_load_ps(addr4), 3)
-#endif
-
 #endif // __Resample_AVX512_H__
