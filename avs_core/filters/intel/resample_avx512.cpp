@@ -1222,12 +1222,12 @@ void resize_h_planar_float_avx512_transpose_vstripe_ks4(BYTE* dst8, const BYTE* 
 
         _MM_TRANSPOSE16_LANE4_PS(data_1_5_9_13, data_2_6_10_14, data_3_7_11_15, data_4_8_12_16);
 
-        __m512 result = _mm512_mul_ps(data_1_5_9_13, coef_1_5_9_13);
-        result = _mm512_fmadd_ps(data_2_6_10_14, coef_2_6_10_14, result);
-        result = _mm512_fmadd_ps(data_3_7_11_15, coef_3_7_11_15, result);
-        result = _mm512_fmadd_ps(data_4_8_12_16, coef_4_8_12_16, result);
-
-        _mm512_stream_ps(dst_ptr, result);
+        // two sets, hint for the compiler to allow parallel fma's
+        __m512 result_0 = _mm512_mul_ps(data_1_5_9_13, coef_1_5_9_13);
+        __m512 result_1 = _mm512_mul_ps(data_2_6_10_14, coef_2_6_10_14);
+        result_0 = _mm512_fmadd_ps(data_3_7_11_15, coef_3_7_11_15, result_0);
+        result_1 = _mm512_fmadd_ps(data_4_8_12_16, coef_4_8_12_16, result_1);
+        _mm512_stream_ps(dst_ptr, _mm512_add_ps(result_0, result_1));
 
         dst_ptr += dst_pitch;
         src_ptr += src_pitch;
@@ -1413,16 +1413,17 @@ void resize_h_planar_float_avx512_transpose_vstripe_ks8(BYTE* dst8, const BYTE* 
 
         _MM_TRANSPOSE8x16_PS(data01, data23, data45, data67, data89, data1011, data1213, data1415);
 
-        __m512 result = _mm512_mul_ps(data01, coef01);
-        result = _mm512_fmadd_ps(data23, coef23, result);
-        result = _mm512_fmadd_ps(data45, coef45, result);
-        result = _mm512_fmadd_ps(data67, coef67, result);
-        result = _mm512_fmadd_ps(data89, coef89, result);
-        result = _mm512_fmadd_ps(data1011, coef1011, result);
-        result = _mm512_fmadd_ps(data1213, coef1213, result);
-        result = _mm512_fmadd_ps(data1415, coef1415, result);
+        // two sets, hint for the compiler to allow parallel fma's
+        __m512 result_0 = _mm512_mul_ps(data01, coef01);
+        __m512 result_1 = _mm512_mul_ps(data23, coef23);
+        result_0 = _mm512_fmadd_ps(data45, coef45, result_0);
+        result_1 = _mm512_fmadd_ps(data67, coef67, result_1);
+        result_0 = _mm512_fmadd_ps(data89, coef89, result_0);
+        result_1 = _mm512_fmadd_ps(data1011, coef1011, result_1);
+        result_0 = _mm512_fmadd_ps(data1213, coef1213, result_0);
+        result_1 = _mm512_fmadd_ps(data1415, coef1415, result_1);
 
-        _mm512_stream_ps(dst_ptr, result);
+        _mm512_stream_ps(dst_ptr, _mm512_add_ps(result_0, result_1));
 
         dst_ptr += dst_pitch;
         src_ptr += src_pitch;
@@ -1501,25 +1502,15 @@ void resize_h_planar_float_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
       _MM_TRANSPOSE16_LANE4_PS(coef_r0, coef_r1, coef_r2, coef_r3);
 
       // convert resampling program in H-form into permuting indexes for src transposition in V-form
-      int iStart = program->pixel_offset[x + 0];
-
+      __m512i perm_0 = _mm512_loadu_si512((__m512i*)(&program->pixel_offset[x]));
+      int iStart = program->pixel_offset[x];
+      perm_0 = _mm512_sub_epi32(perm_0, _mm512_set1_epi32(iStart));
+      /* like this:
       __m512i perm_0 = _mm512_set_epi32(
         program->pixel_offset[x + 15] - iStart,
-        program->pixel_offset[x + 14] - iStart,
-        program->pixel_offset[x + 13] - iStart,
-        program->pixel_offset[x + 12] - iStart,
-        program->pixel_offset[x + 11] - iStart,
-        program->pixel_offset[x + 10] - iStart,
-        program->pixel_offset[x + 9] - iStart,
-        program->pixel_offset[x + 8] - iStart,
-        program->pixel_offset[x + 7] - iStart,
-        program->pixel_offset[x + 6] - iStart,
-        program->pixel_offset[x + 5] - iStart,
-        program->pixel_offset[x + 4] - iStart,
-        program->pixel_offset[x + 3] - iStart,
-        program->pixel_offset[x + 2] - iStart,
-        program->pixel_offset[x + 1] - iStart,
-        0);
+        ...
+        program->pixel_offset[x + 0] - iStart);
+      */
 
       // Taps are contiguous (0, 1, 2, 3), so we increment perm indexes by 1.
       __m512i one_epi32 = _mm512_set1_epi32(1);
@@ -1652,25 +1643,15 @@ void resize_h_planar_float_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* s
       _MM_TRANSPOSE16_LANE4_PS(coef_r4, coef_r5, coef_r6, coef_r7);
 
       // convert resampling program in H-form into permuting indexes for src transposition in V-form
+      __m512i perm_0 = _mm512_loadu_si512((__m512i*)(&program->pixel_offset[x]));
       int iStart = program->pixel_offset[x + 0];
-
+      perm_0 = _mm512_sub_epi32(perm_0, _mm512_set1_epi32(iStart));
+      /* like this:
       __m512i perm_0 = _mm512_set_epi32(
         program->pixel_offset[x + 15] - iStart,
-        program->pixel_offset[x + 14] - iStart,
-        program->pixel_offset[x + 13] - iStart,
-        program->pixel_offset[x + 12] - iStart,
-        program->pixel_offset[x + 11] - iStart,
-        program->pixel_offset[x + 10] - iStart,
-        program->pixel_offset[x + 9] - iStart,
-        program->pixel_offset[x + 8] - iStart,
-        program->pixel_offset[x + 7] - iStart,
-        program->pixel_offset[x + 6] - iStart,
-        program->pixel_offset[x + 5] - iStart,
-        program->pixel_offset[x + 4] - iStart,
-        program->pixel_offset[x + 3] - iStart,
-        program->pixel_offset[x + 2] - iStart,
-        program->pixel_offset[x + 1] - iStart,
-        0);
+        ...
+        program->pixel_offset[x + 0] - iStart);
+        */
 
       // Taps are contiguous (0, 1, 2, 3 .. 7), so we increment perm indexes by 1.
       __m512i one_epi32 = _mm512_set1_epi32(1);

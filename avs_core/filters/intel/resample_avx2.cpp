@@ -1282,12 +1282,13 @@ void resize_h_planar_float_avx_transpose_vstripe_ks4(BYTE* dst8, const BYTE* src
 
       _MM_TRANSPOSE8_LANE4_PS(data_1_data_5, data_2_data_6, data_3_data_7, data_4_data_8);
 
-      __m256 result = _mm256_mul_ps(data_1_data_5, coef_1_coef_5);
-      result = _mm256_fmadd_ps(data_2_data_6, coef_2_coef_6, result);
-      result = _mm256_fmadd_ps(data_3_data_7, coef_3_coef_7, result);
-      result = _mm256_fmadd_ps(data_4_data_8, coef_4_coef_8, result);
+      // two sets, hint for the compiler to allow parallel fma's
+      __m256 result_0 = _mm256_mul_ps(data_1_data_5, coef_1_coef_5);
+      __m256 result_1 = _mm256_mul_ps(data_2_data_6, coef_2_coef_6);
+      result_0 = _mm256_fmadd_ps(data_3_data_7, coef_3_coef_7, result_0);
+      result_1 = _mm256_fmadd_ps(data_4_data_8, coef_4_coef_8, result_1);
 
-      _mm256_stream_ps(dst_ptr, result);
+      _mm256_stream_ps(dst_ptr, _mm256_add_ps(result_0, result_1));
 
       dst_ptr += dst_pitch;
       src_ptr += src_pitch;
@@ -1745,19 +1746,15 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
     _MM_TRANSPOSE8_LANE4_PS(coef_0, coef_1, coef_2, coef_3);
 
     // convert resampling program in H-form into permuting indexes for src transposition in V-form
-    const int begin1 = program->pixel_offset[x + 0];
-    const int begin2 = program->pixel_offset[x + 1];
-    const int begin3 = program->pixel_offset[x + 2];
-    const int begin4 = program->pixel_offset[x + 3];
-    const int begin5 = program->pixel_offset[x + 4];
-    const int begin6 = program->pixel_offset[x + 5];
-    const int begin7 = program->pixel_offset[x + 6];
-    const int begin8 = program->pixel_offset[x + 7];
-
-    __m256i offset_start = _mm256_set1_epi32(begin1); // all permute offsets relative to this start offset
-
-    __m256i perm_0 = _mm256_set_epi32(begin8, begin7, begin6, begin5, begin4, begin3, begin2, begin1);
-    perm_0 = _mm256_sub_epi32(perm_0, offset_start); // begin8_rel, begin7_rel, ... begin2_rel, begin1_rel
+      __m256i perm_0 = _mm256_loadu_si256((__m256i*)(&program->pixel_offset[x]));
+      int iStart = program->pixel_offset[x];
+      perm_0 = _mm256_sub_epi32(perm_0, _mm256_set1_epi32(iStart));
+      /* like this:
+      __m256i perm_0 = _mm512_set_epi32(
+        program->pixel_offset[x + 7] - iStart,
+        ...
+        program->pixel_offset[x + 0] - iStart);
+      */
 
     __m256i one_epi32 = _mm256_set1_epi32(1);
     __m256i perm_1 = _mm256_add_epi32(perm_0, one_epi32); // begin8_rel+1, begin7_rel+1, ... begin2_rel+1, begin1_rel+1
@@ -1766,17 +1763,17 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
     // These indexes are guaranteed to be 0..7 due to the earlier analysis,
     // and can be used for the indexing parameter in _mm256_permutevar8x32_ps
       float* AVS_RESTRICT dst_ptr = dst + x + y_from * dst_pitch;
-      const float* src_ptr = src + begin1 + y_from * src_pitch;
+      const float* src_ptr = src + iStart + y_from * src_pitch;
 
     // for partial_load only
-      const int remaining = program->source_size - begin1;
+      const int remaining = program->source_size - iStart;
     const int floats_to_load = remaining >= 8 ? 8 : remaining;
 
       for (int y = y_from; y < y_to; ++y) {
 
         // process scanline y
       __m256 data_src;
-      // We'll need exactly 8 floats starting from src+begin1
+        // We'll need exactly 8 floats starting from src+iStart
       if constexpr (partial_load) {
         // In the potentially unsafe zone (near the right edge of the image), we use a safe loading function
         // to prevent reading beyond the allocated source scanline. This handles cases where loading 8 floats
