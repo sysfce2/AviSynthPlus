@@ -2366,28 +2366,29 @@ AVS_FORCEINLINE static void process_pix4_coeff4_h_float_core_first_avx2(
   int filter_size,
   __m256& result1, __m256& result2, __m256& result3, __m256& result4)
 {
-  // Note: _mm_loadu_ps/_mm_load_ps automatically zero the upper 128 bits of the YMM register.
-  // We cast them to __m256 to allow using _mm256_mul_ps, which results in correct zero-extended output.
-
   // Pixel 1
-  __m256 data_1 = _mm256_castps128_ps256(_mm_loadu_ps(src + begin1));
-  __m256 coeff_1 = _mm256_castps128_ps256(_mm_load_ps(current_coeff));
-  result1 = _mm256_mul_ps(data_1, coeff_1);
+  __m128 data_1 = _mm_loadu_ps(src + begin1);
+  __m128 coeff_1 = _mm_load_ps(current_coeff);
+  __m128 temp_result_1 = _mm_mul_ps(data_1, coeff_1);
+  result1 = _mm256_zextps128_ps256_avx2(temp_result_1);
 
   // Pixel 2
-  __m256 data_2 = _mm256_castps128_ps256(_mm_loadu_ps(src + begin2));
-  __m256 coeff_2 = _mm256_castps128_ps256(_mm_load_ps(current_coeff + 1 * filter_size));
-  result2 = _mm256_mul_ps(data_2, coeff_2);
+  __m128 data_2 = _mm_loadu_ps(src + begin2);
+  __m128 coeff_2 = _mm_load_ps(current_coeff + 1 * filter_size);
+  __m128 temp_result_2 = _mm_mul_ps(data_2, coeff_2);
+  result2 = _mm256_zextps128_ps256_avx2(temp_result_2);
 
   // Pixel 3
-  __m256 data_3 = _mm256_castps128_ps256(_mm_loadu_ps(src + begin3));
-  __m256 coeff_3 = _mm256_castps128_ps256(_mm_load_ps(current_coeff + 2 * filter_size));
-  result3 = _mm256_mul_ps(data_3, coeff_3);
+  __m128 data_3 = _mm_loadu_ps(src + begin3);
+  __m128 coeff_3 = _mm_load_ps(current_coeff + 2 * filter_size);
+  __m128 temp_result_3 = _mm_mul_ps(data_3, coeff_3);
+  result3 = _mm256_zextps128_ps256_avx2(temp_result_3);
 
   // Pixel 4
-  __m256 data_4 = _mm256_castps128_ps256(_mm_loadu_ps(src + begin4));
-  __m256 coeff_4 = _mm256_castps128_ps256(_mm_load_ps(current_coeff + 3 * filter_size));
-  result4 = _mm256_mul_ps(data_4, coeff_4);
+  __m128 data_4 = _mm_loadu_ps(src + begin4);
+  __m128 coeff_4 = _mm_load_ps(current_coeff + 3 * filter_size);
+  __m128 temp_result_4 = _mm_mul_ps(data_4, coeff_4);
+  result4 = _mm256_zextps128_ps256_avx2(temp_result_4);
 }
 
 #define HAS_COEFF16_STEP
@@ -2539,30 +2540,29 @@ AVS_FORCEINLINE static void process_four_pixels_h_float_pix4of16_ks_4_8_16_avx2(
     // -------------------------------------------------------------------
     if (i < ksmod4) {
 
-      // 128-bit loads (movups/movaps) automatically zero the upper 128 bits of the YMM register.
-      // We cast to __m256 and FMA directly. 
-      // Lower 128 bits: Accumulated normally.
-      // Upper 128 bits: 0 * 0 + Result_High -> Result_High preserved.
-
       // Pixel 1
-      __m256 data_1 = _mm256_castps128_ps256(_mm_loadu_ps(src_ptr1 + i));
-      __m256 coeff_1 = _mm256_castps128_ps256(_mm_load_ps(current_coeff + i));
-      result1 = _mm256_fmadd_ps(data_1, coeff_1, result1);
+      __m128 data_1 = _mm_loadu_ps(src_ptr1 + i);
+      __m128 coeff_1 = _mm_load_ps(current_coeff + i);
+      __m128 temp_result_1 = _mm_mul_ps(data_1, coeff_1);
+      result1 = _mm256_add_ps(result1, _mm256_zextps128_ps256_avx2(temp_result_1));
 
       // Pixel 2
-      __m256 data_2 = _mm256_castps128_ps256(_mm_loadu_ps(src_ptr2 + i));
-      __m256 coeff_2 = _mm256_castps128_ps256(_mm_load_ps(current_coeff2 + i));
-      result2 = _mm256_fmadd_ps(data_2, coeff_2, result2);
+      __m128 data_2 = _mm_loadu_ps(src_ptr2 + i);
+      __m128 coeff_2 = _mm_load_ps(current_coeff2 + i);
+      __m128 temp_result_2 = _mm_mul_ps(data_2, coeff_2);
+      result2 = _mm256_add_ps(result2, _mm256_zextps128_ps256_avx2(temp_result_2));
 
       // Pixel 3
-      __m256 data_3 = _mm256_castps128_ps256(_mm_loadu_ps(src_ptr3 + i));
-      __m256 coeff_3 = _mm256_castps128_ps256(_mm_load_ps(current_coeff3 + i));
-      result3 = _mm256_fmadd_ps(data_3, coeff_3, result3);
+      __m128 data_3 = _mm_loadu_ps(src_ptr3 + i);
+      __m128 coeff_3 = _mm_load_ps(current_coeff3 + i);
+      __m128 temp_result_3 = _mm_mul_ps(data_3, coeff_3);
+      result3 = _mm256_add_ps(result3, _mm256_zextps128_ps256_avx2(temp_result_3));
 
       // Pixel 4
-      __m256 data_4 = _mm256_castps128_ps256(_mm_loadu_ps(src_ptr4 + i));
-      __m256 coeff_4 = _mm256_castps128_ps256(_mm_load_ps(current_coeff4 + i));
-      result4 = _mm256_fmadd_ps(data_4, coeff_4, result4);
+      __m128 data_4 = _mm_loadu_ps(src_ptr4 + i);
+      __m128 coeff_4 = _mm_load_ps(current_coeff4 + i);
+      __m128 temp_result_4 = _mm_mul_ps(data_4, coeff_4);
+      result4 = _mm256_add_ps(result4, _mm256_zextps128_ps256_avx2(temp_result_4));
 
       i += 4;
       if (i == kernel_size) return;
@@ -2571,16 +2571,15 @@ AVS_FORCEINLINE static void process_four_pixels_h_float_pix4of16_ks_4_8_16_avx2(
     const int ksmod2 = kernel_size / 2 * 2;
 
     // -------------------------------------------------------------------
-    // New Mod 2 Block (2 elements for four pixels using __m128)
-    // Mod 2 Block (Optimized: _mm_load_sd zeros upper bits 128-255 too!)
+    // Mod 2 Block (2 elements for four pixels using __m128)
     // -------------------------------------------------------------------
     if (i < ksmod2) {
-      // _mm_load_sd (vmovsd) loads 64 bits and zeroes everything else in the register (up to 256 bits).
+      // _mm_load_sd (vmovsd) loads 64 bits and zeroes everything else in the register.
       // Vector looks like: [0, 0, 0, 0, 0, 0, val1, val0]
       // We can use the exact same FMA trick.
 
       auto load_2_floats_as_ymm = [](const float* p) {
-        return _mm256_castps128_ps256(_mm_castpd_ps(_mm_load_sd(reinterpret_cast<const double*>(p))));
+        return _mm256_zextps128_ps256_avx2(_mm_castpd_ps(_mm_load_sd(reinterpret_cast<const double*>(p))));
         };
 
       result1 = _mm256_fmadd_ps(load_2_floats_as_ymm(src_ptr1 + i), load_2_floats_as_ymm(current_coeff + i), result1);
