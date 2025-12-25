@@ -1051,26 +1051,31 @@ See :ref:`GetEnvProperty <cplusplus_getenvproperty>`
 
 Interface V9.1 introduced important fixes for C interface methods: avs_new_video_frame_p(_a), avs_prop_get_data
 
+Interface V12 introduced global locks, GetCPUFlagsEx, query L2 cache size
+
 ::
 
     Example of usage with CPP interface (through avisynth.h).
 
     IScriptEnvironment *env = ...
-    int avisynth_if_ver = 6;
-    int avisynth_bugfix_ver = 0;
+    avisynth_if_ver = 6; // guessed minimum
+    avisynth_bugfix_ver = 0;
+    try { env->CheckVersion(8); avisynth_if_ver = 8; }
+    catch (const AvisynthError&) {}
     try { 
-      avisynth_if_ver = env->GetEnvProperty(AEP_INTERFACE_VERSION); 
+      env->CheckVersion(9); // if this works, we are at least V9, can use GetEnvProperty with AEP_INTERFACE_VERSION
+      avisynth_if_ver = env->GetEnvProperty(AEP_INTERFACE_VERSION); // only since V9!
       avisynth_bugfix_ver = env->GetEnvProperty(AEP_INTERFACE_BUGFIX);      
     } 
-    catch (const AvisynthError&) { 
-      try { env->CheckVersion(8); avisynth_if_ver = 8; } catch (const AvisynthError&) { }
-    }
+    catch (const AvisynthError&) {}
+    
     has_at_least_v8 = avisynth_if_ver >= 8; // frame properties, NewVideoFrameP, other V8 environment functions
     has_at_least_v8_1 = avisynth_if_ver > 8 || (avisynth_if_ver == 8 && avisynth_bugfix_ver >= 1);
     // 8.1: C interface frameprop access fixed, IsPropertyWritable/MakePropertyWritable support, extended GetEnvProperty queries
     has_at_least_v9 = avisynth_if_ver >= 9; // future
     has_at_least_v9_1 = avisynth_if_ver > 9 || (avisynth_if_ver == 9 && avisynth_bugfix_ver >= 1);
     // 9.1: C interface fixes: avs_new_video_frame_p(_a), avs_prop_get_data
+    has_at_least_v12 = avisynth_if_ver >= 12; // global locks, GetCPUFlagsEx, query L2 cache size
     
 
 .. _cplusplus_subframe:
@@ -1760,21 +1765,22 @@ CPP interface (through avisynth.h).
 ::
 
     IScriptEnvironment *env = ...
-    int avisynth_if_ver = 6;
-    int avisynth_bugfix_ver = 0;
+    avisynth_if_ver = 6; // guessed minimum
+    avisynth_bugfix_ver = 0;
+    try { env->CheckVersion(8); avisynth_if_ver = 8; }
+    catch (const AvisynthError&) {}
     try { 
-      avisynth_if_ver = env->GetEnvProperty(AEP_INTERFACE_VERSION); 
+      env->CheckVersion(9); // if this works, we are at least V9, can use GetEnvProperty with AEP_INTERFACE_VERSION
+      avisynth_if_ver = env->GetEnvProperty(AEP_INTERFACE_VERSION); // only since V9!
       avisynth_bugfix_ver = env->GetEnvProperty(AEP_INTERFACE_BUGFIX);      
     } 
-    catch (const AvisynthError&) { 
-      try { env->CheckVersion(8); avisynth_if_ver = 8; } catch (const AvisynthError&) { }
-    }
+    catch (const AvisynthError&) {}
+    
     has_at_least_v8 = avisynth_if_ver >= 8; // frame properties, NewVideoFrameP, other V8 environment functions
     has_at_least_v8_1 = avisynth_if_ver > 8 || (avisynth_if_ver == 8 && avisynth_bugfix_ver >= 1);
     // 8.1: C interface frameprop access fixed, IsPropertyWritable/MakePropertyWritable support, extended GetEnvProperty queries
     has_at_least_v9 = avisynth_if_ver >= 9;
-    has_at_least_v12 = avisynth_if_ver >= 12; // global locks
-    has_at_least_v13 = avisynth_if_ver >= 13; // GetCPUFlagsEx, query L2 cache size
+    has_at_least_v12 = avisynth_if_ver >= 12; // global locks, GetCPUFlagsEx, query L2 cache size
 
 C interface (through avisynth_c.h)
 
@@ -1786,21 +1792,23 @@ C interface (through avisynth_c.h)
     int retval = avs_check_version(env, 8);
     if (retval == 0) {
       avisynth_if_ver = 8;
-      // V8 at least, we have avs_get_env_property but AVS_AEP_INTERFACE_VERSION query may not be supported
-      int retval = avs_get_env_property(env, AVS_AEP_INTERFACE_VERSION);
+      retval = avs_check_version(env, 9);
+      if (retval == 0) {
+        // V9 at least, we have AVS_AEP_INTERFACE_VERSION supported
+        size_t retval_getenv = avs_get_env_property(env, AVS_AEP_INTERFACE_VERSION);
       if(env->error == 0) {
-        avisynth_if_ver = retval;
-        retval = avs_get_env_property(env, AVS_AEP_INTERFACE_BUGFIX);
+          avisynth_if_ver = retval_getenv;
+          retval_getenv = avs_get_env_property(env, AVS_AEP_INTERFACE_BUGFIX);
         if(env->error == 0)
-          avisynth_bugfix_ver = retval;
+            avisynth_bugfix_ver = retval_getenv;
       }
+    }
     }
     has_at_least_v8 = avisynth_if_ver >= 8; // frame properties, NewVideoFrameP, other V8 environment functions
     has_at_least_v8_1 = avisynth_if_ver > 8 || (avisynth_if_ver == 8 && avisynth_bugfix_ver >= 1);
     // 8.1: C interface frameprop access fixed, IsPropertyWritable/MakePropertyWritable support, extended GetEnvProperty queries
     has_at_least_v9 = avisynth_if_ver >= 9;
-    has_at_least_v12 = avisynth_if_ver >= 12; // global locks
-    has_at_least_v13 = avisynth_if_ver >= 13; // avs_get_cpu_flags_ex, query L2 cache size
+    has_at_least_v12 = avisynth_if_ver >= 12; // global locks, avs_get_cpu_flags_ex, query L2 cache size
 
 
 AEP_INTERFACE_BUGFIX (c++) AVS_AEP_INTERFACE_BUGFIX (c)
@@ -1827,7 +1835,7 @@ in the first place).
 AEP_CACHESIZE_L2 (c++) AVS_AEP_CACHESIZE_L2 (c)
 ...............................................
 
-Since V13. Returns the size of the L2 CPU cache in bytes.
+Since V12. Returns the size of the L2 CPU cache in bytes.
 
 ::
 
