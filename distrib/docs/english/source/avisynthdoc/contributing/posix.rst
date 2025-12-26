@@ -76,13 +76,33 @@ the use of the `filesystem submodule`_.
 Raspbian Raspberry Pi 5 + llvm + ninja
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Raspberry Pi 5 is an aarch64 architecture, presently (2025) comes with a gcc 12.2.
-Unfortunately it is not able to optimize well, namely it does not recognize well
+Raspberry Pi 5 is an aarch64 architecture, presently comes with a gcc 14.2.0 and Clang 19.1.7 
+as of December 2025 (gcc was 12.2, Clang 14.0.6 in early 2025).
+
+Version 12.2 was unfortunately unable to optimize well, namely it does not recognize well
 the vectorizable code, and even produces slower code with a so-called "vector attribute"
 that without it. Probably the ArmV8-a support is not perfect.
 
-Using llvm instead is the way to go. At the moment it comes with 14.0.6 version for this
-distribution.
+it seems that using llvm instead is the way to go.
+
+This procedure was done on a trixie version:
+::
+
+    cat /etc/os-release
+
+::
+
+    PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+    NAME="Debian GNU/Linux"
+    VERSION_ID="13"
+    VERSION="13 (trixie)"
+    VERSION_CODENAME=trixie
+    DEBIAN_VERSION_FULL=13.2
+    ID=debian
+    HOME_URL="https://www.debian.org/"
+    SUPPORT_URL="https://www.debian.org/support"
+    BUG_REPORT_URL="https://bugs.debian.org/"
+
 
 I'm still using here the -DCMAKE_BUILD_TYPE=Release flag, but after a May 2025 source
 it is no longer needed to avoid a completely unoptimized build with Ninja.
@@ -98,9 +118,11 @@ First, get some basic stuff.
     git clone https://github.com/AviSynth/AviSynthPlus && \
     cd AviSynthPlus && \
     mkdir avisynth-build && \
-    cd avisynth-build && \
+    cd avisynth-build
 
 From now on, instead of a copy-pastable content, we create script files with the following contents.
+
+Create a suitable directory for these scripts, and save them there.
 
 *config.sh*: grabs the missing components for compiling AviSynth with llvm.
 The prefix path is very important.
@@ -110,18 +132,55 @@ The prefix path is very important.
 
     # Configuration variables for LLVM build
     LLVM_PACKAGE="llvm"
-    LLVM_CMAKE_PREFIX_PATH="/usr/lib/llvm-$(ls /usr/lib/llvm-* 2>/dev/null | sed 's>
+
+    # --- AUTOMATIC VERSION DETECTION AND PATH SETUP ---
+    # Detect the full path for CMake
+    LLVM_CMAKE_PREFIX_PATH="$(llvm-config --prefix)"
+    # Detect the major version for installing the specific compiler binary
+    LLVM_MAJOR_VERSION=$(llvm-config --version | cut -d. -f1 2>/dev/null)
+
+    if [ -z "$LLVM_MAJOR_VERSION" ]; then
+        echo "Fatal Error: Could not determine LLVM major version. Cannot proceed."
+        exit 1
+    fi
 
     echo "Using LLVM CMake prefix path: $LLVM_CMAKE_PREFIX_PATH"
 
-    # Optional: Install LLVM, libc++-dev, and libc++abi-dev if not already present
-    if ! command -v clang++ &> /dev/null || ! dpkg -s libc++-dev &> /dev/null || ! >
-      echo "LLVM, libc++-dev, or libc++abi-dev not found. Installing..."
+    # --- COMPLETE INSTALLATION CHECK ---
+    # Check for the *specific* versioned compiler binary (e.g., clang-19)
+    # AND the necessary libraries.
+    if ! command -v "clang-$LLVM_MAJOR_VERSION" &> /dev/null || ! dpkg -s libc++-dev &> /dev/null || ! dpkg -s libc++abi-dev &> /dev/null; then
+      echo "LLVM compiler (clang-$LLVM_MAJOR_VERSION) or required libraries not found. Installing..."
       sudo apt update
-      sudo apt install -y "$LLVM_PACKAGE" libc++-dev libc++abi-dev
+
+      # Install the specific versioned compiler package and libraries.
+      # This fixes the problem where the generic 'llvm' package doesn't provide 'clang-19'.
+      sudo apt install -y "clang-$LLVM_MAJOR_VERSION" libc++-dev libc++abi-dev
     fi
 
 
+you can check the installed version and the prefix with
+::
+
+    llvm-config --version
+    llvm-config --prefix
+
+Or list your all clang versions
+::
+
+    ls /usr/bin/clang*
+
+And query e.g. clang-19
+::
+
+    clang-19 --version
+    
+    Debian clang version 19.1.7 (3+b1)
+    Target: aarch64-unknown-linux-gnu
+    Thread model: posix
+    InstalledDir: /usr/lib/llvm-19/bin
+
+  
 *build-llvm.sh* makes an actual clean build, assumes that avisynth was cloned
 in the right folder in the previous step.
 
@@ -130,29 +189,78 @@ You can remove the general purge by remove the ``rm -rf *`` if everythings behav
 ::
 
     #!/bin/bash
-
-    # Source the configuration script
+    
+    # Source the configuration script (sets LLVM_CMAKE_PREFIX_PATH)
     source ./config.sh
-
-    cd ~/AviSynthPlus/avisynth-build
-    rm -rf *
-
+    
+    # 1. AUTOMATICALLY EXTRACT MAJOR LLVM VERSION (FIXED)
+    # Uses the known working '--version' output and cuts out the major number (e.g., '19').
+    LLVM_MAJOR_VERSION=$(llvm-config --version | cut -d. -f1 2>/dev/null)
+    
+    if [ -z "$LLVM_MAJOR_VERSION" ]; then
+        echo "Fatal Error: Could not determine LLVM major version. Please run 'llvm-config --version' manually to verify installation."
+        exit 1
+    fi
+    
+    echo "Detected LLVM Major Version: $LLVM_MAJOR_VERSION"
+    
+    # Navigate to the build directory and clean up. Safely.
+    BUILD_DIR=~/AviSynthPlus/avisynth-build
+    # Navigate
+    cd "$BUILD_DIR"
+    # Clean up (The shell expands the unquoted * to all visible contents)
+    rm -rf "$BUILD_DIR"/*
+    
+    # 2. RUN CMAKE WITH VERSIONED COMPILERS
+    # Compilers are now set to the specific version (e.g., clang-19, clang++-19).
     cmake ../ -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_C_COMPILER=clang \
-        -DCMAKE_CXX_COMPILER=clang++ \
+        -DCMAKE_C_COMPILER="clang-$LLVM_MAJOR_VERSION" \
+        -DCMAKE_CXX_COMPILER="clang++-$LLVM_MAJOR_VERSION" \
         -DCMAKE_PREFIX_PATH="$LLVM_CMAKE_PREFIX_PATH"
-
+    
+    # Check if CMake failed
+    if [ $? -ne 0 ]; then
+        echo "CMake configuration failed. Please check the output above."
+        exit 1
+    fi
+    
+    # 3. BUILD
     ninja
+    
+    # Check if ninja build failed
+    if [ $? -ne 0 ]; then
+        echo "Ninja build failed. Please check the output above."
+        exit 1
+    fi
+    
+    # 4. INSTALL
+    
+    # The generated avisynth.pc is in the build directory, inside the avs_core folder.
+    AVS_VERSION=$(cat avs_core/avisynth.pc | grep Version: | cut -d " " -f2)
+    CURRENT_DATE=$(date --rfc-3339=date | sed 's/-//g')
+    PACKAGE_VERSION="$AVS_VERSION-$CURRENT_DATE-git"
+    
+    echo "Package Version: $PACKAGE_VERSION"
+    
+    sudo checkinstall --pkgname=avisynth \
+        --pkgversion="$PACKAGE_VERSION" \
+        --backup=no \
+        --deldoc=yes \
+        --delspec=yes \
+        --deldesc=yes \
+        --strip=yes \
+        --stripso=yes \
+        --addso=yes \
+        --fstrans=no \
+        --default \
+        ninja install
+    
+    # Navigate to the target bin directory (assuming this is correct)
+    cd ~/bin
+      
+    echo "AviSynth+ built and installed with LLVM version $LLVM_MAJOR_VERSION!"
 
-    sudo checkinstall --pkgname=avisynth --pkgversion="$(grep -r \
-        Version avs_core/avisynth.pc | cut -f2 -d " ")-$(date --rfc-3339=date | \
-        sed 's/-//g')-git" --backup=no --deldoc=yes --delspec=yes --deldesc=yes \
-        --strip=yes --stripso=yes --addso=yes --fstrans=no --default ninja install
-
-    cd ~bin
-
-    echo "AviSynth+ built and installed with LLVM!"
 
 
 When you are happy with gcc, use this script:
@@ -161,21 +269,69 @@ build-gcc.sh:
 ::
 
     #!/bin/bash
+    
+    # Navigate to the build directory and clean up. Safely.
+    BUILD_DIR=~/AviSynthPlus/avisynth-build
+    # Navigate
+    cd "$BUILD_DIR"
+    # Clean up (The shell expands the unquoted * to all visible contents)
+    rm -rf "$BUILD_DIR"/*
+    
+    # ---  Get GCC Major Version ---
+    GXX_MAJOR_VERSION=$(g++ -dumpversion | cut -d. -f1 2>/dev/null)
+    
+    if [ -z "$GXX_MAJOR_VERSION" ]; then
+        echo "Warning: Could not determine G++ major version. Using \"$GXX_MAJOR_VERSION\"."
+    fi
+    # -----------------------------------
+    
+    # 1. Configure the build using the default system compiler (gcc/g++)
+    cmake ../ -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+    
+    # Check if CMake failed
+    if [ $? -ne 0 ]; then
+        echo "CMake configuration failed."
+        exit 1
+    fi
+    
+    # 2. Build the project
+    ninja
+    
+    # Check if ninja build failed
+    if [ $? -ne 0 ]; then
+        echo "Ninja build failed."
+        exit 1
+    fi
+    
+    # 3. Prepare Package Version
+    AVS_VERSION=$(cat avs_core/avisynth.pc | grep Version: | cut -d " " -f2)
+    CURRENT_DATE=$(date --rfc-3339=date | sed 's/-//g')
+    PACKAGE_VERSION="$AVS_VERSION-$CURRENT_DATE-git"
+    
+    echo "Package Version: $PACKAGE_VERSION"
+    
+    # 4. Install using checkinstall
+    sudo checkinstall --pkgname=avisynth \
+        --pkgversion="$PACKAGE_VERSION" \
+        --backup=no \
+        --deldoc=yes \
+        --delspec=yes \
+        --deldesc=yes \
+        --strip=yes \
+        --stripso=yes \
+        --addso=yes \
+        --fstrans=no \
+        --default \
+        ninja install
+    
+    # Navigate to the target bin directory
+    cd ~/bin
+    
+    # 5. Success Message
+    echo "AviSynth+ built and installed using GCC/G++ version $GXX_MAJOR_VERSION!"
 
-    cd ~/AviSynthPlus/avisynth-build
-    rm -rf *
 
-    cmake ../ -G Ninja -DCMAKE_BUILD_TYPE=Release && \
-    ninja && \
-        sudo checkinstall --pkgname=avisynth --pkgversion="$(grep -r \
-        Version avs_core/avisynth.pc | cut -f2 -d " ")-$(date --rfc-3339=date | \
-        sed 's/-//g')-git" --backup=no --deldoc=yes --delspec=yes --deldesc=yes \
-        --strip=yes --stripso=yes --addso=yes --fstrans=no --default ninja install
-
-    cd ~bin
-
-
-
+For testing you can go on to the more advanced ffmpeg support.
 
 
 Distributions without checkinstall
@@ -294,6 +450,7 @@ Prerequisites
 Linux
 ~~~~~
 
+
 Ubuntu
 ......
 
@@ -376,6 +533,82 @@ which helps you through the process.
 Important: you'll need some additions, like extending the configuration with 
 ``--enable-avisynth`` and maybe ``--disable-doc``.
 
+Here comes an all-in-one description:
+
+First, enable the Sources repository by either enabling it
+using the Software Sources dialog or by uncommenting the
+right lines in /etc/apt/sources.list.
+
+::
+
+    sudo apt-get build-dep ffmpeg
+    sudo apt-get install nasm libsdl2-dev
+
+ffmpeg needs at least nasm 2.14, we have 2.16.03-1 on December 2005 Raspbian.
+other prerequisites:
+
+ffmpeg-pre.sh
+::
+
+    sudo apt-get update -qq && sudo apt-get -y install \
+      autoconf \
+      automake \
+      build-essential \
+      cmake \
+      git-core \
+      libass-dev \
+      libfreetype6-dev \
+      libgnutls28-dev \
+      libmp3lame-dev \
+      libsdl2-dev \
+      libtool \
+      libva-dev \
+      libvdpau-dev \
+      libvorbis-dev \
+      libxcb1-dev \
+      libxcb-shm0-dev \
+      libxcb-xfixes0-dev \
+      meson \
+      ninja-build \
+      pkg-config \
+      texinfo \
+      wget \
+      yasm \
+      zlib1g-dev
+
+In your home directory make a new directory to put all of the source code and binaries into:
+
+::
+
+    mkdir -p ~/ffmpeg_sources ~/bin
+
+Then various features, like libx264 
+::
+
+    sudo apt-get install libx264-dev
+
+Finally FFmpeg build with avisynth, here I set only x264 and avisynth, a rather minimum setup to test.
+::
+
+    cd ~/ffmpeg_sources && \
+    wget -O ffmpeg-snapshot.tar.bz2 https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 && \
+    tar xjvf ffmpeg-snapshot.tar.bz2 && \
+    cd ffmpeg && \
+    PATH="$HOME/bin:$PATH" PKG_CONFIG_PATH="$HOME/ffmpeg_build/lib/pkgconfig" ./configure \
+      --prefix="$HOME/ffmpeg_build" \
+      --pkg-config-flags="--static" \
+      --extra-cflags="-I$HOME/ffmpeg_build/include" \
+      --extra-ldflags="-L$HOME/ffmpeg_build/lib" \
+      --extra-libs="-lpthread -lm" \
+      --ld="g++" \
+      --bindir="$HOME/bin" \
+      --enable-gpl \
+      --enable-libx264 \
+      --enable-avisynth \
+      --enable-nonfree && \
+    PATH="$HOME/bin:$PATH" make -j4 && \
+    make install && \
+    hash -r
 
 
 macOS
@@ -418,6 +651,7 @@ The easiest two scripts to test the installation are Version or Colorbars/Colorb
 ::
 
     Colorbars() # or ColorbarsHD()
+    Info()
 
 
 And running this script in the test build of FFmpeg:
@@ -426,27 +660,44 @@ And running this script in the test build of FFmpeg:
 
     cd ~/ffmpeg_build/bin
 
+or configure the PATH Permanently:
+::
 
-Create the script in this directory, for ease of testing.
+    nano ~/.bashrc
+    
+Make sure this line is near the top (or uncommented and correct):
+::
+
+    export PATH="$HOME/bin:$PATH"
+
+Save and close the file, then apply the change:
+::
+
+    source ~/.bashrc
+
+Now, which ffplay (or ffmpeg) should report /home/<yourhome>/bin/ffplay (/ffmpeg)
+
+
+Create the script in a directory, for ease of testing.
 
 To play the script::
 
-    ./ffplay -i test.avs
+    ffplay -i test.avs
 
 To convert as usual::
 
-    ./ffmpeg -i test.avs [encoding options]
+    ffmpeg -i test.avs [encoding options]
 
 Benchmark::
 
-    ./ffmpeg -benchmark -i test.avs -f null -
+    ffmpeg -benchmark -i test.avs -f null -
 
 Stream to a GUI, e.g. to VLC Media Player on a Raspberry Pi.
 Choose "Open Network Stream" from menu, and enter ``udp://@127.0.0.1:10000`` 
 for the network url.
 ::
 
-    ./ffmpeg -i test.avs -pix_fmt yuv420p -f mpegts udp://127.0.0.1:10000
+    ffmpeg -i test.avs -pix_fmt yuv420p -f mpegts udp://127.0.0.1:10000
 
 
 Troubleshooting:
@@ -463,6 +714,10 @@ Troubleshooting:
 - ffmpeg does not recognize the AviSynth script. You probably typed ``ffmpeg`` 
   instead of ``./ffmpeg``. For example, Raspberry Pi 5 Raspbian comes with a 5.x ffmpeg 
   without AviSynth support, and your command finds that one.
+
+
+
+
 
 
 Loading actual video sources will require a source filter.  FFMS2 doesn't require any porting
