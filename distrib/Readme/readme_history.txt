@@ -9,7 +9,48 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
-20251130 3.7.5.xxxxx (pre 3.7.6)
+20251225 3.7.5.r4403 (pre 3.7.6)
+--------------------------------
+- Fix: The `Animate()` function now explicitly clamps interpolated values to ensure they remain 
+  strictly between the start and end range. Due to the high precision of 64-bit `double` introduced 
+  in v3.7.5, intermediate calculations could slightly exceed the boundary (e.g., 360.00000000000006 
+  when interpolating from 0 to 360.0 in 564 steps), requiring this clamp to prevent out-of-range errors.
+  
+20251223 3.7.5.r4400 (pre 3.7.6)
+--------------------------------
+- Resamplers, horiz. float, add back DTL2020's new quick algorithms for kernel size <= 4. Since MT is not their forte, use the generic resamplers if Prefetch > 1.
+- AVX512 float resampler additions, optimize horizontal (kernelsize <= 8), add code for vertical (DTL2020)
+- Fix an ApplyMessage regression not recognizing '\n' line ends of Authors.avs (since 20250831)
+
+20251220 3.7.5.r4392 (pre 3.7.6)
+--------------------------------
+- "Info": Optimize AVX512 features display, group features, make a bit more compact
+- "Info": add L2 cache size display
+- "SetMaxCPU": add "avx512base" and "avx512fast" options to enable/disable AVX512 grouped features. see SetMaxCPU .
+- ARM64 (aarch64) area:
+  - "Info": add ARMV8-A features display (NEON, DOTPROD, SVE2)
+  - Add ArmV8-A cpu feature detection (NEON, DOTPROD, SVE2) on ARM64 Windows/Linux/macOS builds. On Windows, only up-to DOTPROD can be detected due to OS limitations.
+  - New CPU flags in cpuid.h and avisynth_c.h: CPUF_ARM_NEON, CPUF_ARM_DOTPROD, CPUF_ARM_SVE2
+  - "SetMaxCPU": add "neon", "dotprod", "sve2" options to enable/disable ARM64 (aarch64) features.
+- New CPU flags: cpuid.h and ``avisynth_c.h - added AVX512 group feature flags CPUF_AVX512_BASE and CPUF_AVX512_FAST (Ice Lake, usable AVX-512 since that point). - added many new AVX512 individual feature flags - added ARM64 feature flags CPUF_ARM_NEON, CPUF_ARM_DOTPROD, CPUF_ARM_SVE2 - CPUF_xxxxx flags are now 64 bit, replace enum with constexpr.
+- CMakeLists.txt: avx512 compile flag support for gcc/clang ("fast" Ice Lake-like feature set).
+- V12 interface: GetCPUFlagsEx returning 64 bit flags (too many AVX512 subfeatures to fit in 32 bit). C interface: avs_get_cpu_flags_ex. see GetCPUFlagsEx and GetCPUFlags
+- V12 interface: L2 cache size query support. New entry in AvsEnvProperty: AEP_CACHESIZE_L2 (C++), AVS_AEP_CACHESIZE_L2 (C) to query L2 cache size in bytes with IScriptEnvironment->GetEnvProperty(). x86/x64 architecture only for now. See AvsEnvProperty .
+- Refactor CMakeLists.txt:
+  - Correct default of ENABLE_INTEL_SIMD for cross-compiling scenarios (e.g. ARM64 target on x86_64 host) Old logic relied on the host processor: ${CMAKE_SYSTEM_PROCESSOR}
+  - Add back option to compile ARM64 builds with Visual Studio on Windows. On VS2026 even clangcl (LLVM) is supported out-of-box for ARM64 platform, easily cross-compilable way from an x64 machine.
+  - VDubFilter: allow building on Windows only x86/x64 targets (and not for ARM64).
+  - Fix LLVM/clangcl/Intel ICX compile warning: 'WIN32' macro redefined as "#define WIN32 /D_WINDOWS /W3 /GR /EHsc 1 ", when CMake injects a command-line macro wrongly and thus redefines WIN32 . The fix: converts global add_definitions("/D ...") and other option string magics into per-target target_compile_definitions() and target_compile_options(). Thus removing the accidental injection of ${CMAKE_CXX_FLAGS} into add_compile_options(), and prevents the WIN32 macro redefinition.
+- Change video-framebuffer over-allocation from 16 to 64 bytes. Allocate 64 bytes more than needed for video frame buffer in order to be able to read 64 bytes safely with AVX512 without risking access violation on the last pixels of the frame.
+- rst docs
+  - Update GetCPUFlags, add GetCPUFlagsEx
+  - Update CPU Feature Flags with AVX512 and ARM64 features
+  - Update SetMaxCPU with AVX512 and ARM64 features
+  - Update AvsEnvProperty with L2 cache size entry
+  - Update Russian GPL notice in UTF-8 format
+
+
+20251130 3.7.5.r4356 (pre 3.7.6)
 --------------------------------
 - v12 interface: inform plugins about the effective thread count after Prefetch() via cache hints:
   * ``CachePolicyHint::CACHE_INFORM_NUM_THREADS`` (C++)
@@ -20,7 +61,7 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - Resamplers: optimizer 32-bit float vertical avx2 by DTL2020
 - Update Russian GPL notice in UTF-8 format
 
-20251122 3.7.5.xxxxx (pre 3.7.6)
+20251122 3.7.5.r4335 (pre 3.7.6)
 --------------------------------
 - Fix #462: Report: "AviSynth scripts don't work in a folder with a Unicode name."
   Plugin autoload folders are internally stored in UTF-8, regardless of which Windows ANSI codepage is set.

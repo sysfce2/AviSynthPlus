@@ -102,6 +102,11 @@ Bugfixes
 - Change video-framebuffer over-allocation from 16 to 64 bytes. Allocate 64 bytes more than needed for 
   video frame buffer in order to be able to read 64 bytes safely with AVX512 without risking access violation 
   on the last pixels of the frame.
+- Fix: The `Animate()` function now explicitly clamps interpolated values to ensure they remain 
+  strictly between the start and end range. Due to the high precision of 64-bit `double` introduced 
+  in v3.7.5, intermediate calculations could slightly exceed the boundary (e.g., 360.00000000000006 
+  when interpolating from 0 to 360.0 in 564 steps), requiring this clamp to prevent out-of-range errors.
+
 
 Optimizations
 ~~~~~~~~~~~~~
