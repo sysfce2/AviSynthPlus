@@ -584,7 +584,7 @@ void resize_v_c_planar_uint8_16_t_auto_vectorized(BYTE* dst8, const BYTE* src8, 
           if constexpr (!lessthan16bit) {
             src16 += shifttosigned_short;
           }
-          src.convert_from(src16); // widen short->int
+          src = Int32x4::convert_from(src16); // widen short->int
         }
 
         result += src * a_coeff;

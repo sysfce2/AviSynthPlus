@@ -32,7 +32,7 @@
 // which is not derived from or based on Avisynth, such as 3rd-party filters,
 // import and export plugins, or graphical user interfaces.
 
-// SIMD-like C++ classes (C)2025 Ferenc Pintér
+// SIMD-like C++ classes (C)2025 Ferenc PintÃ©r
 
 #ifndef __AVS_SIMD_C_H__
 #define __AVS_SIMD_C_H__
@@ -286,6 +286,7 @@ public:
   // Full and half size
 
   // Full: Widening or narrowing without range checks, e.g., no saturation when converting down.
+  // This one  must be used as src=Int32x4::convert_from(src16) and NOT as src32.convert_from(src16).
   template <typename OtherDerived, typename OtherVecType>
   AVS_FORCEINLINE static VectorWrapper convert_from(const VectorWrapper<OtherDerived, OtherVecType>& other) {
     static_assert(vector_traits<VecType>::size == vector_traits<OtherVecType>::size,
