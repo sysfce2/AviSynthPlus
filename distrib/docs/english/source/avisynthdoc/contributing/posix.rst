@@ -186,31 +186,32 @@ in the right folder in the previous step.
 
 You can remove the general purge by remove the ``rm -rf *`` if everythings behaves as it should.
 
+**build-llvm.sh**:
 ::
 
     #!/bin/bash
-    
+
     # Source the configuration script (sets LLVM_CMAKE_PREFIX_PATH)
     source ./config.sh
-    
-    # 1. AUTOMATICALLY EXTRACT MAJOR LLVM VERSION (FIXED)
+
+    # 1. AUTOMATICALLY EXTRACT MAJOR LLVM VERSION
     # Uses the known working '--version' output and cuts out the major number (e.g., '19').
     LLVM_MAJOR_VERSION=$(llvm-config --version | cut -d. -f1 2>/dev/null)
-    
+
     if [ -z "$LLVM_MAJOR_VERSION" ]; then
         echo "Fatal Error: Could not determine LLVM major version. Please run 'llvm-config --version' manually to verify installation."
         exit 1
     fi
-    
+
     echo "Detected LLVM Major Version: $LLVM_MAJOR_VERSION"
-    
+
     # Navigate to the build directory and clean up. Safely.
     BUILD_DIR=~/AviSynthPlus/avisynth-build
     # Navigate
     cd "$BUILD_DIR"
     # Clean up (The shell expands the unquoted * to all visible contents)
     rm -rf "$BUILD_DIR"/*
-    
+
     # 2. RUN CMAKE WITH VERSIONED COMPILERS
     # Compilers are now set to the specific version (e.g., clang-19, clang++-19).
     cmake ../ -G Ninja \
@@ -218,31 +219,68 @@ You can remove the general purge by remove the ``rm -rf *`` if everythings behav
         -DCMAKE_C_COMPILER="clang-$LLVM_MAJOR_VERSION" \
         -DCMAKE_CXX_COMPILER="clang++-$LLVM_MAJOR_VERSION" \
         -DCMAKE_PREFIX_PATH="$LLVM_CMAKE_PREFIX_PATH"
-    
+
     # Check if CMake failed
     if [ $? -ne 0 ]; then
         echo "CMake configuration failed. Please check the output above."
         exit 1
     fi
-    
-    # 3. BUILD
+
+    # 2. Build the project
     ninja
-    
+
     # Check if ninja build failed
     if [ $? -ne 0 ]; then
         echo "Ninja build failed. Please check the output above."
         exit 1
     fi
-    
-    # 4. INSTALL
-    
+
+    # 3. Prepare Package Version
+
     # The generated avisynth.pc is in the build directory, inside the avs_core folder.
     AVS_VERSION=$(cat avs_core/avisynth.pc | grep Version: | cut -d " " -f2)
     CURRENT_DATE=$(date --rfc-3339=date | sed 's/-//g')
     PACKAGE_VERSION="$AVS_VERSION-$CURRENT_DATE-git"
-    
+
     echo "Package Version: $PACKAGE_VERSION"
-    
+
+
+    # 4.1 Ensure symlinks are (re)created during install so checkinstall includes them
+    # Detect the SONAME from the freshly built real library (libavisynth.so.<version>)
+    # and remove both the namelink (libavisynth.so) and the SONAME symlink (libavisynth.so.<SOVERSION>)
+    # before running 'ninja install' under checkinstall. This guarantees they are recreated
+    # during install and captured in the package payload.
+    # Without this step, libavisynth.so may be missing after every second build, because
+    # CMake reports existing symlinks as "Up-to-date", and checkinstall does not record
+    # pre-existing filesystem items in the package payload.
+
+    LIBDIR=/usr/lib/aarch64-linux-gnu
+
+    # Find the real library we just built (e.g., libavisynth.so.3.7.5) in the target libdir
+    REAL_LIB=$(ls -1 "$LIBDIR"/libavisynth.so.* 2>/dev/null | grep -E '\.so\.[0-9]+\.[0-9]+' | head -n1)
+
+    # If the real library is not yet present in the target libdir (first install on a clean system),
+    # try to read it from the build tree so we can still get the SONAME safely.
+    if [ -z "$REAL_LIB" ]; then
+      # Search in the build directory output (adjust if your library lands elsewhere during build)
+      REAL_LIB=$(ls -1 "$BUILD_DIR"/libavisynth.so.* 2>/dev/null | grep -E '\.so\.[0-9]+\.[0-9]+' | head -n1)
+    fi
+
+    # If we managed to locate the real library, extract SONAME and remove symlinks safely.
+    if [ -n "$REAL_LIB" ]; then
+      SONAME=$(readelf -d "$REAL_LIB" 2>/dev/null | awk '/SONAME/ {print $5}' | tr -d '[]')
+      if [ -n "$SONAME" ]; then
+        echo "Detected SONAME: $SONAME (from $REAL_LIB)"
+        # Remove namelink and SONAME symlink if present; leave the real file intact.
+        sudo rm -f "$LIBDIR/libavisynth.so" "$LIBDIR/$SONAME"
+      else
+        echo "Warning: Could not detect SONAME via readelf; skipping pre-install symlink removal."
+      fi
+    else
+      echo "Note: Real library not found before install; skipping pre-install symlink removal."
+    fi
+
+    # 4.2 Install using checkinstall
     sudo checkinstall --pkgname=avisynth \
         --pkgversion="$PACKAGE_VERSION" \
         --backup=no \
@@ -255,62 +293,104 @@ You can remove the general purge by remove the ``rm -rf *`` if everythings behav
         --fstrans=no \
         --default \
         ninja install
-    
-    # Navigate to the target bin directory (assuming this is correct)
+
+    # 4.3 Refresh the dynamic linker cache
+    sudo ldconfig
+
+  
+    # Navigate to the target bin directory
     cd ~/bin
-      
+  
+    # 5. Success Message
     echo "AviSynth+ built and installed with LLVM version $LLVM_MAJOR_VERSION!"
 
 
 
 When you are happy with gcc, use this script:
 
-build-gcc.sh:
+**build-gcc.sh**:
 ::
 
     #!/bin/bash
-    
+
     # Navigate to the build directory and clean up. Safely.
     BUILD_DIR=~/AviSynthPlus/avisynth-build
     # Navigate
     cd "$BUILD_DIR"
     # Clean up (The shell expands the unquoted * to all visible contents)
     rm -rf "$BUILD_DIR"/*
-    
+
     # ---  Get GCC Major Version ---
     GXX_MAJOR_VERSION=$(g++ -dumpversion | cut -d. -f1 2>/dev/null)
-    
+
     if [ -z "$GXX_MAJOR_VERSION" ]; then
         echo "Warning: Could not determine G++ major version. Using \"$GXX_MAJOR_VERSION\"."
     fi
     # -----------------------------------
-    
+
     # 1. Configure the build using the default system compiler (gcc/g++)
     cmake ../ -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-    
+
     # Check if CMake failed
     if [ $? -ne 0 ]; then
-        echo "CMake configuration failed."
+        echo "CMake configuration failed. Please check the output above."
         exit 1
     fi
-    
+
     # 2. Build the project
     ninja
-    
+
     # Check if ninja build failed
     if [ $? -ne 0 ]; then
-        echo "Ninja build failed."
+        echo "Ninja build failed. Please check the output above."
         exit 1
     fi
-    
+
     # 3. Prepare Package Version
+
+    # The generated avisynth.pc is in the build directory, inside the avs_core folder.
     AVS_VERSION=$(cat avs_core/avisynth.pc | grep Version: | cut -d " " -f2)
     CURRENT_DATE=$(date --rfc-3339=date | sed 's/-//g')
     PACKAGE_VERSION="$AVS_VERSION-$CURRENT_DATE-git"
-    
+
     echo "Package Version: $PACKAGE_VERSION"
-    
-    # 4. Install using checkinstall
+
+    # 4.1 Ensure symlinks are (re)created during install so checkinstall includes them
+    # Detect the SONAME from the freshly built real library (libavisynth.so.<version>)
+    # and remove both the namelink (libavisynth.so) and the SONAME symlink (libavisynth.so.<SOVERSION>)
+    # before running 'ninja install' under checkinstall. This guarantees they are recreated
+    # during install and captured in the package payload.
+    # Without this step, libavisynth.so may be missing after every second build, because
+    # CMake reports existing symlinks as "Up-to-date", and checkinstall does not record
+    # pre-existing filesystem items in the package payload.
+
+    LIBDIR=/usr/lib/aarch64-linux-gnu
+
+    # Find the real library we just built (e.g., libavisynth.so.3.7.5) in the target libdir
+    REAL_LIB=$(ls -1 "$LIBDIR"/libavisynth.so.* 2>/dev/null | grep -E '\.so\.[0-9]+\.[0-9]+' | head -n1)
+
+    # If the real library is not yet present in the target libdir (first install on a clean system),
+    # try to read it from the build tree so we can still get the SONAME safely.
+    if [ -z "$REAL_LIB" ]; then
+      # Search in the build directory output (adjust if your library lands elsewhere during build)
+      REAL_LIB=$(ls -1 "$BUILD_DIR"/libavisynth.so.* 2>/dev/null | grep -E '\.so\.[0-9]+\.[0-9]+' | head -n1)
+    fi
+
+    # If we managed to locate the real library, extract SONAME and remove symlinks safely.
+    if [ -n "$REAL_LIB" ]; then
+      SONAME=$(readelf -d "$REAL_LIB" 2>/dev/null | awk '/SONAME/ {print $5}' | tr -d '[]')
+      if [ -n "$SONAME" ]; then
+        echo "Detected SONAME: $SONAME (from $REAL_LIB)"
+        # Remove namelink and SONAME symlink if present; leave the real file intact.
+        sudo rm -f "$LIBDIR/libavisynth.so" "$LIBDIR/$SONAME"
+      else
+        echo "Warning: Could not detect SONAME via readelf; skipping pre-install symlink removal."
+      fi
+    else
+      echo "Note: Real library not found before install; skipping pre-install symlink removal."
+    fi
+
+    # 4.2 Install using checkinstall
     sudo checkinstall --pkgname=avisynth \
         --pkgversion="$PACKAGE_VERSION" \
         --backup=no \
@@ -323,10 +403,13 @@ build-gcc.sh:
         --fstrans=no \
         --default \
         ninja install
-    
+
+    # 4.3 Refresh the dynamic linker cache
+    sudo ldconfig
+  
     # Navigate to the target bin directory
     cd ~/bin
-    
+  
     # 5. Success Message
     echo "AviSynth+ built and installed using GCC/G++ version $GXX_MAJOR_VERSION!"
 
@@ -604,8 +687,7 @@ Finally FFmpeg build with avisynth, here I set only x264 and avisynth, a rather 
       --bindir="$HOME/bin" \
       --enable-gpl \
       --enable-libx264 \
-      --enable-avisynth \
-      --enable-nonfree && \
+      --enable-avisynth && \
     PATH="$HOME/bin:$PATH" make -j4 && \
     make install && \
     hash -r
