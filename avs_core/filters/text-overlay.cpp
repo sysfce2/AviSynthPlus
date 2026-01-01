@@ -2245,7 +2245,6 @@ const char* const t_ABFF="Assumed Bottom Field First ";
 const char* const t_STFF="Top Field (Separated)      ";
 const char* const t_SBFF="Bottom Field (Separated)   ";
 
-#if defined(X86_32) || defined(X86_64)
 static std::string GetCacheInfo(IScriptEnvironment* env)
 {
   std::stringstream ss;
@@ -2254,14 +2253,6 @@ static std::string GetCacheInfo(IScriptEnvironment* env)
     ss << "L2 Cache Size: " << l2_cache_size << " bytes";
   return ss.str();
 }
-#else
-// display is unsupported on non-x86 architectures
-std::string GetCacheInfo(IScriptEnvironment* env)
-{
-  std::stringstream ss;
-  return ss.str(); 
-}
-#endif
 
 #ifdef INTEL_INTRINSICS
 std::string GetCpuMsg(IScriptEnvironment * env, bool avx512)
