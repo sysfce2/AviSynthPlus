@@ -112,22 +112,58 @@ function(handle_arch_flags ARCH_SUFFIX GCC_FLAGS MSVC_FLAGS)
     string(TOLOWER "${ARCH_SUFFIX}" ARCH_SUFFIX_LOWER)
     file(GLOB_RECURSE SRCS_${ARCH_SUFFIX} "*_${ARCH_SUFFIX_LOWER}.cpp")
     if(SRCS_${ARCH_SUFFIX})
-        if (MSVC_IDE)
+        # Check for any MSVC-based toolchain (VS IDE or cl.exe with Ninja) on Windows.
+        if (MSVC) # MSVC can do Win32 and ARM64 as well.
+            # not this: if (MSVC_IDE), Ninja leaves MSVC_IDE off
+            # Check for MSVC-frontends that use GCC/Clang-like flags (e.g., ClangCL, IntelLLVM)
             IF(CLANG_IN_VS STREQUAL "1" OR IntelLLVM_IN_VS STREQUAL "1" OR IntelClassic_IN_VS STREQUAL "1")
                 set_source_files_properties(${SRCS_${ARCH_SUFFIX}} PROPERTIES COMPILE_FLAGS "${GCC_FLAGS}")
             ELSE()
+                # Native MSVC (cl.exe, including when used with Ninja)
+                IF(WIN32)
                 # MSVC gives warning in x64 when SSE2 flag is added, it's just required as a minimum
                 if(NOT (CMAKE_SIZEOF_VOID_P EQUAL 8 AND "${MSVC_FLAGS}" STREQUAL " /arch:SSE2 "))
                     set_source_files_properties(${SRCS_${ARCH_SUFFIX}} PROPERTIES COMPILE_FLAGS "${MSVC_FLAGS}")
                 endif()
+                endif()
             ENDIF()
         else()
+            # Fallback for all non-MSVC compilers (GCC, Clang on Linux/macOS, MinGW)
             set_source_files_properties(${SRCS_${ARCH_SUFFIX}} PROPERTIES COMPILE_FLAGS "${GCC_FLAGS}")
         endif()
         list(APPEND AvsCore_Sources ${SRCS_${ARCH_SUFFIX}})
     endif()
 endfunction()
 
+if(ENABLE_NEON_SIMD)
+    # =========================================================================
+    # AArch64 (ARM64) SIMD Flags
+    # =========================================================================
+    # See: Arch64 SIMD Compilation and Source Code Rules
+    # Files must be located in 'aarch64' subdirectory.
+    
+    # Baseline NEON (ASIMD)
+    # GCC/Clang: Implicit (or -march=armv8-a) MSVC: /arch:armv8.0
+    # asm output debug, leave it here pls.: handle_arch_flags(NEON " -march=armv8-a -S -g -fverbose-asm -Wa,-adhln " " /arch:armv8.0 ")
+    handle_arch_flags(NEON " -march=armv8-a " " /arch:armv8.0 ")
+
+    # Dot Product (FEAT_DotProd / ARMv8.1-A) compulsory from ARMv8.4-A
+    handle_arch_flags(DP " -march=armv8.1-a+dotprod " " /arch:armv8.1 ") 
+
+    # Int8 Matrix Multiply (FEAT_I8MM / ARMv8.2-A) Compulsory from ARMv8.6-A
+    # Use the base arch flag to enable the features, relying on modern toolchain support.
+    handle_arch_flags(I8MM " -march=armv8.2-a+i8mm " " /arch:armv8.2 ") 
+
+    # SVE2 (Scalable Vector Extension 2) (FEAT_SVE2 / ARMv8.5-A) Compulsory from ARMv9.0-A
+    handle_arch_flags(SVE2 " -march=armv8.5-a+sve2 " " /arch:armv8.5 ") 
+
+    # SVE2.1 (FEAT_SVE2p1 / ARMv9.1-A)
+    handle_arch_flags(SVE2_1 " -march=armv9.1-a+sve2.1 " " /arch:armv9.1 ")
+
+else()
+    # =========================================================================
+    # Intel (x86/x64) SIMD Flags
+    # =========================================================================  
 # gcc/llvm/clang-like flags, MSVC flags
 handle_arch_flags(SSSE3 " -mssse3 " " /arch:SSE2 ") # no special SSSE3 option in MSVC
 handle_arch_flags(SSE41 " -msse4.1 " " /arch:SSE2 ") # no special SSE4.1 option in MSVC
@@ -148,6 +184,7 @@ if(DEFINE_AVX512)
     # GCC/Clang/Intel compilers use the -mavx512... flags inside handle_arch_flags when running in MSVC_IDE
     handle_arch_flags(AVX512 "${AVX512_FAST_GCC_FLAGS}" " /arch:AVX512 ")
 endif()
+ENDIF()
 
 # Specify include directories
 target_include_directories("AvsCore" PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

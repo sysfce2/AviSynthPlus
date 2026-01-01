@@ -99,16 +99,19 @@ if(NOT HEADERS_ONLY)
   endif()
 
   # Detect Intel processors and turn Intel SIMD on or off automatically.
+  # Detect AArch64 processors and turn AArch64 NEON SIMD on or off automatically.
   # Old logic relied on the host processor: ${CMAKE_SYSTEM_PROCESSOR}
 
   set(INTEL_SIMD "OFF")
-  # Use a list of known Intel-compatible architecture names for the default ON state.
+  set(NEON_SIMD "OFF")
+  # Use a list of known Intel-compatible/aarch64 architecture names for the default ON state.
   set(INTEL_ARCH_NAMES "win32" "x64" "x86" "i386" "amd64" "x86_64" "i686")
+  set(ARM_ARCH_NAMES "arm64" "aarch64")
 
   # Check the TARGET architecture using the most reliable variables (CMAKE_GENERATOR_PLATFORM and PLATFORMID_LOWER)
   string(TOLOWER "${PLATFORMID}" PLATFORMID_LOWER)
   string(TOLOWER "${CMAKE_GENERATOR_PLATFORM}" GEN_PLATFORM_LOWER) # Often holds x64, ARM64, etc.
-  string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" HOST_ARCH_LOWER)
+  string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" HOST_ARCH_LOWER) # ninja with ative aarch64 gcc: probably only this exists
 
   # --- DEBUG OUTPUT START ---
   # message(STATUS "--- SIMD Detection Variables ---")
@@ -125,14 +128,20 @@ if(NOT HEADERS_ONLY)
   # PLATFORMID_LOWER (VS Target Platform): 
   # CMAKE_GENERATOR_PLATFORM (Generator Target): ARM64  
 
+  # check aarch64 variants
+  list(FIND ARM_ARCH_NAMES "${HOST_ARCH_LOWER}" _found_arm_host) # New check
+  list(FIND ARM_ARCH_NAMES "${PLATFORMID_LOWER}" _found_arm_platform_id)
+  list(FIND ARM_ARCH_NAMES "${GEN_PLATFORM_LOWER}" _found_arm_gen)
+  # check intel variants
   list(FIND INTEL_ARCH_NAMES "${HOST_ARCH_LOWER}" _found_arch)
   list(FIND INTEL_ARCH_NAMES "${PLATFORMID_LOWER}" _found_target_platform_id)
   list(FIND INTEL_ARCH_NAMES "${GEN_PLATFORM_LOWER}" _found_target_gen)
 
   # 1. Check if the target platform is explicitly known non-Intel (ARM64, AARCH64)
-  if("${PLATFORMID_LOWER}" STREQUAL "arm64" OR "${GEN_PLATFORM_LOWER}" STREQUAL "arm64")
+  if(_found_arm_platform_id GREATER -1 OR _found_arm_gen GREATER -1 OR _found_arm_host GREATER -1)
       set(INTEL_SIMD "OFF")
-      message(STATUS "Target is ARM64/AARCH64, INTEL_SIMD forced OFF.")
+      set(NEON_SIMD "ON")
+      message(STATUS "Target is aarch64, turn NEON_SIMD ON.")
   else()
       # 2. Inclusion Check: We are NOT targeting ARM64. 
       
@@ -150,6 +159,7 @@ if(NOT HEADERS_ONLY)
   endif()
   # message(STATUS "Final INTEL_SIMD initial assumption: ${INTEL_SIMD}")
   option(ENABLE_INTEL_SIMD "Enable SIMD intrinsics for Intel processors" "${INTEL_SIMD}")
+  option(ENABLE_NEON_SIMD "Enable SIMD intrinsics for AArch64 processors" "${NEON_SIMD}")
 
   option(ENABLE_PLUGINS "Build set of default external plugins" ON)
   set(USER_AVS_PLUGINDIR_LOCATION ".local/lib/avisynth" CACHE STRING "Override path for user-local plugins, with $HOME omitted (default: .local/lib/avisynth)")
@@ -180,9 +190,10 @@ if(NOT HEADERS_ONLY)
   endif()
 
   # Use this one to be safe:
-  # Check for the Visual Studio generator, not the MSVC compiler ID, as this 
-  # block configures VS project structure (platforms/toolsets), which fails for Ninja/MSVC.
-  if( CMAKE_GENERATOR MATCHES "Visual Studio" )
+  # Check for the Visual Studio generator OR the MSVC compiler/toolchain on Windows 
+  # (which includes Ninja with cl.exe).
+  # We use the MSVC variable to ensure the configuration block runs when cl.exe is detected.
+  if( CMAKE_GENERATOR MATCHES "Visual Studio" OR (MSVC AND WIN32) )
   ## IF( MSVC ) # Check for Visual Studio
 
     #1910-1919 = VS 15.0 (v141 toolset) Visual Studio 2017
@@ -191,10 +202,37 @@ if(NOT HEADERS_ONLY)
     #  ( 1940-1949 = VS v17.10+: Toolset v143 (Still!) | Compiler 19.4x)
     #1950-1959 = VS 18.0 (v145 toolset) Visual Studio 2026
     
+    # --- Determine MSVC target platform, Ninja makes a bit more work for us
+    # Since CMAKE_VS_PLATFORM_NAME is empty, only valid for Visual Studio generators.
+
+    # Detect the target platform based on the most reliable variables for MSVC/Ninja:
+    # 1. start with the VS Generator's specific variable. If it's not set, it will be empty.
+    set(TARGET_PLATFORM_TO_CHECK "${CMAKE_VS_PLATFORM_NAME}")
+
+    # message(STATUS "DEBUG: CMAKE_VS_PLATFORM_NAME = '${CMAKE_VS_PLATFORM_NAME}'")
+    # message(STATUS "DEBUG: CMAKE_GENERATOR_PLATFORM = '${CMAKE_GENERATOR_PLATFORM}'")
+    # message(STATUS "DEBUG: CMAKE_SIZEOF_VOID_P = '${CMAKE_SIZEOF_VOID_P}'")
+
+    # 2. If CMAKE_VS_PLATFORM_NAME is empty (e.g., Ninja generator), try to infer from pointer size.
+    if(NOT TARGET_PLATFORM_TO_CHECK)
+        # 3. Check the pointer size (most reliable indicator for x64/Win32)
+        if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+            # 64-bit target
+            set(TARGET_PLATFORM_TO_CHECK "x64")
+        elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
+            # 32-bit target
+            set(TARGET_PLATFORM_TO_CHECK "Win32")
+        endif()
+    endif()
+
+    # 4. final attempt: If CMAKE_GENERATOR_PLATFORM has a value and TARGET_PLATFORM_TO_CHECK is still empty
+    if(NOT TARGET_PLATFORM_TO_CHECK AND CMAKE_GENERATOR_PLATFORM)
+        set(TARGET_PLATFORM_TO_CHECK "${CMAKE_GENERATOR_PLATFORM}")
+    endif()
+    
     # detect if the target is for x86
     # PLATFORMID_LOWER is just a lowercase copy of CMAKE_VS_PLATFORM_NAME
-    string(TOLOWER "${CMAKE_VS_PLATFORM_NAME}" PLATFORMID_LOWER)
-
+    string(TOLOWER "${TARGET_PLATFORM_TO_CHECK}" PLATFORMID_LOWER)
     # message("-- PLATFORMID_LOWER: ${PLATFORMID_LOWER}")
  
     if(("${PLATFORMID_LOWER}" STREQUAL "win32") OR
@@ -393,7 +431,7 @@ if(NOT HEADERS_ONLY)
   # -----------------------------------------------------------------------
   foreach(AFFECTED_TARGET ${ALL_AFFECTED_TARGETS})
     if(TARGET ${AFFECTED_TARGET})
-      message(STATUS "Applying Intel/Clang compiler fixes to target: ${AFFECTED_TARGET}")
+      message(STATUS "Applying compiler fixes to target: ${AFFECTED_TARGET}")
 
       # Check if the target is a library or executable (exclude INTERFACE targets)
       get_target_property(_target_type ${AFFECTED_TARGET} TYPE)
@@ -413,6 +451,7 @@ if(NOT HEADERS_ONLY)
       # This robust check ensures that the MSVC block only runs in an MSVC environment.
 
         # Handle ARM64 soft intrinsics if requested (for AvsCore logic)
+        # Was experimental, never true
         if("${PLATFORMID}" STREQUAL "ARM64" AND ENABLE_INTEL_SIMD)
           target_compile_definitions(${AFFECTED_TARGET} PRIVATE USE_SOFT_INTRINSICS)
         endif()
@@ -433,6 +472,12 @@ if(NOT HEADERS_ONLY)
         if(ENABLE_INTEL_SIMD)
           target_compile_definitions(${AFFECTED_TARGET} PRIVATE INTEL_INTRINSICS)
         endif()
+        # NEON intrinsics master switch (if enabled)
+        if(ENABLE_NEON_SIMD)
+          target_compile_definitions(${AFFECTED_TARGET} PRIVATE NEON_INTRINSICS)
+        endif()
+        
+        # FIXME: With Ninja, we can see cl : Command line warning D9025 : overriding '/EHs' with '/EHa'
         
         # Compiler-specific options for IntelLLVM / Clang
         if(CLANG_IN_VS STREQUAL "1")
@@ -497,6 +542,9 @@ if(NOT HEADERS_ONLY)
         if(ENABLE_INTEL_SIMD)
           target_compile_options(${AFFECTED_TARGET} PRIVATE -msse2)
           target_compile_definitions(${AFFECTED_TARGET} PRIVATE INTEL_INTRINSICS)
+        endif()
+        if(ENABLE_NEON_SIMD)
+          target_compile_definitions(${AFFECTED_TARGET} PRIVATE NEON_INTRINSICS)
         endif()
         if(WIN32)
           target_compile_definitions(${AFFECTED_TARGET} PRIVATE __CRT__NO_INLINE=1)

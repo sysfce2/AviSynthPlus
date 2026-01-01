@@ -38,6 +38,33 @@ FILE(GLOB AvsCore_Sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
 
 )
 
+IF(ENABLE_NEON_SIMD)
+  FILE(GLOB Conditional_Filter_Cpu_Sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "filters/conditional/aarch64/*.cpp"
+    "filters/conditional/aarch64/*.h")
+  LIST(APPEND AvsCore_Sources "${Conditional_Filter_Cpu_Sources}")
+
+  FILE(GLOB Convert_Cpu_Sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "convert/aarch64/*.cpp"
+    "convert/aarch64/*.h")
+  LIST(APPEND AvsCore_Sources "${Convert_Cpu_Sources}")
+
+  FILE(GLOB Filters_Cpu_Sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "filters/aarch64/*.cpp"
+    "filters/aarch64/*.h")
+  LIST(REMOVE_ITEM AvsCore_Sources "")
+
+  LIST(APPEND AvsCore_Sources "${Filters_Cpu_Sources}")
+
+  FILE(GLOB Overlay_Cpu_Sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "filters/overlay/aarch64/*.cpp"
+    "filters/overlay/aarch64/*.h")
+  #not removing yet, unlike for Intel, no SIMD replacement
+  #LIST(REMOVE_ITEM AvsCore_Sources "filters/overlay/444convert.cpp"
+  #                                 "filters/overlay/444convert.h")
+  LIST(APPEND AvsCore_Sources "${Overlay_Cpu_Sources}")
+ENDIF()
+
 IF(ENABLE_INTEL_SIMD)
   FILE(GLOB Conditional_Filter_Cpu_Sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
     "filters/conditional/intel/*.cpp"
