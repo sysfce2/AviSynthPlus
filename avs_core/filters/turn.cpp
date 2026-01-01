@@ -42,6 +42,9 @@
 #ifdef INTEL_INTRINSICS
 #include "intel/turn_sse.h"
 #endif
+#ifdef NEON_INTRINSICS
+#include "aarch64/turn_neon.h"
+#endif
 #include "resample.h"
 #include "planeswap.h"
 #include "../core/internal.h"
@@ -342,6 +345,11 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
   const bool ssse3 = cpu & CPUF_SSSE3;
 #endif
 
+#ifdef NEON_INTRINSICS
+  const bool neon = env->GetCPUFlags() & CPUF_ARM_NEON;
+  const bool dotprod = env->GetCPUFlags() & CPUF_ARM_DOTPROD;
+#endif
+
   TurnFuncPtr funcs[3];
   auto set_funcs = [&funcs](TurnFuncPtr tleft, TurnFuncPtr tright, TurnFuncPtr t180) {
     funcs[0] = tleft;
@@ -354,6 +362,10 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
 #ifdef INTEL_INTRINSICS
     if (sse2)
       set_funcs(turn_left_rgb64_sse2, turn_right_rgb64_sse2, turn_180_plane_sse2<uint64_t>);
+    else
+#elif defined(NEON_INTRINSICS)
+    if (neon)
+      set_funcs(turn_left_rgb64_neon, turn_right_rgb64_neon, turn_180_plane_neon<uint64_t>);
     else
 #endif
     {
@@ -370,6 +382,10 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
 #ifdef INTEL_INTRINSICS
     if (sse2)
       set_funcs(turn_left_rgb32_sse2, turn_right_rgb32_sse2, turn_180_plane_sse2<uint32_t>);
+    else
+#elif defined(NEON_INTRINSICS)
+    if (neon)
+      set_funcs(turn_left_rgb32_neon, turn_right_rgb32_neon, turn_180_plane_neon<uint32_t>);
     else
 #endif
     {
@@ -393,6 +409,12 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
         ssse3 ? turn_180_plane_ssse3<BYTE> : turn_180_plane_sse2<BYTE>);
     }
     else
+#elif defined(NEON_INTRINSICS)
+    if (neon)
+    {
+      set_funcs(turn_left_plane_8_neon, turn_right_plane_8_neon, turn_180_plane_neon<BYTE>);
+    }
+    else
 #endif
     {
       set_funcs(turn_left_plane_8_c, turn_right_plane_8_c, turn_180_plane_c<BYTE>);
@@ -407,7 +429,12 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
         ssse3 ? turn_180_plane_ssse3<uint16_t> : turn_180_plane_sse2<uint16_t>);
     }
     else
-
+#elif defined(NEON_INTRINSICS)
+    if (neon)
+    {
+      set_funcs(turn_left_plane_16_neon, turn_right_plane_16_neon, turn_180_plane_neon<uint16_t>);
+    }
+    else
 #endif
     {
       set_funcs(turn_left_plane_16_c, turn_right_plane_16_c, turn_180_plane_c<uint16_t>);
@@ -420,7 +447,11 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
       set_funcs(turn_left_plane_32_sse2, turn_right_plane_32_sse2, turn_180_plane_sse2<uint32_t>);
     }
     else
-
+#elif defined(NEON_INTRINSICS)
+    if (neon) {
+      set_funcs(turn_left_plane_32_neon, turn_right_plane_32_neon, turn_180_plane_neon<uint32_t>);
+    }
+    else
 #endif
     {
       set_funcs(turn_left_plane_32_c, turn_right_plane_32_c, turn_180_plane_c<uint32_t>);

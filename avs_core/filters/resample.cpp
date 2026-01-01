@@ -41,6 +41,10 @@
 #endif
 #include "intel/turn_sse.h"
 #endif
+#ifdef NEON_INTRINSICS
+#include "aarch64/turn_neon.h"
+#endif
+
 #include <avs/config.h>
 
 #include "transform.h"
@@ -1348,6 +1352,9 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
 #ifdef INTEL_INTRINSICS
   int cpu = env->GetCPUFlags();
   bool has_sse2 = (cpu & CPUF_SSE2) != 0;
+#elif defined(NEON_INTRINSICS)
+  int cpu = env->GetCPUFlags();
+  bool has_neon = (cpu & CPUF_ARM_NEON) != 0;
 #else
   int cpu = 0;
 #endif
@@ -1359,6 +1366,7 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
     if (!fast_resize) {
 
       // nonfast-resize: using V resizer for horizontal resizing between a turnleft/right
+      // For packed RGB formats this is the only way
 
       resampler_luma = FilteredResizeV::GetResampler(cpu, pixelsize, bits_per_pixel, resampling_program_luma, env);
 
@@ -1386,6 +1394,12 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
           turn_right = turn_right_rgb32_sse2;
         }
         else
+#elif NEON_INTRINSICS
+        if (has_neon) {
+          turn_left = turn_left_rgb32_neon;
+          turn_right = turn_right_rgb32_neon;
+        }
+        else
 #endif
         {
           turn_left = turn_left_rgb32_c;
@@ -1406,7 +1420,12 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
           turn_right = turn_right_rgb64_sse2;
         }
         else
-
+#elif defined(NEON_INTRINSICS)
+        if (has_neon) {
+          turn_left = turn_left_rgb64_neon;
+          turn_right = turn_right_rgb64_neon;
+        }
+        else
 #endif
         {
           turn_left = turn_left_rgb64_c;
@@ -1422,6 +1441,12 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
             turn_right = turn_right_plane_8_sse2;
           }
           else
+#elif defined(NEON_INTRINSICS)
+          if (has_neon) {
+            turn_left = turn_left_plane_8_neon;
+            turn_right = turn_right_plane_8_neon;
+          }
+          else
 #endif
           {
             turn_left = turn_left_plane_8_c;
@@ -1433,6 +1458,12 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
           if (has_sse2) {
             turn_left = turn_left_plane_16_sse2;
             turn_right = turn_right_plane_16_sse2;
+          }
+          else
+#elif defined(NEON_INTRINSICS)
+          if (has_neon) {
+            turn_left = turn_left_plane_16_neon;
+            turn_right = turn_right_plane_16_neon;
           }
           else
 #endif
