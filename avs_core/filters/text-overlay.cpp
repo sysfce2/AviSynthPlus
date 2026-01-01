@@ -2367,13 +2367,17 @@ std::string GetCpuMsg(IScriptEnvironment* env)
   if (flags & CPUF_ARM_NEON)
     ss << "NEON ";
 
-  // Tier 2: CPUF_ARM_DOTPROD (Dot Product, AVX2-like features on 128-bit)
   if (flags & CPUF_ARM_DOTPROD)
     ss << "DOTPROD ";
 
-  // Tier 3: CPUF_ARM_SVE2 (Scalable Vector, 256/512-bits)
+  if (flags & CPUF_ARM_I8MM)
+    ss << "I8MM ";
+
   if (flags & CPUF_ARM_SVE2)
     ss << "SVE2 ";
+
+  if (flags & CPUF_ARM_SVE2_1)
+    ss << "SVE2.1 ";
 
   return ss.str();
 }
