@@ -3,6 +3,7 @@ Changes from 3.7.5 to 3.7.6
 
 Additions, changes
 ~~~~~~~~~~~~~~~~~~
+- Bump year to 2026
 - Overlay: "add" and "subtract" direct RGB mode
 - Overlay: "add" and "subtract" supports 32-bit float.
 - Added utf8 parameter to AddAutoLoadDir
@@ -117,19 +118,22 @@ Optimizations
   * further optimize verticals, use ``AVS_RESTRICT``
   * optimize SSSE3 and AVX2 horizontal resampler for 32-bit float for small (<=4) kernel sizes
   * optimize 32-bit float vertical avx2
-  * (Work In Progress) add AVX512 code path
-  * (Work In Progress) unifify horizontal and vertical place processing flow
+  * add AVX512 code path to 32-bit float resamplers
+  * (Work In Progress) unify horizontal and vertical plane processing flow
 
+- add NEON optimizations for ARM64 (aarch64) for TurnLeft/TurnRight/Turn180.
+  (First aarch64 code in Avisynth)
 
 Documentation
 ~~~~~~~~~~~~~
 - Build on Raspbian, Raspberry Pi 5 and llvm/gcc :doc:`This page <./contributing/posix>` 
   describes linux builds process.
+- Add to :ref:`SIMD in ARM64 (aarch64) section <aarch64_simd_tiers>`
 - Extend ``env->Allocate/Free`` see at :ref:`Allocate <cplusplus_allocate>`
 - Interface V12 changes: see :ref:`API v12 changes<api_v12_whats_new>` for more details.
 - Add folder macro description to AddAutoLoadPlugins
 - Update :doc:`Overlay <./corefilters/overlay>`
-- Update :ref:`SetCacheHints<cplusplus_setcachehints>` with CACHE_INFORM_NUM_THREADS
+- Update :ref:`SetCacheHints<cplusplus_setcachehints>` with ``CACHE_INFORM_NUM_THREADS``
 - Update :ref:`GetCPUFlags<cplusplus_getcpuflags>`, add :ref:`GetCPUFlagsEx<cplusplus_getcpuflagsex>`
 - Update :ref:`CPU Feature Flags<cplusplus_cpufeatureflags>` with AVX512 and ARM64 features
 - Update :ref:`SetMaxCPU <setmaxcpu>` with AVX512 and ARM64 features
@@ -140,7 +144,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2025/12/19 13:30:00 $
+$Date: 2026/01/01 10:42:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

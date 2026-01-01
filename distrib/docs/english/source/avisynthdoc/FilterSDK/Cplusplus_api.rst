@@ -509,9 +509,9 @@ AVX512 is considered to be "Fast" when either
 
 Ice Lake and AVX10 common flags are: VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ; this is what you can expect from CPUF_AVX512_FAST feature flag.
 
-** ARMv8-A architecture flags: **
+** Aarch64 architecture flags: **
 
-See :ref:`ARMv8-A SIMD tiers<armv8_simd_tiers>` for details about ARM CPU feature flags.
+See :ref:`Aarch64 (ARM64) SIMD tiers<aarch64_simd_tiers>` for details about ARMv8/v9 CPU feature flags.
 
 
 
@@ -1723,7 +1723,7 @@ Query to ask for various system (not frame!) properties.
       AEP_HOST_SYSTEM_ENDIANNESS = 7, // V9
       AEP_INTERFACE_VERSION = 8, // V9
       AEP_INTERFACE_BUGFIX = 9,  // V9
-      AEP_CACHESIZE_L2 = 10, // v13
+      AEP_CACHESIZE_L2 = 10, // v12
 
       // Neo additionals
       AEP_NUM_DEVICES = 901,
@@ -2849,7 +2849,7 @@ CPU Feature Flags
 In ``avs/cpuid.h`` (C++) or in ``avisynth_c.h`` (C).
 The ``LL`` suffix indicates these are 64-bit values; at least the last ones exceed 32 bits.
 
-From Interface version V13 you can use :ref:`GetCPUFlagsEx<cplusplus_getcpuflagsex>` which returns a 64-bit integer
+From Interface version V12 you can use :ref:`GetCPUFlagsEx<cplusplus_getcpuflagsex>` which returns a 64-bit integer
 with all CPU feature flags, unlike GetCPUFlags() which returns only a 32-bit integer, thus missing some AVX512 flags.
 
 See also :ref:`SetMaxCPU <setmaxcpu>`.
@@ -2857,7 +2857,7 @@ See also :ref:`SetMaxCPU <setmaxcpu>`.
 Intel x86 and AMD64 CPU feature flags
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. table:: CPU Feature Flags (used in Avisynth+ for optimized code paths)
+.. table:: CPU Feature Flags - Intel (used in Avisynth+ for optimized code paths)
    :align: center
 
    +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
@@ -3039,35 +3039,85 @@ Due to the large number of AVX-512 sub-features, the following group and composi
 Note: "C" interface names are the same but with ``AVS_CPUF_`` prefix instead of ``CPUF_``.
 They are defined in ``avisynth_c.h``.
 
-.. _armv8_simd_tiers:
+.. _aarch64_simd_tiers:
 
-Avisynth ARMv8 SIMD Feature Tiers
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Avisynth Aarch64 SIMD feature tiers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-(Preliminary ARMv8-A NEON / SVE2 feature flags (work in progress)
+First: a useful link about AArch64 architecture and its SIMD capabilities:
+`Developer documentation at ARM <https://developer.arm.com/documentation/>`__
 
-Avisynth defines three primary categories for ARMv8 (AArch64) SIMD support, allowing for feature-based dispatch similar 
-to the x86 SSE/AVX tiers. This categorization prioritizes performance uplift in video processing and codec-related 
-assembly over granular individual instruction checks.
+Avisynth defines multiple categories for AArch64 (mentioned also as ARM64, ARMv8/v9) SIMD support, allowing for feature-based dispatch similar
+to the x86 SSE2/AVX2.
 
-The implementation relies on runtime detection of hardware capabilities (e.g., Linux's ``getauxval`` and ``hwcap``, or macOS's ``sysctl``) 
-as AArch64 mandates a feature-based approach rather than relying solely on CPU model strings.
+The implementation relies on runtime detection of hardware capabilities (using Linux's ``getauxval`` and ``hwcap``, or macOS's ``sysctl``).
+Unlike x86, AArch64 (ARM64) is using a feature-based approach rather than relying solely on CPU model strings. Features are not
+necessarily tied to specific CPU models and levels, feature become optional at a specific ARMv8 revision, then it becomes mandatory in a later revision.
+By detecting a feature flag, we can only be sure, that the CPU level is at least the one where the feature was introduced as optional.
 
-ARMv8 Versioning Scheme (v8.x-A)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Avisynth header ``avs/config.h`` defines ``ARM64`` when it detects ``aarch64`` platform through the actual compiler's predefined macros.
+When ``ARM64`` is defined, we can assume we are compiling for ARMv8-A (AArch64) architecture, regardless of actual OS or compiler.
+As of late 2025 Avisynth supports aarch64 with Linux, Windows, BSD and macOS. gcc, llvm, clang-cl and MSVC compilers are supported.
 
-ARMv8 (AArch64) is a living standard. Key features are introduced in minor revisions:
+Avisynth currently defines only a few ARM SIMD tiers, focusing on the most relevant features for video processing workloads, instead of
+trying to cover every possible ARM extension (50+ different ones).
+
+The ARMv8-A flag values shared with X86 flags, their usage can be guarded by platform macros.
+
+.. table:: CPU Feature Flags - aarch64 (ARM64)
+   :align: center
+
+   +------------------------------+---------------+-----------------------------------------------------------+
+   | C++ name                     | Flag value    | Remark                                                    |
+   +==============================+===============+===========================================================+
+   | ``CPUF_ARM_NEON``            | ``0x01``      | NEON flag, minimum for aarch64                            |
+   +------------------------------+---------------+-----------------------------------------------------------+
+   | ``CPUF_ARM_DOTPROD``         | ``0x02``      |                                                           |
+   +------------------------------+---------------+-----------------------------------------------------------+
+   | ``CPUF_ARM_SVE2``            | ``0x04``      |                                                           |
+   +------------------------------+---------------+-----------------------------------------------------------+
+   | ``CPUF_ARM_I8MM``            | ``0x08``      |                                                           |
+   +------------------------------+---------------+-----------------------------------------------------------+
+   | ``CPUF_ARM_SSE2_1``          | ``0x10``      |                                                           |
+   +------------------------------+---------------+-----------------------------------------------------------+
+
+These are in ``avs/cpuid.h`` (C++) or in ``avisynth_c.h`` (C).
+
+Usage:
+::
+
+    #include <avisynth.h>
+    #include <avs/cpuid.h>
+    #ifdef NEON_INTRINSICS
+    if (env->GetCPUFlags() & CPUF_ARM_DOTPROD) {
+        // Use DOTPROD optimized code path
+    } else {
+        // Fallback to NEON baseline
+    } else 
+    #endif
+    {
+        // Plain c++ non-ARM64 code path
+    }
+
+
+AArch64 Versioning Scheme (v8.x-A, v9.x-A)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+AArch64 is a living standard. Key features relevant to Avisynth are introduced in minor revisions:
 
 * **ARMv8.0-A:** The baseline for AArch64. **NEON is mandatory.**
-* **ARMv8.2-A:** Introduces ``DOTPROD`` (Dot Product) and optional SVE (Scalable Vector Extension).
-* **ARMv8.4-A:** Introduces extensions like ``Flag Manipulation Instructions`` and enhanced integer support.
-* **ARMv8.5-A:** Introduces **SVE2** (Scalable Vector Extension 2).
+* **ARMv8.1-A:** Introduces optional ``DOTPROD`` (Dot Product)
+* **ARMv8.2-A:** Introduces optional ``I8MM`` (8-bit Matrix Multiply).
+* **ARMv8.4-A:** Makes ``DOTPROD`` mandatory.
+* **ARMv8.5-A:** Introduces optional ``SVE2`` (Scalable Vector Extension 2).
+* **ARMv8.6-A:** Makes ``I8MM`` (8-bit Matrix Multiply) mandatory.
+* **ARMv9.0-A:** Compulsory ``SVE2`` support for ARMv9-A compliant CPUs.
+* **ARMv9.1-A:** Introduces further ``SVE2`` extensions (``FEAT_SVE2p1``).
 
-These minor revisions are crucial because they define the feature-level groupings used in Avisynth.
+
 
 Avisynth ARM SIMD Tiers
 ^^^^^^^^^^^^^^^^^^^^^^^
-
 
 - CPUF_ARM_NEON (Baseline SIMD)
 
@@ -3079,28 +3129,42 @@ Avisynth ARM SIMD Tiers
       integer vector processing.
     * **Usable Instruction Sets:** All basic NEON operations (addition, subtraction, multiplication, 
       shuffle, load/store).
-    * **Video Processing Relevance:** Used for basic planar operations, simple resizing, and the 
-      vast majority of non-specialized routines in older codecs.
+    * Compilers with aarch64 support automatically set Armv8.0-a baseline which includes 'fp' and 'neon' (SIMD).
 
 - CPUF_ARM_DOTPROD (Advanced 128-bit)
 
     This tier represents the first major performance jump for modern video encoding and processing. It is 
     defined by the availability of specialized multiply-accumulate instructions.
 
-    * **Minimum Requirement:** ARMv8.2-A (specifically, the **DOTPROD** feature flag).
+    * **Minimum Requirement:** ARMv8.1-A (where the **DOTPROD** feature flag became optional).
     * **Register Width:** Still fixed **128-bit** (V-registers).
-    * **x86 Analogy:** Comparable to **AVX2** in terms of **instruction versatility and performance uplift**, but **not register size**.
-        * **Analogy:** Both AVX2 and ARM's DOTPROD unlock highly efficient hardware routines for inner loops.
-        * **Difference:** AVX2 *doubled* the register width (128-bit to 256-bit). This ARM tier provides the *instructions* without changing the physical register width.
+    * **x86 Analogy:** Comparable to **SSSE3** or **SSE4.1** maybe a little **AVX2**, since v8.1-A introduced other new instructions as well.
+        * Unlike AVX2 which doubled the register width (128-bit to 256-bit), this ARM tier provides the *instructions* without changing the physical register width.
     * **Usable Instruction Sets:** The **DOTPROD** instructions (e.g., ``SDOT`` and ``UDOT``) for integer dot product operations.
     * **Video Processing Relevance:** Absolutely critical for accelerating modern video codecs (HEVC/VVC/AV1) by providing highly efficient paths for:
         * Motion Compensation
         * Intra-Prediction
         * Integer Matrix Operations (analogous to x86's VNNI).
+    * Compiler flags: ``-march=armv8.1-a+dotprod`` (gcc/clang-cl) or ``/arch:ARMv8.1`` (MSVC).
+      Since dotprod is a feature, if it exists, we can only be sure that an armv8.1-a system is used.
 
-- CPUF_ARM_SVE2 (Scalable Vector Extension)
+See also:
+`The-Armv8-1-architecture-extension <https://developer.arm.com/documentation/109697/2025_12/Feature-descriptions/The-Armv8-1-architecture-extension?lang=en>`__
+and
+`The-Armv8-4-architecture-extension <https://developer.arm.com/documentation/109697/2025_12/Feature-descriptions/The-Armv8-4-architecture-extension?lang=en>`__
 
-    This is the highest tier, representing the leap to scalable vector architecture.
+- CPUF_ARM_I8MM (8 bit matrix multiplication)
+
+    Another useful instruction set, optional since v8.2-a, mandatory in v8.6-a.
+
+See also:
+`The-Armv8-2-architecture-extension <https://developer.arm.com/documentation/109697/2025_12/Feature-descriptions/The-Armv8-2-architecture-extension?lang=en#md447-the-armv82-architecture-extension__feat_FEAT_I8MM>`__
+and
+`SIMD-FP-Instructions/USDOT <https://developer.arm.com/documentation/ddi0602/2025-12/SIMD-FP-Instructions/USDOT--vector---Dot-product-with-unsigned-and-signed-integers--vector--?lang=en>`__
+
+- CPUF_ARM_SVE2 (Scalable Vector Extension 2)
+
+    A next leap to scalable vector architecture, we skipped simple SVE in Avisynth.
 
     * **Minimum Requirement:** ARMv8.5-A (SVE2 feature flag).
     * **Register Width:** **Scalable Vector Length (SVL)**. This register length is defined by the hardware 
@@ -3113,15 +3177,106 @@ Avisynth ARM SIMD Tiers
       this tier offers the largest data throughput per clock cycle for highly parallel operations like 
       convolutions.
 
+- CPUF_ARM_SVE2_1 (Scalable Vector Extension 2.1 FEAT_SVE2p1)
+
+    Even more useful instructions added in ARMv9.1-A
+
+
+.. _AArch64_SIMD_Compilation:
+
+AArch64 SIMD Compilation and Source Code Rules
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+AviSynth utilizes file naming conventions within its source tree to automatically apply the correct, feature-specific compiler flags for AArch64 (ARM64) architectures, 
+ensuring optimal SIMD performance while maintaining wide compatibility.
+
+1. Source File Location
+.......................
+
+This is how Avisynth source code is organized for AArch64-specific SIMD implementations:
+
+All AArch64-specific SIMD C++ files must be located within the **aarch64** subdirectory, parallel to any existing ``intel`` optimization folders.
+CMakeLists.txt is configured to include this directory when building for ARM64 targets and the ``ENABLE_NEON_SIMD`` option is enabled for CMake.
+In source code we should check ``NEON_INTRINSICS`` define for NEON specific code.
+Like this:
+::
+
+    #include "turn.h"
+    #ifdef INTEL_INTRINSICS
+    #include "intel/turn_sse.h"
+    #endif
+    #ifdef NEON_INTRINSICS
+    #include "aarch64/turn_neon.h"
+    #endif
+
+
+2. File Patterns and Automatic Compiler Options Rule
+....................................................
+
+The build system (via CMake) uses the file name suffix to select the appropriate compiler flags for the target feature. This ensures that only the intended instructions are generated for each source file.
+
++-------------------+--------------------------------------------------+------------------------------------+------------------------------------+
+| File Pattern      | Feature / Minimum Arch                           | Compiler Flag (GCC/Clang)          | Compiler Flag (MSVC)               |
++===================+==================================================+====================================+====================================+
+| ``*_neon.cpp``    | Baseline NEON (ASIMD)                            | Implicit (or ``-march=armv8-a``)   | ``/arch:armv8.0``                  |
++-------------------+--------------------------------------------------+------------------------------------+------------------------------------+
+| ``*_dp.cpp``      | Dot Product (``FEAT_DotProd``) / ARMv8.1-A       | ``-march=armv8.1-a+dotprod``       | ``/arch:armv8.1``                  |
++-------------------+--------------------------------------------------+------------------------------------+------------------------------------+
+| ``*_i8mm.cpp``    | Int8 Matrix Multiply (``FEAT_I8MM``) / ARMv8.5-A | ``-march=armv8.2-a+i8mm``          | ``/arch:armv8.2``                  |
++-------------------+--------------------------------------------------+------------------------------------+------------------------------------+
+| ``*_sve2.cpp``    | Scalable Vector Extension 2                      | ``-march=armv8.5-a+sve2``          | ``/arch:armv8.5``                  |
+|                   | (``FEAT_SVE2``) / ARMv8.5-A                      |                                    |                                    |
++-------------------+--------------------------------------------------+------------------------------------+------------------------------------+
+| ``*_sve2_1.cpp``  | Scalable Vector Extension 2.1                    | ``-march=armv9.1-a+sve2.1``        | ``/arch:armv9.1``                  |
+|                   | (``FEAT_SVE2p1``) / ARMv9.1-A                    |                                    |                                    |
++-------------------+--------------------------------------------------+------------------------------------+------------------------------------+
+
+.. note::
+    * MSVC supports the ``/arch:armvX.X`` syntax for convenience, individual features are not supported as separate flags.
+    * This distinction is necessary when targeting features for Clang-cl and gcc, the allowed C++ intrinsics are stricter
+      than in MSVC where if a more modern instruction is used, MSVC will compile it without error. For gcc/llvm/Clang-cl, so-called function attributes 
+      (like ``__attribute__((target("...")))`` can enable additional features in a lower-architecture targeted context.
+
+3. Compiler Knowledge of Minimum Version
+........................................
+
+The flags above explicitly define the minimum architectural version (e.g., ``armv8.2-a``, ``armv8.5-a``) rather than just the baseline ``armv8-a`` plus the feature.
+
+* While modern compilers (GCC, Clang) are generally smart enough to know that the ``+dotprod`` feature only 
+  appeared in ``ARMv8.1-A`` (and thus implicitly set the target baseline higher), using the explicit flag (e.g., ``-march=armv8.1-a+dotprod``) 
+  provides clarity.
+* **Compiler's Internal Logic:** When a feature flag like ``+dotprod`` is used, the compiler consults its internal definition of the Arm architecture. 
+  Since ``dotprod`` instructions are not part of the ``ARMv8.0-A`` baseline, the compiler must allow *all* instructions mandated by the version where 
+  the feature first appeared (v8.1-A). Explicitly stating the version ensures all other non-feature-specific architectural improvements are also made 
+  available to the compiler.
+
+4. Source Code and Dispatch
+...........................
+
+Specialized files contain the highly optimized code using the respective **ACLE Intrinsics** (Arm C Language Extensions).
+
+* **Runtime Dispatch:** To correctly use these files, the main filter logic must include runtime CPU feature detection to check the capabilities 
+  of the host CPU, Avisynth has its own CPUFlags feature set, which relies on the OS reported hardware capabilities. (e.g., via the Linux ``getauxval()`` 
+  or Windows ``IsProcessorFeaturePresent()`` functions).
+* The dispatcher function will then call the appropriate implementation available: ``SVE2 or I8MM -> DOTPROD -> NEON (ASIMD)``.
+
+5. Useful tutorial videos
+.........................
+LVC21-309 SVE & SVE2 in LLVM 
+https://www.youtube.com/watch?v=v6NmKOkQ2LE
+
+MSVC ARM64 optimization in Visual Studio:
+https://www.youtube.com/watch?v=O5XAdeMTRWk
+
 Real-World Use Case: FFmpeg Categorization
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Projects like FFmpeg and libx265 use similar feature checks to manage their optimized assembly code paths.
-FFmpeg primarily checks for individual ``hwcap`` bits, which map directly to our tiers:
+Projects like FFmpeg use similar feature checks to manage their optimized assembly code paths.
+FFmpeg primarily checks for individual ``hwcap`` bits, which map directly to some of our tiers:
 
 1.  **Baseline:** Determined by the presence of **NEON** (mandatory).
 2.  **Advanced 128-bit:** Primarily determined by the **DOTPROD** flag.
-3.  **SVE/SVE2:** Checked via dedicated **SVE** and **SVE2** flags.
+3.  **I8MM:** Checked via dedicated **I8MM** flags.
 
 The **DOTPROD** flag is often the most important threshold for enabling the fastest H.264/HEVC/VVC assembly functions.
 
@@ -3132,7 +3287,7 @@ For common single-board computers, the support is as follows:
 
 * **Raspberry Pi 4 (Broadcom BCM2711):** * **CPU:** Quad-core Arm Cortex-A72.
     * **Architecture:** Supports **ARMv8.2-A**.
-    * **Extensions:** It supports the **DOTPROD** (Dot Product) extension.
+    * **Extensions:** It supports the **DOTPROD** (Dot Product) extension, though it is optional there.
     * **Category:** Belongs to **CPUF_ARM_DOTPROD**.
 
 * **Raspberry Pi 5 (Broadcom BCM2712):**
@@ -3142,13 +3297,8 @@ For common single-board computers, the support is as follows:
       It supports **DOTPROD** and other extensions that are part of the newer ARMv8.x standards.
     * **Category:** Belongs to **CPUF_ARM_DOTPROD**, but **NOT CPUF_ARM_SVE2**.
 
-This confirms that the **CPUF_ARM_DOTPROD** tier is a highly relevant, modern category that 
-covers key devices like the RPi 4 and RPi 5. **CPUF_ARM_SVE2** should only be targeted for 
-processors specifically documented to support SVE2 (like Arm Cortex-A710/X1/X2/X4 cores).
-
-
 ____
 
 Back to :doc:`FilterSDK`
 
-$Date: 2025/12/17 10:23:00 $
+$Date: 2025/12/31 17:40:00 $
