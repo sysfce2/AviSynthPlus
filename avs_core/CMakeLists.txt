@@ -171,6 +171,8 @@ handle_arch_flags(AVX " -mavx " " /arch:AVX ")
 handle_arch_flags(AVX2 " -mavx2 -mfma " " /arch:AVX2 ")
 
 if(DEFINE_AVX512)
+        # Similar to AVX2, fma must be added explicitly for GCC/Clang.
+        # We also add bmi2 (since AVX2), useful in AVX512 mask operations like _bzhi_u64/u32
     # The CPUF_AVX512_FAST feature flag in Avisynth guarantees a modern, low-throttling architecture (ICL/RKL/AVX10.2).
     # This feature set is the minimal intersection of ICL and AVX10.1's guaranteed features 
     # (F, CD, BW, DQ, VL, VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ).
@@ -178,7 +180,7 @@ if(DEFINE_AVX512)
     set(AVX512_FAST_GCC_FLAGS
         #" -march=icelake-client "  # PF test
         #" -march=graniterapids " # PF test avx10.1
-        " -mfma -mavx512f -mavx512cd -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mavx512vbmi -mavx512vbmi2 -mavx512bitalg -mavx512vpopcntdq "
+            " -mfma -mbmi2 -mavx512f -mavx512cd -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mavx512vbmi -mavx512vbmi2 -mavx512bitalg -mavx512vpopcntdq "
     )
     # Note: MSVC's /arch:AVX512 enables the basic F, CD, ... and does not have individual flags for VBMI, VBMI2, etc.
     # GCC/Clang/Intel compilers use the -mavx512... flags inside handle_arch_flags when running in MSVC_IDE
