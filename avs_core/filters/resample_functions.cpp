@@ -321,6 +321,77 @@ double UserDefined2Filter::f(double x)
   return c * sinc(x + 2) + b * sinc(x + 1) + a * sinc(x) + b * sinc(x - 1) + c * sinc(x - 2);
 }
 
+/*
+ * OPTIMAL SCANLINE CALCULATION NOTES (L2 CACHE BLOCKING)
+ *
+ * This function calculates the optimal vertical strip size (max_scanline)
+ * to be processed in a cache-blocked horizontal resizing operation.
+ *
+ * CONTEXT: Single-threaded, high-throughput workload with private L2 cache.
+ * The high FPS target justifies a more aggressive cache reservation factor.
+ *
+ * 1. COEFFICIENT TABLE EXCLUSION (Horizontal 2x resize of fullhd content):
+ * The coefficient table (~245 KB) is excluded from the calculation. It is
+ * treated as a streamed resource due to its size relative to L2 (512 KB).
+ * The hardware prefetcher is expected to handle its sequential access pattern
+ * efficiently without residing fully in the reserved L2 working set.
+ *
+ * 2. CACHE RESERVATION HEURISTIC:
+ * A factor of 0.75 (3/4) is reserved for the working set. This is an aggressive
+ * approach for a single-threaded task with a private L2 cache, minimizing
+ * cache thrashing risk from OS context switches while maximizing block size.
+ *
+ * 3. CONCRETE SCENARIO (512 KB L2, 1920->3840 upscale):
+ * Reserved L2 space: 512 KB * 0.75 = 384 KB (393,216 bytes).
+ * One scanline strip (src + tgt) is 23,040 bytes.
+ * The resulting max_scanline is 17 (393,216 / 23,040 ~ 17.06).
+ */
+int ResamplingProgram::resampler_h_detect_optimal_scanline(int src_width, int tgt_width, size_t l2_cache_size_bytes, size_t pixel_size) {
+  constexpr double CACHE_RESERVE_FACTOR = 0.75;
+
+  // Calculate the bytes needed for one (Source + Destination) scanline strip
+  size_t scanline_bytes = (static_cast<size_t>(src_width) + static_cast<size_t>(tgt_width)) * pixel_size;
+
+  // Calculate the reserved bytes based on the aggressive factor
+  // Use floating point math for precision, then cast to size_t
+  size_t reserved_l2_bytes = static_cast<size_t>(
+    static_cast<double>(l2_cache_size_bytes) * CACHE_RESERVE_FACTOR
+    );
+
+  // Calculate max_scanline (integer division for floor)
+  int max_scanline = static_cast<int>(reserved_l2_bytes / scanline_bytes);
+
+  // Clamp to practical bounds (4 to 64 is typical range for strip size)
+  // Dynamic by sample_size. For float32 (size=4) was 4 min and 64 max, so for uint8_t size=1 it will be 4x times more.
+  // Heuristic limits to avoid too small or too large strip sizes.
+  int iMinLimit;
+  int iMaxLimit;
+
+  switch (pixel_size)
+  {
+  case 4: // float
+    iMinLimit = 4;
+    iMaxLimit = 64;
+    break;
+  case 2: // uint16_t
+    iMinLimit = 8;
+    iMaxLimit = 128;
+    break;
+  case 1: // uint8_t
+    iMinLimit = 16;
+    iMaxLimit = 256;
+    break;
+  default: // should never happen
+    iMinLimit = 4;
+    iMaxLimit = 64;
+    break;
+  }
+
+  max_scanline = std::min(std::max(max_scanline, iMinLimit), iMaxLimit);
+
+  return max_scanline;
+}
+
 
 /******************************
  **** Resampling Patterns  ****

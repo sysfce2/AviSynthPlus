@@ -81,6 +81,7 @@ struct ResamplingProgram {
   // 3.7.4- can be different for each line but then they get equalized and aligned.
 
   size_t cache_size_L2; // in bytes, for possible use in resizers
+  int max_scanlines; // recommended vertical stripe for h resamplers
 
   // In H resizers, when using SIMD loads for speed, these is a "danger zone".
   // If SIMD load from source pixels (src+offset) over reads beyond the allocated
@@ -98,6 +99,8 @@ struct ResamplingProgram {
   SafeLimit safelimit_32_pixels = { false, -1, -1 };
   SafeLimit safelimit_8_pixels_each8th_target = { false, -1, -1 };
   SafeLimit safelimit_16_pixels_each16th_target = { false, -1, -1 };
+
+  int resampler_h_detect_optimal_scanline(int src_width, int tgt_width, size_t l2_cache_size_bytes, size_t pixel_size);
 
   ResamplingProgram(int filter_size, int source_size, int target_size, double crop_start, double crop_size, int bits_per_pixel, IScriptEnvironment* env)
     : Env(env), source_size(source_size), target_size(target_size), crop_start(crop_start), crop_size(crop_size), filter_size(filter_size), filter_size_real(filter_size),
@@ -124,6 +127,8 @@ struct ResamplingProgram {
     }
 
     cache_size_L2 = env->GetEnvProperty(AEP_CACHESIZE_L2);
+    const int pixel_size_bytes = (bits_per_pixel + 7) / 8;
+    max_scanlines = resampler_h_detect_optimal_scanline(source_size, target_size, cache_size_L2, pixel_size_bytes);
 
   };
 

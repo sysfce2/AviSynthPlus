@@ -1143,10 +1143,7 @@ void resize_h_planar_float_avx512_transpose_vstripe_ks4(BYTE* dst8, const BYTE* 
   // Vertical stripe alignment
   constexpr int STRIPE_ALIGN = 16;
 
-  const size_t cache_size_L2 = program->cache_size_L2;
-  int max_scanlines = resampler_h_float_detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2)
-    / STRIPE_ALIGN * STRIPE_ALIGN;
-
+  int max_scanlines = program->max_scanlines / STRIPE_ALIGN * STRIPE_ALIGN;
   if (max_scanlines < STRIPE_ALIGN) max_scanlines = STRIPE_ALIGN;
 
   // --- outer loop: vertical stripes ---
@@ -1278,9 +1275,7 @@ void resize_h_planar_float_avx512_transpose_vstripe_ks8(BYTE* dst8, const BYTE* 
   // Vertical stripe alignment
   constexpr int STRIPE_ALIGN = 16; // this must be multiple of PIXELS_AT_A_TIME 
 
-  const size_t cache_size_L2 = program->cache_size_L2;
-  int max_scanlines = resampler_h_float_detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2)
-    / STRIPE_ALIGN * STRIPE_ALIGN;
+  int max_scanlines = program->max_scanlines / STRIPE_ALIGN * STRIPE_ALIGN;
 
   if (max_scanlines < STRIPE_ALIGN) max_scanlines = STRIPE_ALIGN;
 
@@ -1475,9 +1470,7 @@ void resize_h_planar_float_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
   // Ensure that coefficient loading beyond the valid target size is safe for 4x4 float loads.
   assert(program->filter_size_alignment >= 4);
 
-  // e.g. i7-11700 typical L2 if 512K per core.
-  const size_t cache_size_L2 = program->cache_size_L2;
-  int max_scanlines = resampler_h_float_detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2);
+  const int max_scanlines = program->max_scanlines;
 
   // Vertical stripe loop for L2 cache optimization
   for (int y_from = 0; y_from < height; y_from += max_scanlines)
@@ -1608,9 +1601,7 @@ void resize_h_planar_float_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* s
   // Ensure that coefficient loading beyond the valid target size is safe for 4x8 float loads.
   assert(program->filter_size_alignment >= 8);
 
-  // e.g. i7-11700 typical L2 if 512K per core.
-  const size_t cache_size_L2 = program->cache_size_L2;
-  int max_scanlines = resampler_h_float_detect_optimal_scanline(program->source_size, program->target_size, cache_size_L2);
+  const int max_scanlines = program->max_scanlines;
 
   // Vertical stripe loop for L2 cache optimization
   for (int y_from = 0; y_from < height; y_from += max_scanlines)
