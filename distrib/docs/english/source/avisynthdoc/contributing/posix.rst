@@ -627,7 +627,7 @@ right lines in /etc/apt/sources.list.
     sudo apt-get build-dep ffmpeg
     sudo apt-get install nasm libsdl2-dev
 
-ffmpeg needs at least nasm 2.14, we have 2.16.03-1 on December 2005 Raspbian.
+ffmpeg needs at least nasm 2.14, we have 2.16.03-1 on December 2025 Raspbian.
 other prerequisites:
 
 ffmpeg-pre.sh

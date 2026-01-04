@@ -119,6 +119,7 @@ Optimizations
   * optimize SSSE3 and AVX2 horizontal resampler for 32-bit float for small (<=4) kernel sizes
   * optimize 32-bit float vertical avx2
   * add AVX512 code path to 32-bit float resamplers
+  * add AVX512 code path to 8-16-bit horizontal resamplers, having kernel size <= 4 and specific ratios; 300%+ !!
   * (Work In Progress) unify horizontal and vertical plane processing flow
 
 - add NEON optimizations for ARM64 (aarch64) for TurnLeft/TurnRight/Turn180.
@@ -144,7 +145,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/01/01 10:42:00 $
+$Date: 2026/01/04 19:45:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
