@@ -98,6 +98,9 @@ void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int fi
   p->safelimit_32_pixels.overread_possible = false;
   p->safelimit_8_pixels_each8th_target.overread_possible = false;
   p->safelimit_16_pixels_each16th_target.overread_possible = false;
+  p->safelimit_64_pixels_each32th_target.overread_possible = false; // avx512 uint16_t 32 target pixels, handling 64 source pixels in permutex-based resizers
+  p->safelimit_128_pixels_each64th_target.overread_possible = false; // avx512 uint8_t 64 target pixels, handling 128 source pixels in permutex-based resizers
+  // FIXME: found out how to make it general safelimit_SOURCEREADPIXELS_pixels_each_TARGETPIXELSATATIME. Not here, in each frame proecssing for sure.
 
   // note: filter_size_real was the max(kernel_sizes[])
   int filter_size_aligned = AlignNumber(p->filter_size_real, p->filter_size_alignment);
@@ -105,7 +108,10 @@ void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int fi
 
   int target_size_aligned = AlignNumber(p->target_size, ALIGN_RESIZER_TARGET_SIZE);
 
-  // align target_size to 8 units to allow safe up to 8 pixels/cycle in H resizers. modded later.
+  // align target_size to X units to allow safe, up to X pixels/cycle in H resizers.
+  // also, this is the coeff table Y-size.
+  // e.g. ALIGN_RESIZER_TARGET_SIZE = 64 allows to access coefficient table elements at
+  // current_coeff + filter_size * 63, if we step current_coeff by 64 * filter_size
   p->target_size_alignment = ALIGN_RESIZER_TARGET_SIZE;
 
   // Common variables for both float and integer paths
@@ -200,6 +206,10 @@ void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int fi
       checkAndSetOverread(start_pos + 8 - 1, p->safelimit_8_pixels_each8th_target, start_pos, i, p->source_size);
     if (i % 16 == 0)
       checkAndSetOverread(start_pos + 16 - 1, p->safelimit_16_pixels_each16th_target, start_pos, i, p->source_size);
+    if (i % 32 == 0) // avx512 uint16_t 32 target pixels, handling 64 source pixels
+      checkAndSetOverread(start_pos + 64 - 1, p->safelimit_64_pixels_each32th_target, start_pos, i, p->source_size);
+    if (i % 64 == 0) // avx512 uint8_t 64 target pixels, handling 128 source pixels
+      checkAndSetOverread(start_pos + 128 - 1, p->safelimit_128_pixels_each64th_target, start_pos, i, p->source_size);
 
       }
 
@@ -1622,6 +1632,16 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
   if (pixelsize == 1)
   {
 #ifdef INTEL_INTRINSICS
+#ifdef INTEL_INTRINSICS_AVX512
+    if (((CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST)) {
+      // feature flag, grouping many avx512 features
+      if (program->filter_size_real <= 4) {
+        out_resampler_h_alternative_for_mt = resizer_h_avx2_generic_uint8_t; // AVX2 should present if AVX512 present
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(64/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 4/*kernel_size*/))
+          return resize_h_planar_uint8_avx512_permutex_vstripe_ks4;
+      }
+    }
+#endif
     if (CPU & CPUF_AVX2) {
       return resizer_h_avx2_generic_uint8_t;
     }
@@ -1634,6 +1654,24 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
   }
   else if (pixelsize == 2) {
 #ifdef INTEL_INTRINSICS
+#ifdef INTEL_INTRINSICS_AVX512
+    if (((CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST)) {
+      // feature flag, grouping many avx512 features
+      if (program->filter_size_real <= 4) {
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 64/*permutex_index_diff_limit*/, 4/*kernel_size*/))
+        {
+          if (bits_per_pixel < 16)
+            out_resampler_h_alternative_for_mt = resizer_h_avx2_generic_uint16_t<true>; // AVX2 should present if AVX512 present
+          else
+            out_resampler_h_alternative_for_mt = resizer_h_avx2_generic_uint16_t<false>;
+          if (bits_per_pixel < 16)
+            return resize_h_planar_uint16_avx512_permutex_vstripe_ks4<true>;
+          else
+            return resize_h_planar_uint16_avx512_permutex_vstripe_ks4<false>;
+        }
+      }
+    }
+#endif
     if (CPU & CPUF_AVX2) {
       if (bits_per_pixel < 16)
         return resizer_h_avx2_generic_uint16_t<true>;
@@ -1670,9 +1708,6 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
         }
           return resize_h_planar_float_avx512_transpose_vstripe_ks4;
         }
-        return resize_h_planar_float_avx512_permutex_vstripe_ks4;
-          }
-
       if (program->filter_size_real <= 8) {
         // up to 8 coeffs it can be highly optimized with transposes, gather/permutex choice
         out_resampler_h_alternative_for_mt = resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16; // jolly joker
