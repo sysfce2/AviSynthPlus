@@ -77,7 +77,7 @@ struct ResamplingProgram {
   float* pixel_coefficient_float;
   // Array of real kernel size, handles edge cases! <= filter_size
   // for SIMD, coefficients are copied over a padded aligned storage
-  std::vector<short> kernel_sizes; 
+  std::vector<short> kernel_sizes; // temporary, used during setup only
   // 3.7.4- can be different for each line but then they get equalized and aligned.
 
   size_t cache_size_L2; // in bytes, for possible use in resizers
@@ -101,6 +101,8 @@ struct ResamplingProgram {
   SafeLimit safelimit_16_pixels_each16th_target = { false, -1, -1 };
 
   int resampler_h_detect_optimal_scanline(int src_width, int tgt_width, size_t l2_cache_size_bytes, size_t pixel_size);
+  bool resize_h_planar_gather_permutex_vstripe_check(int iSamplesInTheGroup, int permutex_index_diff_limit, int kernel_size);
+
 
   ResamplingProgram(int filter_size, int source_size, int target_size, double crop_start, double crop_size, int bits_per_pixel, IScriptEnvironment* env)
     : Env(env), source_size(source_size), target_size(target_size), crop_start(crop_start), crop_size(crop_size), filter_size(filter_size), filter_size_real(filter_size),

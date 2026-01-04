@@ -1665,7 +1665,9 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
       if (program->filter_size_real <= 4) {
         // up to 4 coeffs it can be highly optimized with transposes, gather/permutex choice
         out_resampler_h_alternative_for_mt = resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16; // jolly joker
-        if (resize_h_planar_float_avx512_gather_permutex_vstripe_ks4_check(program)) {
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(16 /*iSamplesInTheGroup*/, 32 /*permutex_index_diff_limit*/, 4 /*kernel_size*/)) {
+          return resize_h_planar_float_avx512_permutex_vstripe_ks4;
+        }
           return resize_h_planar_float_avx512_transpose_vstripe_ks4;
         }
         return resize_h_planar_float_avx512_permutex_vstripe_ks4;
@@ -1674,8 +1676,10 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
       if (program->filter_size_real <= 8) {
         // up to 8 coeffs it can be highly optimized with transposes, gather/permutex choice
         out_resampler_h_alternative_for_mt = resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16; // jolly joker
-        if (resize_h_planar_float_avx512_gather_permutex_vstripe_ks8_check(program)) {
-          return resize_h_planar_float_avx512_transpose_vstripe_ks8; // no template
+        // first check 16 pixels per cycle version, probably resize_h_planar_float_avx512_permutex_vstripe_2s8_ks8 is faster,
+        // if not possible, then 8 pixels per cycle
+        if (program->resize_h_planar_gather_permutex_vstripe_check(16/*iSamplesInTheGroup*/, 32/*permutex_index_diff_limit*/, 8/*kernel_size*/)) {
+          return resize_h_planar_float_avx512_transpose_vstripe_ks8;
         }
         return resize_h_planar_float_avx512_permutex_vstripe_ks8;
       }
@@ -1699,7 +1703,7 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
       // These perform very poorly in Prefetch, so we provide alternative generic version for MT
       out_resampler_h_alternative_for_mt = resize_h_planar_float_avx2_permutex_vstripe_ks4; // jolly joker
       if (program->filter_size_real <= 4) {
-        if (resize_h_planar_float_avx2_gather_permutex_vstripe_ks4_check(program)) {
+        if (program->resize_h_planar_gather_permutex_vstripe_check(8 /*iSamplesInTheGroup*/, 8 /*permutex_index_diff_limit*/, 4 /*kernel_size*/)) {
       switch (program->filter_size_real) {
           case 1: return resize_h_planar_float_avx2_transpose_vstripe_ks4<1>; break;
           case 2: return resize_h_planar_float_avx2_transpose_vstripe_ks4<2>; break;
@@ -1707,7 +1711,7 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
           case 4: return resize_h_planar_float_avx2_transpose_vstripe_ks4<0>; break;
           }
         }
-        return resize_h_planar_float_avx2_permutex_vstripe_ks4; //
+        return resize_h_planar_float_avx2_permutex_vstripe_ks4;
       }
       return resizer_h_avx2_generic_float_pix16_sub4_ks_4_8_16; // new generic, like avx512 version
       // return resizer_h_avx2_generic_float; old generic would be named pix8_sub2_ks8

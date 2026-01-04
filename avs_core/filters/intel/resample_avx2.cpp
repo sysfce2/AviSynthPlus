@@ -1406,54 +1406,6 @@ BilinearResize(int(width*0.97), height) # gather, H kernel size 3
  * Out of bounds target pixels coefficients are padded with zeros up to program->filter_size_alignment.
 */
 
-// returns true if only transpose method is allowed, false if permutex method can be used
-bool resize_h_planar_float_avx2_gather_permutex_vstripe_ks4_check(ResamplingProgram* program)
-{
-  // 'target_size_alignment' ensures we can safely access pixel_offset[] entries using offsets like
-  // pixel_offset[x + 0] to pixel_offset[x + 7] per 8-pixel block processing
-  assert(program->target_size_alignment >= 8);
-
-  // Ensure that coefficient loading is safe for 4 float loads
-  assert(program->filter_size_alignment >= 4);
-
-  for (int x = 0; x < program->target_size; x += 8)
-  {
-    int start_off = program->pixel_offset[x + 0];
-    // program->pixel_offset[x + 7] is still valid, since program->target_size_alignment >= 8
-    // and pixel_offset[] values for x >= target_size are the same as for x=target_size-1.
-    // This is ensured during the resampling program setup in resize_prepare_coeffs()
-    int end_off = program->pixel_offset[x + 7] + 3;
-    if ((end_off - start_off) >= 8) {
-      return true; // only transpose is allowed
-    }
-  }
-  return false; // permute is OK.
-}
-
-// returns true if only transpose method is allowed, false if permutex method can be used
-bool resize_h_planar_float_avx2_gather_permutex_vstripe_ks4_pix16_check(ResamplingProgram* program)
-{
-  // 'target_size_alignment' ensures we can safely access pixel_offset[] entries using offsets like
-  // pixel_offset[x + 0] to pixel_offset[x + 15] per 16-pixel block processing
-  assert(program->target_size_alignment >= 16);
-
-  // Ensure that coefficient loading is safe for 4 float loads
-  assert(program->filter_size_alignment >= 4);
-
-  for (int x = 0; x < program->target_size; x += 16)
-  {
-    int start_off = program->pixel_offset[x + 0];
-    // program->pixel_offset[x + 15] is still valid, since program->target_size_alignment >= 16
-    // and pixel_offset[] values for x >= target_size are the same as for x=target_size-1.
-    // This is ensured during the resampling program setup in resize_prepare_coeffs()
-    int end_off = program->pixel_offset[x + 15] + 3;
-    if ((end_off - start_off) >= 16) {
-      return true; // only transpose is allowed
-    }
-  }
-  return false; // permute is OK.
-}
-
 // resize_h_planar_float_avx2_xxx_vstripe_ks4 method #1: gather-based
 template<int filtersizemod4>
 void resize_h_planar_float_avx2_transpose_vstripe_ks4(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
@@ -2187,7 +2139,7 @@ void resize_h_planar_float_avx2_gather_permutex_vstripe_ks4(BYTE* dst8, const BY
 {
 
   // FIXME: this analysis could be done once in the dispatcher instead of per call, since the program is constant
-  bool bDoGather = resize_h_planar_float_avx2_gather_permutex_vstripe_ks4_check(program);
+  bool bDoGather = program->resize_h_planar_gather_permutex_vstripe_check(8/*iSamplesInThGroup*/, 8 /*permutex_index_diff_limit*/, 4 /*kernel_size*/);
   if (bDoGather)
   {
     resize_h_planar_float_avx2_transpose_vstripe_ks4<filtersizemod4>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);

@@ -392,6 +392,67 @@ int ResamplingProgram::resampler_h_detect_optimal_scanline(int src_width, int tg
   return max_scanline;
 }
 
+/**
+ * @brief Checks if the data access pattern for horizontal resampling requires the slower Transpose method,
+ * or if the faster Permutex approach can be used.
+ *
+ * This function determines the feasibility of using vector instructions (like AVX2/AVX-512 Permutex)
+ * to load the source samples required for a group of output samples. This method is preferred when
+ * the total spread of necessary source samples is small.
+ *
+ * @note This check is performed for methods that process multiple output sample groups per loop pass
+ * (e.g., loading 2 groups of 8 samples for AVX-512).
+ *
+ * @param iSamplesInTheGroup       The number of output samples processed in one vector iteration (e.g., 8, 16, 64).
+ * (Usually referred to as PIXELS_AT_A_TIME).
+ * @param permutex_index_diff_limit The maximum byte/element difference allowed between the earliest and latest
+ * required source sample for Permutex to be viable. This limit is dictated
+ * by the specific Permutex intrinsic used (e.g., 8 for _mm256_permutevar8x32_ps).
+ * @param kernel_size              The size of the resampling filter kernel (number of coefficients).
+ * @return true                    If the source sample spread is too large, meaning only the Transpose method is allowed.
+ * @return false                   If the source sample spread is small enough, meaning the Permutex method can be used.
+ */
+bool ResamplingProgram::resize_h_planar_gather_permutex_vstripe_check(int iSamplesInTheGroup, int permutex_index_diff_limit, int kernel_size)
+{
+  // iSamplesInTheGroup is usually denoted as PIXELS_AT_A_TIME in H resampler code
+  // permutex_index_diff_limit is like iAccessibleSourceSamplesToGroup
+
+  // Alignment checks ensure safe access to pre-calculated arrays for the entire vector block.
+
+  // 'target_size_alignment' ensures safe access for the entire group (x to x + iSamplesInTheGroup - 1)
+  // Example: for iSamplesInTheGroup = 8, we need to ensure that
+  // - program->pixel_offset[x + 0] to program->pixel_offset[x + 7] and
+  // - corresponding coefficients (spread over coeff-strides like current_coeff + filter_size*0 to filter_size*7), where filter_size is the aligned coefficient stride.
+  // are valid if iSamplesInTheGroup = 8.
+  assert(target_size_alignment >= iSamplesInTheGroup);
+
+  // Ensure that coefficient loading is safe for "kernel_size" element loads
+  assert(filter_size_alignment >= kernel_size);
+
+  for (int x = 0; x < target_size; x += iSamplesInTheGroup) // check each group
+  {
+    // Get the index of the first required source sample for this group.
+    int start_off = pixel_offset[x + 0];
+
+    // Get the index of the last required source sample. This is the offset for the last
+    // output pixel in the group (x + iSamplesInTheGroup - 1) plus the last kernel tap (kernel_size - 1).
+    // Note: pixel_offset[] values for x >= target_size are pre-padded to match target_size-1 (ensured by resize_prepare_coeffs()).
+    const int end_off = pixel_offset[x + (iSamplesInTheGroup - 1)] + (kernel_size - 1);
+
+    // Check the total spread (difference) in source sample indices.
+    // This difference must be less than the limit imposed by the Permutex intrinsic's addressing capability.
+    // Examples of permutex_index_diff_limit:
+    // - 8 for _mm256_permutevar8x32_ps (float, avx2)
+    // - 32 for _mm512_permutex2var_ps (float, avx512)
+    // - 64 for _mm512_permutex2var_epi16 (uint16_t, avx512)
+    // - 128 for _mm512_permutex2var_epi8 (uint8_t, avx512)
+    if ((end_off - start_off) >= permutex_index_diff_limit) {
+      return true; // spread is too wide; only the transpose method is allowed.
+    }
+  }
+  return false; // Spread is acceptable; Permutex is OK.
+}
+
 
 /******************************
  **** Resampling Patterns  ****
