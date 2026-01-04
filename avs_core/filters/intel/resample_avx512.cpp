@@ -2750,7 +2750,7 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
         __m256i result_0_31_u8 = _mm512_cvtusepi16_epi8(result_0_31_int16); // is it good saturated truncation equal to _mm256_packus_epi16 ?
         __m256i result_32_63_u8 = _mm512_cvtusepi16_epi8(result_32_63_int16);
 
-        _mm512_stream_si512(dst_ptr, _mm512_inserti64x4(_mm512_zextsi256_si512(result_0_31_u8), result_32_63_u8, 1));
+        _mm512_stream_si512(reinterpret_cast<__m512i*>(dst_ptr), _mm512_inserti64x4(_mm512_zextsi256_si512(result_0_31_u8), result_32_63_u8, 1));
 
         dst_ptr += dst_pitch;
         src_ptr += src_pitch;
@@ -3002,7 +3002,7 @@ void resize_h_planar_uint16_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* 
           result_0_31_int16 = _mm512_min_epu16(result_0_31_int16, clamp_limit); // extra clamp for 10-14 bit
         }
         
-        _mm512_stream_si512(dst_ptr, result_0_31_int16);
+        _mm512_stream_si512(reinterpret_cast<__m512i*>(dst_ptr), result_0_31_int16);
 
         dst_ptr += dst_pitch;
         src_ptr += src_pitch;
@@ -3024,3 +3024,6 @@ void resize_h_planar_uint16_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* 
     }
   }
 }
+
+template void resize_h_planar_uint16_avx512_permutex_vstripe_ks4<false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
+template void resize_h_planar_uint16_avx512_permutex_vstripe_ks4<true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
