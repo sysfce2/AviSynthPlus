@@ -101,6 +101,7 @@ void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int fi
 
   // note: filter_size_real was the max(kernel_sizes[])
   int filter_size_aligned = AlignNumber(p->filter_size_real, p->filter_size_alignment);
+  // FIXME: really this needs to be dynamic based on SIMD used in resizer
 
   int target_size_aligned = AlignNumber(p->target_size, ALIGN_RESIZER_TARGET_SIZE);
 
@@ -147,7 +148,7 @@ void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int fi
     // In order to be able to read 'filter_size_real' number of coefficients safely at the
     // image boundaries, we right-align the actual coefficients within the allocated filter
     // size. This will require adjusting (shifting) the pixel offsets as well, and increasing
-    // the kernel sizes, to reflect the new effective size: filter_size_real.
+    // the smaller kernel sizes, to reflect the new effective size: filter_size_real.
 
     // Copy coefficients with appropriate shift
     if (p->bits_per_pixel == 32) {
@@ -202,19 +203,18 @@ void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int fi
 
       }
 
+  // from now on, kernel_sizes[] has no role, each is filter_size_real
+  p->kernel_sizes.clear();
+
   // Fill the extra offset after target_size with fake values.
   // Our aim is to have a safe, up to 8-32 pixels/cycle simd loop for V and specific H resizers.
   // Their coeffs will be 0, so they don't count if such coeffs
   // are multiplied with invalid, though existing pixels.
   if (p->target_size < target_size_aligned) {
-    p->kernel_sizes.resize(target_size_aligned);
     p->pixel_offset.resize(target_size_aligned);
     int last_offset = p->pixel_offset[p->target_size - 1];
     for (int i = p->target_size; i < target_size_aligned; ++i) {
-      p->kernel_sizes[i] = p->filter_size_real;
-      p->pixel_offset[i] = last_offset; // repeat last valid offset, helps permutex-based H resizers
-      // even if this ensures the in-line safety, alternative H resizer implementations must
-      // not read beyond last line, where y>=height.
+      p->pixel_offset[i] = last_offset; // repeat last valid offset, helps permutex-based H resizers to stay within valid distances
     }
   }
 
