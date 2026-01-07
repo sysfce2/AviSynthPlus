@@ -247,8 +247,14 @@ AVS_FORCEINLINE static int32_t _mm512_reduce_add_epi32_compat(__m512i v) {
   return _mm512_reduce_add_epi32(v);
 }
 
+// These are the direct rewrite of the full-generic AVX2 h resamplers
+// - resizer_h_avx512_generic_uint8_t and
+// - resizer_h_avx512_generic_uint16_t<bool lessthan16bit>
+// They are not any quicker than the AVX2 versions, but they serve as a base for further optimizations.
+// The 512-bitness is not exploited, only have more registers, but they did not help. WIP.
+
 // -----------------------------------------------------------------------------------------
-// Core Processing: 4x16, 2x16 Taps (AVX-512 VNNI)
+// Core Processing: 4x16, 2x16 Taps
 // -----------------------------------------------------------------------------------------
 // taps16, 4 coeffs
 template<typename pixel_t, bool lessthan16bit>
@@ -276,7 +282,7 @@ AVS_FORCEINLINE static void process_two_16pixels_core(const pixel_t * AVS_RESTRI
   __m256i coeff_1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(current_coeff));
   __m256i coeff_2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(current_coeff + filter_size));
 
-  result1 = _mm256_dpwssd_epi32(result1, data_1, coeff_1);
+  result1 = _mm256_dpwssd_epi32(result1, data_1, coeff_1); // vnni, not really a bottleneck here
   result2 = _mm256_dpwssd_epi32(result2, data_2, coeff_2);
 }
 
@@ -570,35 +576,6 @@ AVS_FORCEINLINE static __m256i reduce_8x128i_to_8x32i(
   return _mm256_add_epi32(result_8x_32, rounder_v);
 }
 
-// ---------------------------------------------------------------------------
-// FULL VECTOR REDUCTION: 8x ZMM -> 1x YMM (8x 32-bit sums)
-// ---------------------------------------------------------------------------
-
-AVS_FORCEINLINE static __m256i reduce_8x512i_to_8x32i(
-  __m512i r0, __m512i r1, __m512i r2, __m512i r3,
-  __m512i r4, __m512i r5, __m512i r6, __m512i r7,
-  int rounder_scalar)
-{
-  // No 512-bit hadd instruction, we need to do it manually.
-  // Reduce 512-bit ZMM to 256-bit YMM (16 elements -> 8 elements) ---
-  // The convolution sum is currently spread across all 16 lanes of each ZMM.
-  // We sum the low 256-bit half (lanes 0-7) with the high 256-bit half (lanes 8-15).
-
-  // VADDD (summing the two 256-bit halves)
-  __m256i sum0 = _mm256_add_epi32(_mm512_extracti64x4_epi64(r0, 0), _mm512_extracti64x4_epi64(r0, 1));
-  __m256i sum1 = _mm256_add_epi32(_mm512_extracti64x4_epi64(r1, 0), _mm512_extracti64x4_epi64(r1, 1));
-  __m256i sum2 = _mm256_add_epi32(_mm512_extracti64x4_epi64(r2, 0), _mm512_extracti64x4_epi64(r2, 1));
-  __m256i sum3 = _mm256_add_epi32(_mm512_extracti64x4_epi64(r3, 0), _mm512_extracti64x4_epi64(r3, 1));
-  __m256i sum4 = _mm256_add_epi32(_mm512_extracti64x4_epi64(r4, 0), _mm512_extracti64x4_epi64(r4, 1));
-  __m256i sum5 = _mm256_add_epi32(_mm512_extracti64x4_epi64(r5, 0), _mm512_extracti64x4_epi64(r5, 1));
-  __m256i sum6 = _mm256_add_epi32(_mm512_extracti64x4_epi64(r6, 0), _mm512_extracti64x4_epi64(r6, 1));
-  __m256i sum7 = _mm256_add_epi32(_mm512_extracti64x4_epi64(r7, 0), _mm512_extracti64x4_epi64(r7, 1));
-
-  return reduce_8x256i_32i_tree(
-    sum0, sum1, sum2, sum3,
-    sum4, sum5, sum6, sum7,
-    rounder_scalar);
-}
 
 // -----------------------------------------------------------------------------------------
 // Wrapper for Two-Pixel Processing
@@ -776,7 +753,7 @@ AVS_FORCEINLINE static void process_four_pixels_h_avx512(const pixel_t* AVS_REST
 }
 
 // -----------------------------------------------------------------------------------------
-// Main Block Processor (Corrected Init)
+// Main Block Processor, TWO_PIXELS_AT_ONCE for testing performance difference
 // -----------------------------------------------------------------------------------------
 template<bool is_safe, typename pixel_t, bool lessthan16bit, int FixedFilterSize>
 AVS_FORCEINLINE static void process_sixteen_pixels_h_avx512(const pixel_t * src, int x, const short* current_coeff_base, int filter_size,
@@ -787,7 +764,7 @@ AVS_FORCEINLINE static void process_sixteen_pixels_h_avx512(const pixel_t * src,
   const short* AVS_RESTRICT current_coeff = current_coeff_base + x * run_filter_size_stride;
   const int unaligned_kernel_size = program->filter_size_real;
 
-#if TWO_PIXELS_AT_ONCE
+#ifdef TWO_PIXELS_AT_ONCE
   __m256i result0 = _mm256_setzero_si256();
   __m256i result1 = _mm256_setzero_si256();
   process_two_pixels_h_avx512<is_safe, pixel_t, lessthan16bit, FixedFilterSize>(src, program->pixel_offset[x], program->pixel_offset[x + 1], current_coeff, run_filter_size_stride, result0, result1, unaligned_kernel_size, shifttosigned);
@@ -837,7 +814,7 @@ AVS_FORCEINLINE static void process_sixteen_pixels_h_avx512(const pixel_t * src,
     rounder_scalar);
 
   // same for pixels 8..15
-#if TWO_PIXELS_AT_ONCE
+#ifdef TWO_PIXELS_AT_ONCE
   __m256i result8 = _mm256_setzero_si256();
   __m256i result9 = _mm256_setzero_si256();
   process_two_pixels_h_avx512<is_safe, pixel_t, lessthan16bit, FixedFilterSize>(src, program->pixel_offset[x + 8], program->pixel_offset[x + 9], current_coeff, run_filter_size_stride, result8, result9, unaligned_kernel_size, shifttosigned);
@@ -899,23 +876,18 @@ AVS_FORCEINLINE static void process_sixteen_pixels_h_avx512(const pixel_t * src,
   __m256i scaled_lo = _mm256_srai_epi32(result_8x_32_lo, shift);
   __m256i scaled_hi = _mm256_srai_epi32(result_8x_32_hi, shift);
 
-  // no _mm256_cvtepi32_epu16 :(
-  __m128i lo_lo = _mm256_extracti128_si256(scaled_lo, 0);
-  __m128i lo_hi = _mm256_extracti128_si256(scaled_lo, 1);
-  __m128i result_16_lo = _mm_packus_epi32(lo_lo, lo_hi); // clamps
-  __m128i hi_lo = _mm256_extracti128_si256(scaled_hi, 0);
-  __m128i hi_hi = _mm256_extracti128_si256(scaled_hi, 1);
-  __m128i result_16_hi = _mm_packus_epi32(hi_lo, hi_hi); // clamps
-
-  __m256i result_16 = _mm256_inserti128_si256(_mm256_castsi128_si256(result_16_lo), result_16_hi, 1);
+  // integer 32->unsigned 16 bit, the usual and quick way
+  __m256i result_16 = _mm256_packus_epi32(scaled_lo, scaled_hi);
 
   // we have 8x16 bit unsigned pixels now in result_16
   if constexpr (sizeof(pixel_t) == 2 && lessthan16bit) {
     result_16 = _mm256_min_epu16(result_16, clamp_limit);
   }
 
+  result_16 =  _mm256_permute4x64_epi64(result_16, (0 << 0) | (2 << 2) | (1 << 4) | (3 << 6));
+
   if constexpr (sizeof(pixel_t) == 1) {
-    __m128i result_8 = _mm256_cvtepi16_epi8(result_16);
+    __m128i result_8 = _mm_packus_epi16(_mm256_castsi256_si128(result_16), _mm256_extracti128_si256(result_16, 1));
     _mm_stream_si128(reinterpret_cast<__m128i*>(dst + x), result_8); // 16x 8bit pixels
   }
   else {
