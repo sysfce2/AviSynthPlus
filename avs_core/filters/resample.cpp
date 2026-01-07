@@ -1737,14 +1737,46 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
         // first check 16 pixels per cycle version, probably resize_h_planar_float_avx512_permutex_vstripe_2s8_ks8 is faster,
         // if not possible, then 8 pixels per cycle
         if (program->resize_h_planar_gather_permutex_vstripe_check(16/*iSamplesInTheGroup*/, 32/*permutex_index_diff_limit*/, 8/*kernel_size*/)) {
+          // 16 pixels per cycle version of permutex was not possible, try 2x8 version
+          if (!program->resize_h_planar_gather_permutex_vstripe_check(8/*iSamplesInTheGroup*/, 32/*permutex_index_diff_limit*/, 8/*kernel_size*/)) {
+            return resize_h_planar_float_avx512_permutex_vstripe_2s8_ks8; // 2x8 output version: better than transpose and generic
+          }
           return resize_h_planar_float_avx512_transpose_vstripe_ks8;
+          // Speed ranking fps, just to have a clue, higher is better.
+          // resize_h_planar_float_avx512_permutex_vstripe_2s8_ks8:        3482
+          // resize_h_planar_float_avx512_transpose_vstripe_ks8:           3186
+          // generic resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16:  2772
         }
+        // Speed ranking fps, just to have a clue, higher is better.
+        // resize_h_planar_float_avx512_permutex_vstripe_2s8_ks8:  2040 2390 1221
+        // resize_h_planar_float_avx512_permutex_vstripe_ks8:      2847 3236 1775
         return resize_h_planar_float_avx512_permutex_vstripe_ks8;
       }
 
+      if (program->filter_size_real <= 16) {
+        // up to 16 coeffs it can be highly optimized with transposes, gather/permutex choice
+        out_resampler_h_alternative_for_mt = resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16; // jolly joker
+        if (program->resize_h_planar_gather_permutex_vstripe_check(16/*iSamplesInTheGroup*/, 32/*permutex_index_diff_limit*/, 16/*kernel_size*/)) {
+          if (!program->resize_h_planar_gather_permutex_vstripe_check(8/*iSamplesInTheGroup*/, 32/*permutex_index_diff_limit*/, 16/*kernel_size*/)) {
+            // LanczosResize(int(width * 0.9 + 0.5), height, taps = 4) # case K: H kernel size 9
+            // LanczosResize(int(width * 0.5 + 0.5), height, taps = 3) # case N: H kernel size 12
 
+            // Speed ranking fps, just to have a clue, higher is better.
+            // 1902 2809 resize_h_planar_float_avx512_permutex_vstripe_ks16 (invalid here, but for reference)
+            // 1356 2137 resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16 
+            // 1278 1997 resize_h_planar_float_avx512_permutex_vstripe_2s8_ks16 test 2x8 output version
+
+            // return resize_h_planar_float_avx512_permutex_vstripe_2s8_ks16; // This one is slower than the generic version
+            // Anyway we keep this branch, maybe in future 2s8_ks16 can be optimized better, till then, use generic.
       return resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16;
-      // other candidates for testing:
+          }
+          return resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16; // todo: _ks16 transpose-based version to be designed and checked 
+        }
+        return resize_h_planar_float_avx512_permutex_vstripe_ks16;
+      }
+      
+      return resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16;
+      // other candidates were tested:
       // return resizer_h_avx512_generic_float_pix8_sub8_ks16;
       // return resizer_h_avx512_generic_float_pix16_sub16_ks8;
       // return resizer_h_avx512_generic_float_pix32_sub8_ks8;
