@@ -1635,11 +1635,34 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
 #ifdef INTEL_INTRINSICS_AVX512
     if (((CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST)) {
       // feature flag, grouping many avx512 features
-      if (program->filter_size_real <= 4) {
+      // in case of optimized avx512_permutex_vstripe resizer found, set alternative resizer for MT use
         out_resampler_h_alternative_for_mt = resizer_h_avx2_generic_uint8_t; // AVX2 should present if AVX512 present
+      if (program->filter_size_real <= 4) {
         if (!program->resize_h_planar_gather_permutex_vstripe_check(64/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 4/*kernel_size*/))
           return resize_h_planar_uint8_avx512_permutex_vstripe_ks4;
       }
+      if (program->filter_size_real <= 8) {
+        /*
+          resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8
+          - support more downsampling ratios, like
+            Bicubic/BilinearResize(width/2) and even SinPowResize(width/2) for downsampling of UHD 4k to FHD is working.
+          - Expected to support scaling ratios from about a bit below 0.5 to infinity (with filter support <=2).
+
+          resize_h_planar_uint8_avx512_permutex_vstripe_ks8
+          - faster with scale ratios from about 1.0 to infinity (with filter support <=4).
+
+          These two functions selected in order from faster to slower.
+        */
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(64/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 8/*kernel_size*/)) // first try faster ks8
+          return resize_h_planar_uint8_avx512_permutex_vstripe_ks8;
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 8/*kernel_size*/)) // slower ks8 but more downsample ratio for /2
+          return resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8;
+    }
+      if (program->filter_size_real <= 16) {
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 16/*kernel_size*/))
+          return resize_h_planar_uint8_avx512_permutex_vstripe_ks16;
+      }
+      out_resampler_h_alternative_for_mt = nullptr; // not needed
     }
 #endif
     if (CPU & CPUF_AVX2) {
