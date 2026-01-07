@@ -9,6 +9,25 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
+20260107 3.7.5.r44XX (pre 3.7.6)
+--------------------------------
+  * add AVX512 code path (tuning by DTL2020)
+  
+    - 32-bit float resamplers, verticals; horizontals up to kernel size 16.
+    - 8-16-bit horizontal resamplers,
+
+      - kernel size <= 4 and specific ratios; 300%+ !!
+      - kernel sizes up to 8 and 16 and specific ratios.
+    - 8-16-bit vertical resamplers
+
+20260105 3.7.5.r4430 (pre 3.7.6)
+--------------------------------
+- add AVX512 code path to 8-16-bit horizontal resamplers, having kernel size <= 4 and specific ratios (DTL) 300%+ !!
+- More Aarch64 (ARM64) NEON: 
+  - add I8MM and SVE2_1 feature flags
+  - add NEON optimization to TurnLeft/Right/180
+
+
 20251225 3.7.5.r4403 (pre 3.7.6)
 --------------------------------
 - Fix: The `Animate()` function now explicitly clamps interpolated values to ensure they remain 
