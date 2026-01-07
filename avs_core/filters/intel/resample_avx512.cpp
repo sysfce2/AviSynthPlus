@@ -3197,105 +3197,92 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* s
       const __mmask32 k_16_23 = _mm512_kunpackw(_mm512_int2mask(0x00FF), _mm512_int2mask(0x0000)); // temp fix for VS2017 builds
       const __mmask32 k_24_31 = _mm512_kunpackw(_mm512_int2mask(0xFF00), _mm512_int2mask(0x0000)); // temp fix for VS2017 builds
 
-      // 0.0 .. 15.0 in low 256, 16.0 .. 31.0 in high 256
-      __m512i coef_r0_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r0_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r0_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r0_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r0_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r0_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r0_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r0_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r0_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r0_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
+      auto inc_perms = [&](
+        __m512i& c0_7,
+        __m512i& c8_15,
+        __m512i& c16_23,
+        __m512i& c24_31
+        ) {
+          c0_7 = _mm512_add_epi16(c0_7, one_epi16);
+          c8_15 = _mm512_add_epi16(c8_15, one_epi16);
+          c16_23 = _mm512_add_epi16(c16_23, one_epi16);
+          c24_31 = _mm512_add_epi16(c24_31, one_epi16);
+        };
 
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
+      auto make_row_0_63 = [&](
+        __m512i& row_0_31w, __m512i& row_32_63w,
+        __m512i c0_7, __m512i c8_15, __m512i c16_23, __m512i c24_31
+        ) {
+          // 0..31
+          row_0_31w = _mm512_mask_blend_epi16(
+            k_8_15,
+            _mm512_permutex2var_epi16(coef_0_3, c0_7, coef_4_7),
+            _mm512_permutex2var_epi16(coef_8_11, c8_15, coef_12_15)
+          );
+          row_0_31w = _mm512_mask_blend_epi16(
+            k_16_23,
+            row_0_31w,
+            _mm512_permutex2var_epi16(coef_16_19, c16_23, coef_20_23)
+          );
+          row_0_31w = _mm512_mask_blend_epi16(
+            k_24_31,
+            row_0_31w,
+            _mm512_permutex2var_epi16(coef_24_27, c24_31, coef_28_31)
+          );
 
-      __m512i coef_r1_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r1_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r1_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r1_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r1_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r1_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r1_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r1_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r1_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r1_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
+          // 32..63
+          row_32_63w = _mm512_mask_blend_epi16(
+            k_8_15,
+            _mm512_permutex2var_epi16(coef_32_35, c0_7, coef_36_39),
+            _mm512_permutex2var_epi16(coef_40_43, c8_15, coef_44_47)
+          );
+          row_32_63w = _mm512_mask_blend_epi16(
+            k_16_23,
+            row_32_63w,
+            _mm512_permutex2var_epi16(coef_48_51, c16_23, coef_52_55)
+          );
+          row_32_63w = _mm512_mask_blend_epi16(
+            k_24_31,
+            row_32_63w,
+            _mm512_permutex2var_epi16(coef_56_59, c24_31, coef_60_63)
+          );
+        };
 
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
+      __m512i coef_r0_0_31w, coef_r0_32_63w;
+      __m512i coef_r1_0_31w, coef_r1_32_63w;
+      __m512i coef_r2_0_31w, coef_r2_32_63w;
+      __m512i coef_r3_0_31w, coef_r3_32_63w;
+      __m512i coef_r4_0_31w, coef_r4_32_63w;
+      __m512i coef_r5_0_31w, coef_r5_32_63w;
+      __m512i coef_r6_0_31w, coef_r6_32_63w;
+      __m512i coef_r7_0_31w, coef_r7_32_63w;
 
-      __m512i coef_r2_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r2_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r2_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r2_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r2_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r2_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r2_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r2_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r2_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r2_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
-
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
-
-      __m512i coef_r3_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r3_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r3_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r3_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r3_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r3_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r3_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r3_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r3_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r3_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
-
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
-
-      __m512i coef_r4_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r4_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r4_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r4_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r4_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r4_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r4_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r4_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r4_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r4_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
-
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
-
-      __m512i coef_r5_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r5_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r5_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r5_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r5_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r5_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r5_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r5_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r5_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r5_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
-
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
-
-      __m512i coef_r6_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r6_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r6_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r6_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r6_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r6_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r6_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r6_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r6_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r6_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
-
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
-
-      __m512i coef_r7_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r7_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r7_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r7_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r7_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r7_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r7_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r7_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r7_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r7_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
+      // r0
+      make_row_0_63(coef_r0_0_31w, coef_r0_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r1
+      make_row_0_63(coef_r1_0_31w, coef_r1_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r2
+      make_row_0_63(coef_r2_0_31w, coef_r2_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r3
+      make_row_0_63(coef_r3_0_31w, coef_r3_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r4
+      make_row_0_63(coef_r4_0_31w, coef_r4_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r5
+      make_row_0_63(coef_r5_0_31w, coef_r5_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r6
+      make_row_0_63(coef_r6_0_31w, coef_r6_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r7
+      make_row_0_63(coef_r7_0_31w, coef_r7_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      /* // last one, not needed
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      */
 
       // convert-transpose to H-pairs for madd ? better to do with single permutex in future
       // 16 to 16 512 registers - finally real working coeffs to store in the transposed resampling program for block of 64 target samples
@@ -3633,98 +3620,92 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8(BYTE* dst8, const BY
       const __mmask32 k_16_23 = _mm512_kunpackw(_mm512_int2mask(0x00FF), _mm512_int2mask(0x0000)); // temp fix for VS2017 builds
       const __mmask32 k_24_31 = _mm512_kunpackw(_mm512_int2mask(0xFF00), _mm512_int2mask(0x0000)); // temp fix for VS2017 builds
 
-      // 0.0 .. 15.0 in low 256, 16.0 .. 31.0 in high 256
-      __m512i coef_r0_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r0_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r0_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r0_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r0_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r0_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r0_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r0_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r0_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r0_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
+      auto inc_perms = [&](
+        __m512i& c0_7,
+        __m512i& c8_15,
+        __m512i& c16_23,
+        __m512i& c24_31
+        ) {
+          c0_7 = _mm512_add_epi16(c0_7, one_epi16);
+          c8_15 = _mm512_add_epi16(c8_15, one_epi16);
+          c16_23 = _mm512_add_epi16(c16_23, one_epi16);
+          c24_31 = _mm512_add_epi16(c24_31, one_epi16);
+        };
 
-      __m512i coef_r1_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r1_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r1_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r1_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r1_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r1_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r1_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r1_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r1_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r1_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
+      auto make_row_0_63 = [&](
+        __m512i& row_0_31w, __m512i& row_32_63w,
+        __m512i c0_7, __m512i c8_15, __m512i c16_23, __m512i c24_31
+        ) {
+          // 0..31
+          row_0_31w = _mm512_mask_blend_epi16(
+            k_8_15,
+            _mm512_permutex2var_epi16(coef_0_3, c0_7, coef_4_7),
+            _mm512_permutex2var_epi16(coef_8_11, c8_15, coef_12_15)
+          );
+          row_0_31w = _mm512_mask_blend_epi16(
+            k_16_23,
+            row_0_31w,
+            _mm512_permutex2var_epi16(coef_16_19, c16_23, coef_20_23)
+          );
+          row_0_31w = _mm512_mask_blend_epi16(
+            k_24_31,
+            row_0_31w,
+            _mm512_permutex2var_epi16(coef_24_27, c24_31, coef_28_31)
+          );
 
-      __m512i coef_r2_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r2_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r2_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r2_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r2_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r2_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r2_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r2_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r2_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r2_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
+          // 32..63
+          row_32_63w = _mm512_mask_blend_epi16(
+            k_8_15,
+            _mm512_permutex2var_epi16(coef_32_35, c0_7, coef_36_39),
+            _mm512_permutex2var_epi16(coef_40_43, c8_15, coef_44_47)
+          );
+          row_32_63w = _mm512_mask_blend_epi16(
+            k_16_23,
+            row_32_63w,
+            _mm512_permutex2var_epi16(coef_48_51, c16_23, coef_52_55)
+          );
+          row_32_63w = _mm512_mask_blend_epi16(
+            k_24_31,
+            row_32_63w,
+            _mm512_permutex2var_epi16(coef_56_59, c24_31, coef_60_63)
+          );
+        };
 
-      __m512i coef_r3_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r3_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r3_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r3_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r3_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r3_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r3_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r3_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r3_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r3_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
+      __m512i coef_r0_0_31w, coef_r0_32_63w;
+      __m512i coef_r1_0_31w, coef_r1_32_63w;
+      __m512i coef_r2_0_31w, coef_r2_32_63w;
+      __m512i coef_r3_0_31w, coef_r3_32_63w;
+      __m512i coef_r4_0_31w, coef_r4_32_63w;
+      __m512i coef_r5_0_31w, coef_r5_32_63w;
+      __m512i coef_r6_0_31w, coef_r6_32_63w;
+      __m512i coef_r7_0_31w, coef_r7_32_63w;
 
-      __m512i coef_r4_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r4_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r4_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r4_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r4_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r4_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r4_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r4_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r4_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r4_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
-
-      __m512i coef_r5_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r5_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r5_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r5_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r5_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r5_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r5_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r5_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r5_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r5_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
-
-      __m512i coef_r6_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r6_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r6_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r6_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r6_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r6_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r6_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r6_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r6_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r6_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
-      c_perm_0_7 = _mm512_add_epi16(c_perm_0_7, one_epi16);
-      c_perm_8_15 = _mm512_add_epi16(c_perm_8_15, one_epi16);
-      c_perm_16_23 = _mm512_add_epi16(c_perm_16_23, one_epi16);
-      c_perm_24_31 = _mm512_add_epi16(c_perm_24_31, one_epi16);
-
-      __m512i coef_r7_0_31w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_0_3, c_perm_0_7, coef_4_7), _mm512_permutex2var_epi16(coef_8_11, c_perm_8_15, coef_12_15));
-      coef_r7_0_31w = _mm512_mask_blend_epi16(k_16_23, coef_r7_0_31w, _mm512_permutex2var_epi16(coef_16_19, c_perm_16_23, coef_20_23));
-      coef_r7_0_31w = _mm512_mask_blend_epi16(k_24_31, coef_r7_0_31w, _mm512_permutex2var_epi16(coef_24_27, c_perm_24_31, coef_28_31));
-      // 32.0 .. 47.0  in low 256, 48.0 .. 63.0 in high 256
-      __m512i coef_r7_32_63w = _mm512_mask_blend_epi16(k_8_15, _mm512_permutex2var_epi16(coef_32_35, c_perm_0_7, coef_36_39), _mm512_permutex2var_epi16(coef_40_43, c_perm_8_15, coef_44_47));
-      coef_r7_32_63w = _mm512_mask_blend_epi16(k_16_23, coef_r7_32_63w, _mm512_permutex2var_epi16(coef_48_51, c_perm_16_23, coef_52_55));
-      coef_r7_32_63w = _mm512_mask_blend_epi16(k_24_31, coef_r7_32_63w, _mm512_permutex2var_epi16(coef_56_59, c_perm_24_31, coef_60_63));
+      // r0
+      make_row_0_63(coef_r0_0_31w, coef_r0_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r1
+      make_row_0_63(coef_r1_0_31w, coef_r1_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r2
+      make_row_0_63(coef_r2_0_31w, coef_r2_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r3
+      make_row_0_63(coef_r3_0_31w, coef_r3_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r4
+      make_row_0_63(coef_r4_0_31w, coef_r4_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r5
+      make_row_0_63(coef_r5_0_31w, coef_r5_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r6
+      make_row_0_63(coef_r6_0_31w, coef_r6_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      // r7
+      make_row_0_63(coef_r7_0_31w, coef_r7_32_63w, c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      /* // last one, not needed
+      inc_perms(c_perm_0_7, c_perm_8_15, c_perm_16_23, c_perm_24_31);
+      */
 
       // convert-transpose to H-pairs for madd ? better to do with single permutex in future
       // 16 to 16 512 registers - finally real working coeffs to store in the transposed resampling program for block of 64 target samples
@@ -3828,7 +3809,7 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8(BYTE* dst8, const BY
           data_src2_2 = _mm512_loadu_si512(src_ptr_2 + 64);
         }
 
-        // 64 target pixels into two groups: 0–31 and 32–63.
+        // 64 target pixels into two groups: 0-31 and 32-63.
         const __mmask32 k_high = _mm512_kunpackw(_mm512_int2mask(0xFFFF), _mm512_int2mask(0x0000)); // temp fix for VS2017 builds
 
         // rows 0..3
@@ -4127,253 +4108,148 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks16(BYTE* dst8, const BYTE* 
       const __mmask32 k_24_27 = _mm512_kunpackw(_mm512_int2mask(0x0F00), _mm512_int2mask(0x0000)); // temp fix for VS2017 builds
       const __mmask32 k_28_31 = _mm512_kunpackw(_mm512_int2mask(0xF000), _mm512_int2mask(0x0000)); // temp fix for VS2017 builds
 
-      __m512i coef_r0_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r0_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r0_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r0_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r0_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r0_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r0_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r0_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r0_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r0_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r0_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r0_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r0_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+      // Helper lambda to increment all eight permutation vectors by one.
+      auto inc_perms = [&](
+        __m512i& p0_3, __m512i& p4_7, __m512i& p8_11, __m512i& p12_15,
+        __m512i& p16_19, __m512i& p20_23, __m512i& p24_27, __m512i& p28_31
+        ) {
+          p0_3 = _mm512_add_epi16(p0_3, one_epi16);
+          p4_7 = _mm512_add_epi16(p4_7, one_epi16);
+          p8_11 = _mm512_add_epi16(p8_11, one_epi16);
+          p12_15 = _mm512_add_epi16(p12_15, one_epi16);
+          p16_19 = _mm512_add_epi16(p16_19, one_epi16);
+          p20_23 = _mm512_add_epi16(p20_23, one_epi16);
+          p24_27 = _mm512_add_epi16(p24_27, one_epi16);
+          p28_31 = _mm512_add_epi16(p28_31, one_epi16);
+        };
 
-      __m512i coef_r1_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r1_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r1_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r1_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r1_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r1_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r1_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r1_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r1_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r1_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r1_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r1_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r1_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+      // Helper lambda to construct one full 32-word (512-bit) coefficient row.
+      // It uses mask blending to merge the results of _mm512_permutex2var_epi16
+      // for different 4-word segments, using the current permutation vectors.
+      auto make_coef_row = [&](
+        __m512i& row_result,
+        __m512i p0_3, __m512i p4_7, __m512i p8_11, __m512i p12_15,
+        __m512i p16_19, __m512i p20_23, __m512i p24_27, __m512i p28_31
+        ) {
+          // Start with the first segment (words 0-3) and the fourth segment (words 4-7).
+          row_result = _mm512_mask_blend_epi16(
+            k_4_7,
+            _mm512_permutex2var_epi16(coef_0_1, p0_3, coef_2_3),  // words 0-3 (unmasked)
+            _mm512_permutex2var_epi16(coef_4_5, p4_7, coef_6_7)   // words 4-7 (masked)
+          );
 
-      __m512i coef_r2_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r2_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r2_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r2_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r2_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r2_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r2_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r2_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r2_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r2_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r2_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r2_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r2_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+          // Merge segment 8-11
+          row_result = _mm512_mask_blend_epi16(
+            k_8_11,
+            row_result,
+            _mm512_permutex2var_epi16(coef_8_9, p8_11, coef_10_11)
+          );
 
-      __m512i coef_r3_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r3_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r3_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r3_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r3_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r3_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r3_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r3_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r3_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r3_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r3_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r3_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r3_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+          // Merge segment 12-15
+          row_result = _mm512_mask_blend_epi16(
+            k_12_15,
+            row_result,
+            _mm512_permutex2var_epi16(coef_12_13, p12_15, coef_14_15)
+          );
 
-      __m512i coef_r4_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r4_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r4_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r4_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r4_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r4_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r4_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r4_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r4_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r4_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r4_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r4_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r4_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+          // Merge segment 16-19
+          row_result = _mm512_mask_blend_epi16(
+            k_16_19,
+            row_result,
+            _mm512_permutex2var_epi16(coef_16_17, p16_19, coef_18_19)
+          );
 
-      __m512i coef_r5_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r5_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r5_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r5_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r5_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r5_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r5_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r5_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r5_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r5_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r5_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r5_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r5_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+          // Merge segment 20-23
+          row_result = _mm512_mask_blend_epi16(
+            k_20_23,
+            row_result,
+            _mm512_permutex2var_epi16(coef_20_21, p20_23, coef_22_23)
+          );
 
-      __m512i coef_r6_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r6_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r6_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r6_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r6_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r6_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r6_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r6_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r6_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r6_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r6_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r6_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r6_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+          // Merge segment 24-27
+          row_result = _mm512_mask_blend_epi16(
+            k_24_27,
+            row_result,
+            _mm512_permutex2var_epi16(coef_24_25, p24_27, coef_26_27)
+          );
 
-      __m512i coef_r7_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r7_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r7_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r7_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r7_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r7_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r7_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r7_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r7_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r7_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r7_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r7_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r7_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+          // Merge segment 28-31
+          row_result = _mm512_mask_blend_epi16(
+            k_28_31,
+            row_result,
+            _mm512_permutex2var_epi16(coef_28_29, p28_31, coef_30_31)
+          );
+        };
 
-      __m512i coef_r8_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r8_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r8_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r8_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r8_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r8_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r8_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r8_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r8_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r8_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r8_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r8_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r8_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+      // Declare the coefficient row variables
+      __m512i coef_r0_0_31w, coef_r1_0_31w, coef_r2_0_31w, coef_r3_0_31w;
+      __m512i coef_r4_0_31w, coef_r5_0_31w, coef_r6_0_31w, coef_r7_0_31w;
+      __m512i coef_r8_0_31w, coef_r9_0_31w, coef_r10_0_31w, coef_r11_0_31w;
+      __m512i coef_r12_0_31w, coef_r13_0_31w, coef_r14_0_31w, coef_r15_0_31w;
 
-      __m512i coef_r9_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r9_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r9_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r9_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r9_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r9_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r9_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r9_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r9_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r9_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r9_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r9_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r9_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+      // Process Row 0
+      make_coef_row(coef_r0_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
 
-      __m512i coef_r10_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r10_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r10_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r10_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r10_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r10_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r10_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r10_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r10_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r10_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r10_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r10_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r10_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+      // Process Row 1
+      make_coef_row(coef_r1_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
 
-      __m512i coef_r11_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r11_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r11_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r11_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r11_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r11_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r11_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r11_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r11_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r11_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r11_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r11_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r11_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+      // Process Row 2
+      make_coef_row(coef_r2_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
 
-      __m512i coef_r12_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r12_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r12_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r12_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r12_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r12_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r12_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r12_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r12_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r12_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r12_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r12_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r12_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);;
+      // Process Row 3
+      make_coef_row(coef_r3_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
 
-      __m512i coef_r13_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r13_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r13_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r13_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r13_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r13_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r13_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r13_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r13_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r13_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r13_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r13_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r13_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+      // Process Row 4
+      make_coef_row(coef_r4_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
 
-      __m512i coef_r14_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r14_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r14_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r14_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r14_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r14_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r14_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r14_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r14_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r14_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r14_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r14_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r14_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
-      c_perm_0_3 = _mm512_add_epi16(c_perm_0_3, one_epi16);
-      c_perm_4_7 = _mm512_add_epi16(c_perm_4_7, one_epi16);
-      c_perm_8_11 = _mm512_add_epi16(c_perm_8_11, one_epi16);
-      c_perm_12_15 = _mm512_add_epi16(c_perm_12_15, one_epi16);
-      c_perm_16_19 = _mm512_add_epi16(c_perm_16_19, one_epi16);
-      c_perm_20_23 = _mm512_add_epi16(c_perm_20_23, one_epi16);
-      c_perm_24_27 = _mm512_add_epi16(c_perm_24_27, one_epi16);
-      c_perm_28_31 = _mm512_add_epi16(c_perm_28_31, one_epi16);
+      // Process Row 5
+      make_coef_row(coef_r5_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
 
-      __m512i coef_r15_0_31w = _mm512_mask_blend_epi16(k_4_7, _mm512_permutex2var_epi16(coef_0_1, c_perm_0_3, coef_2_3), _mm512_permutex2var_epi16(coef_4_5, c_perm_4_7, coef_6_7));
-      coef_r15_0_31w = _mm512_mask_blend_epi16(k_8_11, coef_r15_0_31w, _mm512_permutex2var_epi16(coef_8_9, c_perm_8_11, coef_10_11));
-      coef_r15_0_31w = _mm512_mask_blend_epi16(k_12_15, coef_r15_0_31w, _mm512_permutex2var_epi16(coef_12_13, c_perm_12_15, coef_14_15));
-      coef_r15_0_31w = _mm512_mask_blend_epi16(k_16_19, coef_r15_0_31w, _mm512_permutex2var_epi16(coef_16_17, c_perm_16_19, coef_18_19));
-      coef_r15_0_31w = _mm512_mask_blend_epi16(k_20_23, coef_r15_0_31w, _mm512_permutex2var_epi16(coef_20_21, c_perm_20_23, coef_22_23));
-      coef_r15_0_31w = _mm512_mask_blend_epi16(k_24_27, coef_r15_0_31w, _mm512_permutex2var_epi16(coef_24_25, c_perm_24_27, coef_26_27));
-      coef_r15_0_31w = _mm512_mask_blend_epi16(k_28_31, coef_r15_0_31w, _mm512_permutex2var_epi16(coef_28_29, c_perm_28_31, coef_30_31));
+      // Process Row 6
+      make_coef_row(coef_r6_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+
+      // Process Row 7
+      make_coef_row(coef_r7_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+
+      // Process Row 8
+      make_coef_row(coef_r8_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+
+      // Process Row 9
+      make_coef_row(coef_r9_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+
+      // Process Row 10
+      make_coef_row(coef_r10_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+
+      // Process Row 11
+      make_coef_row(coef_r11_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+
+      // Process Row 12
+      make_coef_row(coef_r12_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+
+      // Process Row 13
+      make_coef_row(coef_r13_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+
+      // Process Row 14
+      make_coef_row(coef_r14_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      inc_perms(c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+
+      // Process Row 15
+      make_coef_row(coef_r15_0_31w, c_perm_0_3, c_perm_4_7, c_perm_8_11, c_perm_12_15, c_perm_16_19, c_perm_20_23, c_perm_24_27, c_perm_28_31);
+      // No inc_perms here
 
       // convert-transpose to H-pairs for madd ? better to do with single permutex in future
       // 16 to 16 512 registers - finally real working coeffs to store in the transposed resampling program for block of 64 target samples
