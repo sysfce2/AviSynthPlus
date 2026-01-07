@@ -426,8 +426,14 @@ bool ResamplingProgram::resize_h_planar_gather_permutex_vstripe_check(int iSampl
   // are valid if iSamplesInTheGroup = 8.
   assert(target_size_alignment >= iSamplesInTheGroup);
 
-  // Ensure that coefficient loading is safe for "kernel_size" element loads
-  assert(filter_size_alignment >= kernel_size);
+  // Ensure that coefficient loading is safe for "kernel_size" element loads.
+  // But this is not true. For float pixel types, we can keep the alignment to 8, which can be less than kernel_size.
+  // It's because it depends on the filter's implementation. E.g. resize_h_planar_float_avx512_permutex_vstripe_ks16 has kernel_size=16.
+  // However, it uses gather loads from coeffs, which do not need to be aligned to kernel_size.
+  // uint8_t avx512 versions with ks16 do need 32 byte alignment, the 'short' coefficients stride is aligned to 32 bytes, that is 16 coeffs.
+  // So in this case, we need the alignment.
+  // The check cannot be generalized here, it is put in the specific resampler implementations if needed.
+  // assert(filter_size_alignment >= kernel_size);
 
   for (int x = 0; x < target_size; x += iSamplesInTheGroup) // check each group
   {

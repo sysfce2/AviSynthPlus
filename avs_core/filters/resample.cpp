@@ -1617,7 +1617,7 @@ PVideoFrame __stdcall FilteredResizeH::GetFrame(int n, IScriptEnvironment* env)
 ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pixel, ResamplingProgram* program, ResamplerH &out_resampler_h_alternative_for_mt, IScriptEnvironment* env)
 {
   out_resampler_h_alternative_for_mt = nullptr;
-  int simd_coeff_count_padding = 8;
+  int simd_coeff_count_padding = 8; // even for _ks16_float this is enough, it works differently inside
 
   // Both 8-bit and 16-bit SSSE3 and AVX2 horizontal resizers benefit from processing 16 pixels per cycle.
   // Floats also use 32 bytes, but since 32/sizeof(float) = 8, processing 16 pixels is unnecessary.

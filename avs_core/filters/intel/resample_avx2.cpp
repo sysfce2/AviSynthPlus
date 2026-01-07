@@ -615,7 +615,7 @@ static void internal_resizer_h_avx2_generic_float(BYTE* dst8, const BYTE* src8, 
 // here we cover filter sizes up to 32 (4x8) efficiently through template specialization
 void resizer_h_avx2_generic_float(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
   const int filter_size = program->filter_size;
-  assert(program->filter_size_alignment == 8);
+  assert(program->filter_size_alignment >= 8); // coeffs are float, 8x4 float can be aligned_loaded with AVX2
 
   if (filter_size == 8)
     internal_resizer_h_avx2_generic_float<1>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
@@ -2686,7 +2686,7 @@ static void internal_resizer_h_avx2_generic_float_pix16_sub4_ks_4_8_16(BYTE* dst
 void resizer_h_avx2_generic_float_pix16_sub4_ks_4_8_16(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
   const int filter_size = program->filter_size;
   // Expected alignment
-  assert(program->filter_size_alignment == 8);
+  assert(program->filter_size_alignment >= 8);
 
   // Dispatcher template now supports filter_size aligned to 8 (8, 16, 24, 32) and a special case for <=4
   // Larger filter sizes will use the generic method (-1) which still benefit from 16-8-4 coeff processing blocks.

@@ -1886,8 +1886,18 @@ void resize_h_planar_float_avx512_permutex_vstripe_ks16(BYTE* dst8, const BYTE* 
   assert(FRAME_ALIGN >= 64); // Adjusted for 16 pixels AviSynth+ default
 
   // Ensure that coefficient loading beyond the valid target size is safe for 4x16 float loads.
-  // n/a: load once 16. align 8 is the same as 16 for the purpose.
-  assert(program->filter_size_alignment >= 8);
+  // We gather_load 'short' coeffs, from 0..15. 
+  // Load is unaligned, but we treat 16 coeffs.
+  // - For kernel_size 9..16 we have valid entries until 16 when filter_size_alignment==8:
+  //   alignment 8 is enough for gathering with filter_size*15 offset.
+  // - But for kernel_size 1..8 we need alignment 16 to be able to gather up to
+  //   filter_size*15 offset.
+  // This is just an extra safety; this case is called in practice between kernel sizes 9..16.
+  assert(
+    (program->filter_size_real < 8 && program->filter_size_alignment >= 16)
+    ||
+    (program->filter_size_real >= 8 && program->filter_size_alignment >= 8)
+  );
 
   const int max_scanlines = program->max_scanlines;
 
@@ -3787,7 +3797,8 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* s
   assert(FRAME_ALIGN >= 64); // Good for 64x8 bit pixels
 
   // Ensure that coefficient loading beyond the valid target size is safe for 4x8 float loads.
-  // We load 8x16bit coeffs at a time
+  // We load 8x 'short' coeffs at a time
+  // Loading is unaligned, but we fill __m128 registers before combining into __m512
   assert(program->filter_size_alignment >= 8);
 
   const int max_scanlines = program->max_scanlines;
@@ -4210,7 +4221,7 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8(BYTE* dst8, const BY
   assert(FRAME_ALIGN >= 64); // Good for 64x8 bit pixels
 
   // Ensure that coefficient loading beyond the valid target size is safe for 4x8 float loads.
-  // We load 8x16bit coeffs at a time
+  // We load 8x 'short' coeffs at a time
   assert(program->filter_size_alignment >= 8);
 
   const int max_scanlines = program->max_scanlines;
@@ -4646,7 +4657,9 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks16(BYTE* dst8, const BYTE* 
   assert(FRAME_ALIGN >= 32); // Good for 32x8 bit pixels
 
   // Ensure that coefficient loading beyond the valid target size is safe 
-  // We load 8x16bit coeffs at a time
+  // We load 16x 'short' coeffs at a time
+  // We aligned_load from coeff positions, 32 bytes boundary needed, which is
+  // guaranteed by filter_size_alignment >=16
   assert(program->filter_size_alignment >= 16);
 
   const int max_scanlines = program->max_scanlines;
