@@ -3501,7 +3501,7 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
     int x = 0;
 
     // Lambda to handle both safe (fast) and unsafe (masked/partial) loading paths
-    auto do_h_float_core = [&](auto partial_load) {
+    auto do_h_integer_core = [&](auto partial_load) {
 
       // prepare coefs in transposed V-form
       // TODO: make storage in transposed form, 64 x uint16 transposition looks too slow
@@ -3758,13 +3758,13 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
     // Process the 'safe zone' where direct full unaligned loads are acceptable.
     for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
     {
-      do_h_float_core(std::false_type{});
+      do_h_integer_core(std::false_type{});
     }
 
     // Process the potentially 'unsafe zone' near the image edge, using safe masked loading.
     for (; x < width; x += PIXELS_AT_A_TIME)
     {
-      do_h_float_core(std::true_type{});
+      do_h_integer_core(std::true_type{});
     }
   }
 }
@@ -3816,7 +3816,7 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* s
     int x = 0;
 
     // Lambda to handle both safe (fast) and unsafe (masked/partial) loading paths
-    auto do_h_float_core = [&](auto partial_load) {
+    auto do_h_integer_core = [&](auto partial_load) {
 
       // prepare coefs in transposed V-form
       // TODO: make storage in transposed form, 64 x uint16 transposition looks too slow
@@ -4179,13 +4179,13 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* s
     // Process the 'safe zone' where direct full unaligned loads are acceptable.
     for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
     {
-      do_h_float_core(std::false_type{});
+      do_h_integer_core(std::false_type{});
     }
 
     // Process the potentially 'unsafe zone' near the image edge, using safe masked loading.
     for (; x < width; x += PIXELS_AT_A_TIME)
     {
-      do_h_float_core(std::true_type{});
+      do_h_integer_core(std::true_type{});
     }
   }
 }
@@ -4239,7 +4239,7 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8(BYTE* dst8, const BY
     int x = 0;
 
     // Lambda to handle both safe (fast) and unsafe (masked/partial) loading paths
-    auto do_h_float_core = [&](auto partial_load) {
+    auto do_h_integer_core = [&](auto partial_load) {
 
       // prepare coefs in transposed V-form
       // TODO: make storage in transposed form, 64 x uint16 transposition looks too slow
@@ -4612,18 +4612,18 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8(BYTE* dst8, const BY
       }
 
       current_coeff += filter_size * PIXELS_AT_A_TIME;
-    };
+      };
 
     // Process the 'safe zone' where direct full unaligned loads are acceptable.
     for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
     {
-      do_h_float_core(std::false_type{});
+      do_h_integer_core(std::false_type{});
     }
 
     // Process the potentially 'unsafe zone' near the image edge, using safe masked loading.
     for (; x < width; x += PIXELS_AT_A_TIME)
     {
-      do_h_float_core(std::true_type{});
+      do_h_integer_core(std::true_type{});
     }
   }
 }
@@ -4677,7 +4677,7 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks16(BYTE* dst8, const BYTE* 
     int x = 0;
 
     // Lambda to handle both safe (fast) and unsafe (masked/partial) loading paths
-    auto do_h_float_core = [&](auto partial_load) {
+    auto do_h_integer_core = [&](auto partial_load) {
 
       // prepare coefs in transposed V-form
       // TODO: make storage in transposed form, 32 x uint8 transposition looks too slow
@@ -5148,13 +5148,13 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks16(BYTE* dst8, const BYTE* 
     // Process the 'safe zone' where direct full unaligned loads are acceptable.
     for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
     {
-      do_h_float_core(std::false_type{});
+      do_h_integer_core(std::false_type{});
     }
 
     // Process the potentially 'unsafe zone' near the image edge, using safe masked loading.
     for (; x < width; x += PIXELS_AT_A_TIME)
     {
-      do_h_float_core(std::true_type{});
+      do_h_integer_core(std::true_type{});
     }
   }
 }
@@ -5219,7 +5219,7 @@ void resize_h_planar_uint16_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* 
     int x = 0;
 
     // Lambda to handle both safe (fast) and unsafe (masked/partial) loading paths
-    auto do_h_float_core = [&](auto partial_load) {
+    auto do_h_integer_core = [&](auto partial_load) {
 
       // prepare coefs in transposed V-form
       // 32 source pixels, 32 coeff strides
@@ -5400,13 +5400,13 @@ void resize_h_planar_uint16_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* 
     // Process the 'safe zone' where direct full unaligned loads are acceptable.
     for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
     {
-      do_h_float_core(std::false_type{});
+      do_h_integer_core(std::false_type{});
     }
 
     // Process the potentially 'unsafe zone' near the image edge, using safe masked loading.
     for (; x < width; x += PIXELS_AT_A_TIME)
     {
-      do_h_float_core(std::true_type{});
+      do_h_integer_core(std::true_type{});
     }
   }
 }

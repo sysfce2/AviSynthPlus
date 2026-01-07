@@ -343,8 +343,8 @@ AVS_FORCEINLINE static void process_eight_pixels_h_uint8_16(const pixel_t* src, 
 
   if constexpr (sizeof(pixel_t) == 1) {
     __m128i result_2x4x_uint8 = _mm_packus_epi16(result_2x4x_uint16_128, _mm_setzero_si128());
-  _mm_storel_epi64(reinterpret_cast<__m128i*>(dst + x), result_2x4x_uint8);
-}
+    _mm_storel_epi64(reinterpret_cast<__m128i*>(dst + x), result_2x4x_uint8);
+  }
   else {
     _mm_stream_si128(reinterpret_cast<__m128i*>(dst + x), result_2x4x_uint16_128);
   }
@@ -704,7 +704,7 @@ static void resize_v_avx2_planar_uint8_pix16(BYTE* AVS_RESTRICT dst, const BYTE*
       __m128i result128_lo = _mm256_castsi256_si128(result_2x8x_uint16);
       __m128i result128_hi = _mm256_extractf128_si256(result_2x8x_uint16, 1);
       __m128i result128 = _mm_packus_epi16(result128_lo, result128_hi);
-      _mm_store_si128(reinterpret_cast<__m128i*>(dst + x), result128);
+      _mm_stream_si128(reinterpret_cast<__m128i*>(dst + x), result128);
 
     }
     dst += dst_pitch;
@@ -822,8 +822,8 @@ static void resize_v_avx2_planar_uint8_pix32(BYTE* AVS_RESTRICT dst, const BYTE*
             __m128i result128_2 = _mm_packus_epi16(result128_lo2, result128_hi2);
 
 
-            _mm_store_si128(reinterpret_cast<__m128i*>(dst + x), result128);
-            _mm_store_si128(reinterpret_cast<__m128i*>(dst + x + 16), result128_2);
+            _mm_stream_si128(reinterpret_cast<__m128i*>(dst + x), result128);
+            _mm_stream_si128(reinterpret_cast<__m128i*>(dst + x + 16), result128_2);
 
         }
         dst += dst_pitch;
@@ -1452,32 +1452,32 @@ void resize_h_planar_float_avx2_transpose_vstripe_ks4(BYTE* dst8, const BYTE* sr
     // Reset current_coeff for the start of the stripe
     const float* AVS_RESTRICT current_coeff = program->pixel_coefficient_float; // +iYstart * filter_size;
 
-  int x = 0;
+    int x = 0;
 
-  // This 'auto' lambda construct replaces the need of templates
-  auto do_h_float_core = [&](auto partial_load) {
-    // Load up to 2x4 coefficients at once before the height loop.
-    // Pre-loading and transposing coefficients keeps register usage efficient.
-    // Assumes 'filter_size_aligned' is at least 4.
+    // This 'auto' lambda construct replaces the need of templates
+    auto do_h_float_core = [&](auto partial_load) {
+      // Load up to 2x4 coefficients at once before the height loop.
+      // Pre-loading and transposing coefficients keeps register usage efficient.
+      // Assumes 'filter_size_aligned' is at least 4.
 
-    // Coefficients for the source pixel offset (for src_ptr + begin1 [0..3] and for src_ptr + begin5 [0..3] )
-    __m256 coef_1_coef_5 = _mm256_load_2_m128(current_coeff + filter_size * 0, current_coeff + filter_size * 4);
-    __m256 coef_2_coef_6 = _mm256_load_2_m128(current_coeff + filter_size * 1, current_coeff + filter_size * 5);
-    __m256 coef_3_coef_7 = _mm256_load_2_m128(current_coeff + filter_size * 2, current_coeff + filter_size * 6);
-    __m256 coef_4_coef_8 = _mm256_load_2_m128(current_coeff + filter_size * 3, current_coeff + filter_size * 7);
+      // Coefficients for the source pixel offset (for src_ptr + begin1 [0..3] and for src_ptr + begin5 [0..3] )
+      __m256 coef_1_coef_5 = _mm256_load_2_m128(current_coeff + filter_size * 0, current_coeff + filter_size * 4);
+      __m256 coef_2_coef_6 = _mm256_load_2_m128(current_coeff + filter_size * 1, current_coeff + filter_size * 5);
+      __m256 coef_3_coef_7 = _mm256_load_2_m128(current_coeff + filter_size * 2, current_coeff + filter_size * 6);
+      __m256 coef_4_coef_8 = _mm256_load_2_m128(current_coeff + filter_size * 3, current_coeff + filter_size * 7);
 
-    _MM_TRANSPOSE8_LANE4_PS(coef_1_coef_5, coef_2_coef_6, coef_3_coef_7, coef_4_coef_8);
+      _MM_TRANSPOSE8_LANE4_PS(coef_1_coef_5, coef_2_coef_6, coef_3_coef_7, coef_4_coef_8);
 
-    // Pixel offsets for the current target x-positions.
-    // Even for x >= width, these offsets are guaranteed to be within the allocated 'target_size_alignment'.
-    const int begin1 = program->pixel_offset[x + 0];
-    const int begin2 = program->pixel_offset[x + 1];
-    const int begin3 = program->pixel_offset[x + 2];
-    const int begin4 = program->pixel_offset[x + 3];
-    const int begin5 = program->pixel_offset[x + 4];
-    const int begin6 = program->pixel_offset[x + 5];
-    const int begin7 = program->pixel_offset[x + 6];
-    const int begin8 = program->pixel_offset[x + 7];
+      // Pixel offsets for the current target x-positions.
+      // Even for x >= width, these offsets are guaranteed to be within the allocated 'target_size_alignment'.
+      const int begin1 = program->pixel_offset[x + 0];
+      const int begin2 = program->pixel_offset[x + 1];
+      const int begin3 = program->pixel_offset[x + 2];
+      const int begin4 = program->pixel_offset[x + 3];
+      const int begin5 = program->pixel_offset[x + 4];
+      const int begin6 = program->pixel_offset[x + 5];
+      const int begin7 = program->pixel_offset[x + 6];
+      const int begin8 = program->pixel_offset[x + 7];
 
       size_t y = y_from;
 
@@ -1487,66 +1487,66 @@ void resize_h_planar_float_avx2_transpose_vstripe_ks4(BYTE* dst8, const BYTE* sr
         //float* AVS_RESTRICT dst_ptr = dst + y * dst_pitch + x;
         //const float* src_ptr = src + y * src_pitch;
 
-      __m256 data_1_data_5;
-      __m256 data_2_data_6;
-      __m256 data_3_data_7;
-      __m256 data_4_data_8;
+        __m256 data_1_data_5;
+        __m256 data_2_data_6;
+        __m256 data_3_data_7;
+        __m256 data_4_data_8;
 
-      if constexpr (partial_load) {
-        // In the potentially unsafe zone (near the right edge of the image), we use a safe loading function
-        // to prevent reading beyond the allocated source scanline. This handles cases where loading 4 floats
-        // starting from 'src_ptr + beginX' might exceed the source buffer.
+        if constexpr (partial_load) {
+          // In the potentially unsafe zone (near the right edge of the image), we use a safe loading function
+          // to prevent reading beyond the allocated source scanline. This handles cases where loading 4 floats
+          // starting from 'src_ptr + beginX' might exceed the source buffer.
 
-        // Example of the unsafe scenario: If target width is 320, a load at src_ptr + 317
-        // would attempt to read floats at indices 317, 318, 319, and 320, potentially going out of bounds.
+          // Example of the unsafe scenario: If target width is 320, a load at src_ptr + 317
+          // would attempt to read floats at indices 317, 318, 319, and 320, potentially going out of bounds.
 
-        // Two main issues in the unsafe zone:
-        // 1.) Out-of-bounds memory access: Reading beyond the allocated memory for the source scanline can
-        //     lead to access violations and crashes. '_mm_loadu_ps' attempts to load 16 bytes, so even if
-        //     the starting address is within bounds, subsequent reads might not be.
-        // 2.) Garbage or NaN values: Even if a read doesn't cause a crash, accessing uninitialized or
-        //     out-of-bounds memory (especially for float types) can result in garbage data, including NaN.
-        //     Multiplying by a valid coefficient and accumulating this NaN can contaminate the final result.
+          // Two main issues in the unsafe zone:
+          // 1.) Out-of-bounds memory access: Reading beyond the allocated memory for the source scanline can
+          //     lead to access violations and crashes. '_mm_loadu_ps' attempts to load 16 bytes, so even if
+          //     the starting address is within bounds, subsequent reads might not be.
+          // 2.) Garbage or NaN values: Even if a read doesn't cause a crash, accessing uninitialized or
+          //     out-of-bounds memory (especially for float types) can result in garbage data, including NaN.
+          //     Multiplying by a valid coefficient and accumulating this NaN can contaminate the final result.
 
-        // '_mm256_load_partial_safe_2_m128' safely loads up to 'filter_size_real' pixels and pads with zeros if needed,
-        // preventing out-of-bounds reads and ensuring predictable results even near the image edges.
+          // '_mm256_load_partial_safe_2_m128' safely loads up to 'filter_size_real' pixels and pads with zeros if needed,
+          // preventing out-of-bounds reads and ensuring predictable results even near the image edges.
 
-        data_1_data_5 = _mm256_load_partial_safe_2_m128<filtersizemod4>(src_ptr + begin1, src_ptr + begin5);
-        data_2_data_6 = _mm256_load_partial_safe_2_m128<filtersizemod4>(src_ptr + begin2, src_ptr + begin6);
-        data_3_data_7 = _mm256_load_partial_safe_2_m128<filtersizemod4>(src_ptr + begin3, src_ptr + begin7);
-        data_4_data_8 = _mm256_load_partial_safe_2_m128<filtersizemod4>(src_ptr + begin4, src_ptr + begin8);
-      }
-      else {
-        // In the safe zone, we can directly load 4 pixels at a time using unaligned loads.
-        data_1_data_5 = _mm256_loadu_2_m128(src_ptr + begin1, src_ptr + begin5);
-        data_2_data_6 = _mm256_loadu_2_m128(src_ptr + begin2, src_ptr + begin6);
-        data_3_data_7 = _mm256_loadu_2_m128(src_ptr + begin3, src_ptr + begin7);
-        data_4_data_8 = _mm256_loadu_2_m128(src_ptr + begin4, src_ptr + begin8);
-      }
+          data_1_data_5 = _mm256_load_partial_safe_2_m128<filtersizemod4>(src_ptr + begin1, src_ptr + begin5);
+          data_2_data_6 = _mm256_load_partial_safe_2_m128<filtersizemod4>(src_ptr + begin2, src_ptr + begin6);
+          data_3_data_7 = _mm256_load_partial_safe_2_m128<filtersizemod4>(src_ptr + begin3, src_ptr + begin7);
+          data_4_data_8 = _mm256_load_partial_safe_2_m128<filtersizemod4>(src_ptr + begin4, src_ptr + begin8);
+        }
+        else {
+          // In the safe zone, we can directly load 4 pixels at a time using unaligned loads.
+          data_1_data_5 = _mm256_loadu_2_m128(src_ptr + begin1, src_ptr + begin5);
+          data_2_data_6 = _mm256_loadu_2_m128(src_ptr + begin2, src_ptr + begin6);
+          data_3_data_7 = _mm256_loadu_2_m128(src_ptr + begin3, src_ptr + begin7);
+          data_4_data_8 = _mm256_loadu_2_m128(src_ptr + begin4, src_ptr + begin8);
+        }
 
-      _MM_TRANSPOSE8_LANE4_PS(data_1_data_5, data_2_data_6, data_3_data_7, data_4_data_8);
+        _MM_TRANSPOSE8_LANE4_PS(data_1_data_5, data_2_data_6, data_3_data_7, data_4_data_8);
 
-      __m256 result = _mm256_mul_ps(data_1_data_5, coef_1_coef_5);
-      result = _mm256_fmadd_ps(data_2_data_6, coef_2_coef_6, result);
-      result = _mm256_fmadd_ps(data_3_data_7, coef_3_coef_7, result);
-      result = _mm256_fmadd_ps(data_4_data_8, coef_4_coef_8, result);
+        __m256 result = _mm256_mul_ps(data_1_data_5, coef_1_coef_5);
+        result = _mm256_fmadd_ps(data_2_data_6, coef_2_coef_6, result);
+        result = _mm256_fmadd_ps(data_3_data_7, coef_3_coef_7, result);
+        result = _mm256_fmadd_ps(data_4_data_8, coef_4_coef_8, result);
 
         _mm256_stream_ps(dst_ptr, result);
-      dst_ptr += dst_pitch;
-      src_ptr += src_pitch;
-    } // y
-    current_coeff += filter_size * 8; // Move to the next set of coefficients for the next 8 output pixels
-    }; // end of lambda
+        dst_ptr += dst_pitch;
+        src_ptr += src_pitch;
+      } // y
+      current_coeff += filter_size * 8; // Move to the next set of coefficients for the next 8 output pixels
+      }; // end of lambda
 
-  // Process the 'safe zone' where direct full unaligned loads are acceptable.
-  for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
-  {
+    // Process the 'safe zone' where direct full unaligned loads are acceptable.
+    for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
+    {
       do_h_float_core(std::false_type{}); // partial_load == false, use direct _mm256_loadu_ps
-  }
+    }
 
-  // Process the potentially 'unsafe zone' near the image edge, using safe loading.
-  for (; x < width; x += PIXELS_AT_A_TIME)
-  {
+    // Process the potentially 'unsafe zone' near the image edge, using safe loading.
+    for (; x < width; x += PIXELS_AT_A_TIME)
+    {
       do_h_float_core(std::true_type{}); // partial_load == true, use the safer _mm256_load_partial_safe_2_m128
     }
   }
@@ -1627,20 +1627,20 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
     // Reset current_coeff for the start of the stripe
     const float* AVS_RESTRICT current_coeff = program->pixel_coefficient_float; // +iYstart * filter_size;
 
-  int x = 0;
+    int x = 0;
 
-  // This 'auto' lambda construct replaces the need of templates
-  auto do_h_float_core = [&](auto partial_load) {
-    // Assumes 'filter_size_alignment' <= 4, 'target_size_alignment' >= 8
-    // Prepare 4 coefs per pixel for 8 pixels in transposed V-form at once before the height loop.
-    __m256 coef_0 = _mm256_load_2_m128(current_coeff + filter_size * 0, current_coeff + filter_size * 4);
-    __m256 coef_1 = _mm256_load_2_m128(current_coeff + filter_size * 1, current_coeff + filter_size * 5);
-    __m256 coef_2 = _mm256_load_2_m128(current_coeff + filter_size * 2, current_coeff + filter_size * 6);
-    __m256 coef_3 = _mm256_load_2_m128(current_coeff + filter_size * 3, current_coeff + filter_size * 7);
+    // This 'auto' lambda construct replaces the need of templates
+    auto do_h_float_core = [&](auto partial_load) {
+      // Assumes 'filter_size_alignment' <= 4, 'target_size_alignment' >= 8
+      // Prepare 4 coefs per pixel for 8 pixels in transposed V-form at once before the height loop.
+      __m256 coef_0 = _mm256_load_2_m128(current_coeff + filter_size * 0, current_coeff + filter_size * 4);
+      __m256 coef_1 = _mm256_load_2_m128(current_coeff + filter_size * 1, current_coeff + filter_size * 5);
+      __m256 coef_2 = _mm256_load_2_m128(current_coeff + filter_size * 2, current_coeff + filter_size * 6);
+      __m256 coef_3 = _mm256_load_2_m128(current_coeff + filter_size * 3, current_coeff + filter_size * 7);
 
-    _MM_TRANSPOSE8_LANE4_PS(coef_0, coef_1, coef_2, coef_3);
+      _MM_TRANSPOSE8_LANE4_PS(coef_0, coef_1, coef_2, coef_3);
 
-    // convert resampling program in H-form into permuting indexes for src transposition in V-form
+      // convert resampling program in H-form into permuting indexes for src transposition in V-form
       __m256i perm_0 = _mm256_loadu_si256((__m256i*)(&program->pixel_offset[x]));
       int iStart = program->pixel_offset[x];
       perm_0 = _mm256_sub_epi32(perm_0, _mm256_set1_epi32(iStart));
@@ -1651,70 +1651,70 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
         program->pixel_offset[x + 0] - iStart);
       */
 
-    __m256i one_epi32 = _mm256_set1_epi32(1);
-    __m256i perm_1 = _mm256_add_epi32(perm_0, one_epi32); // begin8_rel+1, begin7_rel+1, ... begin2_rel+1, begin1_rel+1
-    __m256i perm_2 = _mm256_add_epi32(perm_1, one_epi32); // begin8_rel+2, begin7_rel+2, ... begin2_rel+2, begin1_rel+2
-    __m256i perm_3 = _mm256_add_epi32(perm_2, one_epi32); // begin8_rel+3, begin7_rel+3, ... begin2_rel+3, begin1_rel+3
-    // These indexes are guaranteed to be 0..7 due to the earlier analysis,
-    // and can be used for the indexing parameter in _mm256_permutevar8x32_ps
+      __m256i one_epi32 = _mm256_set1_epi32(1);
+      __m256i perm_1 = _mm256_add_epi32(perm_0, one_epi32); // begin8_rel+1, begin7_rel+1, ... begin2_rel+1, begin1_rel+1
+      __m256i perm_2 = _mm256_add_epi32(perm_1, one_epi32); // begin8_rel+2, begin7_rel+2, ... begin2_rel+2, begin1_rel+2
+      __m256i perm_3 = _mm256_add_epi32(perm_2, one_epi32); // begin8_rel+3, begin7_rel+3, ... begin2_rel+3, begin1_rel+3
+      // These indexes are guaranteed to be 0..7 due to the earlier analysis,
+      // and can be used for the indexing parameter in _mm256_permutevar8x32_ps
       float* AVS_RESTRICT dst_ptr = dst + x + y_from * dst_pitch;
       const float* src_ptr = src + iStart + y_from * src_pitch;
 
-    // for partial_load only
+      // for partial_load only
       const int remaining = program->source_size - iStart;
-    const int floats_to_load = remaining >= 8 ? 8 : remaining;
+      const int floats_to_load = remaining >= 8 ? 8 : remaining;
 
       for (int y = y_from; y < y_to; ++y) {
 
         // process scanline y
-      __m256 data_src;
+        __m256 data_src;
         // We'll need exactly 8 floats starting from src+iStart
-      if constexpr (partial_load) {
-        // In the potentially unsafe zone (near the right edge of the image), we use a safe loading function
-        // to prevent reading beyond the allocated source scanline. This handles cases where loading 8 floats
-        // starting from 'src_ptr + beginX' might exceed the source buffer.
-        data_src = _mm256_load_partial_safe(src_ptr, floats_to_load);
-      }
-      else {
-        data_src = _mm256_loadu_ps(src_ptr); // load 8 source pixels, can contain garbage beyond the right edge in the last loop
-      }
+        if constexpr (partial_load) {
+          // In the potentially unsafe zone (near the right edge of the image), we use a safe loading function
+          // to prevent reading beyond the allocated source scanline. This handles cases where loading 8 floats
+          // starting from 'src_ptr + beginX' might exceed the source buffer.
+          data_src = _mm256_load_partial_safe(src_ptr, floats_to_load);
+        }
+        else {
+          data_src = _mm256_loadu_ps(src_ptr); // load 8 source pixels, can contain garbage beyond the right edge in the last loop
+        }
 
-      // After we load 8 source pixels starting from begin1, we can be sure, that pixel_offset[x+0] .. pixel_offset[x+7] + 3 is
-      // within valid source range. Pre-check chooses permutex method only if all needed pixels fit within these 8 loaded pixels.
+        // After we load 8 source pixels starting from begin1, we can be sure, that pixel_offset[x+0] .. pixel_offset[x+7] + 3 is
+        // within valid source range. Pre-check chooses permutex method only if all needed pixels fit within these 8 loaded pixels.
 
-      // perm_0 .. perm_3 contain the indexes to permute data_src into the correct order
-      // for each of the 8 output pixels so they index into 0..7 (guaranteed) range of the source data loaded above
-      __m256 data_0 = _mm256_permutevar8x32_ps(data_src, perm_0);
-      __m256 data_1 = _mm256_permutevar8x32_ps(data_src, perm_1);
-      __m256 data_2 = _mm256_permutevar8x32_ps(data_src, perm_2);
-      __m256 data_3 = _mm256_permutevar8x32_ps(data_src, perm_3);
+        // perm_0 .. perm_3 contain the indexes to permute data_src into the correct order
+        // for each of the 8 output pixels so they index into 0..7 (guaranteed) range of the source data loaded above
+        __m256 data_0 = _mm256_permutevar8x32_ps(data_src, perm_0);
+        __m256 data_1 = _mm256_permutevar8x32_ps(data_src, perm_1);
+        __m256 data_2 = _mm256_permutevar8x32_ps(data_src, perm_2);
+        __m256 data_3 = _mm256_permutevar8x32_ps(data_src, perm_3);
 
-      __m256 result0 = _mm256_mul_ps(data_0, coef_0);
-      __m256 result1 = _mm256_mul_ps(data_2, coef_2);
+        __m256 result0 = _mm256_mul_ps(data_0, coef_0);
+        __m256 result1 = _mm256_mul_ps(data_2, coef_2);
 
-      result0 = _mm256_fmadd_ps(data_1, coef_1, result0);
-      result1 = _mm256_fmadd_ps(data_3, coef_3, result1);
+        result0 = _mm256_fmadd_ps(data_1, coef_1, result0);
+        result1 = _mm256_fmadd_ps(data_3, coef_3, result1);
 
         // this must be stream until partial tile interface done
         _mm256_stream_ps(dst_ptr, _mm256_add_ps(result0, result1));
 
-      dst_ptr += dst_pitch;
-      src_ptr += src_pitch;
+        dst_ptr += dst_pitch;
+        src_ptr += src_pitch;
+      }
+      current_coeff += filter_size * 8;
+      }; // end of lambda
+
+    // Process the 'safe zone' where direct full unaligned loads are acceptable.
+    for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
+    {
+      do_h_float_core(std::false_type{}); // partial_load == false, use direct _mm_loadu_ps
     }
-    current_coeff += filter_size * 8;
-    }; // end of lambda
 
-  // Process the 'safe zone' where direct full unaligned loads are acceptable.
-  for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
-  {
-    do_h_float_core(std::false_type{}); // partial_load == false, use direct _mm_loadu_ps
-  }
-
-  // Process the potentially 'unsafe zone' near the image edge, using safe loading.
-  for (; x < width; x += PIXELS_AT_A_TIME)
-  {
-    do_h_float_core(std::true_type{}); // partial_load == true, use the safer '_mm256_load_partial_safe'
-  }
+    // Process the potentially 'unsafe zone' near the image edge, using safe loading.
+    for (; x < width; x += PIXELS_AT_A_TIME)
+    {
+      do_h_float_core(std::true_type{}); // partial_load == true, use the safer '_mm256_load_partial_safe'
+    }
   }
 }
 
@@ -1877,7 +1877,7 @@ static void _mm256_load_512_partial_safe(__m256 &A, __m256 &B, const float* src_
   else if (floats_to_load == 13) {
     A = _mm256_loadu_ps(src_ptr);
     B = _mm256_setr_ps(src_ptr[8], src_ptr[9], src_ptr[10], src_ptr[11], src_ptr[12], 0.0f, 0.0f, 0.0f);
-}
+  }
   else if (floats_to_load == 14) {
     A = _mm256_loadu_ps(src_ptr);
     B = _mm256_setr_ps(src_ptr[8], src_ptr[9], src_ptr[10], src_ptr[11], src_ptr[12], src_ptr[13], 0.0f, 0.0f);
