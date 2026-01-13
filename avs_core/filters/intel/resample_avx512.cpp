@@ -3294,11 +3294,16 @@ void resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16(BYTE* dst8, const BYTE*
 
 // Horizontals uint8
 
+// Original function needed avx512vbmi! We use _mm512_permutex2var_epi8_SIMUL<UseVBMI>.
+// Both Base AVX512 and ICL level arch is supported. Skylake-SP (613x / 1st Gen), Cascade Lake (623x / 2nd Gen)
+// We are using two separated source modules and include this file templated with UseVBMI
+
 // filter size up to 4
 // 64 target uint8_t pixels at a time
 // 128-byte source loads (128 uint8_t pixels)
 // maximum permute index is 128 for _mm512_permutex2var_epi8 (uint8_t)
-void resize_h_planar_uint8_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
+template<bool UseVBMI>
+static void resize_h_planar_uint8_avx512_permutex_vstripe_ks4_internal(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
   const int filter_size = program->filter_size; // aligned, practically the coeff table stride
 
@@ -3391,7 +3396,7 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
         *reinterpret_cast<const long long*>(current_coeff + filter_size * 31)
       );
 
-      __m512i coef_32_39= _mm512_setr_epi64(
+      __m512i coef_32_39 = _mm512_setr_epi64(
         *reinterpret_cast<const long long*>(current_coeff + filter_size * 32),
         *reinterpret_cast<const long long*>(current_coeff + filter_size * 33),
         *reinterpret_cast<const long long*>(current_coeff + filter_size * 34),
@@ -3521,7 +3526,7 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
 
         if constexpr (partial_load) {
           // Safe masked loads for the image edge
-          data_src  = _mm512_maskz_loadu_epi8(k1, src_ptr);
+          data_src = _mm512_maskz_loadu_epi8(k1, src_ptr);
           data_src2 = _mm512_maskz_loadu_epi8(k2, src_ptr + 64);
         }
         else {
@@ -3530,10 +3535,10 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
           data_src2 = _mm512_loadu_si512(src_ptr + 64);
         }
         
-        __m512i data_0 = _mm512_permutex2var_epi8(data_src, perm_0, data_src2);
-        __m512i data_1 = _mm512_permutex2var_epi8(data_src, perm_1, data_src2);
-        __m512i data_2 = _mm512_permutex2var_epi8(data_src, perm_2, data_src2);
-        __m512i data_3 = _mm512_permutex2var_epi8(data_src, perm_3, data_src2);
+        __m512i data_0 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_0, data_src2);
+        __m512i data_1 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_1, data_src2);
+        __m512i data_2 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_2, data_src2);
+        __m512i data_3 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_3, data_src2);
 
        // unpack 8->16bit 4 to 8 512bit registers source
         __m512i src_r0_0_31 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(data_0)); 
@@ -3611,8 +3616,9 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* s
 // filter size up to 8
 // 64 target uint8_t pixels at a time
 // 128-byte source loads (128 uint8_t pixels)
-// maximum permute index is 128 for _mm512_permutex2var_epi8 (uint8_t)
-void resize_h_planar_uint8_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
+// maximum permute index is 128 for _mm512_permutex2var_epi8(uint8_t)
+template<bool UseVBMI>
+static void resize_h_planar_uint8_avx512_permutex_vstripe_ks8_internal(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
   const int filter_size = program->filter_size; // aligned, practically the coeff table stride
 
@@ -3899,13 +3905,13 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* s
         }
 
         // rows 0..3
-        __m512i data_0 = _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2);
-        __m512i data_1 = _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2);
+        __m512i data_0 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2);
+        __m512i data_1 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2);
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8);
 
-        __m512i data_2 = _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2);
-        __m512i data_3 = _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2);
+        __m512i data_2 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2);
+        __m512i data_3 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2);
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8);
 
@@ -3943,13 +3949,13 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* s
         __m512i result_32_63hi = _mm512_add_epi32(_mm512_madd_epi16(src_r0r1_32_63hi, coef_r0r1_32_63hi), _mm512_madd_epi16(src_r2r3_32_63hi, coef_r2r3_32_63hi));
 
         // rows 4..7
-        __m512i data_4 = _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2);
-        __m512i data_5 = _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2);
+        __m512i data_4 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2);
+        __m512i data_5 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2);
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8);
 
-        __m512i data_6 = _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2);
-        __m512i data_7 = _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2);
+        __m512i data_6 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2);
+        __m512i data_7 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2);
 
         // unpack 8->16bit 4 to 8 512bit registers source
         __m512i src_r4_0_31 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(data_4));
@@ -4034,7 +4040,8 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* s
 // support /2 downsample ratios for resizers with no-resize kernel size of 4 (or support of 2 ?) (Bicubic, Bilinear, and others, also SinPowResize (?))
 // 2 groups of 128-byte source loads (128 uint8_t pixels)
 // maximum permute index is 128 for _mm512_permutex2var_epi8 (uint8_t)
-void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
+template<bool UseVBMI>
+static void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8_internal(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
   const int filter_size = program->filter_size; // aligned, practically the coeff table stride
 
@@ -4339,12 +4346,12 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8(BYTE* dst8, const BY
         const __mmask32 k_high = _mm512_kunpackw(_mm512_int2mask(0xFFFF), _mm512_int2mask(0x0000)); // temp fix for VS2017 builds
 
         // rows 0..3
-        __m512i data_0 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2), _mm512_permutex2var_epi8(data_src_2, perm_w_even, data_src2_2));
-        __m512i data_1 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2), _mm512_permutex2var_epi8(data_src_2, perm_w_odd, data_src2_2));
+        __m512i data_0 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2), _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src_2, perm_w_even, data_src2_2));
+        __m512i data_1 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2), _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src_2, perm_w_odd, data_src2_2));
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8); // Use perm_w_odd here!
-        __m512i data_2 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2), _mm512_permutex2var_epi8(data_src_2, perm_w_even, data_src2_2));
-        __m512i data_3 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2), _mm512_permutex2var_epi8(data_src_2, perm_w_odd, data_src2_2));
+        __m512i data_2 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2), _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src_2, perm_w_even, data_src2_2));
+        __m512i data_3 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2), _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src_2, perm_w_odd, data_src2_2));
 
         // unpack 8->16bit 4 to 8 512bit registers source
         __m512i src_r0_0_31 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(data_0));
@@ -4382,12 +4389,12 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8(BYTE* dst8, const BY
         // rows 4..7
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8); // Use perm_w_odd here!
-        __m512i data_4 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2), _mm512_permutex2var_epi8(data_src_2, perm_w_even, data_src2_2));
-        __m512i data_5 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2), _mm512_permutex2var_epi8(data_src_2, perm_w_odd, data_src2_2));
+        __m512i data_4 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2), _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src_2, perm_w_even, data_src2_2));
+        __m512i data_5 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2), _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src_2, perm_w_odd, data_src2_2));
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8);
-        __m512i data_6 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2), _mm512_permutex2var_epi8(data_src_2, perm_w_even, data_src2_2));
-        __m512i data_7 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2), _mm512_permutex2var_epi8(data_src_2, perm_w_odd, data_src2_2));
+        __m512i data_6 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2), _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src_2, perm_w_even, data_src2_2));
+        __m512i data_7 = _mm512_mask_blend_epi16(k_high, _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2), _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src_2, perm_w_odd, data_src2_2));
 
         // unpack 8->16bit 4 to 8 512bit registers source
         __m512i src_r4_0_31 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(data_4));
@@ -4472,7 +4479,8 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8(BYTE* dst8, const BY
 // 128-byte source loads (128 uint8_t pixels)
 // maximum permute index is 128 for _mm512_permutex2var_epi8 (uint8_t)
 // expect to support all upsampling ratios up to filter support of 8 (or 7..6 ?) and some downsampling ratios with filter support up to 3 (with downsample ratios from 0.5 or a bit lower)
-void resize_h_planar_uint8_avx512_permutex_vstripe_ks16(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
+template<bool UseVBMI>
+static void resize_h_planar_uint8_avx512_permutex_vstripe_ks16_internal(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
   const int filter_size = program->filter_size; // aligned, practically the coeff table stride
 
@@ -4856,13 +4864,13 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks16(BYTE* dst8, const BYTE* 
         }
 
         // rows 0..3
-        __m512i data_0 = _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2);
-        __m512i data_1 = _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2);
+        __m512i data_0 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2);
+        __m512i data_1 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2);
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8);
 
-        __m512i data_2 = _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2);
-        __m512i data_3 = _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2);
+        __m512i data_2 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2);
+        __m512i data_3 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2);
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8);
 
@@ -4883,13 +4891,13 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks16(BYTE* dst8, const BYTE* 
         __m512i result_0_31hi = _mm512_add_epi32(_mm512_madd_epi16(src_r0r1_0_31hi, coef_r0r1_0_31hi), _mm512_madd_epi16(src_r2r3_0_31hi, coef_r2r3_0_31hi));
 
         // rows 4..7
-        __m512i data_4 = _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2);
-        __m512i data_5 = _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2);
+        __m512i data_4 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2);
+        __m512i data_5 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2);
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8);
 
-        __m512i data_6 = _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2);
-        __m512i data_7 = _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2);
+        __m512i data_6 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2);
+        __m512i data_7 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2);
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8);
 
@@ -4911,13 +4919,13 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks16(BYTE* dst8, const BYTE* 
         result_0_31hi = _mm512_add_epi32(_mm512_madd_epi16(src_r6r7_0_31hi, coef_r6r7_0_31hi), result_0_31hi);
 
         // rows 8..11
-        __m512i data_8 = _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2);
-        __m512i data_9 = _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2);
+        __m512i data_8 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2);
+        __m512i data_9 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2);
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8);
 
-        __m512i data_10 = _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2);
-        __m512i data_11 = _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2);
+        __m512i data_10 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2);
+        __m512i data_11 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2);
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8);
 
@@ -4939,13 +4947,13 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks16(BYTE* dst8, const BYTE* 
         result_0_31hi = _mm512_add_epi32(_mm512_madd_epi16(src_r10r11_0_31hi, coef_r10r11_0_31hi), result_0_31hi);
 
         // rows 12..15
-        __m512i data_12 = _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2);
-        __m512i data_13 = _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2);
+        __m512i data_12 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2);
+        __m512i data_13 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2);
         perm_w_even = _mm512_add_epi8(perm_w_even, two_epi8);
         perm_w_odd = _mm512_add_epi8(perm_w_odd, two_epi8);
 
-        __m512i data_14 = _mm512_permutex2var_epi8(data_src, perm_w_even, data_src2);
-        __m512i data_15 = _mm512_permutex2var_epi8(data_src, perm_w_odd, data_src2);
+        __m512i data_14 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_even, data_src2);
+        __m512i data_15 = _mm512_permutex2var_epi8_SIMUL<UseVBMI>(data_src, perm_w_odd, data_src2);
 
         // unpack 8->16bit 4 to 8 512bit registers source
         __m512i src_r12_0_31 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(data_12));
@@ -4996,6 +5004,32 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_ks16(BYTE* dst8, const BYTE* 
       do_h_integer_core(std::true_type{});
     }
   }
+}
+
+
+
+/*
+The core of these function moved into resample_avx512.hpp because of dual BASE and CPUF_AVX512_FAST requirement.
+*/
+
+void resize_h_planar_uint8_avx512_permutex_vstripe_ks4_base(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
+  // false template parameter: BASE version, no VBMI
+  resize_h_planar_uint8_avx512_permutex_vstripe_ks4_internal<false>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
+}
+
+void resize_h_planar_uint8_avx512_permutex_vstripe_ks8_base(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
+  // false template parameter: BASE version, no VBMI
+  resize_h_planar_uint8_avx512_permutex_vstripe_ks8_internal<false>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
+}
+
+void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8_base(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
+  // false template parameter: BASE version, no VBMI
+  resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8_internal<false>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
+}
+
+void resize_h_planar_uint8_avx512_permutex_vstripe_ks16_base(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
+  // false template parameter: BASE version, no VBMI
+  resize_h_planar_uint8_avx512_permutex_vstripe_ks16_internal<false>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
 }
 
 // Horizontals uint16

@@ -1629,17 +1629,25 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
   // at the right and bottom ends, since we may have variable kernel sizes due to boundary conditions.
   resize_prepare_coeffs(program, env, simd_coeff_count_padding);
 
+  const bool has_AVX512_base = (CPU & CPUF_AVX512_BASE) == CPUF_AVX512_BASE;
+  const bool has_AVX512_fast = (CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST;
+
   if (pixelsize == 1)
   {
 #ifdef INTEL_INTRINSICS
 #ifdef INTEL_INTRINSICS_AVX512
-    if (((CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST)) {
+    if (has_AVX512_base) {
       // feature flag, grouping many avx512 features
       // in case of optimized avx512_permutex_vstripe resizer found, set alternative resizer for MT use
         out_resampler_h_alternative_for_mt = resizer_h_avx2_generic_uint8_t; // AVX2 should present if AVX512 present
       if (program->filter_size_real <= 4) {
-        if (!program->resize_h_planar_gather_permutex_vstripe_check(64/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 4/*kernel_size*/))
-          return resize_h_planar_uint8_avx512_permutex_vstripe_ks4;
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(64/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 4/*kernel_size*/)) {
+          if(has_AVX512_fast)
+            return resize_h_planar_uint8_avx512_permutex_vstripe_ks4_vbmi;
+          else
+            return resize_h_planar_uint8_avx512_permutex_vstripe_ks4_base;
+
+      }
       }
       if (program->filter_size_real <= 8) {
         /*
@@ -1653,14 +1661,26 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
 
           These two functions selected in order from faster to slower.
         */
-        if (!program->resize_h_planar_gather_permutex_vstripe_check(64/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 8/*kernel_size*/)) // first try faster ks8
-          return resize_h_planar_uint8_avx512_permutex_vstripe_ks8;
-        if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 8/*kernel_size*/)) // slower ks8 but more downsample ratio for /2
-          return resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8;
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(64/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 8/*kernel_size*/)) { // first try faster ks8
+          if (has_AVX512_fast)
+            return resize_h_planar_uint8_avx512_permutex_vstripe_ks8_vbmi;
+          else
+            return resize_h_planar_uint8_avx512_permutex_vstripe_ks8_base;
     }
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 8/*kernel_size*/)) { // slower ks8 but more downsample ratio for /2
+          if (has_AVX512_fast)
+            return resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8_vbmi;
+          else
+            return resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8_base;
+        }
+      }
       if (program->filter_size_real <= 16) {
-        if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 16/*kernel_size*/))
-          return resize_h_planar_uint8_avx512_permutex_vstripe_ks16;
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 16/*kernel_size*/)) {
+          if (has_AVX512_fast)
+            return resize_h_planar_uint8_avx512_permutex_vstripe_ks16_vbmi;
+          else
+            return resize_h_planar_uint8_avx512_permutex_vstripe_ks16_base;
+      }
       }
       out_resampler_h_alternative_for_mt = nullptr; // not needed
     }
@@ -1678,7 +1698,7 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
   else if (pixelsize == 2) {
 #ifdef INTEL_INTRINSICS
 #ifdef INTEL_INTRINSICS_AVX512
-    if (((CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST)) {
+    if (has_AVX512_base) {
       // feature flag, grouping many avx512 features
       if (program->filter_size_real <= 4) {
         if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 64/*permutex_index_diff_limit*/, 4/*kernel_size*/))
@@ -1718,7 +1738,7 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
   else { //if (pixelsize == 4)
 #ifdef INTEL_INTRINSICS
 #ifdef INTEL_INTRINSICS_AVX512
-    if (((CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST)) {
+    if (has_AVX512_base) {
       // feature flag, grouping many avx512 features
 
       // these perform very poorly in Prefetch, so we provide alternative generic version for MT
@@ -1965,6 +1985,8 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
   // for SIMD friendliness and more: consolidate the kernel_size vs filter_size at the end.
   // See comments at FilteredResizeH::GetResampler
 
+  const bool has_AVX512_base = (CPU & CPUF_AVX512_BASE) == CPUF_AVX512_BASE;
+
   if (program->filter_size == 1) {
     // Fast pointresize
     switch (pixelsize) // AVS16
@@ -1981,7 +2003,7 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
     {
 #ifdef INTEL_INTRINSICS
 #ifdef INTEL_INTRINSICS_AVX512
-      if (CPU & CPUF_AVX512_FAST)
+      if (has_AVX512_base)
         return resize_v_avx512_planar_uint8_t_w_sr;
 #endif
       if (CPU & CPUF_AVX2)
@@ -2000,7 +2022,7 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
     {
 #ifdef INTEL_INTRINSICS
 #ifdef INTEL_INTRINSICS_AVX512
-      if (CPU & CPUF_AVX512_FAST) {
+      if (has_AVX512_base) {
         if (bits_per_pixel < 16)
           return resize_v_avx512_planar_uint16_t_w_sr<true>;
         else
@@ -2030,7 +2052,7 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
     {
 #ifdef INTEL_INTRINSICS
 #ifdef INTEL_INTRINSICS_AVX512
-      if ((CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST) {
+      if (has_AVX512_base) {
         // return resize_v_avx512_planar_float; // Old, base version, quicker than avx2 version
         // This one is about equal to avx2 version, but only with clang,
         // it seems that clang is too good and, probably unrolls the old function version
