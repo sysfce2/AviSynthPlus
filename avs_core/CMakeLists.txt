@@ -171,20 +171,39 @@ handle_arch_flags(AVX " -mavx " " /arch:AVX ")
 handle_arch_flags(AVX2 " -mavx2 -mfma " " /arch:AVX2 ")
 
 if(DEFINE_AVX512)
-        # Similar to AVX2, fma must be added explicitly for GCC/Clang.
-        # We also add bmi2 (since AVX2), useful in AVX512 mask operations like _bzhi_u64/u32
-    # The CPUF_AVX512_FAST feature flag in Avisynth guarantees a modern, low-throttling architecture (ICL/RKL/AVX10.2).
-    # This feature set is the minimal intersection of ICL and AVX10.1's guaranteed features 
+        # Similar to AVX2, FMA must be added explicitly for GCC/Clang.
+        # We also enable BMI2, as it is standard since AVX2 and useful for 
+        # AVX-512 mask operations like _bzhi_u64/u32.
+        # The core subsets (F, CD, BW, DQ, VL) comprising the CPUF_AVX512_BASE 
+        # flag are present on all AVX-512-capable architectures.
+        #
+        # Note: Early Xeon (e.g., Skylake-X/Cascadelake) may exhibit severe 
+        # thermal throttling even on a single thread. In AviSynth+, AVX512_BASE 
+        # must be manually enabled in-script unless CPUF_AVX512_FAST is also detected.
+        # Functions in *_avx512b.cpp should be dispatched on CPUF_AVX512_BASE.
+        set(AVX512_BASE_GCC_FLAGS
+            " -mfma -mbmi2 -mavx512f -mavx512cd -mavx512bw -mavx512dq -mavx512vl "
+        )
+
+        # CPUF_AVX512_FAST indicates a modern, low-throttling architecture (ICL/RKL/AVX10.x).
+        # This set represents the intersection of Icelake and AVX10.1 features:
     # (F, CD, BW, DQ, VL, VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ).
-    # Function used from *_avx512.cpp files should be dispatched on CPUF_AVX512_FAST to match these compile flags.
+        # Functions in *_avx512.cpp should be dispatched on CPUF_AVX512_FAST.
     set(AVX512_FAST_GCC_FLAGS
         #" -march=icelake-client "  # PF test
         #" -march=graniterapids " # PF test avx10.1
             " -mfma -mbmi2 -mavx512f -mavx512cd -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mavx512vbmi -mavx512vbmi2 -mavx512bitalg -mavx512vpopcntdq "
     )
-    # Note: MSVC's /arch:AVX512 enables the basic F, CD, ... and does not have individual flags for VBMI, VBMI2, etc.
-    # GCC/Clang/Intel compilers use the -mavx512... flags inside handle_arch_flags when running in MSVC_IDE
-    handle_arch_flags(AVX512 "${AVX512_FAST_GCC_FLAGS}" " /arch:AVX512 ")
+
+        # Note: MSVC's /arch:AVX512 enables the basic subset (F, CD, BW, DQ, VL).
+        # Unlike GCC/Clang, MSVC does not require individual flags for extensions 
+        # like VBMI or VNNI; if the intrinsic is used, it is compiled directly. 
+        # GCC/Clang require either file-level flags (set here) or function-level 
+        # target attributes.
+        # GCC/Clang/Intel compilers will use -mavx512... flags via handle_arch_flags 
+        # even when running within the MSVC_IDE.
+        handle_arch_flags(AVX512B "${AVX512_BASE_GCC_FLAGS}" " /arch:AVX512 ") # *_avx512b.cpp
+        handle_arch_flags(AVX512 "${AVX512_FAST_GCC_FLAGS}" " /arch:AVX512 ") # *_avx512.cpp
 endif()
 ENDIF()
 
