@@ -44,163 +44,23 @@
 
 #include <immintrin.h> // Includes AVX-512 intrinsics
 
-// H-Float-Resampler: 16 pixels, filter size 4, transpose 4x (4x_m128) to 4x_m512
-// Transposes a 4x4 matrix of 4-float vectors (16x16 float matrix effectively).
-// Input/Output: Four 512-bit vectors (16 floats each) passed by reference.
-AVS_FORCEINLINE static void _MM_TRANSPOSE16_LANE4_PS(__m512& row0, __m512& row1, __m512& row2, __m512& row3) {
-  // Stage 1: Interleave 32-bit (float) elements within 128-bit chunks (lanes)
-  // t0 = (r0_lo, r1_lo) | t1 = (r0_hi, r1_hi)
-  // t2 = (r2_lo, r3_lo) | t3 = (r2_hi, r3_hi)
-  __m512 t0 = _mm512_unpacklo_ps(row0, row1);
-  __m512 t1 = _mm512_unpackhi_ps(row0, row1);
-  __m512 t2 = _mm512_unpacklo_ps(row2, row3);
-  __m512 t3 = _mm512_unpackhi_ps(row2, row3);
+#include "resample_avx512.hpp"
 
-  // Stage 2: Shuffle 128-bit chunks (lanes) to complete the transpose
-  // We use _mm512_shuffle_ps which shuffles 64-bit blocks across the 512-bit register.
-  // _MM_SHUFFLE(w, z, y, x) applies to the 64-bit pairs (4 floats) within each 128-bit lane.
-  // Result: row0 = columns 0, 1, 2, 3
-  row0 = _mm512_shuffle_ps(t0, t2, _MM_SHUFFLE(1, 0, 1, 0));
-  // Result: row1 = columns 4, 5, 6, 7
-  row1 = _mm512_shuffle_ps(t0, t2, _MM_SHUFFLE(3, 2, 3, 2));
-  // Result: row2 = columns 8, 9, 10, 11
-  row2 = _mm512_shuffle_ps(t1, t3, _MM_SHUFFLE(1, 0, 1, 0));
-  // Result: row3 = columns 12, 13, 14, 15
-  row3 = _mm512_shuffle_ps(t1, t3, _MM_SHUFFLE(3, 2, 3, 2));
+/**
+ * Simulates _mm256_dpwssd_epi32 for CPUs without AVX512_VNNI (e.g., Xeon 613x).
+ * Logic: For each 32-bit lane, it treats the inputs as pairs of 16-bit signed ints,
+ * multiplies the pairs, adds them together, and adds the result to the accumulator.
+ */
+static AVS_FORCEINLINE __m256i _MM256_DPWSSD_EPI32_SIMUL(__m256i acc, __m256i a, __m256i b) {
+#if defined(__AVX512VNNI__) || defined(__AVX_VNNI__)
+  return _mm256_dpwssd_epi32(acc, a, b);
+#else
+  // vpmaddwd: (a_even * b_even) + (a_odd * b_odd) for each 32-bit slot
+  __m256i product = _mm256_madd_epi16(a, b);
+  // vpaddd: add the products to the existing accumulator
+  return _mm256_add_epi32(acc, product);
+#endif
 }
-
-// H-float-resampler: 16 pixels, filter size 8, transpose 8x (2x_m256) to 8x_m512
-// Transposes an 8x8 matrix of 2-float vectors (16x16 float matrix).
-// Input/Output: Eight 512-bit vectors (16 floats each) passed by reference.
-AVS_FORCEINLINE static void _MM_TRANSPOSE8x16_PS(
-  __m512& r0, __m512& r1, __m512& r2, __m512& r3,
-  __m512& r4, __m512& r5, __m512& r6, __m512& r7)
-{
-  // --- Stage 1: Unpack 32-bit (Pairs of rows) ---
-  __m512 t0 = _mm512_unpacklo_ps(r0, r1);
-  __m512 t1 = _mm512_unpackhi_ps(r0, r1);
-  __m512 t2 = _mm512_unpacklo_ps(r2, r3);
-  __m512 t3 = _mm512_unpackhi_ps(r2, r3);
-  __m512 t4 = _mm512_unpacklo_ps(r4, r5);
-  __m512 t5 = _mm512_unpackhi_ps(r4, r5);
-  __m512 t6 = _mm512_unpacklo_ps(r6, r7);
-  __m512 t7 = _mm512_unpackhi_ps(r6, r7);
-
-  // --- Stage 2: Unpack 64-bit (Quads of rows) ---
-  // Uses _mm512_unpacklo/hi_pd for 64-bit (double) to interleave pairs of __m512 floats
-  __m512 u0 = _mm512_castpd_ps(_mm512_unpacklo_pd(_mm512_castps_pd(t0), _mm512_castps_pd(t2)));
-  __m512 u1 = _mm512_castpd_ps(_mm512_unpackhi_pd(_mm512_castps_pd(t0), _mm512_castps_pd(t2)));
-  __m512 u2 = _mm512_castpd_ps(_mm512_unpacklo_pd(_mm512_castps_pd(t1), _mm512_castps_pd(t3)));
-  __m512 u3 = _mm512_castpd_ps(_mm512_unpackhi_pd(_mm512_castps_pd(t1), _mm512_castps_pd(t3)));
-  __m512 u4 = _mm512_castpd_ps(_mm512_unpacklo_pd(_mm512_castps_pd(t4), _mm512_castps_pd(t6)));
-  __m512 u5 = _mm512_castpd_ps(_mm512_unpackhi_pd(_mm512_castps_pd(t4), _mm512_castps_pd(t6)));
-  __m512 u6 = _mm512_castpd_ps(_mm512_unpacklo_pd(_mm512_castps_pd(t5), _mm512_castps_pd(t7)));
-  __m512 u7 = _mm512_castpd_ps(_mm512_unpackhi_pd(_mm512_castps_pd(t5), _mm512_castps_pd(t7)));
-
-  // --- Stage 3: Shuffle 128-bit lanes (Octets of rows) ---
-  // _mm512_shuffle_f32x4 shuffles the 128-bit (f32x4) sub-vectors within and between two __m512 vectors.
-  // 0x88 = (10001000)_2: selects lane 0 from first input and lane 0 from second input for lo/hi 256 bits.
-  // 0xDD = (11011101)_2: selects lane 3 from first input and lane 3 from second input for lo/hi 256 bits.
-  __m512 v0 = _mm512_shuffle_f32x4(u0, u4, 0x88); // Col 0, 4 (interleaved)
-  __m512 v1 = _mm512_shuffle_f32x4(u0, u4, 0xDD); // Col 1, 5 (interleaved)
-  __m512 v2 = _mm512_shuffle_f32x4(u1, u5, 0x88); // Col 2, 6 (interleaved)
-  __m512 v3 = _mm512_shuffle_f32x4(u1, u5, 0xDD); // Col 3, 7 (interleaved)
-  __m512 v4 = _mm512_shuffle_f32x4(u2, u6, 0x88); // Col 8, 12 (interleaved)
-  __m512 v5 = _mm512_shuffle_f32x4(u2, u6, 0xDD); // Col 9, 13 (interleaved)
-  __m512 v6 = _mm512_shuffle_f32x4(u3, u7, 0x88); // Col 10, 14 (interleaved)
-  __m512 v7 = _mm512_shuffle_f32x4(u3, u7, 0xDD); // Col 11, 15 (interleaved)
-
-  // --- Stage 4: Permute to Linearize Indices ---
-  // Corrects the order of the 128-bit lanes to linearize the columns.
-  // The columns are currently: (0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15)
-  // The required order is: (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
-  __m512i idx = _mm512_setr_epi32(
-    0, 4, 1, 5,    /* Lane 0: Rows 0, 1, 2, 3 */
-    2, 6, 3, 7,    /* Lane 1: Rows 4, 5, 6, 7 */
-    8, 12, 9, 13, /* Lane 2: Rows 8, 9, 10, 11 */
-    10, 14, 11, 15 /* Lane 3: Rows 12, 13, 14, 15 */
-  );
-
-  // --- Final Assignment with Correct Mapping ---
-  // Maps the permuted vector components back to the original row variables (now columns).
-  r0 = _mm512_permutexvar_ps(idx, v0); // Col 0
-  r1 = _mm512_permutexvar_ps(idx, v2); // Col 1
-  r2 = _mm512_permutexvar_ps(idx, v4); // Col 2
-  r3 = _mm512_permutexvar_ps(idx, v6); // Col 3
-  r4 = _mm512_permutexvar_ps(idx, v1); // Col 4
-  r5 = _mm512_permutexvar_ps(idx, v3); // Col 5
-  r6 = _mm512_permutexvar_ps(idx, v5); // Col 6
-  r7 = _mm512_permutexvar_ps(idx, v7); // Col 7
-}
-
-// Loads two 256-bit float vectors from registers (__m256) into a single 512-bit register.
-// Equivalent to _mm512_insertf32x8(_mm512_castps256_ps512(lo), hi, 1)
-AVS_FORCEINLINE static __m512 _mm512_insert_2_m256(__m256 lo, __m256 hi) {
-  return _mm512_insertf32x8(_mm512_castps256_ps512(lo), hi, 1);
-}
-
-// Loads four 128-bit float vectors (unaligned) into a single 512-bit register.
-AVS_FORCEINLINE static __m512 _mm512_loadu_4_m128(
-  /* __m128 const* */ const float* addr1,
-  /* __m128 const* */ const float* addr2,
-  /* __m128 const* */ const float* addr3,
-  /* __m128 const* */ const float* addr4)
-{
-  // The cast is needed for the first insertion to make the target a 512-bit register
-  __m512 v = _mm512_castps128_ps512(_mm_loadu_ps(addr1));
-  v = _mm512_insertf32x4(v, _mm_loadu_ps(addr2), 1);
-  v = _mm512_insertf32x4(v, _mm_loadu_ps(addr3), 2);
-  v = _mm512_insertf32x4(v, _mm_loadu_ps(addr4), 3);
-  return v;
-}
-
-// Loads four 128-bit float vectors (aligned) into a single 512-bit register.
-AVS_FORCEINLINE static __m512 _mm512_load_4_m128(
-  /* __m128 const* */ const float* addr1,
-  /* __m128 const* */ const float* addr2,
-  /* __m128 const* */ const float* addr3,
-  /* __m128 const* */ const float* addr4)
-{
-  // The cast is needed for the first insertion to make the target a 512-bit register
-  __m512 v = _mm512_castps128_ps512(_mm_load_ps(addr1));
-  v = _mm512_insertf32x4(v, _mm_load_ps(addr2), 1);
-  v = _mm512_insertf32x4(v, _mm_load_ps(addr3), 2);
-  v = _mm512_insertf32x4(v, _mm_load_ps(addr4), 3);
-  return v;
-}
-
-// Integers
-// Loads four 128-bit integer vectors (unaligned) into a single 512-bit integer register.
-AVS_FORCEINLINE static __m512i _mm512i_loadu_4_m128i(
-  /* __m128i const* */ const __m128i* addr1,
-  /* __m128i const* */ const __m128i* addr2,
-  /* __m128i const* */ const __m128i* addr3,
-  /* __m128i const* */ const __m128i* addr4)
-{
-  // The cast is needed for the first insertion to make the target a 512-bit register
-  __m512i v = _mm512_zextsi128_si512(_mm_loadu_si128(addr1));
-  v = _mm512_inserti32x4(v, _mm_loadu_si128(addr2), 1);
-  v = _mm512_inserti32x4(v, _mm_loadu_si128(addr3), 2);
-  v = _mm512_inserti32x4(v, _mm_loadu_si128(addr4), 3);
-  return v;
-}
-
-// Loads two 256 - bit unaligned integer vectors from registers(__m256i) into a single 512i register.
-AVS_FORCEINLINE static __m512i _mm512i_loadu_2_m256i(
-  /* __m256i const* */ const __m256i* addr1,
-  /* __m256i const* */ const __m256i* addr2)
-{
-  return _mm512_inserti64x4(_mm512_zextsi256_si512(_mm256_loadu_si256(addr1)), _mm256_loadu_si256(addr2), 1);
-}
-
-// Loads two 256 - bit aligned integer vectors from registers(__m256) into a single 512 - bit register.
-AVS_FORCEINLINE static __m512i _mm512i_load_2_m256i(
-  /* __m256i const* */ const __m256i* addr1,
-  /* __m256i const* */ const __m256i* addr2)
-{
-  return _mm512_inserti64x4(_mm512_zextsi256_si512(_mm256_load_si256(addr1)), _mm256_load_si256(addr2), 1);
-}
-
 
 /**
  * SIMD Optimization Strategy for Horizontal Resampling Kernel (Filter) Execution.
@@ -282,8 +142,8 @@ AVS_FORCEINLINE static void process_two_16pixels_core(const pixel_t * AVS_RESTRI
   __m256i coeff_1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(current_coeff));
   __m256i coeff_2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(current_coeff + filter_size));
 
-  result1 = _mm256_dpwssd_epi32(result1, data_1, coeff_1); // vnni, not really a bottleneck here
-  result2 = _mm256_dpwssd_epi32(result2, data_2, coeff_2);
+  result1 = _MM256_DPWSSD_EPI32_SIMUL(result1, data_1, coeff_1); // vnni, not really a bottleneck here
+  result2 = _MM256_DPWSSD_EPI32_SIMUL(result2, data_2, coeff_2);
 }
 
 // taps16, 4 coeffs
@@ -322,10 +182,10 @@ AVS_FORCEINLINE static void process_four_16pixels_core(const pixel_t* AVS_RESTRI
   __m256i coeff_3 = _mm256_load_si256(reinterpret_cast<const __m256i*>(current_coeff + 2 * filter_size));
   __m256i coeff_4 = _mm256_load_si256(reinterpret_cast<const __m256i*>(current_coeff + 3 * filter_size));
 
-  result1 = _mm256_dpwssd_epi32(result1, data_1, coeff_1);
-  result2 = _mm256_dpwssd_epi32(result2, data_2, coeff_2);
-  result3 = _mm256_dpwssd_epi32(result3, data_3, coeff_3);
-  result4 = _mm256_dpwssd_epi32(result4, data_4, coeff_4);
+  result1 = _MM256_DPWSSD_EPI32_SIMUL(result1, data_1, coeff_1);
+  result2 = _MM256_DPWSSD_EPI32_SIMUL(result2, data_2, coeff_2);
+  result3 = _MM256_DPWSSD_EPI32_SIMUL(result3, data_3, coeff_3);
+  result4 = _MM256_DPWSSD_EPI32_SIMUL(result4, data_4, coeff_4);
 }
 
 // -----------------------------------------------------------------------------------------
@@ -384,19 +244,9 @@ AVS_FORCEINLINE static void process_two_partial_unrolled(const pixel_t* src, int
   __m256i d1_256 = _mm256_zextsi128_si256(d1);
   __m256i d2_256 = _mm256_zextsi128_si256(d2);
 
-  result1 = _mm256_dpwssd_epi32(result1, d1_256, c1_256);
-  result2 = _mm256_dpwssd_epi32(result2, d2_256, c2_256);
+  result1 = _MM256_DPWSSD_EPI32_SIMUL(result1, d1_256, c1_256);
+  result2 = _MM256_DPWSSD_EPI32_SIMUL(result2, d2_256, c2_256);
 
-  /*
-  __m128i r1 = _mm_madd_epi16(d1, c1);
-  __m128i r2 = _mm_madd_epi16(d2, c2);
-
-  __m256i r1_zmm = _mm256_zextsi128_si256(r1);
-  __m256i r2_zmm = _mm256_zextsi128_si256(r2);
-
-  result1 = _mm256_add_epi32(result1, r1_zmm);
-  result2 = _mm256_add_epi32(result2, r2_zmm);
-  */
 }
 
 // -----------------------------------------------------------------------------------------
@@ -476,21 +326,10 @@ AVS_FORCEINLINE static void process_four_partial_unrolled(const pixel_t* src,
   __m256i d3_256 = _mm256_zextsi128_si256(d3);
   __m256i d4_256 = _mm256_zextsi128_si256(d4);
 
-  result1 = _mm256_dpwssd_epi32(result1, d1_256, c1_256);
-  result2 = _mm256_dpwssd_epi32(result2, d2_256, c2_256);
-  result3 = _mm256_dpwssd_epi32(result3, d3_256, c3_256);
-  result4 = _mm256_dpwssd_epi32(result4, d4_256, c4_256);
-
-  /*
-  __m128i r1 = _mm_madd_epi16(d1, c1);
-  __m128i r2 = _mm_madd_epi16(d2, c2);
-
-  __m256i r1_zmm = _mm256_zextsi128_si256(r1);
-  __m256i r2_zmm = _mm256_zextsi128_si256(r2);
-
-  result1 = _mm256_add_epi32(result1, r1_zmm);
-  result2 = _mm256_add_epi32(result2, r2_zmm);
-  */
+  result1 = _MM256_DPWSSD_EPI32_SIMUL(result1, d1_256, c1_256);
+  result2 = _MM256_DPWSSD_EPI32_SIMUL(result2, d2_256, c2_256);
+  result3 = _MM256_DPWSSD_EPI32_SIMUL(result3, d3_256, c3_256);
+  result4 = _MM256_DPWSSD_EPI32_SIMUL(result4, d4_256, c4_256);
 }
 
 
