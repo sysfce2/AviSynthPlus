@@ -237,30 +237,30 @@ AVS_FORCEINLINE static __m512 _mm512_load_4_m128(
 
 // Loads two 256 - bit unaligned integer vectors from registers(__m256i) into a single 512i register.
 AVS_FORCEINLINE static __m512i _mm512i_loadu_2_m256i(
-  /* __m256i const* */ const __m256i* addr1,
-  /* __m256i const* */ const __m256i* addr2)
+  const __m256i* addr1,
+  const __m256i* addr2)
 {
-  return _mm512_inserti64x4(_mm512_zextsi256_si512(_mm256_loadu_si256(addr1)), _mm256_loadu_si256(addr2), 1);
+  return _mm512_inserti64x4(_mm512_castsi256_si512(_mm256_loadu_si256(addr1)), _mm256_loadu_si256(addr2), 1);
 }
 
 // Loads two 256 - bit aligned integer vectors from registers(__m256) into a single 512 - bit register.
 AVS_FORCEINLINE static __m512i _mm512i_load_2_m256i(
-  /* __m256i const* */ const __m256i* addr1,
-  /* __m256i const* */ const __m256i* addr2)
+  const __m256i* addr1,
+  const __m256i* addr2)
 {
-  return _mm512_inserti64x4(_mm512_zextsi256_si512(_mm256_load_si256(addr1)), _mm256_load_si256(addr2), 1);
+  return _mm512_inserti64x4(_mm512_castsi256_si512(_mm256_load_si256(addr1)), _mm256_load_si256(addr2), 1);
 }
 
 // Integers
 // Loads four 128-bit integer vectors (unaligned) into a single 512-bit integer register.
 AVS_FORCEINLINE static __m512i _mm512i_loadu_4_m128i(
-  /* __m128i const* */ const __m128i* addr1,
-  /* __m128i const* */ const __m128i* addr2,
-  /* __m128i const* */ const __m128i* addr3,
-  /* __m128i const* */ const __m128i* addr4)
+  const __m128i* addr1,
+  const __m128i* addr2,
+  const __m128i* addr3,
+  const __m128i* addr4)
 {
   // The cast is needed for the first insertion to make the target a 512-bit register
-  __m512i v = _mm512_zextsi128_si512(_mm_loadu_si128(addr1));
+  __m512i v = _mm512_castsi128_si512(_mm_loadu_si128(addr1));
   v = _mm512_inserti32x4(v, _mm_loadu_si128(addr2), 1);
   v = _mm512_inserti32x4(v, _mm_loadu_si128(addr3), 2);
   v = _mm512_inserti32x4(v, _mm_loadu_si128(addr4), 3);
