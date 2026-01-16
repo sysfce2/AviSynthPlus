@@ -39,10 +39,17 @@ Functions here are static, they will be compiled into each translation unit incl
 
 */
 
+// Original function needed avx512vbmi feature flag, but we want to support also base AVX512 without VBMI.
+// We use _mm512_permutex2var_epi8_SIMUL<UseVBMI> and _mm512_maskz_permutex2var_epi8_SIMUL<UseVBMI>
+// Thus both Base AVX512 and ICL level arch is supported.
+// We are using two separated source modules and include this hpp file templated
+// with UseVBMI/UseVNNI
+
+
 // helper function for simulating _mm512_permutex2var_epi8 when VBMI is not available
 // The MSB bit (128) zeroing effect is _not_ considered here, the indices must be all positive and within 0-127 range.
 template<bool UseVBMI>
-static AVS_FORCEINLINE __m512i _mm512_permutex2var_epi8_SIMUL(__m512i a, __m512i idx, __m512i b) {
+AVS_FORCEINLINE static __m512i _mm512_permutex2var_epi8_SIMUL(__m512i a, __m512i idx, __m512i b) {
   if constexpr (UseVBMI) {
     return _mm512_permutex2var_epi8(a, idx, b);
   }
@@ -82,6 +89,26 @@ static AVS_FORCEINLINE __m512i _mm512_permutex2var_epi8_SIMUL(__m512i a, __m512i
   }
 }
 
+template<bool UseVBMI>
+AVS_FORCEINLINE static __m512i _mm512_maskz_permutex2var_epi8_SIMUL(
+  __mmask64 k,
+  __m512i a,
+  __m512i idx,
+  __m512i b)
+{
+  if constexpr (UseVBMI) {
+    return _mm512_maskz_permutex2var_epi8(k, a, idx, b);
+  }
+  else {
+    // 1. Run the base simulation to get the permuted bytes
+    // Note: Using your existing logic to get the full 512-bit permuted result
+    __m512i res = _mm512_permutex2var_epi8_SIMUL<false>(a, idx, b);
+
+    // 2. Apply the zero-mask using AVX-512BW
+    // _mm512_maskz_mov_epi8(k, src, src) returns 'src' where k[i]==1, and 0 where k[i]==0
+    return _mm512_maskz_mov_epi8(k, res);
+  }
+}
 
 // H-Float-Resampler: 16 pixels, filter size 4, transpose 4x (4x_m128) to 4x_m512
 // Transposes a 4x4 matrix of 4-float vectors (16x16 float matrix effectively).
