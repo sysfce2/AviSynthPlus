@@ -1614,6 +1614,9 @@ PVideoFrame __stdcall FilteredResizeH::GetFrame(int n, IScriptEnvironment* env)
   return dst;
 }
 
+//#define SPEEDTEST_MPZ 1
+//#define USE_MPZ_VNNI 1
+
 ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pixel, ResamplingProgram* program, ResamplerH &out_resampler_h_alternative_for_mt, IScriptEnvironment* env)
 {
   out_resampler_h_alternative_for_mt = nullptr;
@@ -1629,24 +1632,53 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
   // at the right and bottom ends, since we may have variable kernel sizes due to boundary conditions.
   resize_prepare_coeffs(program, env, simd_coeff_count_padding);
 
-  const bool has_AVX512_base = (CPU & CPUF_AVX512_BASE) == CPUF_AVX512_BASE;
-  const bool has_AVX512_fast = (CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST;
+  const bool has_AVX512_base = (CPU & CPUF_AVX512_BASE) == CPUF_AVX512_BASE; // group flag!
+  const bool has_AVX512_fast = (CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST; // group flag!
 
   if (pixelsize == 1)
   {
 #ifdef INTEL_INTRINSICS
 #ifdef INTEL_INTRINSICS_AVX512
     if (has_AVX512_base) {
+#ifdef PF_GENERIC_UINT_TEST
+      return resizer_h_avx512_generic_uint8_t; // PF debug
+#endif
       // feature flag, grouping many avx512 features
       // in case of optimized avx512_permutex_vstripe resizer found, set alternative resizer for MT use
         out_resampler_h_alternative_for_mt = resizer_h_avx2_generic_uint8_t; // AVX2 should present if AVX512 present
       if (program->filter_size_real <= 4) {
         if (!program->resize_h_planar_gather_permutex_vstripe_check(64/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 4/*kernel_size*/)) {
+          /*
+            (Rocket Lake i7 - 11700, Expr-vertical-stripes + BicubicResize(width*2,height))
+            Contenders
+            AVX512 Fast
+            resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_vnni  2760fps (VNNI is not even really used in clangcl)
+            resize_h_planar_uint8_avx512_permutex_vstripe_ks4_vbmi      2548fps
+            AVX512 base; No VNNI, No VBMI, both simulating the 8 bit VBMI shuffle
+            resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_base  1478fps (register pressure - twice as much _mm512_permutex2var_epi8 simulation than non-mpz)
+            resize_h_planar_uint8_avx512_permutex_vstripe_ks4_base      2493fps (despite the _mm512_permutex2var_epi8 simulation, this is only 2-3% slower than vbmi version
+            resizer_h_avx2_generic_uint8_t                               752fps
+
+            Winners: (Fast) resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_vnni (Base) resize_h_planar_uint8_avx512_permutex_vstripe_ks4_base
+          */
+#ifdef SPEEDTEST_MPZ
+#ifdef USE_MPZ_VNNI
+          if(has_AVX512_fast)
+            return resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_vnni; // Chosen for CPUF_AVX512_FAST
+          else
+            return resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_base; // Huge register pressure, -50% compared to resize_h_planar_uint8_avx512_permutex_vstripe_ks4_base
+#else
           if(has_AVX512_fast)
             return resize_h_planar_uint8_avx512_permutex_vstripe_ks4_vbmi;
           else
+            return resize_h_planar_uint8_avx512_permutex_vstripe_ks4_base; // Chosen for CPUF_AVX512_BASE
+#endif
+#else
+          if (has_AVX512_fast)
+            return resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_vnni;
+          else
             return resize_h_planar_uint8_avx512_permutex_vstripe_ks4_base;
-
+#endif
       }
       }
       if (program->filter_size_real <= 8) {
@@ -1662,10 +1694,36 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
           These two functions selected in order from faster to slower.
         */
         if (!program->resize_h_planar_gather_permutex_vstripe_check(64/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 8/*kernel_size*/)) { // first try faster ks8
+          /*
+          Contenders
+          AVX512 Fast
+          resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_vnni  3420fps
+          resize_h_planar_uint8_avx512_permutex_vstripe_ks8_vbmi      3240fps
+          AVX512 base
+          resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_base  1720fps (register pressure)
+          resize_h_planar_uint8_avx512_permutex_vstripe_ks8_base      2940fps
+
+          Winners: (Fast) resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_vnni (Base) resize_h_planar_uint8_avx512_permutex_vstripe_ks8_base
+          */
+#ifdef SPEEDTEST_MPZ
+#ifdef USE_MPZ_VNNI
+          if (has_AVX512_fast)
+            return resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_vnni;
+          else
+            return resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_base;
+#else
           if (has_AVX512_fast)
             return resize_h_planar_uint8_avx512_permutex_vstripe_ks8_vbmi;
           else
             return resize_h_planar_uint8_avx512_permutex_vstripe_ks8_base;
+#endif
+#else
+          if (has_AVX512_fast)
+            return resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_vnni;
+          else
+            return resize_h_planar_uint8_avx512_permutex_vstripe_ks8_base;
+
+#endif
     }
         if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 8/*kernel_size*/)) { // slower ks8 but more downsample ratio for /2
           if (has_AVX512_fast)
@@ -1675,11 +1733,40 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
         }
       }
       if (program->filter_size_real <= 16) {
+        // yes: LanczosResize(int(width*0.9 + 0.5), height, taps=4) kernel size 9 (K)
+        // yes: LanczosResize(int(width*1.1 + 0.5), height, taps=5) kernel size 10 (L)
+        // yes: LanczosResize(int(width*1.1 + 0.5), height, taps=6) kernel size 12 (M)
+        // yes: LanczosResize(int(width*0.5 + 0.5), height, taps=3) kernel size 12 (N) (in float only 2s8_ks16 covered this resampling ratio)
         if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 16/*kernel_size*/)) {
+          /*
+          Contenders:
+          AVX512 fast
+          resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_vnni  3440fps
+          resize_h_planar_uint8_avx512_permutex_vstripe_ks16_vbmi      3037fps
+          AVX512 base
+          resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_base  1686fps (register pressure)
+          resize_h_planar_uint8_avx512_permutex_vstripe_ks16_base      2909fps
+
+          Winners: (Fast) resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_vnni (Base) resize_h_planar_uint8_avx512_permutex_vstripe_ks16_base
+          */
+#ifdef SPEEDTEST_MPZ
+#ifdef USE_MPZ_VNNI
+          if (has_AVX512_fast)
+            return resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_vnni;
+          else
+            return resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_base;
+#else
           if (has_AVX512_fast)
             return resize_h_planar_uint8_avx512_permutex_vstripe_ks16_vbmi;
           else
             return resize_h_planar_uint8_avx512_permutex_vstripe_ks16_base;
+#endif
+#else
+          if (has_AVX512_fast)
+            return resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_vnni;
+          else
+            return resize_h_planar_uint8_avx512_permutex_vstripe_ks16_base;
+#endif
       }
       }
       out_resampler_h_alternative_for_mt = nullptr; // not needed
@@ -1699,21 +1786,154 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
 #ifdef INTEL_INTRINSICS
 #ifdef INTEL_INTRINSICS_AVX512
     if (has_AVX512_base) {
+#ifdef PF_GENERIC_UINT_TEST
+      if (bits_per_pixel < 16)
+        return resizer_h_avx512_generic_uint16_t<true>; // PF debug
+      else
+        return resizer_h_avx512_generic_uint16_t<false>; // PF debug
+#endif
+      if (bits_per_pixel < 16)
+        out_resampler_h_alternative_for_mt = resizer_h_avx2_generic_uint16_t<true>; // AVX2 should present if AVX512 present
+      else
+        out_resampler_h_alternative_for_mt = resizer_h_avx2_generic_uint16_t<false>;
+
       // feature flag, grouping many avx512 features
       if (program->filter_size_real <= 4) {
         if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 64/*permutex_index_diff_limit*/, 4/*kernel_size*/))
         {
-          if (bits_per_pixel < 16)
-            out_resampler_h_alternative_for_mt = resizer_h_avx2_generic_uint16_t<true>; // AVX2 should present if AVX512 present
-          else
-            out_resampler_h_alternative_for_mt = resizer_h_avx2_generic_uint16_t<false>;
-          if (bits_per_pixel < 16)
+          /*
+            Contenders :
+            AVX512 Fast
+            resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_vnni 2578fps
+            resize_h_planar_uint16_avx512_permutex_vstripe_ks4         2310fps (only base)
+            AVX512 Base
+            resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_base 2556fps
+            resize_h_planar_uint16_avx512_permutex_vstripe_ks4         2310fps (only base)
+            Fazit: The MP versions' difference is only two VNNI instructions between BASE/FAST, in benchmarks zero visible speed benefit is seen.
+            Winners: (Both mp) (Fast) resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_vnni (Base) resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_base
+          */
+#ifdef SPEEDTEST_MPZ
+#ifdef USE_MPZ_VNNI
+          if (bits_per_pixel < 16) {
+            if (has_AVX512_fast)
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_vnni<true>; // true: lessthan16bit
+            else
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_base<true>;
+          } 
+          else {
+            if (has_AVX512_fast)
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_vnni<false>;
+            else
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_base<false>;
+          }
+#else
+          if (bits_per_pixel < 16) {
             return resize_h_planar_uint16_avx512_permutex_vstripe_ks4<true>;
-          else
+          }
+          else {
             return resize_h_planar_uint16_avx512_permutex_vstripe_ks4<false>;
+          }
+#endif
+#else
+          if (bits_per_pixel < 16) {
+            if (has_AVX512_fast)
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_vnni<true>; // true: lessthan16bit
+            else
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_base<true>;
+          }
+          else {
+            if (has_AVX512_fast)
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_vnni<false>;
+            else
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_base<false>;
+          }
+#endif
         }
       }
+      if (program->filter_size_real <= 8) {
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 64/*permutex_index_diff_limit*/, 8/*kernel_size*/)) {
+          /*
+            Contenders:
+            resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_vnni
+            resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_base
+            resize_h_planar_uint16_avx512_permutex_vstripe_ks8  (base avx512 only, no special intructions)
+            Fazit: The MP versions' difference is only two VNNI instructions between BASE/FAST, in benchmarks 1-2% visible speed benefit is seen.
+            Winners: (Both mp) (Fast) resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_vnni (Base) resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_base
+          */
+#ifdef SPEEDTEST_MPZ
+#ifdef USE_MPZ_VNNI
+          if (bits_per_pixel < 16) {
+            if (has_AVX512_fast)
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_vnni<true>; // true: lessthan16bit
+            else
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_base<true>;
+          } 
+          else {
+            if (has_AVX512_fast)
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_vnni<false>;
+            else
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_base<false>;
+          }
+#else
+          if (bits_per_pixel < 16)
+            return resize_h_planar_uint16_avx512_permutex_vstripe_ks8<true>;
+          else
+            return resize_h_planar_uint16_avx512_permutex_vstripe_ks8<false>;
+#endif
+#else
+          if (bits_per_pixel < 16) {
+            if (has_AVX512_fast)
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_vnni<true>; // true: lessthan16bit
+            else
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_base<true>;
+          }
+          else {
+            if (has_AVX512_fast)
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_vnni<false>;
+            else
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_base<false>;
+          }
+#endif
+        }
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 8/*kernel_size*/)) { // slower ks8 but more downsample ratio for /2
+          if (bits_per_pixel < 16)
+            return resize_h_planar_uint16_avx512_permutex_vstripe_2s16_ks8<true>;
+          else
+            return resize_h_planar_uint16_avx512_permutex_vstripe_2s16_ks8<false>;
+        }
+      }
+      if (program->filter_size_real <= 16) {
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(32/*iSamplesInTheGroup*/, 64/*permutex_index_diff_limit*/, 16/*kernel_size*/))
+        {
+          // yes: LanczosResize(int(width*0.9 + 0.5), height, taps=4) kernel size 9 (K)
+          // yes: LanczosResize(int(width*1.1 + 0.5), height, taps=5) kernel size 10 (L)
+          // yes: LanczosResize(int(width*1.1 + 0.5), height, taps=6) kernel size 12 (M)
+          // no:  LanczosResize(int(width*0.5 + 0.5), height, taps=3) kernel size 12 (N) (in float only 2s8_ks16 covered this resampling ratio)
+          /*
+            Contenders (none):
+            AVX512 Fast
+            resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks16_vnni 1851 1853 2189
+            AVX512 Base
+            resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks16_base 1889 1869 2203 (? within measurement error, but quicker than VNNI??)
+            resizer_h_avx2_generic_uint16_t (fallback)                  1156 1085 1292
+            Winners: (Both mp) (Fast) resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_vnni (Base) resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_base
+          */
+          if (bits_per_pixel < 16) {
+            if (has_AVX512_fast)
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks16_vnni<true>; // true: lessthan16bit
+            else
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks16_base<true>;
     }
+          else {
+            if (has_AVX512_fast)
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks16_vnni<false>;
+            else
+              return resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks16_base<false>;
+          }
+        }
+      }
+      out_resampler_h_alternative_for_mt = nullptr; // not needed
+    } // has_AVX512_base
 #endif
     if (CPU & CPUF_AVX2) {
       if (bits_per_pixel < 16)
