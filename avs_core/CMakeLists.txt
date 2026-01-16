@@ -31,6 +31,9 @@ if(ENABLE_INTEL_SIMD)
 
                 if(MSVC_MAJOR GREATER_EQUAL 19 AND MSVC_MINOR GREATER_EQUAL 22) # MSVC 2019 16.2 (19.22) or newer
                     set(DEFINE_AVX512 TRUE)
+                else()
+                    # set(DEFINE_AVX512 TRUE) # perhaps compiles but not recommended
+                    message(STATUS "Disabling AVX-512: MSVC version ${CMAKE_CXX_COMPILER_VERSION} is too old (MSVC 2019 16.2 (19.22) or newer).")
                 endif()
             else()
                 message(WARNING "Could not parse native 64-bit MSVC version. AVX-512 support might be incomplete.")
@@ -70,7 +73,8 @@ endif()
 if(NOT DEFINE_AVX512)
     # Remove AVX512 specific files if it's a 32-bit build
     # or not supported compiler version
-    list(FILTER AvsCore_Sources EXCLUDE REGEX ".*_avx512\\.(cpp|h)$")
+    list(FILTER AvsCore_Sources EXCLUDE REGEX ".*_avx512\\.(cpp|hpp|h)$")
+    list(FILTER AvsCore_Sources EXCLUDE REGEX ".*_avx512b\\.(cpp|hpp|h)$")
 endif()
 
 add_library("AvsCore" ${AvsCore_Sources})
@@ -101,7 +105,7 @@ foreach(FILE ${AvsCore_Sources})
   # group into "Source Files" and "Header Files"
   if ("${FILE}" MATCHES ".*\\.cpp")
     set(GROUP "Source Files\\${GROUP}")
-  elseif("${FILE}" MATCHES ".*\\.h")
+  elseif("${FILE}" MATCHES ".*\\.(h|hpp)$")
     set(GROUP "Header Files\\${GROUP}")
   endif()
 

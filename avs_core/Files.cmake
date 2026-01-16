@@ -68,16 +68,19 @@ ENDIF()
 IF(ENABLE_INTEL_SIMD)
   FILE(GLOB Conditional_Filter_Cpu_Sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
     "filters/conditional/intel/*.cpp"
+    "filters/conditional/intel/*.hpp"
     "filters/conditional/intel/*.h")
   LIST(APPEND AvsCore_Sources "${Conditional_Filter_Cpu_Sources}")
 
   FILE(GLOB Convert_Cpu_Sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
     "convert/intel/*.cpp"
+    "convert/intel/*.hpp"
     "convert/intel/*.h")
   LIST(APPEND AvsCore_Sources "${Convert_Cpu_Sources}")
 
   FILE(GLOB Filters_Cpu_Sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
     "filters/intel/*.cpp"
+    "filters/intel/*.hpp"
     "filters/intel/*.h")
   LIST(REMOVE_ITEM AvsCore_Sources "")
 
@@ -85,6 +88,7 @@ IF(ENABLE_INTEL_SIMD)
 
   FILE(GLOB Overlay_Cpu_Sources RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
     "filters/overlay/intel/*.cpp"
+    "filters/overlay/intel/*.hpp"
     "filters/overlay/intel/*.h")
   LIST(REMOVE_ITEM AvsCore_Sources "filters/overlay/444convert.cpp"
                                    "filters/overlay/444convert.h")
