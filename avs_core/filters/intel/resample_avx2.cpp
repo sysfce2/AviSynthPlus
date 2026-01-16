@@ -901,7 +901,7 @@ void resize_v_avx2_planar_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch, 
 
         __m256i src_even = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src2_ptr)); // 16x 16bit pixels
         __m256i src_odd = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src2_ptr + src_pitch));  // 16x 16bit pixels
-        if (!lessthan16bit) {
+        if constexpr (!lessthan16bit) {
           src_even = _mm256_add_epi16(src_even, shifttosigned);
           src_odd = _mm256_add_epi16(src_odd, shifttosigned);
         }
@@ -920,7 +920,7 @@ void resize_v_avx2_planar_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch, 
         __m256i coeff = _mm256_set1_epi16(current_coeff[i]); // 0|co|0|co|0|co|0|co   0|co|0|co|0|co|0|co
 
         __m256i src_even = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src2_ptr)); // 16x 16bit pixels
-        if (!lessthan16bit) {
+        if constexpr (!lessthan16bit) {
           src_even = _mm256_add_epi16(src_even, shifttosigned);
         }
         __m256i src_lo = _mm256_unpacklo_epi16(src_even, zero);
@@ -934,7 +934,7 @@ void resize_v_avx2_planar_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch, 
       // correct if signed, scale back, store
       __m256i result_lo = result_single_lo;
       __m256i result_hi = result_single_hi;
-      if (!lessthan16bit) {
+      if constexpr (!lessthan16bit) {
         result_lo = _mm256_add_epi32(result_lo, shiftfromsigned);
         result_hi = _mm256_add_epi32(result_hi, shiftfromsigned);
       }
@@ -943,7 +943,7 @@ void resize_v_avx2_planar_uint16_t(BYTE* dst8, const BYTE* src8, int dst_pitch, 
       result_hi = _mm256_srai_epi32(result_hi, FPScale16bits);
 
       __m256i result_2x8x_uint16 = _mm256_packus_epi32(result_lo, result_hi);
-      if (lessthan16bit) {
+      if constexpr (lessthan16bit) {
         result_2x8x_uint16 = _mm256_min_epu16(result_2x8x_uint16, clamp_limit); // extra clamp for 10-14 bit
       }
       _mm256_stream_si256(reinterpret_cast<__m256i*>(dst + x), result_2x8x_uint16);

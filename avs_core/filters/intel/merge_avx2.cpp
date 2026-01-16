@@ -181,7 +181,7 @@ void weighted_merge_planar_uint16_avx2(BYTE *p1, const BYTE *p2, int p1_pitch, i
       px1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(p1 + x)); // y7 y6 y5 y4 y3 y2 y1 y0
       px2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(p2 + x)); // Y7 Y6 Y5 Y4 Y3 Y2 Y1 Y0
 
-      if (!lessthan16bit) {
+      if constexpr (!lessthan16bit) {
         px1 = _mm256_add_epi16(px1, signed_shifter);
         px2 = _mm256_add_epi16(px2, signed_shifter);
       }
@@ -199,7 +199,7 @@ void weighted_merge_planar_uint16_avx2(BYTE *p1, const BYTE *p2, int p1_pitch, i
       p47 = _mm256_srai_epi32(p47, 15);
 
       auto p07 = _mm256_packs_epi32(p03, p47);
-      if (!lessthan16bit) {
+      if constexpr (!lessthan16bit) {
         p07 = _mm256_add_epi16(p07, signed_shifter);
       }
 
@@ -211,7 +211,7 @@ void weighted_merge_planar_uint16_avx2(BYTE *p1, const BYTE *p2, int p1_pitch, i
       __m128i px1, px2;
       px1 = _mm_load_si128(reinterpret_cast<__m128i*>(p1 + x)); // y7 y6 y5 y4 y3 y2 y1 y0
       px2 = _mm_load_si128(const_cast<__m128i*>(reinterpret_cast<const __m128i*>(p2 + x))); // Y7 Y6 Y5 Y4 Y3 Y2 Y1 Y0
-      if (!lessthan16bit) {
+      if constexpr (!lessthan16bit) {
         px1 = _mm_add_epi16(px1, signed_shifter_128);
         px2 = _mm_add_epi16(px2, signed_shifter_128);
       }
@@ -229,7 +229,7 @@ void weighted_merge_planar_uint16_avx2(BYTE *p1, const BYTE *p2, int p1_pitch, i
       p47 = _mm_srai_epi32(p47, 15);
 
       auto p07 = _mm_packs_epi32(p03, p47);
-      if (!lessthan16bit) {
+      if constexpr (!lessthan16bit) {
         p07 = _mm_add_epi16(p07, signed_shifter_128);
       }
 

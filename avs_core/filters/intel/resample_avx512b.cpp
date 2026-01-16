@@ -2662,7 +2662,7 @@ void resize_v_avx512_planar_uint16_t_w_sr(BYTE* dst8, const BYTE* src8, int dst_
         __m512i src = _mm512_load_si512(reinterpret_cast<const __m512i*>(src2_ptr)); // 32x 16bit pixels
         __m512i src_2 = _mm512_load_si512(reinterpret_cast<const __m512i*>(src2_ptr + 32)); // 32x 16bit pixels
 
-        if (!lessthan16bit) {
+        if constexpr (!lessthan16bit) {
           src = _mm512_add_epi16(src, shifttosigned);
           src_2 = _mm512_add_epi16(src_2, shifttosigned);
         }
@@ -2682,7 +2682,7 @@ void resize_v_avx512_planar_uint16_t_w_sr(BYTE* dst8, const BYTE* src8, int dst_
         src2_ptr += src_pitch;
       }
 
-      if (!lessthan16bit) {
+      if constexpr (!lessthan16bit) {
         result_lo = _mm512_add_epi32(result_lo, shiftfromsigned);
         result_hi = _mm512_add_epi32(result_hi, shiftfromsigned);
 
@@ -2699,7 +2699,7 @@ void resize_v_avx512_planar_uint16_t_w_sr(BYTE* dst8, const BYTE* src8, int dst_
 
       __m512i result_2x8x_uint16 = _mm512_packus_epi32(result_lo, result_hi);
       __m512i result_2x8x_uint16_2 = _mm512_packus_epi32(result_lo_2, result_hi_2);
-      if (lessthan16bit) {
+      if constexpr (lessthan16bit) {
         result_2x8x_uint16 = _mm512_min_epu16(result_2x8x_uint16, clamp_limit); // extra clamp for 10-14 bit
         result_2x8x_uint16_2 = _mm512_min_epu16(result_2x8x_uint16_2, clamp_limit); // extra clamp for 10-14 bit
       }
@@ -2722,7 +2722,7 @@ void resize_v_avx512_planar_uint16_t_w_sr(BYTE* dst8, const BYTE* src8, int dst_
         __m512i coeff = _mm512_set1_epi16(current_coeff[i]); // 0|co|0|co|0|co|0|co   0|co|0|co|0|co|0|co
 
         __m512i src = _mm512_load_si512(reinterpret_cast<const __m512i*>(src2_ptr)); // 32x 16bit pixels
-        if (!lessthan16bit) {
+        if constexpr (!lessthan16bit) {
           src = _mm512_add_epi16(src, shifttosigned);
         }
         __m512i src_lo = _mm512_unpacklo_epi16(src, zero);
@@ -2733,7 +2733,7 @@ void resize_v_avx512_planar_uint16_t_w_sr(BYTE* dst8, const BYTE* src8, int dst_
         src2_ptr += src_pitch;
       }
 
-      if (!lessthan16bit) {
+      if constexpr (!lessthan16bit) {
         result_lo = _mm512_add_epi32(result_lo, shiftfromsigned);
         result_hi = _mm512_add_epi32(result_hi, shiftfromsigned);
       }
@@ -2742,7 +2742,7 @@ void resize_v_avx512_planar_uint16_t_w_sr(BYTE* dst8, const BYTE* src8, int dst_
       result_hi = _mm512_srai_epi32(result_hi, FPScale16bits);
 
       __m512i result_2x8x_uint16 = _mm512_packus_epi32(result_lo, result_hi);
-      if (lessthan16bit) {
+      if constexpr (lessthan16bit) {
         result_2x8x_uint16 = _mm512_min_epu16(result_2x8x_uint16, clamp_limit); // extra clamp for 10-14 bit
       }
       _mm512_stream_si512(reinterpret_cast<__m512i*>(dst + x), result_2x8x_uint16);
@@ -5222,7 +5222,7 @@ void resize_h_planar_uint16_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* 
         __m512i src_r2_0_31 = _mm512_permutex2var_epi16(data_src, perm_2, data_src2);
         __m512i src_r3_0_31 = _mm512_permutex2var_epi16(data_src, perm_3, data_src2);
 
-        if (!lessthan16bit) {
+        if constexpr (!lessthan16bit) {
           // madd requires signed integers, so shift to signed range
           src_r0_0_31 = _mm512_add_epi16(src_r0_0_31, shifttosigned);
           src_r1_0_31 = _mm512_add_epi16(src_r1_0_31, shifttosigned);
@@ -5241,7 +5241,7 @@ void resize_h_planar_uint16_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* 
         __m512i result_0_31lo = _mm512_add_epi32(_mm512_madd_epi16(src_r0r1_0_31lo, coef_r0r1_0_31lo), _mm512_madd_epi16(src_r2r3_0_31lo, coef_r2r3_0_31lo));
         __m512i result_0_31hi = _mm512_add_epi32(_mm512_madd_epi16(src_r0r1_0_31hi, coef_r0r1_0_31hi), _mm512_madd_epi16(src_r2r3_0_31hi, coef_r2r3_0_31hi));
 
-        if (!lessthan16bit) {
+        if constexpr (!lessthan16bit) {
           // return from signed range
           result_0_31lo = _mm512_add_epi32(result_0_31lo, shiftfromsigned);
           result_0_31hi = _mm512_add_epi32(result_0_31hi, shiftfromsigned);
@@ -5257,7 +5257,7 @@ void resize_h_planar_uint16_avx512_permutex_vstripe_ks4(BYTE* dst8, const BYTE* 
         // negative and over 16 bit values are clamped automatically
         __m512i result_0_31_int16 = _mm512_packus_epi32(result_0_31lo, result_0_31hi);
 
-        if (lessthan16bit) {
+        if constexpr (lessthan16bit) {
           result_0_31_int16 = _mm512_min_epu16(result_0_31_int16, clamp_limit); // extra clamp for 10-14 bit
         }
         
@@ -5539,7 +5539,7 @@ void resize_h_planar_uint16_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* 
         __m512i src_r6_0_31 = _mm512_permutex2var_epi16(data_src, perm_6, data_src2);
         __m512i src_r7_0_31 = _mm512_permutex2var_epi16(data_src, perm_7, data_src2);
 
-        if (!lessthan16bit) {
+        if constexpr (!lessthan16bit) {
           // madd requires signed integers, so shift to signed range
           src_r0_0_31 = _mm512_add_epi16(src_r0_0_31, shifttosigned);
           src_r1_0_31 = _mm512_add_epi16(src_r1_0_31, shifttosigned);
@@ -5574,7 +5574,7 @@ void resize_h_planar_uint16_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* 
           _mm512_add_epi32(_mm512_madd_epi16(src_r4r5_0_31hi, coef_r4r5_0_31hi), _mm512_madd_epi16(src_r6r7_0_31hi, coef_r6r7_0_31hi))
         );
 
-        if (!lessthan16bit) {
+        if constexpr (!lessthan16bit) {
           // return from signed range
           result_0_31lo = _mm512_add_epi32(result_0_31lo, shiftfromsigned);
           result_0_31hi = _mm512_add_epi32(result_0_31hi, shiftfromsigned);
@@ -5590,7 +5590,7 @@ void resize_h_planar_uint16_avx512_permutex_vstripe_ks8(BYTE* dst8, const BYTE* 
         // negative and over 16 bit values are clamped automatically
         __m512i result_0_31_int16 = _mm512_packus_epi32(result_0_31lo, result_0_31hi);
 
-        if (lessthan16bit) {
+        if constexpr (lessthan16bit) {
           result_0_31_int16 = _mm512_min_epu16(result_0_31_int16, clamp_limit); // extra clamp for 10-14 bit
         }
 
