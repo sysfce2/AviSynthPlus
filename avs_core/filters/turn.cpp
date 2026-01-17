@@ -41,6 +41,7 @@
 #include "turn.h"
 #ifdef INTEL_INTRINSICS
 #include "intel/turn_sse.h"
+#include "intel/turn_avx2.h"
 #endif
 #ifdef NEON_INTRINSICS
 #include "aarch64/turn_neon.h"
@@ -343,6 +344,7 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
   const int cpu = env->GetCPUFlags();
   const bool sse2 = cpu & CPUF_SSE2;
   const bool ssse3 = cpu & CPUF_SSSE3;
+  const bool avx2 = cpu & CPUF_AVX2;
 #endif
 
 #ifdef NEON_INTRINSICS
@@ -360,7 +362,9 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
   if (vi.IsRGB64())
   {
 #ifdef INTEL_INTRINSICS
-    if (sse2)
+    if (avx2)
+      set_funcs(turn_left_rgb64_avx2, turn_right_rgb64_avx2, turn_180_plane_avx2<uint64_t>);
+    else if (sse2)
       set_funcs(turn_left_rgb64_sse2, turn_right_rgb64_sse2, turn_180_plane_sse2<uint64_t>);
     else
 #elif defined(NEON_INTRINSICS)
@@ -380,7 +384,9 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
   else if (vi.IsRGB32())
   {
 #ifdef INTEL_INTRINSICS
-    if (sse2)
+    if (avx2)
+      set_funcs(turn_left_rgb32_avx2, turn_right_rgb32_avx2, turn_180_plane_avx2<uint32_t>);
+    else if (sse2)
       set_funcs(turn_left_rgb32_sse2, turn_right_rgb32_sse2, turn_180_plane_sse2<uint32_t>);
     else
 #elif defined(NEON_INTRINSICS)
@@ -403,7 +409,11 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
   else if (vi.ComponentSize() == 1) // 8 bit
   {
 #ifdef INTEL_INTRINSICS
-    if (sse2)
+    if(avx2)
+    {
+      set_funcs(turn_left_plane_8_avx2, turn_right_plane_8_avx2, turn_180_plane_avx2<BYTE>);
+    }
+    else if (sse2)
     {
       set_funcs(turn_left_plane_8_sse2, turn_right_plane_8_sse2,
         ssse3 ? turn_180_plane_ssse3<BYTE> : turn_180_plane_sse2<BYTE>);
@@ -423,7 +433,11 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
   else if (vi.ComponentSize() == 2) // 16 bit
   {
 #ifdef INTEL_INTRINSICS
-    if (sse2)
+    if (avx2)
+    {
+      set_funcs(turn_left_plane_16_avx2, turn_right_plane_16_avx2, turn_180_plane_avx2<uint16_t>);
+    }
+    else if (sse2)
     {
       set_funcs(turn_left_plane_16_sse2, turn_right_plane_16_sse2,
         ssse3 ? turn_180_plane_ssse3<uint16_t> : turn_180_plane_sse2<uint16_t>);
@@ -443,7 +457,10 @@ void Turn::SetTurnFunction(int direction, IScriptEnvironment* env)
   else if (vi.ComponentSize() == 4) // 32 bit
   {
 #ifdef INTEL_INTRINSICS
-    if (sse2) {
+    if(avx2) {
+      set_funcs(turn_left_plane_32_avx2, turn_right_plane_32_avx2, turn_180_plane_avx2<uint32_t>);
+    }
+    else if (sse2) {
       set_funcs(turn_left_plane_32_sse2, turn_right_plane_32_sse2, turn_180_plane_sse2<uint32_t>);
     }
     else

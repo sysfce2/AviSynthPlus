@@ -40,6 +40,7 @@
 #include "intel/resample_avx512.h"
 #endif
 #include "intel/turn_sse.h"
+#include "intel/turn_avx2.h"
 #endif
 #ifdef NEON_INTRINSICS
 #include "aarch64/turn_neon.h"
@@ -1362,6 +1363,7 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
 #ifdef INTEL_INTRINSICS
   int cpu = env->GetCPUFlags();
   bool has_sse2 = (cpu & CPUF_SSE2) != 0;
+  bool has_avx2 = (cpu & CPUF_AVX2) != 0;
 #elif defined(NEON_INTRINSICS)
   int cpu = env->GetCPUFlags();
   bool has_neon = (cpu & CPUF_ARM_NEON) != 0;
@@ -1399,7 +1401,11 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
       }
       else if (vi.IsRGB32()) {
 #ifdef INTEL_INTRINSICS
-        if (has_sse2) {
+      if (has_avx2) {
+        turn_left = turn_left_rgb32_avx2;
+        turn_right = turn_right_rgb32_avx2;
+      }
+      else if (has_sse2) {
           turn_left = turn_left_rgb32_sse2;
           turn_right = turn_right_rgb32_sse2;
         }
@@ -1425,7 +1431,11 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
       }
       else if (vi.IsRGB64()) {
 #ifdef INTEL_INTRINSICS
-        if (has_sse2) {
+      if (has_avx2) {
+        turn_left = turn_left_rgb64_avx2;
+        turn_right = turn_right_rgb64_avx2;
+      }
+      else if (has_sse2) {
           turn_left = turn_left_rgb64_sse2;
           turn_right = turn_right_rgb64_sse2;
         }
@@ -1446,7 +1456,11 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
         switch (vi.ComponentSize()) {// AVS16
         case 1: // 8 bit
 #ifdef INTEL_INTRINSICS
-          if (has_sse2) {
+        if (has_avx2) {
+          turn_left = turn_left_plane_8_avx2;
+          turn_right = turn_right_plane_8_avx2;
+        }
+        else if (has_sse2) {
             turn_left = turn_left_plane_8_sse2;
             turn_right = turn_right_plane_8_sse2;
           }
@@ -1465,7 +1479,11 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
           break;
         case 2: // 16 bit
 #ifdef INTEL_INTRINSICS
-          if (has_sse2) {
+        if (has_avx2) {
+          turn_left = turn_left_plane_16_avx2;
+          turn_right = turn_right_plane_16_avx2;
+        }
+        else if (has_sse2) {
             turn_left = turn_left_plane_16_sse2;
             turn_right = turn_right_plane_16_sse2;
           }
@@ -1484,7 +1502,11 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
           break;
         default: // 32 bit
 #ifdef INTEL_INTRINSICS
-          if (has_sse2) {
+        if (has_avx2) {
+          turn_left = turn_left_plane_32_avx2;
+          turn_right = turn_right_plane_32_avx2;
+        }
+        else if (has_sse2) {
             turn_left = turn_left_plane_32_sse2;
             turn_right = turn_right_plane_32_sse2;
           }
