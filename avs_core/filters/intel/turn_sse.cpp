@@ -62,7 +62,7 @@ static AVS_FORCEINLINE __m128i movehl(const __m128i& x)
 
 
 // This pattern seems faster than the others.
-static AVS_FORCEINLINE void transpose_8x8x8_sse2(const BYTE* srcp, BYTE* dstp, int src_pitch, int dst_pitch)
+static AVS_FORCEINLINE void transpose_8x8x8_sse2(const BYTE* AVS_RESTRICT srcp, BYTE* AVS_RESTRICT dstp, int src_pitch, int dst_pitch)
 {
     __m128i a07 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp + src_pitch * 0)); //a0 a1 a2 a3 a4 a5 a6 a7
     __m128i b07 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp + src_pitch * 1)); //b0 b1 b2 b3 b4 b5 b6 b7
@@ -135,7 +135,7 @@ void turn_left_plane_8_sse2(const BYTE* srcp, BYTE* dstp, int src_rowsize, int s
 
 
 
-static AVS_FORCEINLINE void transpose_16x4x8_sse2(const BYTE* srcp, BYTE* dstp, const int src_pitch, const int dst_pitch)
+static AVS_FORCEINLINE void transpose_16x4x8_sse2(const BYTE* AVS_RESTRICT srcp, BYTE* AVS_RESTRICT dstp, const int src_pitch, const int dst_pitch)
 {
     __m128i a03 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp + src_pitch * 0)); //a0 a1 a2 a3
     __m128i b03 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp + src_pitch * 1)); //b0 b1 b2 b3
@@ -203,7 +203,7 @@ void turn_left_plane_16_sse2(const BYTE* srcp, BYTE* dstp, int src_rowsize, int 
 
 
 
-static AVS_FORCEINLINE void transpose_32x4x4_sse2(const BYTE* srcp, BYTE* dstp, const int src_pitch, const int dst_pitch)
+static AVS_FORCEINLINE void transpose_32x4x4_sse2(const BYTE* AVS_RESTRICT srcp, BYTE* AVS_RESTRICT dstp, const int src_pitch, const int dst_pitch)
 {
     __m128i a03 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(srcp + src_pitch * 0)); //a0 a1 a2 a3
     __m128i b03 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(srcp + src_pitch * 1)); //b0 b1 b2 b3
@@ -277,7 +277,7 @@ void turn_right_rgb32_sse2(const BYTE* srcp, BYTE* dstp, int src_rowsize, int sr
 
 
 
-static inline void turn_right_plane_64_sse2(const BYTE* srcp, BYTE* dstp, int src_rowsize, int src_height, int src_pitch, int dst_pitch)
+static inline void turn_right_plane_64_sse2(const BYTE* AVS_RESTRICT srcp, BYTE* AVS_RESTRICT dstp, int src_rowsize, int src_height, int src_pitch, int dst_pitch)
 {
     const BYTE* s0 = srcp + src_pitch * (src_height - 1);
     int w = src_rowsize & ~15;
@@ -329,8 +329,8 @@ void turn_right_rgb64_sse2(const BYTE* srcp, BYTE* dstp, int src_rowsize, int sr
 template <typename T>
 void turn_180_plane_sse2(const BYTE* srcp, BYTE* dstp, int src_rowsize, int src_height, int src_pitch, int dst_pitch)
 {
-  const BYTE* s0 = srcp;
-  BYTE* d0 = dstp + dst_pitch * (src_height - 1) + src_rowsize - 16;
+  const BYTE* AVS_RESTRICT s0 = srcp;
+  BYTE* AVS_RESTRICT d0 = dstp + dst_pitch * (src_height - 1) + src_rowsize - 16;
   const int w = src_rowsize & ~15;
 
   for (int y = 0; y < src_height; ++y)

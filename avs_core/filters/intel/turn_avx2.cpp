@@ -190,7 +190,7 @@ void turn_left_plane_8_avx2(const BYTE* srcp, BYTE* dstp, int src_rowsize, int s
 // Transpose 8x16 (input) -> 16x8 (output)
 // Input: 16 rows of 8 pixels (uint16_t)
 // Output: 8 rows of 16 pixels
-static AVS_FORCEINLINE void transpose_16x8x16_avx2(const BYTE* srcp, BYTE* dstp, const int src_pitch, const int dst_pitch)
+static AVS_FORCEINLINE void transpose_16x8x16_avx2(const BYTE* AVS_RESTRICT srcp, BYTE* AVS_RESTRICT dstp, const int src_pitch, const int dst_pitch)
 {
   // Helper to load 16 bytes from row i (low lane) and row i+8 (high lane)
   auto load_dual_row_avx2 = [](const BYTE* base, int pitch, int row_idx) -> __m256i
@@ -295,7 +295,7 @@ void turn_left_plane_16_avx2(const BYTE* srcp, BYTE* dstp, int src_rowsize, int 
 // 32-bit Transpose Kernels (Float/RGB32)
 //-------------------------------------------------------------------------------------------------
 
-static AVS_FORCEINLINE void transpose_8x8_32bit_avx2(const BYTE* srcp, BYTE* dstp, int src_pitch, int dst_pitch)
+static AVS_FORCEINLINE void transpose_8x8_32bit_avx2(const BYTE* AVS_RESTRICT srcp, BYTE* AVS_RESTRICT dstp, int src_pitch, int dst_pitch)
 {
   // load 8 rows of 8 pixels (32-bit each)
   __m256i r0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(srcp + src_pitch * 0));
@@ -406,7 +406,7 @@ void turn_right_rgb32_avx2(const BYTE* srcp, BYTE* dstp, int src_rowsize, int sr
 // 64-bit Transpose Kernels (RGB64)
 //-------------------------------------------------------------------------------------------------
 
-static AVS_FORCEINLINE void transpose_4x4_64bit_avx2(const BYTE* srcp, BYTE* dstp, int src_pitch, int dst_pitch)
+static AVS_FORCEINLINE void transpose_4x4_64bit_avx2(const BYTE* AVS_RESTRICT srcp, BYTE* AVS_RESTRICT dstp, int src_pitch, int dst_pitch)
 {
   // Load 4 rows (4 pixels each reg = 32 bytes = 1 YMM register)
   __m256i r0 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(srcp + src_pitch * 0));
@@ -488,13 +488,13 @@ void turn_right_rgb64_avx2(const BYTE* srcp, BYTE* dstp, int src_rowsize, int sr
 template <typename T>
 void turn_180_plane_avx2(const BYTE* srcp, BYTE* dstp, int src_rowsize, int src_height, int src_pitch, int dst_pitch)
 {
-  const BYTE* s0 = srcp;
+  const BYTE* AVS_RESTRICT s0 = srcp;
   const int row_bytes = src_rowsize; // src_rowsize is the byte width of the row.
 
   // d0 points to the byte after the last pixel (byte) of the last row of dst.
   // dst_pitch * (src_height - 1) is the start of the last row.
   // + row_bytes is the address after the last byte of that row.
-  BYTE* d0 = dstp + dst_pitch * (src_height - 1) + row_bytes;
+  BYTE* AVS_RESTRICT d0 = dstp + dst_pitch * (src_height - 1) + row_bytes;
 
   constexpr int vector_bytes = 32;
   const int aligned_row_bytes = row_bytes & ~(vector_bytes - 1);

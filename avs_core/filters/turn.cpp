@@ -74,11 +74,11 @@ enum TurnDirection
 template <typename T>
 void turn_right_plane_c(const BYTE* srcp, BYTE* dstp, int src_rowsize, int height, int src_pitch, int dst_pitch)
 {
-    const BYTE* s0 = srcp + src_pitch * (height - 1);
+    const BYTE* AVS_RESTRICT s0 = srcp + src_pitch * (height - 1);
 
     for (int y = 0; y < height; ++y)
     {
-        BYTE* d0 = dstp;
+        BYTE* AVS_RESTRICT d0 = dstp;
         for (int x = 0; x < src_rowsize; x += sizeof(T))
         {
             *reinterpret_cast<T*>(d0) = *reinterpret_cast<const T*>(s0 + x);
@@ -232,8 +232,8 @@ void turn_180_plane_c(const BYTE* srcp, BYTE* dstp, int src_rowsize, int src_hei
 
     for (int y = 0; y < src_height; ++y)
     {
-        const T* s0 = reinterpret_cast<const T*>(srcp);
-        T* d0 = reinterpret_cast<T*>(dstp);
+        const T* AVS_RESTRICT s0 = reinterpret_cast<const T*>(srcp);
+        T* AVS_RESTRICT d0 = reinterpret_cast<T*>(dstp);
 
         for (int x = 0; x < src_rowsize; ++x)
         {
