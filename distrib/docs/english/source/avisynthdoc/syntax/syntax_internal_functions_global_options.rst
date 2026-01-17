@@ -105,7 +105,7 @@ distinguishing the Ice Lake generation from the earlier Skylake-X and Cascade La
 Multiple options can be put in a comma separated list. They will evaluate in that order. 
 
 The ``"avx512base"`` and ``"avx512fast"`` cover a group of feature flags. Internal Avisynth+ codes test for 
-``CPUF_AVX512_FAST`` in internal AVX-512 optimized paths, not the base CPUF_AVX512_BASE one.
+``CPUF_AVX512_BASE`` and ``CPUF_AVX512_FAST`` in internal AVX-512 optimized paths.
 
 .. note::
 
@@ -123,6 +123,9 @@ The ``"avx512base"`` and ``"avx512fast"`` cover a group of feature flags. Intern
     lead to **misleadingly poor performance** due to aggressive clock throttling on older hardware.
 
     Developers should generally use the ``"avx512fast"`` group for realistic performance testing of 512-bit code paths.
+    
+    Users, who have AVX512 Base level CPU but "Fast" is not fulfilled, must manually enable the Base features,
+    despite that the individual flags (F, CD, BW, DQ, VL) may exist.
 
 
 *Examples:*
@@ -131,6 +134,7 @@ The ``"avx512base"`` and ``"avx512fast"`` cover a group of feature flags. Intern
     SetMaxCPU("SSE2") #reports at most SSE2 processor (even if AVX2 is available)
     SetMaxCPU("avx,sse4.1-") #limits to avx2 but explicitely removes reporting sse4.1 support
     SetMaxCPU("none,avx2+") #limits to plain C, then switches on AVX2-only support
+    SetMaxCPU("avx512base+") # Forcibly switches on AVX512 Base support, for users of old AVX512 CPU.
 
 OnCPU
 ~~~~~

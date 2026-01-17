@@ -13,7 +13,8 @@ Additions, changes
 - "Info": Optimize AVX512 features display, group features, make a bit more compact
 - "Info": add L2 cache size display
 - "SetMaxCPU": add "avx512base" and "avx512fast" options to enable/disable AVX512 grouped features.
-  see :ref:`SetMaxCPU <setmaxcpu>` .
+  see :ref:`SetMaxCPU <setmaxcpu>` . Users of base-only AVX512 CPUs can enable Avisynth-optimizations
+  with SetMaxCPU("avx512base+").
 - ARM64 (aarch64) area:
 
   * "Info": add ARMV8-A features display (NEON, DOTPROD, SVE2)
@@ -27,10 +28,11 @@ Additions, changes
 Build environment, Interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 - introduce ``AVS_RESTRICT`` to ``avs/config.h`` (compiler invariant c++ ``__restrict``)
-- AVX512: CMake to recognize ``*_avx512.*`` file pattern, add compiler specific AVX512 
+- AVX512: CMake to recognize ``*_avx512b.*`` and ``*_avx512.*`` file pattern, add compiler specific AVX512 
   compile flags accordingly (AVX512 Base and Ice Lake extensions)
 - AVX512 support by conditional define.
   Define `INTEL_INTRINSICS_AVX512` if avx512 modules are enabled and compiler supports it.
+  For MSVC,AVX512 support enabled only from MSVC 2019 16.2 (19.22) or newer.
 - add ``.editorconfig``, update .gitignore to include the new .slnx format of Visual Studio 2026
 - v12 interface: Global Lock support (https://github.com/AviSynth/AviSynthPlus/issues/444), 
   mainly for plugins using common fftw3 library:
@@ -55,7 +57,7 @@ Build environment, Interface
   - added many new AVX512 individual feature flags
   - added ARM64 feature flags CPUF_ARM_NEON, CPUF_ARM_DOTPROD, CPUF_ARM_SVE2
   - CPUF_xxxxx flags are now 64 bit, replace enum with constexpr.
-- CMakeLists.txt: avx512 compile flag support for gcc/clang ("fast" Ice Lake-like feature set).
+- CMakeLists.txt: avx512 compile flag support for gcc/clang ("base" and "fast", latter is Ice Lake-like feature set).
 - V12 interface: ``GetCPUFlagsEx`` returning 64 bit flags (too many AVX512 subfeatures to fit in 32 bit).
   C interface: ``avs_get_cpu_flags_ex``.
   see :ref:`GetCPUFlagsEx<cplusplus_getcpuflagsex>` and :ref:`GetCPUFlags<cplusplus_getcpuflags>`
@@ -111,20 +113,20 @@ Bugfixes
 
 Optimizations
 ~~~~~~~~~~~~~
+- TurnLeft, TurnRight: AVX2 support (1,5-3x speed on i7-11700 compared to SSE2 version)
+- Turn180 AVX2 support (very slight speed gain)
 - Resamplers: 
 
   * introduce a SIMD-like C header (avs_simd_c.h) for smart auto-vectorizing compilers.
   * restore vertical float performance (3.7.4 was slower than 3.7.3) + SSE2 special optimization
   * further optimize verticals, use ``AVS_RESTRICT``
+  * (quicker RGB32/64 horizontal on AVX2 since TurnRigh/Left was optimized - packed RGB H-resize = TurnLeft-V-Resize-TurnRight)
   * optimize SSSE3 and AVX2 horizontal resampler for 32-bit float for small (<=4) kernel sizes
   * optimize 32-bit float vertical avx2
   * add AVX512 code path 
   
     - 32-bit float resamplers, verticals; horizontals up to kernel size 16.
-    - 8-16-bit horizontal resamplers,
-
-      - kernel size <= 4 and specific ratios; 300%+ !!
-      - kernel sizes up to 8 and 16 and specific ratios.
+    - 8-16-bit horizontal resamplers, for kernel size <= 16 and specific ratios; speed gain up to 300%+ (DTL2020)!!
     - 8-16-bit vertical resamplers
   * (Work In Progress) unify horizontal and vertical plane processing flow
 
@@ -151,7 +153,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/01/07 15:19:00 $
+$Date: 2026/01/17 21:50:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

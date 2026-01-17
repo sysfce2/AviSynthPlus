@@ -487,7 +487,10 @@ To test against the default Avisynth+ "fast" flags, test:
 ::
 
     if ((env->GetCPUFlags() & CPUF_AVX512_FAST) == CPUF_AVX512_FAST) {
-        // all "fast" AVX512 features supported
+        // all "fast" AVX512 features supported (in AviSynth: *_avx512.cpp)
+        // function dispatch here
+    } else if ((env->GetCPUFlags() & CPUF_AVX512_BASE) == CPUF_AVX512_BASE)) {
+        // "base" AVX512 features supported (in AviSynth: *_avx512b.cpp)
         // function dispatch here
     } else if (env->GetCPUFlags() & CPUF_AVX2) {
         // AVX2 path
@@ -497,13 +500,27 @@ To test against the default Avisynth+ "fast" flags, test:
         // simple C++ path
     }
 
-In Avisynth - as of end of 2025 -, the AVX512 function dispatchers check for CPUF_AVX512_FAST for calling function from ``*_avx512.cpp`` files.
-Compiler flags for ``*_avx512.cpp`` files are automatically set for MSVC as /arch:AVX512.
-For gcc or LLVM (clang-cl) builds the relevant flags in CMakeLists.txt are set
-as ``"-mfma -mavx512f -mavx512cd -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mavx512vbmi -mavx512vbmi2 -mavx512bitalg -mavx512vpopcntdq "`` .
+In Avisynth AVX512 function dispatchers check for CPUF_AVX512_BASE and CPUF_AVX512_FAST for calling function from 
+``*_avx512b.cpp`` or ``*_avx512.cpp`` files, repectively.
 
-The relevant CPU features for the "Fast" group are: FMA3, AVX512_BASE (F, CD, BW, DQ, Vl) and the "fast avx512" criteria.
+Compiler flags for ``*_avx512b.cpp`` and ``*_avx512.cpp`` files are automatically set for MSVC as ``/arch:AVX512``.
+
+For gcc or LLVM (clang-cl) builds the relevant flags in CMakeLists.txt are set as
+
+* "Base" (``*_avx512b.cpp``) : ``" -mfma -mbmi2 -mavx512f -mavx512cd -mavx512bw -mavx512dq -mavx512vl "``
+* "Fast" (``*_avx512.cpp``) : ``" -mfma -mbmi2 -mavx512f -mavx512cd -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mavx512vbmi -mavx512vbmi2 -mavx512bitalg -mavx512vpopcntdq "``
+
+Similar to AVX2, FMA must be added explicitly for GCC/Clang. We also enable BMI2, as it is standard since AVX2 and useful for 
+AVX512 mask operations like _bzhi_u64/u32. The core subsets (F, CD, BW, DQ, VL) comprising the CPUF_AVX512_BASE 
+flag are present on all AVX-512-capable architectures.
+
+We note again: early Xeon (e.g., Skylake-X/Cascadelake) may exhibit severe thermal throttling even on a single thread. 
+In AviSynth+, AVX512_BASE must be manually enabled in-script unless ``CPUF_AVX512_FAST`` is also detected.
+Functions in ``*_avx512b.cpp`` should be dispatched on ``CPUF_AVX512_BASE``.
+Functions in ``*_avx512.cpp`` should be dispatched on ``CPUF_AVX512_FAST``.
+
 AVX512 is considered to be "Fast" when either 
+
 - pre AVX10, and minimum Ice Lake architecture is found (VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ and three crypto flags).
 - or AVX10 (any version) is found.
 
@@ -2909,7 +2926,7 @@ Intel x86 and AMD64 CPU feature flags
    +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
    | ``CPUF_AVX512VBMI``          | ``0x10000000``     | AVX-512 VBMI, byte/word shuffling, sign/zero extension, and general pixel manipulation                                    |
    +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
-   | ``CPUF_AVX512_BASE``         | ``0x20000000``     | AVX-512 Base group feature set. When F, CD, BW, DQ, VL flags exist                                                        |
+   | ``CPUF_AVX512_BASE``         | ``0x20000000``     | AVX-512 Base group feature set. When F, CD, BW, DQ, VL flags exist. Avisynth sets it only if CPUF_AVX512_FAST exists      |
    +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
    | ``CPUF_AVX512_FAST``         | ``0x40000000``     | Base + VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ. Spec detection logic excludes older/throttling models that also have these   |
    |                              |                    | features                                                                                                                  |
@@ -2934,6 +2951,11 @@ AVX-512 features are grouped into two categories:
 - CPUF_AVX512_BASE: Base (F, CD, BW, DQ, VL)
 - CPUF_AVX512_FAST: The "usable" AVX-512, starting with Intel's 10th gen Ice Lake, incl. AMD Zen4/5. The features Base + (VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ) are guaranteed.
 
+Important note for user of old AVX512 CPUs, where only the Base flags exist (not an Ice Lake or better level CPU): 
+the "Base" group flag ``CPUF_AVX512_BASE`` is not enabled automatically, even if the individual base flags exist!
+The reason is to prevent the AVX512 Base-only optimizations in Avisynth for possibly old AVX512 systems.
+However when users know what they are doing (know they do have non-throttling old CPU), they can enable it with ``SetMaxCPU("avx512base+")``
+
 "Fast" means a usable AVX-512 implementation without severe throttling penalties on client CPUs. It basically guarantees a feature set 
 similar to Intel Ice Lake/Rocket Lake and AMD Zen4/Zen5 and excludes older AVX-512 implementations (Skylake-X, Cascade Lake, Ice Lake-SP) 
 which have severe throttling issues on client CPUs.
@@ -2953,7 +2975,7 @@ Due to the large number of AVX-512 sub-features, the following group and composi
    :align: center
 
    +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
-   | ``CPUF_AVX512_BASE``         | ``0x20000000``     | AVX-512 Base group feature set. When F, CD, BW, DQ, VL flags exist                                                        |
+   | ``CPUF_AVX512_BASE``         | ``0x20000000``     | AVX-512 Base group feature set. When F, CD, BW, DQ, VL flags. Avisynth sets it only if CPUF_AVX512_FAST exists            |
    +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
    | ``CPUF_AVX512_FAST``         | ``0x40000000``     | AVX-512 Advance group FAST (Ice Lake/Rocket Lake/Zen4/Zen5) feature set: Base + VNNI, VBMI, VBMI2, BITALG, VPOPCNTDQ.     |
    +------------------------------+--------------------+---------------------------------------------------------------------------------------------------------------------------+
@@ -2973,7 +2995,10 @@ Due to the large number of AVX-512 sub-features, the following group and composi
     Compiling code solely with checking only ``"avx512base"`` (which often only implies first-generation AVX-512) 
     can lead to poor performance due to aggressive clock throttling on older hardware.
 
-    Developers should generally use ``"avx512fast"`` group as a minimum for realistic performance testing of 512-bit code paths.
+    Developers should generally use ``"avx512fast"`` group in their optimizer function dispatchers, as a minimum for 
+    realistic performance testing of 512-bit code paths. Avisynth (e.g. in resamplers) has both base and fast optimizations
+    implemented. However for accessing the optimizations for "Base" AVX512 on old CPUs, ``SetMaxCPU("avx512base+")`` script 
+    command must be used to re-enable AVX512 on these systems.
 
 
 .. note::
