@@ -43,10 +43,8 @@
     #include <avs/win.h>
     #include <initguid.h>
     #include <vfw.h>
-    #include <intrin.h>
 #else
     #include <avs/posix.h>
-    #include <x86intrin.h>
 #endif
 
 #include <avs/minmax.h>

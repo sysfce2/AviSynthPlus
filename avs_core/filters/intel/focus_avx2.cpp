@@ -40,11 +40,11 @@
 
 // Intrinsics base header + really required extension headers
 #if defined(_MSC_VER)
-#include <intrin.h> // MSVC, Clang-CL, and Intel C++ (in MSVC mode)
-#include <immintrin.h> // MS version of immintrin.h covers AVX, AVX2 and FMA3
+#include <intrin.h> // MSVC
 #else 
-#include <x86intrin.h> // GCC/MinGW, Clang (Linux/GNU mode), and Intel C++ (in non-MSVC mode) (__GNUC__, __clang__, __INTEL_COMPILER, etc.)
+#include <x86intrin.h> // GCC/MinGW/Clang/LLVM
 #endif
+#include <immintrin.h>
 
 #if !defined(__FMA__)
 // Assume that all processors that have AVX2 also have FMA3

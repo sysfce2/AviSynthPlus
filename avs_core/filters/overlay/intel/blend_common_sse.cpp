@@ -42,12 +42,10 @@
 
 // Intrinsics base header + really required extension headers
 #if defined(_MSC_VER)
-#include <intrin.h> // MSVC, Clang-CL, and Intel C++ (in MSVC mode)
+#include <intrin.h> // MSVC
 #else 
-#include <x86intrin.h> // GCC/MinGW, Clang (Linux/GNU mode), and Intel C++ (in non-MSVC mode) (__GNUC__, __clang__, __INTEL_COMPILER, etc.)
+#include <x86intrin.h> // GCC/MinGW/Clang/LLVM
 #endif
-#include <emmintrin.h> // SSE2
-#include <tmmintrin.h> // SSSE3
 #include <smmintrin.h> // SSE4.1
 
 #include <stdint.h>
@@ -390,37 +388,6 @@ typedef   __m64 (OverlayMmxCompare)(const __m64&, const __m64&, const __m64&);
 
 typedef int (OverlayCCompare)(BYTE, BYTE);
 
-template<typename pixel_t, bool darken /* OverlayCCompare<pixel_t> compare*/>
-AVS_FORCEINLINE void overlay_darklighten_c(BYTE *p1Y_8, BYTE *p1U_8, BYTE *p1V_8, const BYTE *p2Y_8, const BYTE *p2U_8, const BYTE *p2V_8, int p1_pitch, int p2_pitch, int width, int height) {
-  pixel_t* p1Y = reinterpret_cast<pixel_t *>(p1Y_8);
-  pixel_t* p1U = reinterpret_cast<pixel_t *>(p1U_8);
-  pixel_t* p1V = reinterpret_cast<pixel_t *>(p1V_8);
-
-  const pixel_t* p2Y = reinterpret_cast<const pixel_t *>(p2Y_8);
-  const pixel_t* p2U = reinterpret_cast<const pixel_t *>(p2U_8);
-  const pixel_t* p2V = reinterpret_cast<const pixel_t *>(p2V_8);
-
-  // pitches are already scaled
-  //p1_pitch /= sizeof(pixel_t);
-  //p2_pitch /= sizeof(pixel_t);
-
-  for (int y = 0; y < height; y++) {
-    for (int x = 0; x < width; x++) {
-      int mask = darken ? (p2Y[x] <= p1Y[x]) : (p2Y[x] >= p1Y[x]); // compare(p1Y[x], p2Y[x]);
-      p1Y[x] = overlay_blend_opaque_c_core<pixel_t>(p1Y[x], p2Y[x], mask);
-      p1U[x] = overlay_blend_opaque_c_core<pixel_t>(p1U[x], p2U[x], mask);
-      p1V[x] = overlay_blend_opaque_c_core<pixel_t>(p1V[x], p2V[x], mask);
-    }
-
-    p1Y += p1_pitch;
-    p1U += p1_pitch;
-    p1V += p1_pitch;
-
-    p2Y += p2_pitch;
-    p2U += p2_pitch;
-    p2V += p2_pitch;
-  }
-}
 
 #ifdef X86_32
 template<OverlayMmxCompare compare, OverlayCCompare compare_c>

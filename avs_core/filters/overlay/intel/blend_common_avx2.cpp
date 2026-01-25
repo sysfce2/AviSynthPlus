@@ -38,11 +38,12 @@
 
 #include <stdint.h>
 
-#ifdef AVS_WINDOWS
+#ifdef _MSC_VER
 #include <intrin.h>
 #else
 #include <x86intrin.h>
 #endif
+#include  <immintrin.h>
 
 template<typename pixel_t>
 static AVS_FORCEINLINE __m256 Eightpixels_to_floats(const pixel_t* src) {

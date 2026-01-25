@@ -36,11 +36,12 @@
 #include <avs/alignment.h>
 #include <avs/minmax.h>
 
-#ifdef AVS_WINDOWS
+#ifdef _MSC_VER
     #include <intrin.h>
 #else
     #include <x86intrin.h>
 #endif
+#include <immintrin.h>
 
 #ifndef _mm256_set_m128i
 #define _mm256_set_m128i(v0, v1) _mm256_insertf128_si256(_mm256_castsi128_si256(v1), (v0), 1)
@@ -60,9 +61,6 @@
 #endif
 
 template<typename pixel_t, bool chroma, bool fulls, bool fulld>
-#if defined(GCC) || defined(CLANG)
-__attribute__((__target__("avx2")))
-#endif
 void convert_32_to_uintN_avx2(const BYTE *srcp, BYTE *dstp, int src_rowsize, int src_height, int src_pitch, int dst_pitch, int source_bitdepth, int target_bitdepth, int dither_target_bitdepth)
 {
   const float* srcp0 = reinterpret_cast<const float*>(srcp);

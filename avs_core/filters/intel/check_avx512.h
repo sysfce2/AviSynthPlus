@@ -37,8 +37,7 @@
 
 // Important note: do not include this header from non-avx512 cpp files.
 
-#include <immintrin.h> // includes AVX, AVX2, FMA3, AVX512F, AVX512BW, etc. for MSVC, Clang, and GCC
-
+#include <immintrin.h> // includes all intel intrinsics headers
 // GCC/clang compiler flags for matching CPUF_AVX512_FAST:
 // " -mfma -mavx512f -mavx512cd -mavx512bw -mavx512dq -mavx512vl -mavx512vnni -mavx512vbmi -mavx512vbmi2 -mavx512bitalg -mavx512vpopcntdq "
 

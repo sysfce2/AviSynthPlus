@@ -36,13 +36,11 @@
 #include "turn_avx2.h"
 
 #if defined(_MSC_VER)
-#include <intrin.h> // MSVC, Clang-CL, and Intel C++ (in MSVC mode)
-#include <emmintrin.h>
-#include <smmintrin.h>
-#include <immintrin.h> // MS version of immintrin.h covers AVX, AVX2 and FMA3
+#include <intrin.h> // MSVC
 #else 
-#include <x86intrin.h> // GCC/MinGW, Clang (Linux/GNU mode), and Intel C++ (in non-MSVC mode) (__GNUC__, __clang__, __INTEL_COMPILER, etc.)
+#include <x86intrin.h> // GCC/MinGW/Clang/LLVM
 #endif
+#include <immintrin.h>
 
 #include <cstdint>
 

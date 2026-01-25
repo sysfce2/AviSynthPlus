@@ -36,11 +36,12 @@
 
 
 #include <avs/alignment.h>
-#ifdef AVS_WINDOWS
+#ifdef _MSC_VER
     #include <intrin.h>
 #else
     #include <x86intrin.h>
 #endif
+#include <immintrin.h>
 
 #include "convert_planar_avx2.h"
 

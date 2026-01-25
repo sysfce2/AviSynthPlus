@@ -33,11 +33,12 @@
 // import and export plugins, or graphical user interfaces.
 
 #include <avs/alignment.h>
-#ifdef AVS_WINDOWS
+#ifdef _MSC_VER
     #include <intrin.h>
 #else
     #include <x86intrin.h>
 #endif
+#include <immintrin.h>
 
 #ifndef _mm256_set_m128i
 #define _mm256_set_m128i(v0, v1) _mm256_insertf128_si256(_mm256_castsi128_si256(v1), (v0), 1)
