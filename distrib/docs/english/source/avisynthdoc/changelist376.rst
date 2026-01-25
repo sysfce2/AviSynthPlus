@@ -64,6 +64,7 @@ Build environment, Interface
 - V12 interface: L2 cache size query support. New entry in ``AvsEnvProperty``: ``AEP_CACHESIZE_L2`` (C++), 
   ``AVS_AEP_CACHESIZE_L2`` (C) to query L2 cache size in bytes with ``IScriptEnvironment->GetEnvProperty()``. 
   x86/x64 architecture only for now. See :ref:`AvsEnvProperty<cplusplus_getenvproperty>` .
+
 - Refactor CMakeLists.txt: 
 
   * Correct default of ``ENABLE_INTEL_SIMD`` for cross-compiling scenarios (e.g. ``ARM64`` target on ``x86_64`` host)
@@ -148,6 +149,8 @@ Documentation
 - Update :ref:`SetMaxCPU <setmaxcpu>` with AVX512 and ARM64 features
 - Update :ref:`AvsEnvProperty<cplusplus_getenvproperty>` with L2 cache size entry
 - Update Russian GPL notice in UTF-8 format
+- Add another Ubuntu->Windows DLL cross-compilation guide:
+  See :ref:`Ubuntu->Windows mingw crosscompilation<compiling_avsplus_crosscompiling2>`
 
 
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+

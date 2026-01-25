@@ -832,9 +832,10 @@ Now, without leaving the MinGW64 prompt, package the binaries up in a 7zip archi
     mv $HOME/avisynth+_build $HOME/$AVSDIRNAME && \
     7za a -mx9 ~/$AVSDIRNAME.7z ~/$AVSDIRNAME
 
+.. _compiling_avsplus_crosscompiling1:
 
-Cross-compiling with GCC
-~~~~~~~~~~~~~~~~~~~~~~~~
+Cross-compiling with GCC (Version #1)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 For ease of explanation, we'll assume Ubuntu Linux.  The method to cross-compile under
 most distributions is largely the same, so don't worry about that.
@@ -873,6 +874,451 @@ Download the source code and prepare the build directories:
     ninja && \
     ninja install
 
+.. _compiling_avsplus_crosscompiling2:
+
+Cross-compiling with GCC (Version #2)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**AviSynth+ cross-compilation Guide (On Ubuntu to create Windows, MinGW-w64)**
+
+**Using POSIX-threaded MinGW toolchains (x86 and x64)**
+
+This document describes how to cross‑compile **AviSynth+** for **Windows 32-bit (x86)** and 
+**Windows 64-bit (x64)** from a Linux (Ubuntu) system using the **MinGW-w64 GCC** toolchain.
+
+The guide includes fixes for:
+
+*   `std::mutex` / POSIX thread model issues
+*   CMake/Ninja RPATH errors
+*   32-bit vs. 64-bit toolchain selection
+*   SSE2/MMX intrinsic mismatches
+*   Packaging and dependency notes
+
+This guide is verified against Ubuntu 22.04 and MinGW-w64 POSIX compilers.
+
+
+1. Overview
+...........
+
+AviSynth+ uses C++11 threading primitives (e.g. `std::mutex`, `std::thread`), which require
+the **POSIX** flavor of MinGW-w64. 
+Ubuntu provides separate cross-compilers for:
+
+*    i686-w64-mingw32        => 32-bit Windows target
+*    x86_64-w64-mingw32      => 64-bit Windows target
+
+Ubuntu MinGW packages are not multilib; the 64-bit compiler cannot build 32-bit code.
+You must use **two toolchains**.
+
+2. Prerequisites
+................
+
+Install all needed packages:
+
+.. code-block:: bash
+
+    sudo apt update \
+    sudo apt install git cmake ninja-build mingw-w64 p7zip-full
+
+Ninja is used for fast builds; p7zip is recommended for the final package.
+
+3. About the POSIX Threading Model
+..................................
+
+MinGW-w64 provides two threading backends:
+
+*   **win32** (default on older distros)
+*   **posix** (required for `std::mutex` and modern C++ threading)
+
+Even on modern systems, *you must explicitly use the POSIX compiler variants*:
+
+*    i686-w64-mingw32-g++-posix
+*    x86_64-w64-mingw32-g++-posix
+
+You may *optionally* configure update-alternatives:
+
+.. code-block:: bash
+
+    sudo update-alternatives --set i686-w64-mingw32-gcc /usr/bin/i686-w64-mingw32-gcc-posix \
+    sudo update-alternatives --set i686-w64-mingw32-g++ /usr/bin/i686-w64-mingw32-g++-posix \
+    sudo update-alternatives --set x86\_64-w64-mingw32-gcc /usr/bin/x86\_64-w64-mingw32-gcc-posix \
+    sudo update-alternatives --set x86\_64-w64-mingw32-g++ /usr/bin/x86\_64-w64-mingw32-g++-posix
+
+.. note::
+   **This is optional.**
+   The CMake commands below explicitly select the correct compilers, so you do **not** need to modify system defaults.
+
+4. Get the Source
+.................
+
+And create a reproducible output directory name.
+
+.. code-block:: bash
+
+    git clone https://github.com/AviSynth/AviSynthPlus \
+    cd AviSynthPlus \
+    mkdir -p avisynth-build/i686 avisynth-build/amd64 \
+    AVSDIRNAME=avisynth+-gcc\_r$(git rev-list --count HEAD)-g$(git rev-parse --short HEAD)-$(date +%Y%m%d)
+
+5. Build for 32-bit Windows (i686)
+..................................
+
+AviSynth+ internally applies SIMD and intrinsic flags based on `CMAKE_SYSTEM_PROCESSOR`.  
+To avoid “target-specific option mismatch” errors, explicitly set it to `i686`.
+
+Ubuntu MinGW is not multilib, so you **must use** the dedicated 32-bit toolchain.
+
+.. code-block:: bash
+
+    cd avisynth-build/i686
+
+    cmake ../../ -G Ninja \
+    -DCMAKE\_SYSTEM\_NAME=Windows \
+    -DCMAKE\_SYSTEM\_PROCESSOR=i686 \
+    -DCMAKE\_BUILD\_TYPE=Release \
+    -DCMAKE\_SKIP\_RPATH=TRUE \
+    -DCMAKE\_INSTALL\_PREFIX="$HOME/avisynth+\_build/32bit" \
+    -DCMAKE\_C\_COMPILER=i686-w64-mingw32-gcc-posix \
+    -DCMAKE\_CXX\_COMPILER=i686-w64-mingw32-g++-posix \
+    -DBUILD\_SHIBATCH:BOOL=off
+
+    ninja
+    ninja install
+
+Notes
+^^^^^
+
+*   `CMAKE_SKIP_RPATH=TRUE` eliminates CMake/Ninja install-RPATH relinking failures.
+*   SSE2 is always enabled via AviSynth+ internal logic for 32-bit builds.
+
+6. Build for 64-bit Windows (x86\_64)
+.....................................
+
+.. code-block:: bash
+
+    cd ../amd64
+
+    cmake ../../ -G Ninja \
+      -DCMAKE_SYSTEM_NAME=Windows \
+      -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_SKIP_RPATH=TRUE \
+      -DCMAKE_INSTALL_PREFIX="$HOME/avisynth+_build/64bit" \
+      -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix \
+      -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix \
+      -DBUILD_SHIBATCH:BOOL=off
+
+    ninja
+    ninja install
+
+
+Notes
+^^^^^
+
+*   All x86-64 CPUs support SSE2, so no special flags are required.
+*   POSIX compiler ensures correct C++11 threading.
+
+7. Packaging
+............
+
+.. code-block:: bash
+
+    cd \~ \
+    mv avisynth+\_build "$AVSDIRNAME" \
+    7za a -mx9 "$AVSDIRNAME.7z" "$AVSDIRNAME"
+
+You now have:
+
+    <name>.7z
+        /32bit  → aviynth.dll + includes + plugins
+        /64bit  → same for x64
+
+8. Runtime Dependencies
+.......................
+
+POSIX thread model dependency
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Builds produced with the POSIX toolchain require:
+
+    libwinpthread-1.dll
+
+This is expected and normal.
+
+Place this DLL next to `avisynth.dll` or ship it with your application.
+
+Static linking
+^^^^^^^^^^^^^^
+
+To produce a DLL with no external MinGW dependencies, you can try forcing the linker to use static archives. 
+Note that this may require specific library files to be present in your Ubuntu environment.
+
+.. code-block:: bash
+
+   # Add these to your CMake command:
+   -DCMAKE_CXX_FLAGS="-static-libgcc -static-libstdc++" \
+   -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-Bstatic -lstdc++ -lwinpthread -Wl,-Bdynamic"
+
+**This is advanced.** Fully static POSIX builds are fragile on Ubuntu. If the linker cannot 
+find ``libwinpthread.a``, the build will fail. Additionally, static linking in a DLL can cause 
+issues with memory management if plugins also statically link their runtimes.
+
+Shipping libwinpthread-1.dll alongside avisynth.dll is the recommended and most stable approach.
+
+9. Known Pitfalls and Fixes
+...........................
+
+9.1 Ninja RPATH errors
+^^^^^^^^^^^^^^^^^^^^^^
+
+
+If you see:
+
+    The install of <target> requires changing an RPATH ...
+    not supported with Ninja ...
+
+Always ensure:
+
+    -DCMAKE_SKIP_RPATH=TRUE
+
+This avoids relinking steps which do not apply to Windows binaries.
+
+9.2 Intrinsic "Target specific option mismatch" errors
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Occurs when the CPU type is not set properly.
+
+Fix: set
+
+    -DCMAKE_SYSTEM_PROCESSOR=i686
+
+for 32-bit builds.
+
+9.3 Mixing win32 and posix toolchains
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Never mix:
+
+*    i686-w64-mingw32-g++   (win32 threading)
+*    i686-w64-mingw32-g++-posix  (POSIX threading)
+
+This causes:
+
+*   Missing `std::mutex`
+*   ABI mismatches
+*   Linker errors involving `dllimport` or winpthreads
+
+9.4 Redefinition of CRT functions (`_strlwr`, `_strupr`, etc.)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+MinGW-w64 already provides these.
+When you encounter this, MINGW was not properly detected by CMake, for example
+due to a missing `-DCMAKE_SYSTEM_NAME=Windows`. Normally, the directory of 
+compatibility string util helpers is omitted.
+
+If still building AviSynth+ with a compatibility layer, guard the definitions using:
+
+.. code-block::
+
+    #if !defined(MINGW32) && !defined(MINGW64)
+    /* custom implementations */
+    #endif
+
+10. **Understanding "Install" During Cross-Compilation**
+........................................................
+
+When building AviSynth+ for Windows using a Linux host system (Ubuntu), `ninja install` may 
+appear confusing at first - after all, **Ubuntu cannot load or execute Windows DLLs**.
+However, the *install* step in a cross-compilation context **does not mean installing software 
+on Ubuntu**. Instead, it serves a very different and critically important purpose.
+
+This section explains **what the install step really does**, **why it is needed**, and **how it fits into the cross-compile workflow**.
+
+10.1. What “Install” *Does NOT* Mean
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+It does **not** mean any of the following:
+
+*   Installing AviSynth+ into Ubuntu’s system libraries
+*   Making Ubuntu able to load or use AviSynth.dll
+*   Registering anything system-wide
+*   Enabling AviSynth+ on Linux
+
+None of that happens.
+
+Ubuntu cannot run or link Windows binaries; the Windows DLLs are **not** for the host system at all.
+
+10.2. What “Install” *Actually Means* in Cross‑Compilation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In a cross-build scenario, the install step simply:
+
+**Creates a Windows-style filesystem layout inside a directory on Linux**
+
+This includes folders like:
+
+*    bin/         → Windows executables and DLLs  
+*    lib/         → import libraries, pkgconfig files  
+*    include/     → headers for Windows development  
+*    lib/avisynth/ → internal plugins  
+
+**Collects all produced build artifacts in one clean prefix**
+
+Instead of having binaries scattered through CMake’s intermediate directories, the install step:
+
+*   copies the DLL
+*   copies import libraries (`.dll.a`)
+*   copies headers
+*   copies built‑in plugins
+*   creates `pkgconfig` files
+
+into the exact structure expected by Windows build systems.
+
+**Produces the folder you will later package or ship to Windows**
+
+Your install prefix:
+
+    ``$HOME/avisynth+_build/64bit/``
+
+is not a Linux installation - it is a **staging directory** representing what would be a real 
+installation on a Windows filesystem.
+
+You can zip or 7-zip this folder and distribute it.
+
+10.3. Why "Install" Is Required
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+**(A) To build a proper Windows release**
+
+AviSynth+, FFmpeg, Qt, LLVM, and almost all cross-built libraries **use the install phase** 
+to generate their final, distributable layout.
+
+This ensures your release archive has:
+
+*   the correct include paths
+*   the correct lib paths
+*   the correct bin path
+*   consistent plugin locations
+*   accurate metadata (`pkgconfig`, `version.h`, etc.)
+
+**(B) To separate build artifacts from install artifacts**
+
+The **build tree** contains:
+
+*   temporary object files
+*   CMake intermediate files
+*   Ninja rules
+*   dependency databases
+*   incremental build caches
+
+This tree is **not a clean or portable output**.
+  
+The install tree is.
+
+**(C) For dependent projects to find AviSynth+**
+
+If someone cross-compiles a project that depends on AviSynth+, it can use:
+
+.. code-block:: bash
+
+   pkg-config --cflags --libs avisynth``
+
+This only works because the install step generates:
+
+    ``lib/pkgconfig/avisynth.pc``
+
+containing the correct Windows paths.
+
+**(D) For plugin builds**
+
+Plugins expect:
+::
+
+    include/avisynth/...
+    lib/AviSynth.dll.a
+
+These are only collected during *install*.
+
+10.4. Example: Installed Output Structure
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+After:
+
+.. code-block:: bash
+
+   ninja install
+
+You get something like (in your home directory ~):
+::
+
+    avisynth+_build/64bit/
+    ├── bin/
+    │   └── AviSynth.dll
+    ├── lib/
+    │   ├── AviSynth.dll.a
+    │   └── pkgconfig/
+    │       └── avisynth.pc
+    ├── include/
+    │   └── avisynth/
+    │       ├── avisynth.h
+    │       ├── avs/
+    │       └── ...
+    └── lib/avisynth/
+        ├── ConvertStacked.dll
+        └── ConvertStacked.dll.a
+
+And similarly, for 32bit.
+
+Everything here is intended to be **copied to Windows**, not used on Ubuntu.
+
+10.5. What Happens If You Skip `ninja install`?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+You would be left with:
+
+*   scattered build outputs
+*   missing import libraries
+*   missing pkgconfig file
+*   missing plugin installation
+*   headers buried in the source tree
+
+Your build would not be package‑ready.
+
+In short: *you could not produce a proper Windows release.*
+
+10.6. Summary
+^^^^^^^^^^^^^
+
+The install step is **not installation on Ubuntu**.  
+It is:
+
+**“Exporting the Windows build into a clean, structured staging directory.”**
+
+This directory is then:
+
+*   packaged (e.g., `.7z` or `.zip`)
+*   used by plugin developers
+*   consumed by downstream Windows projects
+*   deployed to real Windows systems
+
+It is an essential part of cross‑compiling AviSynth+.
+
+11. Summary
+...........
+
+This guide provides a **fully correct, stable, reproducible** method to build AviSynth+ for Windows on Ubuntu.  
+It works reliably for:
+
+*   Modern C++17 build environments
+*   Both 32-bit and 64-bit Windows
+*   Ninja + CMake workflows
+*   POSIX-threaded MinGW toolchains
+
+.. warning::
+
+    **Note on ABI compatibility**: This build uses the MinGW-w64 (GCC) ABI. While it is fully compatible with the 
+    AviSynth C-API and most existing plugins, it is not binary-compatible with C++ plugins compiled 
+    specifically for the MSVC ABI.
 
 Finishing up
 ............
@@ -886,4 +1332,4 @@ Packaging:
 
 Back to the :doc:`main page <../../index>`
 
-$ Date: 2025-11-20 16:07:00 +01:00 $
+$ Date: 2026-01-25 21:00:00 +01:00 $
