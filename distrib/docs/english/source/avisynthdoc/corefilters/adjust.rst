@@ -71,9 +71,10 @@ and 255 (8 bit case).
   When set to true, `ordered dithering`_ is applied when doing the adjustment.
   Parameter is ignored for 32 bit float color spaces 
 
-.. describe:: bool  conditional = false
+.. describe:: bool conditional = false
 
-  If true, the global variables "rgbadjust_xxx" with xxx = 
+  If true, the global variables "rgbadjust_xxx" with xxx =
+
   * ``r``, ``g``, ``b``, ``a``, 
   * ``rb``, ``gb``, ``bb``, ``ab``, 
   * ``rg``, ``gg``, ``bg``, ``ag``

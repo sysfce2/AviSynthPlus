@@ -36,7 +36,8 @@ ConvertToXXXX function
 
     ConvertToPlanarRGB(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
-         string chromaresample ] )
+         string chromaresample,
+         float param1, float param2, float param3 ] )
     ConvertToPlanarRGBA(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
          string chromaresample,
