@@ -1090,9 +1090,11 @@ void PreRendered::make_outline() {
     *dst = left | right;
     };
 
-#ifdef MSVC_PURE
+#if defined(_MSC_VER) && _MSC_VER < 1944
   // MSVC's optimizer fail (as of 17.8.4, release, optimize for speed, SSE2) would
-  // Workaround. Bad code generated. Compiler bug. Fixed (said) in 17.9 preview 3
+  // Workaround. Bad code generated. Compiler bug.
+  // Fixed (said) in 17.9 preview 3 (_MSC_VER 1939)
+  // Tested again in 17.14 (_MSC_VER 1944), it's OK.
   // https://developercommunity.visualstudio.com/t/Bad-c-codegen-in-1784-x64-unless-se/10565370
   volatile uint8_t* src_prev;
   volatile uint8_t* src;
