@@ -87,9 +87,6 @@ static AVS_FORCEINLINE __m256i convert_yuv_to_rgb_avx2_core(const __m256i& px018
 }
 
 template<int rgb_pixel_step, bool hasAlpha>
-#if defined(GCC) || defined(CLANG)
-__attribute__((__target__("avx2")))
-#endif
 void convert_yv24_to_rgb_avx2(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, const BYTE* srcV, const BYTE* srcA, size_t dst_pitch, size_t src_pitch_y, size_t src_pitch_uv, size_t src_pitch_a, size_t width, size_t height, const ConversionMatrix& matrix)
 {
   dstp += dst_pitch * (height - 1);  // We start at last line
@@ -260,9 +257,6 @@ template void convert_yv24_to_rgb_avx2<4, true>(BYTE* dstp, const BYTE* srcY, co
 
 
 template<int bits_per_pixel>
-#if defined(GCC) || defined(CLANG)
-__attribute__((__target__("avx2")))
-#endif
 void convert_planarrgb_to_yuv_uint16_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m)
 {
   // generic for 10-16 bit uint16 
