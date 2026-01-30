@@ -74,19 +74,10 @@ void convert_planarrgb_to_yuv_uint16_sse41(BYTE *(&dstp)[3], int (&dstPitch)[3],
 template<int bits_per_pixel>
 void convert_planarrgb_to_yuv_uint16_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m);
 
-template<typename pixel_t, int bits_per_pixel>
-void convert_yuv_to_planarrgb_uint8_14_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m);
+template<typename pixel_t, bool lessthan16bit>
+void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m, const int bits_per_pixel);
 
 void convert_yuv_to_planarrgb_float_sse2(BYTE *(&dstp)[3], int(&dstPitch)[3], const BYTE *(&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix &m);
-
-template<int bits_per_pixel>
-#if defined(GCC) || defined(CLANG)
-__attribute__((__target__("sse4.1")))
-#endif
-void convert_yuv_to_planarrgb_uint16_sse41(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m);
-
-template<int bits_per_pixel>
-void convert_yuv_to_planarrgb_uint16_sse2(BYTE *(&dstp)[3], int(&dstPitch)[3], const BYTE *(&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix &m);
 
 template<int rgb_pixel_step, bool hasAlpha>
 #if defined(GCC) || defined(CLANG)

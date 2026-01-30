@@ -1034,29 +1034,85 @@ template void convert_planarrgb_to_yuv_uint16_sse2<12>(BYTE* (&dstp)[3], int(&ds
 template void convert_planarrgb_to_yuv_uint16_sse2<14>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m);
 template void convert_planarrgb_to_yuv_uint16_sse2<16>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m);
 
+/* Why 13 bit shift:
+ * 13-bit fixed point integer arithmetic for YUV->RGB conversion
+ * We use 13-bit fractional precision (scaling coefficients by 8192) because:
+ * * 1. MADD Constraints: To use _mm_madd_epi16, coefficients must fit in int16.
+ * At 13-bit, a coefficient of 1.596 becomes 13074 (Safe).
+ * At 15-bit, it would be 52297 (Overflows int16).
+ * * 2. Accumulation Headroom: The intermediate 32-bit sum must not overflow.
+ * Max product (16-bit pixel * 13-bit coeff) = 2^29.
+ * Summing Y, U, V components + rounding constant (4 * 2^29) = 2^31.
+ * This fills almost up a signed int32 without overflowing into the sign bit.
+ * 14-bit or 15-bit fractional precision would cause artifacts on 16-bit pixels.
+ * */
 
-template<typename pixel_t, int bits_per_pixel>
-void convert_yuv_to_planarrgb_uint8_14_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m)
+
+template<typename pixel_t, bool lessthan16bit>
+void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m, const int bits_per_pixel)
 {
   // 8 bit        uint8_t
   // 10,12,14 bit uint16_t (signed range)
+  // 16 bit logic:
+  /*
+    1. pivot the pixel:
+      Convert uint16 pixel Y to a signed int16 by flipping the MSB (this is mathematically identical to Y−32768).
+        0 becomes −32768.
+        65535 becomes 32767.
+        All values now fit in int16 without saturation.
+    2. reorganize the formula (offset is negative when exists, e.g. -4096):
+       Original: (Y + offset_y) * Cy
+       Substitute
+       Y = (Ysigned​ + 32768)
+       => (Ysigned​ + 32768 + offset_y) * Cy​
+       => (Ysigned​ * Cy​) + (32768 + offset_y) * Cy​)
+    3. correction after the madd section:
+       Add ((32768 + offset_y) * Cy​) to the existing 32-bit rounding/offset constant.
+    4. Output rgb offset is also added to the precalculated patch.
+  */
+
   __m128i half = _mm_set1_epi16((short)(1 << (bits_per_pixel - 1)));  // 128
   __m128i limit = _mm_set1_epi16((short)((1 << bits_per_pixel) - 1)); // 255
   __m128i offset = _mm_set1_epi16((short)(m.offset_y));
-  
+
   // to be able to use it as signed 16 bit in madd; 4096+(16<<13) would not fit into i16
   // multiplier is 4096 instead of 1:
   // original   : 1      * 4096
   // needed     : 1      * (4096 + offset_rgb<<13)  (4096 + 131072 overflows i16)
   // changed to : 4096   * (1 + offset_rgb>>(13-1)
-  const int round_scale = 4096; // 1 << 12
-  const int round_mask_plus_rgb_offset_scaled_i = (4096 + (m.offset_rgb << 13)) / round_scale;
+  // Except for exact 16 bit, where we do the output offset adjustment along with the 16 bit signed-unsigned pivot fix
+  constexpr int ROUND_SCALE = 4096; // 1 << 12, for 13 bit integer arithmetic: "0.5"
+
+  int round_mask_plus_rgb_offset_scaled_i;
+  __m128i v_patch_G, v_patch_B, v_patch_R;
+  __m128i sign_flip_mask = _mm_set1_epi16((short)0x8000); // for 16 bit pivot
+
+  if constexpr (lessthan16bit) {
+    // 8-14 bit
+    round_mask_plus_rgb_offset_scaled_i = (4096 + (m.offset_rgb << 13)) / ROUND_SCALE;
+    v_patch_G = v_patch_B = v_patch_R = _mm_setzero_si128(); // No patch needed
+  }
+  else {
+    // exact 16 bit
+    // keep madd simple: only handle the rounding (ROUND_SCALE * 1)
+    round_mask_plus_rgb_offset_scaled_i = 1; // effectively 1
+
+    // move BOTH the pivot and the output RGB offset to the 32-bit patch
+    // Since we have to do the patching anyway, we can combine both adjustments here
+    const int luma_pivot = 32768 + m.offset_y;
+    const int rgb_out_offset = (m.offset_rgb << 13);
+
+    // total patch = (pivot * coeff) + output RGB offset
+    v_patch_G = _mm_set1_epi32(luma_pivot * m.y_g + rgb_out_offset);
+    v_patch_B = _mm_set1_epi32(luma_pivot * m.y_b + rgb_out_offset);
+    v_patch_R = _mm_set1_epi32(luma_pivot * m.y_r + rgb_out_offset);
+  }
 
   __m128i zero = _mm_setzero_si128();
 
   const int rowsize = width * sizeof(pixel_t);
   for (int yy = 0; yy < height; yy++) {
-    // if not mod16 then still no trouble, process non-visible pixels, we have 32 byte aligned in avs+
+    // if not mod16 then still no trouble, process non-visible pixels, we have 64 byte aligned in avs+
     for (int x = 0; x < rowsize; x += 8 * sizeof(pixel_t)) {
       __m128i res1, res2;
       __m128i m_uy, m_vR; // bg=uy rR=vR, g=y b=u r=v R=rounding
@@ -1069,19 +1125,46 @@ void convert_yuv_to_planarrgb_uint8_14_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3]
         u = _mm_unpacklo_epi8(_mm_loadl_epi64(reinterpret_cast<const __m128i *>(srcp[1] + x)), zero);
         v = _mm_unpacklo_epi8(_mm_loadl_epi64(reinterpret_cast<const __m128i *>(srcp[2] + x)), zero);
       }
-      else { // uint16_t pixels, 14 bits OK, but 16 bit pixels are unsigned, cannot madd
+      else { // uint16_t pixels, 10-16 bits
         y = _mm_load_si128(reinterpret_cast<const __m128i *>(srcp[0] + x));
         u = _mm_load_si128(reinterpret_cast<const __m128i *>(srcp[1] + x));
         v = _mm_load_si128(reinterpret_cast<const __m128i *>(srcp[2] + x));
       }
-      y = _mm_adds_epi16(y, offset); // offset is negative
-      u = _mm_subs_epi16(u, half);
-      v = _mm_subs_epi16(v, half);
+
+      // exact 16 bit workaround
+      if constexpr (lessthan16bit) {
+        y = _mm_adds_epi16(y, offset); // offset is negative
+        u = _mm_subs_epi16(u, half); // subs, though integer formats compulsory have clamped values for their bitness range
+        v = _mm_subs_epi16(v, half);
+      } else {
+        // pivot the luma, adjust the offset separately
+        // make unsigned to signed by flipping MSB
+        y = _mm_xor_si128(y, sign_flip_mask); // flip MSB; y - 32768
+        u = _mm_sub_epi16(u, half); // no saturation here
+        v = _mm_sub_epi16(v, half);
+      }
       /*
+      // for 8-14 bits Y is already offset adjusted: Y = Y_orig + offset (offset is negative)
       // int b = (((int64_t)matrix.y_b * Y + (int64_t)matrix.u_b * U + (int64_t)matrix.v_b * V + 4096)>>13);
       // int g = (((int64_t)matrix.y_g * Y + (int64_t)matrix.u_g * U + (int64_t)matrix.v_g * V + 4096)>>13);
       // int r = (((int64_t)matrix.y_r * Y + (int64_t)matrix.u_r * U + (int64_t)matrix.v_r * V + 4096)>>13);
+
+      // Exact 16 bit:
+      // int b = (((int64_t)matrix.y_b * (Y_orig + offset) + (int64_t)matrix.u_b * U + (int64_t)matrix.v_b * V + 4096)>>13);
+      // int b = (((int64_t)matrix.y_b * Y_orig +
+                   (int64_t)matrix.y_b * offset +
+                   (int64_t)matrix.u_b * U + (int64_t)matrix.v_b * V + 4096)>>13);
+      // int b = (((int64_t)matrix.y_b * Y_signed + // where Y_signed = Y_orig - 32768
+                   (int64_t)matrix.y_b * offset +
+                   (int64_t)matrix.y_b * 32768 +  // pivot adjustment
+                   (int64_t)matrix.u_b * U + (int64_t)matrix.v_b * V + 4096)>>13);
+      // int b = (((int64_t)matrix.y_b * Y_signed +
+                   (int64_t)matrix.u_b * U + (int64_t)matrix.v_b * V + 4096 // so far the original madd'ed parts
+                   (int64_t)matrix.y_b * (offset + 32768)  // adjustment
+                   )>>13);
+
       */
+      // for 16 bit, the rgb_offset is merged into the patch adjustment
       // Need1:  (m.y_b   m.u_b )     (m.y_b   m.u_b)     (m.y_b   m.u_b)     (m.y_b   m.u_b)   8x16 bit
       //         (  y3      u3  )     (  y2      u2 )     (  y1      u1 )     (   y0     u0 )   8x16 bit
       // res1=  (y_b*y3 + u_b*u3)   ...                                                         4x32 bit
@@ -1094,23 +1177,42 @@ void convert_yuv_to_planarrgb_uint8_14_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3]
 
       uy0123 = _mm_unpacklo_epi16(u, y);
       res1 = _mm_madd_epi16(m_uy, uy0123);
-      xv0123 = _mm_unpacklo_epi16(v, _mm_set1_epi16(round_scale));
+      xv0123 = _mm_unpacklo_epi16(v, _mm_set1_epi16(ROUND_SCALE));
       res2 = _mm_madd_epi16(m_vR, xv0123);
-      __m128i g_lo = _mm_srai_epi32(_mm_add_epi32(res1, res2), 13);
+      auto g_sum_lo = _mm_add_epi32(res1, res2);
+      if constexpr (!lessthan16bit) {
+        // 16-bit adjustment (signed patch, offset, output rgb offset)
+        g_sum_lo = _mm_add_epi32(g_sum_lo, v_patch_G);
+      }
+      __m128i g_lo = _mm_srai_epi32(g_sum_lo, 13);
 
       uy4567 = _mm_unpackhi_epi16(u, y);
       res1 = _mm_madd_epi16(m_uy, uy4567);
-      xv4567 = _mm_unpackhi_epi16(v, _mm_set1_epi16(round_scale));
+      xv4567 = _mm_unpackhi_epi16(v, _mm_set1_epi16(ROUND_SCALE));
       res2 = _mm_madd_epi16(m_vR, xv4567);
-      __m128i g_hi = _mm_srai_epi32(_mm_add_epi32(res1, res2), 13);
+      auto g_sum_hi = _mm_add_epi32(res1, res2);
+      if constexpr (!lessthan16bit) {
+        // 16-bit adjustment (signed patch, offset, output rgb offset)
+        g_sum_hi = _mm_add_epi32(g_sum_hi, v_patch_G);
+      }
+      __m128i g_hi = _mm_srai_epi32(g_sum_hi, 13);
 
-      __m128i g = _mm_packs_epi32(g_lo, g_hi); // 2x4x32 -> 2x4xuint16_t
+      __m128i g;
+      // in SSE2 + Exact 16 bit we use simulation of _MM_PACKUS_EPI32
+      // otherwise the SSE2 _mm_packs_epi32 is OK
       if constexpr(sizeof(pixel_t) == 1) {
-        g = _mm_packus_epi16(g, zero);   // 8x uint16_t -> 8x uint_8
+        g = _mm_packs_epi32(g_lo, g_hi); // 2x4x32 -> 2x4xuint16_t // 32-bit signed -> 16-bit signed
+        g = _mm_packus_epi16(g, zero);   // 8x uint16_t -> 8x uint_8 // 16-bit signed -> 8-bit unsigned (clamping <0 to 0)
         _mm_storel_epi64(reinterpret_cast<__m128i *>(dstp[0]+x), g);
       }
       else {
-        g = _mm_max_epi16(_mm_min_epi16(g, limit), zero); // clamp 10,12,14 bit
+        if constexpr (lessthan16bit) {
+          g = _mm_packs_epi32(g_lo, g_hi); // 2x4x32 -> 2x4xuint16_t // 32-bit signed -> 16-bit signed
+          g = _mm_max_epi16(_mm_min_epi16(g, limit), zero); // clamp 10,12,14 bit
+        }
+        else {
+          g = _MM_PACKUS_EPI32(g_lo, g_hi); // 2x4x32 -> 2x4xuint16_t SSE4.1 simulation, but needs for unsigned 16 bit
+        }
         _mm_store_si128(reinterpret_cast<__m128i *>(dstp[0]+x), g);
       }
       // *B* ----------------
@@ -1119,49 +1221,89 @@ void convert_yuv_to_planarrgb_uint8_14_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3]
 
       uy0123 = _mm_unpacklo_epi16(u, y);
       res1 = _mm_madd_epi16(m_uy, uy0123);
-      xv0123 = _mm_unpacklo_epi16(v, _mm_set1_epi16(round_scale));
+      xv0123 = _mm_unpacklo_epi16(v, _mm_set1_epi16(ROUND_SCALE));
       res2 = _mm_madd_epi16(m_vR, xv0123);
-      __m128i b_lo = _mm_srai_epi32(_mm_add_epi32(res1, res2), 13);
+      auto b_sum_lo = _mm_add_epi32(res1, res2);
+      if constexpr (!lessthan16bit) {
+        // 16-bit adjustment (signed patch, offset, output rgb offset)
+        b_sum_lo = _mm_add_epi32(b_sum_lo, v_patch_B);
+      }
+      __m128i b_lo = _mm_srai_epi32(b_sum_lo, 13);
 
       uy4567 = _mm_unpackhi_epi16(u, y);
       res1 = _mm_madd_epi16(m_uy, uy4567);
-      xv4567 = _mm_unpackhi_epi16(v, _mm_set1_epi16(round_scale));
+      xv4567 = _mm_unpackhi_epi16(v, _mm_set1_epi16(ROUND_SCALE));
       res2 = _mm_madd_epi16(m_vR, xv4567);
-      __m128i b_hi = _mm_srai_epi32(_mm_add_epi32(res1, res2), 13);
+      auto b_sum_hi = _mm_add_epi32(res1, res2);
+      if constexpr (!lessthan16bit) {
+        // 16-bit adjustment (signed patch, offset, output rgb offset)
+        b_sum_hi = _mm_add_epi32(b_sum_hi, v_patch_B);
+      }
+      __m128i b_hi = _mm_srai_epi32(b_sum_hi, 13);
 
-      __m128i b = _mm_packs_epi32(b_lo, b_hi); // 2x4x32 -> 2x4xuint16_t
-      if constexpr(sizeof(pixel_t) == 1) {
-        b = _mm_packus_epi16(b, zero);   // 8x uint16_t -> 8x uint_8
-        _mm_storel_epi64(reinterpret_cast<__m128i *>(dstp[1]+x), b);
+      __m128i b;
+      // in SSE2 + Exact 16 bit we use simulation of _MM_PACKUS_EPI32
+      // otherwise the SSE2 _mm_packs_epi32 is OK
+      if constexpr (sizeof(pixel_t) == 1) {
+        b = _mm_packs_epi32(b_lo, b_hi); // 2x4x32 -> 2x4xuint16_t // 32-bit signed -> 16-bit signed
+        b = _mm_packus_epi16(b, zero);   // 8x uint16_t -> 8x uint_8 // 16-bit signed -> 8-bit unsigned (clamping <0 to 0)
+        _mm_storel_epi64(reinterpret_cast<__m128i*>(dstp[1] + x), b);
       }
       else {
-        b = _mm_max_epi16(_mm_min_epi16(b, limit), zero); // clamp 10,12,14 bit
-        _mm_store_si128(reinterpret_cast<__m128i *>(dstp[1]+x), b);
+        if constexpr (lessthan16bit) {
+          b = _mm_packs_epi32(b_lo, b_hi); // 2x4x32 -> 2x4xuint16_t // 32-bit signed -> 16-bit signed
+          b = _mm_max_epi16(_mm_min_epi16(b, limit), zero); // clamp 10,12,14 bit
+        }
+        else {
+          b = _MM_PACKUS_EPI32(b_lo, b_hi); // 2x4x32 -> 2x4xuint16_t SSE4.1 simulation, but needs for unsigned 16 bit
+        }
+        _mm_store_si128(reinterpret_cast<__m128i*>(dstp[1] + x), b);
       }
+
       // *R* ----------------
       m_uy = _mm_set1_epi32(int((static_cast<uint16_t>(m.y_r) << 16) | static_cast<uint16_t>(m.u_r))); // y and u
       m_vR = _mm_set1_epi32(int((static_cast<uint16_t>(round_mask_plus_rgb_offset_scaled_i) << 16) | static_cast<uint16_t>(m.v_r))); // rounding 13 bit >> 1 and v
 
       uy0123 = _mm_unpacklo_epi16(u, y);
       res1 = _mm_madd_epi16(m_uy, uy0123);
-      xv0123 = _mm_unpacklo_epi16(v, _mm_set1_epi16(round_scale));
+      xv0123 = _mm_unpacklo_epi16(v, _mm_set1_epi16(ROUND_SCALE));
       res2 = _mm_madd_epi16(m_vR, xv0123);
-      __m128i r_lo = _mm_srai_epi32(_mm_add_epi32(res1, res2), 13);
+      auto r_sum_lo = _mm_add_epi32(res1, res2);
+      
+      if constexpr (!lessthan16bit) {
+        // 16-bit adjustment (signed patch, offset, output rgb offset)
+        r_sum_lo = _mm_add_epi32(r_sum_lo, v_patch_R);
+      }
+      __m128i r_lo = _mm_srai_epi32(r_sum_lo, 13);
 
       uy4567 = _mm_unpackhi_epi16(u, y);
       res1 = _mm_madd_epi16(m_uy, uy4567);
-      xv4567 = _mm_unpackhi_epi16(v, _mm_set1_epi16(round_scale));
+      xv4567 = _mm_unpackhi_epi16(v, _mm_set1_epi16(ROUND_SCALE));
       res2 = _mm_madd_epi16(m_vR, xv4567);
-      __m128i r_hi = _mm_srai_epi32(_mm_add_epi32(res1, res2), 13);
+      auto r_sum_hi = _mm_add_epi32(res1, res2);
+      if constexpr (!lessthan16bit) {
+        // 16-bit adjustment (signed patch, offset, output rgb offset)
+        r_sum_hi = _mm_add_epi32(r_sum_hi, v_patch_R);
+      }
+      __m128i r_hi = _mm_srai_epi32(r_sum_hi, 13);
 
-      __m128i r = _mm_packs_epi32(r_lo, r_hi); // 2x4x32 -> 2x4xuint16_t
-      if constexpr(sizeof(pixel_t) == 1) {
-        r = _mm_packus_epi16(r, zero);   // 8x uint16_t -> 8x uint_8
-        _mm_storel_epi64(reinterpret_cast<__m128i *>(dstp[2]+x), r);
+      __m128i r;
+      // in SSE2 + Exact 16 bit we use simulation of _MM_PACKUS_EPI32
+      // otherwise the SSE2 _mm_packs_epi32 is OK
+      if constexpr (sizeof(pixel_t) == 1) {
+        r = _mm_packs_epi32(r_lo, r_hi); // 2x4x32 -> 2x4xuint16_t // 32-bit signed -> 16-bit signed
+        r = _mm_packus_epi16(r, zero);   // 8x uint16_t -> 8x uint_8 // 16-bit signed -> 8-bit unsigned (clamping <0 to 0)
+        _mm_storel_epi64(reinterpret_cast<__m128i*>(dstp[2] + x), r);
       }
       else {
-        r = _mm_max_epi16(_mm_min_epi16(r, limit), zero); // clamp 10,12,14 bit
-        _mm_store_si128(reinterpret_cast<__m128i *>(dstp[2]+x), r);
+        if constexpr (lessthan16bit) {
+          r = _mm_packs_epi32(r_lo, r_hi); // 2x4x32 -> 2x4xuint16_t // 32-bit signed -> 16-bit signed
+          r = _mm_max_epi16(_mm_min_epi16(r, limit), zero); // clamp 10,12,14 bit
+        }
+        else {
+          r = _MM_PACKUS_EPI32(r_lo, r_hi); // 2x4x32 -> 2x4xuint16_t SSE4.1 simulation, but needs for unsigned 16 bit
+        }
+        _mm_store_si128(reinterpret_cast<__m128i*>(dstp[2] + x), r);
       }
     }
     srcp[0] += srcPitch[0];
@@ -1174,11 +1316,10 @@ void convert_yuv_to_planarrgb_uint8_14_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3]
 }
 
 //instantiate
-//template<typename pixel_t, int bits_per_pixel>
-template void convert_yuv_to_planarrgb_uint8_14_sse2<uint8_t, 8>(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m);
-template void convert_yuv_to_planarrgb_uint8_14_sse2<uint16_t, 10>(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m);
-template void convert_yuv_to_planarrgb_uint8_14_sse2<uint16_t, 12>(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m);
-template void convert_yuv_to_planarrgb_uint8_14_sse2<uint16_t, 14>(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m);
+//template<typename pixel_t, bool lessthan16bit>
+template void convert_yuv_to_planarrgb_uintN_sse2<uint8_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, const int bits_per_pixel);
+template void convert_yuv_to_planarrgb_uintN_sse2<uint16_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, const int bits_per_pixel);
+template void convert_yuv_to_planarrgb_uintN_sse2<uint16_t, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, const int bits_per_pixel);
 
 void convert_yuv_to_planarrgb_float_sse2(BYTE *(&dstp)[3], int(&dstPitch)[3], const BYTE *(&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix &m)
 {
@@ -1245,189 +1386,6 @@ void convert_yuv_to_planarrgb_float_sse2(BYTE *(&dstp)[3], int(&dstPitch)[3], co
   }
 }
 
-template<int bits_per_pixel>
-#if defined(GCC) || defined(CLANG)
-__attribute__((__target__("sse4.1")))
-#endif
-void convert_yuv_to_planarrgb_uint16_sse41(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m)
-{
-  // 16 bit uint16_t (unsigned range)
-  __m128  half_f = _mm_set1_ps((float)(1u << (bits_per_pixel - 1))); // 8-16 bit chroma has shift
-  __m128i limit  = _mm_set1_epi16((short)((1 << bits_per_pixel) - 1)); // 255
-  __m128  offset_f = _mm_set1_ps(m.offset_y_f);
-  __m128  offset_rgb = _mm_set1_ps(m.offset_rgb_f);
-
-  const bool has_offset_rgb = 0 != m.offset_rgb_f;
-
-  __m128i zero = _mm_setzero_si128();
-
-  const int rowsize = width * sizeof(uint16_t);
-  for (int yy = 0; yy < height; yy++) {
-    for (int x = 0; x < rowsize; x += 4 * sizeof(uint16_t)) {
-      __m128 sum1, res;
-      __m128 mul_y, mul_u, mul_v;
-      __m128 mat_y, mat_u, mat_v;
-      __m128 y, u, v;
-      // uint16_t: load 8 bytes: 4 pixels
-      __m128i yi = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(srcp[0] + x));
-      __m128i ui = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(srcp[1] + x));
-      __m128i vi = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(srcp[2] + x));
-      y = _mm_cvtepi32_ps(_mm_unpacklo_epi16(yi,zero));
-      u = _mm_cvtepi32_ps(_mm_unpacklo_epi16(ui,zero));
-      v = _mm_cvtepi32_ps(_mm_unpacklo_epi16(vi,zero));
-
-      y = _mm_add_ps(y, offset_f); // offset is negative
-      u = _mm_sub_ps(u, half_f);
-      v = _mm_sub_ps(v, half_f);
-      // *G*
-      mat_y = _mm_set1_ps(m.y_g_f);  mat_u = _mm_set1_ps(m.u_g_f); mat_v = _mm_set1_ps(m.v_g_f);
-      mul_y = _mm_mul_ps(y, mat_y);
-      mul_u = _mm_mul_ps(u, mat_u);
-      mul_v = _mm_mul_ps(v, mat_v);
-      sum1 = _mm_add_ps(mul_y, mul_u);
-      res = _mm_add_ps(sum1, mul_v);
-      if (has_offset_rgb)
-        res = _mm_add_ps(res, offset_rgb);
-
-      __m128i resi = _mm_cvtps_epi32(res); // no extra rounding, cvtps rounds to nearest
-      resi = _mm_packus_epi32(resi, zero);
-      if constexpr(bits_per_pixel<16) // albeit 10-14 bit have another function, make this general
-        resi = _mm_min_epi16(resi, limit); // clamp 10,12,14 bit
-      _mm_storel_epi64(reinterpret_cast<__m128i *>(dstp[0] + x), resi);
-      // *B*
-      mat_y = _mm_set1_ps(m.y_b_f);  mat_u = _mm_set1_ps(m.u_b_f); mat_v = _mm_set1_ps(m.v_b_f);
-      mul_y = _mm_mul_ps(y, mat_y);
-      mul_u = _mm_mul_ps(u, mat_u);
-      mul_v = _mm_mul_ps(v, mat_v);
-      sum1 = _mm_add_ps(mul_y, mul_u);
-      res = _mm_add_ps(sum1, mul_v);
-      if (has_offset_rgb)
-        res = _mm_add_ps(res, offset_rgb);
-
-      resi = _mm_cvtps_epi32(res); // no extra rounding, cvtps rounds to nearest
-      resi = _mm_packus_epi32(resi, zero);
-      if constexpr(bits_per_pixel<16) // albeit 10-14 bit have another function, make this general
-        resi = _mm_min_epi16(resi, limit); // clamp 10,12,14 bit
-      _mm_storel_epi64(reinterpret_cast<__m128i *>(dstp[1] + x), resi);
-      // *R*
-      mat_y = _mm_set1_ps(m.y_r_f);  mat_u = _mm_set1_ps(m.u_r_f); mat_v = _mm_set1_ps(m.v_r_f);
-      mul_y = _mm_mul_ps(y, mat_y);
-      mul_u = _mm_mul_ps(u, mat_u);
-      mul_v = _mm_mul_ps(v, mat_v);
-      sum1 = _mm_add_ps(mul_y, mul_u);
-      res = _mm_add_ps(sum1, mul_v);
-      if (has_offset_rgb)
-        res = _mm_add_ps(res, offset_rgb);
-
-      resi = _mm_cvtps_epi32(res); // no extra rounding, cvtps rounds to nearest
-      resi = _mm_packus_epi32(resi, zero);
-      if constexpr(bits_per_pixel<16) // albeit 10-14 bit have another function, make this general
-        resi = _mm_min_epi16(resi, limit); // clamp 10,12,14 bit
-      _mm_storel_epi64(reinterpret_cast<__m128i *>(dstp[2] + x), resi);
-    }
-    srcp[0] += srcPitch[0];
-    srcp[1] += srcPitch[1];
-    srcp[2] += srcPitch[2];
-    dstp[0] += dstPitch[0];
-    dstp[1] += dstPitch[1];
-    dstp[2] += dstPitch[2];
-  }
-}
-
-//instantiate
-//template<int bits_per_pixel>
-template void convert_yuv_to_planarrgb_uint16_sse41<16>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m);
-
-
-template<int bits_per_pixel>
-void convert_yuv_to_planarrgb_uint16_sse2(BYTE *(&dstp)[3], int(&dstPitch)[3], const BYTE *(&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix &m)
-{
-  // 16 bit uint16_t (unsigned range)
-  __m128  half_f = _mm_set1_ps((float)(1u << (bits_per_pixel - 1)));
-  __m128i limit = _mm_set1_epi16((short)((1 << bits_per_pixel) - 1)); // 255
-  __m128  offset_f = _mm_set1_ps(m.offset_y_f);
-  __m128  offset_rgb = _mm_set1_ps(m.offset_rgb_f);
-
-  const bool has_offset_rgb = 0 != m.offset_rgb_f;
-
-  __m128i zero = _mm_setzero_si128();
-
-  const int rowsize = width * sizeof(uint16_t);
-  for (int yy = 0; yy < height; yy++) {
-    for (int x = 0; x < rowsize; x += 4 * sizeof(uint16_t)) {
-      __m128 sum1, res;
-      __m128 mul_y, mul_u, mul_v;
-      __m128 mat_y, mat_u, mat_v;
-      __m128 y, u, v;
-      // uint16_t: load 8 bytes: 4 pixels
-      __m128i yi = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(srcp[0] + x));
-      __m128i ui = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(srcp[1] + x));
-      __m128i vi = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(srcp[2] + x));
-      y = _mm_cvtepi32_ps(_mm_unpacklo_epi16(yi, zero));
-      u = _mm_cvtepi32_ps(_mm_unpacklo_epi16(ui, zero));
-      v = _mm_cvtepi32_ps(_mm_unpacklo_epi16(vi, zero));
-
-      y = _mm_add_ps(y, offset_f); // offset is negative
-      u = _mm_sub_ps(u, half_f);
-      v = _mm_sub_ps(v, half_f);
-      // *G*
-      mat_y = _mm_set1_ps(m.y_g_f);  mat_u = _mm_set1_ps(m.u_g_f); mat_v = _mm_set1_ps(m.v_g_f);
-      mul_y = _mm_mul_ps(y, mat_y);
-      mul_u = _mm_mul_ps(u, mat_u);
-      mul_v = _mm_mul_ps(v, mat_v);
-      sum1 = _mm_add_ps(mul_y, mul_u);
-      res = _mm_add_ps(sum1, mul_v);
-      if(has_offset_rgb)
-        res = _mm_add_ps(res, offset_rgb);
-
-      __m128i resi = _mm_cvtps_epi32(res); // no extra rounding, cvtps rounds to nearest
-      resi = _MM_PACKUS_EPI32(resi, zero); // simulation
-      if constexpr (bits_per_pixel < 16) // albeit 10-14 bit have another function, make this general
-        resi = _mm_min_epi16(resi, limit); // clamp 10,12,14 bit
-      _mm_storel_epi64(reinterpret_cast<__m128i *>(dstp[0] + x), resi);
-      // *B*
-      mat_y = _mm_set1_ps(m.y_b_f);  mat_u = _mm_set1_ps(m.u_b_f); mat_v = _mm_set1_ps(m.v_b_f);
-      mul_y = _mm_mul_ps(y, mat_y);
-      mul_u = _mm_mul_ps(u, mat_u);
-      mul_v = _mm_mul_ps(v, mat_v);
-      sum1 = _mm_add_ps(mul_y, mul_u);
-      res = _mm_add_ps(sum1, mul_v);
-      if (has_offset_rgb)
-        res = _mm_add_ps(res, offset_rgb);
-
-      resi = _mm_cvtps_epi32(res); // no extra rounding, cvtps rounds to nearest
-      resi = _MM_PACKUS_EPI32(resi, zero); // simulation
-      if constexpr (bits_per_pixel < 16) // albeit 10-14 bit have another function, make this general
-        resi = _mm_min_epi16(resi, limit); // clamp 10,12,14 bit
-      _mm_storel_epi64(reinterpret_cast<__m128i *>(dstp[1] + x), resi);
-      // *R*
-      mat_y = _mm_set1_ps(m.y_r_f);  mat_u = _mm_set1_ps(m.u_r_f); mat_v = _mm_set1_ps(m.v_r_f);
-      mul_y = _mm_mul_ps(y, mat_y);
-      mul_u = _mm_mul_ps(u, mat_u);
-      mul_v = _mm_mul_ps(v, mat_v);
-      sum1 = _mm_add_ps(mul_y, mul_u);
-      res = _mm_add_ps(sum1, mul_v);
-      if (has_offset_rgb)
-        res = _mm_add_ps(res, offset_rgb);
-
-      resi = _mm_cvtps_epi32(res); // no extra rounding, cvtps rounds to nearest
-      resi = _MM_PACKUS_EPI32(resi, zero); // simulation
-      if constexpr (bits_per_pixel < 16) // albeit 10-14 bit have another function, make this general
-        resi = _mm_min_epi16(resi, limit); // clamp 10,12,14 bit
-      _mm_storel_epi64(reinterpret_cast<__m128i *>(dstp[2] + x), resi);
-    }
-    srcp[0] += srcPitch[0];
-    srcp[1] += srcPitch[1];
-    srcp[2] += srcPitch[2];
-    dstp[0] += dstPitch[0];
-    dstp[1] += dstPitch[1];
-    dstp[2] += dstPitch[2];
-  }
-}
-
-//instantiate
-//template<int bits_per_pixel>
-template void convert_yuv_to_planarrgb_uint16_sse2<16>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m);
 
 // packed rgb helper
 static AVS_FORCEINLINE __m128i convert_yuv_to_rgb_sse2_core(const __m128i &px01, const __m128i &px23, const __m128i &px45, const __m128i &px67, const __m128i& zero, const __m128i &matrix, const __m128i &round_mask_plus_rgb_offset) {
@@ -1468,7 +1426,7 @@ void convert_yv24_to_rgb_ssse3(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, c
 {
   dstp += dst_pitch * (height-1);  // We start at last line
 
-  size_t mod8_width = rgb_pixel_step == 3 ? width / 8 * 8 : width; // for rgb32 target we may process pixels beyond width, but we have 32bit alignment at target
+  size_t mod8_width = rgb_pixel_step == 3 ? width / 8 * 8 : width; // for rgb32 target we may process pixels beyond width, but we have at least 32 bytes alignment at target
 
   __m128i matrix_b = _mm_set_epi16(0, matrix.v_b, matrix.u_b, matrix.y_b, 0, matrix.v_b, matrix.u_b, matrix.y_b);
   __m128i matrix_g = _mm_set_epi16(0, matrix.v_g, matrix.u_g, matrix.y_g, 0, matrix.v_g, matrix.u_g, matrix.y_g);
@@ -1588,7 +1546,7 @@ template<int rgb_pixel_step, bool hasAlpha>
 void convert_yv24_to_rgb_sse2(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, const BYTE*srcV, const BYTE*srcA, size_t dst_pitch, size_t src_pitch_y, size_t src_pitch_uv, size_t src_pitch_a, size_t width, size_t height, const ConversionMatrix &matrix) {
   dstp += dst_pitch * (height - 1);  // We start at last line
 
-  size_t mod8_width = rgb_pixel_step == 3 ? width / 8 * 8 : width; // for rgb32 target we may process pixels beyond width, but we have 32bit alignment at target
+  size_t mod8_width = rgb_pixel_step == 3 ? width / 8 * 8 : width; // for rgb32 target we may process pixels beyond width, but we have at least 32 bytes alignment at target
 
   __m128i matrix_b = _mm_set_epi16(0, matrix.v_b, matrix.u_b, matrix.y_b, 0, matrix.v_b, matrix.u_b, matrix.y_b);
   __m128i matrix_g = _mm_set_epi16(0, matrix.v_g, matrix.u_g, matrix.y_g, 0, matrix.v_g, matrix.u_g, matrix.y_g);

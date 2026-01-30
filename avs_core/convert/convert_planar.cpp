@@ -963,23 +963,20 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
     BYTE* dstp[3] = { dstpG, dstpB, dstpR };
     int dstPitch[3] = { dst_pitchG, dst_pitchB, dst_pitchR };
 
-    if (bits_per_pixel < 16 && (env->GetCPUFlags() & CPUF_SSE2) )
+    if (bits_per_pixel <= 16 && (env->GetCPUFlags() & CPUF_SSE2) )
     {
       switch (bits_per_pixel) {
-      case 8: convert_yuv_to_planarrgb_uint8_14_sse2<uint8_t, 8>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix); break;
-      case 10: convert_yuv_to_planarrgb_uint8_14_sse2<uint16_t, 10>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix); break;
-      case 12: convert_yuv_to_planarrgb_uint8_14_sse2<uint16_t, 12>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix); break;
-      case 14: convert_yuv_to_planarrgb_uint8_14_sse2<uint16_t, 14>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix); break;
+      case 8: convert_yuv_to_planarrgb_uintN_sse2<uint8_t, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel); break;
+      case 10:
+      case 12:
+      case 14: convert_yuv_to_planarrgb_uintN_sse2<uint16_t, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel); break;
+      case 16: convert_yuv_to_planarrgb_uintN_sse2<uint16_t, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel); break;
       }
       return dst;
     }
-    if (bits_per_pixel >= 16 && (env->GetCPUFlags() & CPUF_SSE2) ) {
-      if (pixelsize == 4) // float 32 bit
+    
+    if (bits_per_pixel == 32 && (env->GetCPUFlags() & CPUF_SSE2) ) {
         convert_yuv_to_planarrgb_float_sse2(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix);
-      else if (env->GetCPUFlags() & CPUF_SSE4_1)
-        convert_yuv_to_planarrgb_uint16_sse41<16>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix);
-      else
-        convert_yuv_to_planarrgb_uint16_sse2<16>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix);
       return dst;
     }
 #endif
