@@ -752,7 +752,9 @@ void convert_uintN_to_float_avx2(const BYTE* srcp, BYTE* dstp, int src_rowsize, 
   dst_pitch = dst_pitch / sizeof(float);
 
   const int src_width = src_rowsize / sizeof(pixel_t);
-
+  // write 32 floats (128 bytes) only if valid, scanline alignment is only 64 bytes (16 floats).
+  // Alignment, write-limited, 16 floats (64 bytes) is guaranteed by AviSynth
+  const int w16 = (src_width + 15) & ~15;
   //-----------------------
   bits_conv_constants d;
   get_bits_conv_constants(d, chroma, fulls, fulld, source_bitdepth, target_bitdepth);
@@ -763,7 +765,9 @@ void convert_uintN_to_float_avx2(const BYTE* srcp, BYTE* dstp, int src_rowsize, 
 
   for (int y = 0; y < src_height; y++)
   {
-    for (int x = 0; x < src_width; x += 32) // process by 32 integers of 8bit, rows are 64 bytes aligned
+    // rows are 64 bytes - 16 float pixels - aligned we have a write constraint
+    int x;
+    for (x = 0; x + 32 <= w16; x += 32)
     {
       __m256i src_0_32, src_1_32, src_2_32, src_3_32;
 
@@ -771,12 +775,12 @@ void convert_uintN_to_float_avx2(const BYTE* srcp, BYTE* dstp, int src_rowsize, 
       {
         __m256i src_32 = _mm256_load_si256(reinterpret_cast<const __m256i*>(srcp0 + x));
         // unpack to 4x64bits
-        __m256i src_0 = _mm256_permute4x64_epi64(src_32, 0);
+        src_0_32 = _mm256_cvtepu8_epi32(_mm256_castsi256_si128(src_32)); // bytes 0-7
+
         __m256i src_1 = _mm256_permute4x64_epi64(src_32, 1);
         __m256i src_2 = _mm256_permute4x64_epi64(src_32, 2);
         __m256i src_3 = _mm256_permute4x64_epi64(src_32, 3);
 
-        src_0_32 = _mm256_cvtepu8_epi32(_mm256_castsi256_si128(src_0));
         src_1_32 = _mm256_cvtepu8_epi32(_mm256_castsi256_si128(src_1));
         src_2_32 = _mm256_cvtepu8_epi32(_mm256_castsi256_si128(src_2));
         src_3_32 = _mm256_cvtepu8_epi32(_mm256_castsi256_si128(src_3));
@@ -808,10 +812,43 @@ void convert_uintN_to_float_avx2(const BYTE* srcp, BYTE* dstp, int src_rowsize, 
       __m256 out_2_ps = _mm256_fmadd_ps(src_2_ps, m256_mul_factor, m256_dst_offset);
       __m256 out_3_ps = _mm256_fmadd_ps(src_3_ps, m256_mul_factor, m256_dst_offset);
 
+      // process 32 pixels, write 128 bytes
       _mm256_store_ps((dstp0 + x + 0), out_0_ps);
       _mm256_store_ps((dstp0 + x + 8), out_1_ps);
       _mm256_store_ps((dstp0 + x + 16), out_2_ps);
       _mm256_store_ps((dstp0 + x + 24), out_3_ps);
+
+      //        const float pixel = (srcp0[x] - d.src_offset_i) * d.mul_factor + d.dst_offset;
+      //        dstp0[x] = pixel; // no clamp
+    }
+
+    // second loop: process remaining 1-15 pixels, 16 at a time
+    if (x < w16) {
+      __m256i src_0_32, src_1_32;
+
+      if constexpr (sizeof(pixel_t) == 1) // uint8_t
+      {
+        // _m128 enough, 16 pixels
+        __m128i src_16_bytes = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp0 + x));
+        src_0_32 = _mm256_cvtepu8_epi32(src_16_bytes); // 0-7
+        src_1_32 = _mm256_cvtepu8_epi32(_mm_srli_si128(src_16_bytes, 8)); // 8-15, quick permuteless
+      }
+      else // uint16_t
+      {
+        __m256i src_16 = _mm256_load_si256(reinterpret_cast<const __m256i*>(srcp0 + x));
+        src_0_32 = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(src_16));      // 0-7
+        src_1_32 = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(src_16, 1)); // 8-15
+      }
+
+      src_0_32 = _mm256_sub_epi32(src_0_32, m256_src_offset_epi32);
+      src_1_32 = _mm256_sub_epi32(src_1_32, m256_src_offset_epi32);
+
+      __m256 out_0_ps = _mm256_fmadd_ps(_mm256_cvtepi32_ps(src_0_32), m256_mul_factor, m256_dst_offset);
+      __m256 out_1_ps = _mm256_fmadd_ps(_mm256_cvtepi32_ps(src_1_32), m256_mul_factor, m256_dst_offset);
+
+      // 16 floats - 64 bytes always safe
+      _mm256_store_ps((dstp0 + x + 0), out_0_ps);
+      _mm256_store_ps((dstp0 + x + 8), out_1_ps);
 
       //        const float pixel = (srcp0[x] - d.src_offset_i) * d.mul_factor + d.dst_offset;
       //        dstp0[x] = pixel; // no clamp
