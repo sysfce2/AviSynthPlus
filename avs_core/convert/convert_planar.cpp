@@ -963,6 +963,18 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
     BYTE* dstp[3] = { dstpG, dstpB, dstpR };
     int dstPitch[3] = { dst_pitchG, dst_pitchB, dst_pitchR };
 
+    if (bits_per_pixel <= 16 && (env->GetCPUFlags() & CPUF_AVX2))
+    {
+      switch (bits_per_pixel) {
+      case 8: convert_yuv_to_planarrgb_uintN_avx2<uint8_t, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel); break;
+      case 10:
+      case 12:
+      case 14: convert_yuv_to_planarrgb_uintN_avx2<uint16_t, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel); break;
+      case 16: convert_yuv_to_planarrgb_uintN_avx2<uint16_t, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel); break;
+      }
+      return dst;
+    }
+
     if (bits_per_pixel <= 16 && (env->GetCPUFlags() & CPUF_SSE2) )
     {
       switch (bits_per_pixel) {
@@ -976,6 +988,9 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
     }
     
     if (bits_per_pixel == 32 && (env->GetCPUFlags() & CPUF_SSE2) ) {
+      if ((env->GetCPUFlags() & CPUF_AVX2))
+        convert_yuv_to_planarrgb_float_avx2(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix);
+      else
         convert_yuv_to_planarrgb_float_sse2(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix);
       return dst;
     }

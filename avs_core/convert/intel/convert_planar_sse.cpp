@@ -1082,6 +1082,7 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
   // changed to : 4096   * (1 + offset_rgb>>(13-1)
   // Except for exact 16 bit, where we do the output offset adjustment along with the 16 bit signed-unsigned pivot fix
   constexpr int ROUND_SCALE = 4096; // 1 << 12, for 13 bit integer arithmetic: "0.5"
+  const __m128i m128i_round_scale = _mm_set1_epi16(ROUND_SCALE);
 
   int round_mask_plus_rgb_offset_scaled_i;
   __m128i v_patch_G, v_patch_B, v_patch_R;
@@ -1177,7 +1178,7 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
 
       uy0123 = _mm_unpacklo_epi16(u, y);
       res1 = _mm_madd_epi16(m_uy, uy0123);
-      xv0123 = _mm_unpacklo_epi16(v, _mm_set1_epi16(ROUND_SCALE));
+      xv0123 = _mm_unpacklo_epi16(v, m128i_round_scale);
       res2 = _mm_madd_epi16(m_vR, xv0123);
       auto g_sum_lo = _mm_add_epi32(res1, res2);
       if constexpr (!lessthan16bit) {
@@ -1188,7 +1189,7 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
 
       uy4567 = _mm_unpackhi_epi16(u, y);
       res1 = _mm_madd_epi16(m_uy, uy4567);
-      xv4567 = _mm_unpackhi_epi16(v, _mm_set1_epi16(ROUND_SCALE));
+      xv4567 = _mm_unpackhi_epi16(v, m128i_round_scale);
       res2 = _mm_madd_epi16(m_vR, xv4567);
       auto g_sum_hi = _mm_add_epi32(res1, res2);
       if constexpr (!lessthan16bit) {
@@ -1221,7 +1222,7 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
 
       uy0123 = _mm_unpacklo_epi16(u, y);
       res1 = _mm_madd_epi16(m_uy, uy0123);
-      xv0123 = _mm_unpacklo_epi16(v, _mm_set1_epi16(ROUND_SCALE));
+      xv0123 = _mm_unpacklo_epi16(v, m128i_round_scale);
       res2 = _mm_madd_epi16(m_vR, xv0123);
       auto b_sum_lo = _mm_add_epi32(res1, res2);
       if constexpr (!lessthan16bit) {
@@ -1232,7 +1233,7 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
 
       uy4567 = _mm_unpackhi_epi16(u, y);
       res1 = _mm_madd_epi16(m_uy, uy4567);
-      xv4567 = _mm_unpackhi_epi16(v, _mm_set1_epi16(ROUND_SCALE));
+      xv4567 = _mm_unpackhi_epi16(v, m128i_round_scale);
       res2 = _mm_madd_epi16(m_vR, xv4567);
       auto b_sum_hi = _mm_add_epi32(res1, res2);
       if constexpr (!lessthan16bit) {
@@ -1266,7 +1267,7 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
 
       uy0123 = _mm_unpacklo_epi16(u, y);
       res1 = _mm_madd_epi16(m_uy, uy0123);
-      xv0123 = _mm_unpacklo_epi16(v, _mm_set1_epi16(ROUND_SCALE));
+      xv0123 = _mm_unpacklo_epi16(v, m128i_round_scale);
       res2 = _mm_madd_epi16(m_vR, xv0123);
       auto r_sum_lo = _mm_add_epi32(res1, res2);
       
@@ -1278,7 +1279,7 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
 
       uy4567 = _mm_unpackhi_epi16(u, y);
       res1 = _mm_madd_epi16(m_uy, uy4567);
-      xv4567 = _mm_unpackhi_epi16(v, _mm_set1_epi16(ROUND_SCALE));
+      xv4567 = _mm_unpackhi_epi16(v, m128i_round_scale);
       res2 = _mm_madd_epi16(m_vR, xv4567);
       auto r_sum_hi = _mm_add_epi32(res1, res2);
       if constexpr (!lessthan16bit) {
