@@ -1057,12 +1057,13 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
 
     int bits_per_pixel = vi.BitsPerComponent();
 
-#ifdef INTEL_INTRINSICS
     const BYTE* srcp[3] = { src->GetReadPtr(PLANAR_Y), src->GetReadPtr(PLANAR_U), src->GetReadPtr(PLANAR_V) };
     const int srcPitch[3] = { src->GetPitch(PLANAR_Y), src->GetPitch(PLANAR_U), src->GetPitch(PLANAR_V) };
 
     BYTE* dstp[3] = { dstpG, dstpB, dstpR };
     int dstPitch[3] = { dst_pitchG, dst_pitchB, dst_pitchR };
+
+#ifdef INTEL_INTRINSICS
 
     if (bits_per_pixel <= 16 && (env->GetCPUFlags() & CPUF_AVX2))
     {
