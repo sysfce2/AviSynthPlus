@@ -903,9 +903,6 @@ static void convert_yuv_to_planarrgb_float_c(BYTE* dstp[3], int dstPitch[3], con
       float b = matrix.y_b_f * Y + matrix.u_b_f * U + matrix.v_b_f * V + matrix.offset_rgb_f;
       float g = matrix.y_g_f * Y + matrix.u_g_f * U + matrix.v_g_f * V + matrix.offset_rgb_f;
       float r = matrix.y_r_f * Y + matrix.u_r_f * U + matrix.v_r_f * V + matrix.offset_rgb_f;
-      reinterpret_cast<float*>(dstp[0])[x] = clamp(g, 0.0f, 1.0f);  // Probably needed here.
-      reinterpret_cast<float*>(dstp[1])[x] = clamp(b, 0.0f, 1.0f);  // All the safety we can wish for.
-      reinterpret_cast<float*>(dstp[2])[x] = clamp(r, 0.0f, 1.0f);
     }
     dstp[1] += dstPitch[1];
     dstp[0] += dstPitch[0];
