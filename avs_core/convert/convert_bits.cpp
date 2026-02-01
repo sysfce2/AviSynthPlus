@@ -838,7 +838,10 @@ static void get_convert_float_to_float_functions(bool fulls, bool fulld,
 }
 
 static void get_convert_uintN_to_float_functions(int bits_per_pixel, bool fulls, bool fulld,
-  BitDepthConvFuncPtr& conv_function, BitDepthConvFuncPtr& conv_function_chroma, BitDepthConvFuncPtr& conv_function_a, IScriptEnvironment *env)
+#ifdef INTEL_INTRINSICS
+  bool sse2, bool sse4, bool avx2,
+#endif
+  BitDepthConvFuncPtr& conv_function, BitDepthConvFuncPtr& conv_function_chroma, BitDepthConvFuncPtr& conv_function_a)
 {
   // 8-16bit->32bits support fulls fulld, alpha is always full-full
 #define convert_uintN_to_float_functions(uint_X_t) \
@@ -889,8 +892,7 @@ static void get_convert_uintN_to_float_functions(int bits_per_pixel, bool fulls,
   }
 
 #ifdef INTEL_INTRINSICS
-  if ((env->GetCPUFlags() & CPUF_AVX2))
-  {
+  if (avx2) {
     switch (bits_per_pixel) {
     case 8:
       convert_uintN_to_float_functions_avx2(uint8_t);
@@ -1095,6 +1097,61 @@ static void get_convert_uintN_to_uintN_functions(int source_bitdepth, int target
 #undef convert_uintN_to_uintN_functions
 }
 
+void get_convert_any_bits_functions(int dither_mode, int source_bitdepth, int target_bitdepth, bool fulls, bool fulld,
+#ifdef INTEL_INTRINSICS
+  bool sse2, bool sse4, bool avx2,
+#endif
+  BitDepthConvFuncPtr& conv_function, BitDepthConvFuncPtr& conv_function_chroma, BitDepthConvFuncPtr& conv_function_a)
+{
+
+  if (source_bitdepth <= 16 && target_bitdepth <= 16)
+  {
+    // get basic non-dithered versions
+#ifdef INTEL_INTRINSICS
+    get_convert_uintN_to_uintN_functions(source_bitdepth, target_bitdepth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma, conv_function_a);
+#else
+    get_convert_uintN_to_uintN_functions(source_bitdepth, target_bitdepth, fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
+#endif
+    if (target_bitdepth <= source_bitdepth) {
+      // dither is only down
+      if (dither_mode == 0) {
+        // ordered dither
+#ifdef INTEL_INTRINSICS
+        get_convert_uintN_to_uintN_ordered_dither_functions(source_bitdepth, target_bitdepth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma);
+#else
+        get_convert_uintN_to_uintN_ordered_dither_functions(source_bitdepth, target_bitdepth, fulls, fulld, conv_function, conv_function_chroma);
+#endif
+      }
+      else if (dither_mode == 1) {
+        // Floyd, no SIMD there
+        get_convert_uintN_to_uintN_floyd_dither_functions(source_bitdepth, target_bitdepth, fulls, fulld, conv_function, conv_function_chroma);
+      }
+    }
+  }
+
+  // 32->8-16 bit
+  if (source_bitdepth == 32 && target_bitdepth <= 16) {
+#ifdef INTEL_INTRINSICS
+    get_convert_32_to_uintN_functions(target_bitdepth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma, conv_function_a);
+#else
+    get_convert_32_to_uintN_functions(target_bitdepth, fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
+#endif
+  }
+
+  // 8-32->32
+  if (target_bitdepth == 32) {
+    if (source_bitdepth <= 16) // 8-16->32 bit
+#ifdef INTEL_INTRINSICS
+      get_convert_uintN_to_float_functions(source_bitdepth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma, conv_function_a);
+#else
+      get_convert_uintN_to_float_functions(source_bitdepth, fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
+#endif
+    else
+      get_convert_float_to_float_functions(fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
+  }
+}
+
+
 ConvertBits::ConvertBits(PClip _child, const int _dither_mode, const int _target_bitdepth, bool _truerange,
   int _ColorRange_src, int _ColorRange_dest,
   int _dither_bitdepth, IScriptEnvironment* env) :
@@ -1132,47 +1189,11 @@ ConvertBits::ConvertBits(PClip _child, const int _dither_mode, const int _target
       format_change_only = true;
   }
 
-  if (bits_per_pixel <= 16 && target_bitdepth <= 16)
-  {
-    // get basic non-dithered versions
 #ifdef INTEL_INTRINSICS
-    get_convert_uintN_to_uintN_functions(bits_per_pixel, target_bitdepth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma, conv_function_a);
+  get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma, conv_function_a);
 #else
-    get_convert_uintN_to_uintN_functions(bits_per_pixel, target_bitdepth, fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
+  get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
 #endif
-    if (target_bitdepth <= bits_per_pixel) {
-      // dither is only down
-      if (dither_mode == 0) {
-        // ordered dither
-#ifdef INTEL_INTRINSICS
-        get_convert_uintN_to_uintN_ordered_dither_functions(bits_per_pixel, target_bitdepth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma);
-#else
-        get_convert_uintN_to_uintN_ordered_dither_functions(bits_per_pixel, target_bitdepth, fulls, fulld, conv_function, conv_function_chroma);
-#endif
-      }
-      else if (dither_mode == 1) {
-        // Floyd, no SIMD there
-        get_convert_uintN_to_uintN_floyd_dither_functions(bits_per_pixel, target_bitdepth, fulls, fulld, conv_function, conv_function_chroma);
-      }
-    }
-  }
-
-  // 32->8-16 bit
-  if (bits_per_pixel == 32 && target_bitdepth <= 16) {
-#ifdef INTEL_INTRINSICS
-    get_convert_32_to_uintN_functions(target_bitdepth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma, conv_function_a);
-#else
-    get_convert_32_to_uintN_functions(target_bitdepth, fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
-#endif
-  }
-
-  // 8-32->32
-  if (target_bitdepth == 32) {
-    if (bits_per_pixel <= 16) // 8-16->32 bit
-      get_convert_uintN_to_float_functions(bits_per_pixel, fulls, fulld, conv_function, conv_function_chroma, conv_function_a, env);
-    else
-      get_convert_float_to_float_functions(fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
-  }
 
   // Set VideoInfo
   if (target_bitdepth == 8) {
