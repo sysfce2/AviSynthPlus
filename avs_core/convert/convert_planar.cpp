@@ -953,14 +953,26 @@ static void convert_yuv_to_planarrgb_uintN_c(BYTE* dstp[3], int dstPitch[3], con
 
 static void convert_yuv_to_planarrgb_float_c(BYTE* dstp[3], int dstPitch[3], const BYTE* srcp[3], const int srcPitch[3], int width, int height, const ConversionMatrix& matrix) {
   for (int y = 0; y < height; y++) {
+    const float* srcY = reinterpret_cast<const float*>(srcp[0]);
+    const float* srcU = reinterpret_cast<const float*>(srcp[1]);
+    const float* srcV = reinterpret_cast<const float*>(srcp[2]);
+    // We use auto here to handle either float* or pixel_t* destinations
+    float* d0 = reinterpret_cast<float*>(dstp[0]);
+    float* d1 = reinterpret_cast<float*>(dstp[1]);
+    float* d2 = reinterpret_cast<float*>(dstp[2]);
+
     for (int x = 0; x < width; x++) {
-      float Y = reinterpret_cast<const float*>(srcp[0])[x] + matrix.offset_y_f;
-      constexpr float shift = 0.0f;
-      float U = reinterpret_cast<const float*>(srcp[1])[x] - shift;
-      float V = reinterpret_cast<const float*>(srcp[2])[x] - shift;
+      float Y = srcY[x] + matrix.offset_y_f;
+      constexpr float shift = 0.0f; // intentionally, float UV is zero centered
+      float U = srcU[x] - shift;
+      float V = srcV[x] - shift;
       float b = matrix.y_b_f * Y + matrix.u_b_f * U + matrix.v_b_f * V + matrix.offset_rgb_f;
       float g = matrix.y_g_f * Y + matrix.u_g_f * U + matrix.v_g_f * V + matrix.offset_rgb_f;
       float r = matrix.y_r_f * Y + matrix.u_r_f * U + matrix.v_r_f * V + matrix.offset_rgb_f;
+
+      d0[x] = g;
+      d1[x] = b;
+      d2[x] = r;
     }
     dstp[1] += dstPitch[1];
     dstp[0] += dstPitch[0];
