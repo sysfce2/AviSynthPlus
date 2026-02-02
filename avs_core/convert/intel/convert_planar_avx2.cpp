@@ -375,8 +375,9 @@ void convert_yuv_to_planarrgb_uintN_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], co
     4. Output rgb offset is also added to the precalculated patch.
   */
   const __m256i half = _mm256_set1_epi16((short)(1 << (bits_per_pixel - 1)));  // 128
-  const __m256i limit = _mm256_set1_epi16((short)((1 << bits_per_pixel) - 1)); // 255
-  const __m256i offset = _mm256_set1_epi16((short)(m.offset_y));
+  const int max_pixel_value = (1 << bits_per_pixel) - 1;
+  const __m256i limit = _mm256_set1_epi16((short)max_pixel_value); // 255
+  const __m256i offset = _mm256_set1_epi16((short)m.offset_y);
 
   // to be able to use it as signed 16 bit in madd; 4096+(16<<13) would not fit into i16
   // multiplier is 4096 instead of 1:
@@ -387,19 +388,27 @@ void convert_yuv_to_planarrgb_uintN_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], co
   constexpr int ROUND_SCALE = 4096; // 1 << 12, for 13 bit integer arithmetic: "0.5"
   const __m256i m256i_round_scale = _mm256_set1_epi16(ROUND_SCALE);
 
+  // Float conversion extra rules
+  // - no rounding
+  // - no integer scaling back 13 bits
+  // - no clamping to bit depth limits
+  // - the 13-bit scaling factor is integrated into the bits_per_pixel shift
+
+  constexpr int ROUNDER = need_float_conversion ? 0 : (1 << 12); // 4096
+
   int round_mask_plus_rgb_offset_scaled_i;
   __m256i v_patch_G, v_patch_B, v_patch_R;
   __m256i sign_flip_mask = _mm256_set1_epi16((short)0x8000); // for 16 bit pivot
 
   if constexpr (lessthan16bit) {
     // 8-14 bit
-    round_mask_plus_rgb_offset_scaled_i = (4096 + (m.offset_rgb << 13)) / ROUND_SCALE;
+    round_mask_plus_rgb_offset_scaled_i = (ROUNDER + (m.offset_rgb << 13)) / ROUND_SCALE;
     v_patch_G = v_patch_B = v_patch_R = _mm256_setzero_si256(); // No patch needed
   }
   else {
     // exact 16 bit
     // keep madd simple: only handle the rounding (ROUND_SCALE * 1)
-    round_mask_plus_rgb_offset_scaled_i = 1; // effectively 1
+    round_mask_plus_rgb_offset_scaled_i = ROUNDER / ROUND_SCALE; // effectively 1 or 0 (need_float_conversion)
 
     // move BOTH the pivot and the output RGB offset to the 32-bit patch
     // Since we have to do the patching anyway, we can combine both adjustments here
@@ -413,7 +422,8 @@ void convert_yuv_to_planarrgb_uintN_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], co
   }
 
   __m256i zero = _mm256_setzero_si256();
-  const __m256 scale_f = _mm256_set1_ps(1.0f / static_cast<float>((1u << bits_per_pixel) - 1u));
+  constexpr int int_arithmetic_shift = 1 << 13;
+  const __m256 scale_f = _mm256_set1_ps(1.0f / static_cast<float>(int_arithmetic_shift * max_pixel_value));
 
   const __m256i m_uy_G = _mm256_set1_epi32(int((static_cast<uint16_t>(m.y_g) << 16) | static_cast<uint16_t>(m.u_g))); // y and u
   const __m256i m_vR_G = _mm256_set1_epi32(int((static_cast<uint16_t>(round_mask_plus_rgb_offset_scaled_i) << 16) | static_cast<uint16_t>(m.v_g))); // rounding 13 bit >> 1 and v
@@ -459,7 +469,7 @@ void convert_yuv_to_planarrgb_uintN_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], co
       // Avisynth FRAME_ALIGN == 64, so when need_float_conversion, we cannot process 32 pixels at once at the end of the line
       bool safe_last_16float_64bytes;
       if constexpr (need_float_conversion)
-        safe_last_16float_64bytes = (x + 64) <= rowsize;
+        safe_last_16float_64bytes = (x + 16 * sizeof(pixel_t)) <= rowsize;
       else
         safe_last_16float_64bytes = false;
 
@@ -508,7 +518,9 @@ void convert_yuv_to_planarrgb_uintN_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], co
           __m256i sum = _mm256_add_epi32(_mm256_madd_epi16(m_uy, uy), _mm256_madd_epi16(m_vr, vr));
           // 16-bit adjustment (signed patch, offset, output rgb offset)
           if constexpr (!lessthan16bit) sum = _mm256_add_epi32(sum, v_patch);
-          return _mm256_srai_epi32(sum, 13); // 13 bit fixed point shift
+          if constexpr (!need_float_conversion)
+            sum = _mm256_srai_epi32(sum, 13); // 13 bit fixed point shift
+          return sum;
           };
 
         __m256i res1_lo = madd_scale(uy1_lo, vr1_lo); // Pixels 0-3, 8-11

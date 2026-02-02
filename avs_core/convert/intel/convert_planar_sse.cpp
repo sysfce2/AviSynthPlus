@@ -1072,8 +1072,9 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
   */
 
   __m128i half = _mm_set1_epi16((short)(1 << (bits_per_pixel - 1)));  // 128
-  __m128i limit = _mm_set1_epi16((short)((1 << bits_per_pixel) - 1)); // 255
-  __m128i offset = _mm_set1_epi16((short)(m.offset_y));
+  const int max_pixel_value = (1 << bits_per_pixel) - 1;
+  __m128i limit = _mm_set1_epi16((short)max_pixel_value); // 255
+  __m128i offset = _mm_set1_epi16((short)m.offset_y);
 
   // to be able to use it as signed 16 bit in madd; 4096+(16<<13) would not fit into i16
   // multiplier is 4096 instead of 1:
@@ -1084,19 +1085,27 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
   constexpr int ROUND_SCALE = 4096; // 1 << 12, for 13 bit integer arithmetic: "0.5"
   const __m128i m128i_round_scale = _mm_set1_epi16(ROUND_SCALE);
 
+  // Float conversion extra rules
+  // - no rounding
+  // - no integer scaling back 13 bits
+  // - no clamping to bit depth limits
+  // - the 13-bit scaling factor is integrated into the bits_per_pixel shift
+
+  constexpr int ROUNDER = need_float_conversion ? 0 : (1 << 12); // 4096
+
   int round_mask_plus_rgb_offset_scaled_i;
   __m128i v_patch_G, v_patch_B, v_patch_R;
   __m128i sign_flip_mask = _mm_set1_epi16((short)0x8000); // for 16 bit pivot
 
   if constexpr (lessthan16bit) {
     // 8-14 bit
-    round_mask_plus_rgb_offset_scaled_i = (4096 + (m.offset_rgb << 13)) / ROUND_SCALE;
+    round_mask_plus_rgb_offset_scaled_i = (ROUNDER + (m.offset_rgb << 13)) / ROUND_SCALE;
     v_patch_G = v_patch_B = v_patch_R = _mm_setzero_si128(); // No patch needed
   }
   else {
     // exact 16 bit
     // keep madd simple: only handle the rounding (ROUND_SCALE * 1)
-    round_mask_plus_rgb_offset_scaled_i = 1; // effectively 1
+    round_mask_plus_rgb_offset_scaled_i = ROUNDER / ROUND_SCALE; // effectively 1 or 0 (need_float_conversion)
 
     // move BOTH the pivot and the output RGB offset to the 32-bit patch
     // Since we have to do the patching anyway, we can combine both adjustments here
@@ -1110,7 +1119,8 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
   }
 
   __m128i zero = _mm_setzero_si128();
-  const __m128 scale_f_sse2 = _mm_set1_ps(1.0f / static_cast<float>((1u << bits_per_pixel) - 1u));
+  constexpr int int_arithmetic_shift = 1 << 13;
+  const __m128 scale_f_sse2 = _mm_set1_ps(1.0f / static_cast<float>(int_arithmetic_shift * max_pixel_value));
 
   const __m128i m_uy_G = _mm_set1_epi32((static_cast<uint16_t>(m.y_g) << 16) | static_cast<uint16_t>(m.u_g));
   const __m128i m_vr_G = _mm_set1_epi32((static_cast<uint16_t>(round_mask_plus_rgb_offset_scaled_i) << 16) | static_cast<uint16_t>(m.v_g));
@@ -1170,11 +1180,13 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
         auto process_plane_sse2 = [&](BYTE* plane_ptr, __m128i m_uy, __m128i m_vr, __m128i v_patch) {
 
           auto madd_shift = [&](__m128i uy, __m128i vr) {
-            __m128i res = _mm_add_epi32(_mm_madd_epi16(m_uy, uy), _mm_madd_epi16(m_vr, vr));
+            __m128i sum = _mm_add_epi32(_mm_madd_epi16(m_uy, uy), _mm_madd_epi16(m_vr, vr));
             // 16-bit adjustment (signed patch, offset, output rgb offset)
-            if constexpr (!lessthan16bit) res = _mm_add_epi32(res, v_patch);
-            return _mm_srai_epi32(res, 13); // 13 bit fixed point shift
-            };
+            if constexpr (!lessthan16bit) sum = _mm_add_epi32(sum, v_patch);
+            if constexpr(!need_float_conversion)
+              sum = _mm_srai_epi32(sum, 13); // 13 bit fixed point shift
+            return sum;
+          };
 
           __m128i res_lo = madd_shift(uy_lo, vr_lo); // Pixels 0, 1, 2, 3
           __m128i res_hi = madd_shift(uy_hi, vr_hi); // Pixels 4, 5, 6, 7

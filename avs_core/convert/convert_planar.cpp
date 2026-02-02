@@ -890,7 +890,15 @@ static void convert_yuv444p16_to_rgb16_c(BYTE* dstp, const BYTE* srcY, const BYT
 template<typename pixel_t, bool lessthan16bit, bool need_float_conversion>
 static void convert_yuv_to_planarrgb_uintN_c(BYTE* dstp[3], int dstPitch[3], const BYTE* srcp[3], const int srcPitch[3], int width, int height, const ConversionMatrix& matrix, const int bits_per_pixel)
 {
- auto round_mask_plus_rgb_offset_i = 4096 + (matrix.offset_rgb << 13);
+  // Float conversion extra rules
+  // - no rounding
+  // - no integer scaling back 13 bits
+  // - no clamping to bit depth limits
+  // - the 13-bit scaling factor is integrated into the bits_per_pixel shift
+
+  constexpr int ROUNDER = need_float_conversion ? 0 : (1 << 12); // 4096
+
+  auto round_mask_plus_rgb_offset_i = ROUNDER + (matrix.offset_rgb << 13);
 
   // int64_t needed for exact 16 bit pixels.
   // unlike SIMD versions which optimize it by moving into signed int16 then back to uint16, taking care of overflows.
@@ -907,7 +915,8 @@ static void convert_yuv_to_planarrgb_uintN_c(BYTE* dstp[3], int dstPitch[3], con
     max_pixel_value = (1 << bits_per_pixel) - 1;
   }
 
-  const float inv_max = 1.0f / max_pixel_value;
+  constexpr int int_arithmetic_shift = 1 << 13;
+  const float scale_f = 1.0f / static_cast<float>(int_arithmetic_shift * max_pixel_value);
 
   for (int y = 0; y < height; y++) {
     const pixel_t* srcY = reinterpret_cast<const pixel_t*>(srcp[0]);
@@ -920,17 +929,21 @@ static void convert_yuv_to_planarrgb_uintN_c(BYTE* dstp[3], int dstPitch[3], con
       const int U = static_cast<int>(srcU[x]) - half_pixel_value;
       const int V = static_cast<int>(srcV[x]) - half_pixel_value;
 
-      int b = static_cast<int>(((safe_int_t)matrix.y_b * Y + (safe_int_t)matrix.u_b * U + (safe_int_t)matrix.v_b * V + round_mask_plus_rgb_offset_i) >> 13);
-      int g = static_cast<int>(((safe_int_t)matrix.y_g * Y + (safe_int_t)matrix.u_g * U + (safe_int_t)matrix.v_g * V + round_mask_plus_rgb_offset_i) >> 13);
-      int r = static_cast<int>(((safe_int_t)matrix.y_r * Y + (safe_int_t)matrix.u_r * U + (safe_int_t)matrix.v_r * V + round_mask_plus_rgb_offset_i) >> 13);
+      int b = static_cast<int>(((safe_int_t)matrix.y_b * Y + (safe_int_t)matrix.u_b * U + (safe_int_t)matrix.v_b * V + round_mask_plus_rgb_offset_i));
+      int g = static_cast<int>(((safe_int_t)matrix.y_g * Y + (safe_int_t)matrix.u_g * U + (safe_int_t)matrix.v_g * V + round_mask_plus_rgb_offset_i));
+      int r = static_cast<int>(((safe_int_t)matrix.y_r * Y + (safe_int_t)matrix.u_r * U + (safe_int_t)matrix.v_r * V + round_mask_plus_rgb_offset_i));
 
       if constexpr (need_float_conversion) {
-        // no clamp when converting to float
-        reinterpret_cast<float*>(d0)[x] = static_cast<float>(g) * inv_max;
-        reinterpret_cast<float*>(d1)[x] = static_cast<float>(b) * inv_max;
-        reinterpret_cast<float*>(d2)[x] = static_cast<float>(r) * inv_max;
+        // no clamp when converting to float, scale back integrated into scale_f
+        reinterpret_cast<float*>(d0)[x] = static_cast<float>(g) * scale_f;
+        reinterpret_cast<float*>(d1)[x] = static_cast<float>(b) * scale_f;
+        reinterpret_cast<float*>(d2)[x] = static_cast<float>(r) * scale_f;
       }
       else {
+        // scale back
+        g = g >> 13;
+        b = b >> 13;
+        r = r >> 13;
         // Clamp
         g = clamp(g, 0, max_pixel_value);
         b = clamp(b, 0, max_pixel_value);
