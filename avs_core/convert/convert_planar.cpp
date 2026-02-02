@@ -1100,7 +1100,7 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
           // RGBPA target + different bit-depth
           // Alpha bit depth conversion needed, normal planes are done in-process.
           // we need only conv_function_a, proper dispatching from ConvertBits
-          conv_function_a(src->GetReadPtr(PLANAR_A), dstpA, src->GetRowSize(PLANAR_A_ALIGNED), heightA, src->GetPitch(PLANAR_A), dst_pitchA, source_bit_depth, target_bit_depth, -1);
+          conv_function_a(src->GetReadPtr(PLANAR_A), dstpA, src->GetRowSize(PLANAR_A), heightA, src->GetPitch(PLANAR_A), dst_pitchA, source_bit_depth, target_bit_depth, -1);
         }
       }
       else {
