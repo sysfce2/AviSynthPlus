@@ -1176,10 +1176,18 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
         //         (  v3     4096 )     (  v2     4096 )     (  v1     4096 )     (  v0     4096 )
         // res2=  (yv_b*v3 + round' )  ...  round' = round + rgb_offset
         
+        // For v141_xp compatibility: forces the compiler to capture a const variable
+        // that would otherwise be optimized out of nested lambda scopes.
+        #define XP_LAMBDA_CAPTURE_FIX(x) (void)(x)
+
         // Processing lambda - checked and benchmarked to be inlined nicely -avoids code bloat
         auto process_plane_sse2 = [&](BYTE* plane_ptr, __m128i m_uy, __m128i m_vr, __m128i v_patch) {
+          XP_LAMBDA_CAPTURE_FIX(zero);
+          XP_LAMBDA_CAPTURE_FIX(limit);
+          XP_LAMBDA_CAPTURE_FIX(scale_f_sse2);
 
           auto madd_shift = [&](__m128i uy, __m128i vr) {
+            XP_LAMBDA_CAPTURE_FIX(v_patch);
             __m128i sum = _mm_add_epi32(_mm_madd_epi16(m_uy, uy), _mm_madd_epi16(m_vr, vr));
             // 16-bit adjustment (signed patch, offset, output rgb offset)
             if constexpr (!lessthan16bit) sum = _mm_add_epi32(sum, v_patch);
@@ -1219,6 +1227,8 @@ void convert_yuv_to_planarrgb_uintN_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], c
             }
           }
           };
+
+        #undef XP_LAMBDA_CAPTURE_FIX
 
         // Process planes, using pre-packed coefficient, and the 16 bit patch if needed
         process_plane_sse2(dstp[0], m_uy_G, m_vr_G, v_patch_G);
