@@ -9,6 +9,45 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
+20260211 3.7.5.r44?? (pre 3.7.6)
+--------------------------------
+* Fix: inaccurate ColorBarsHD 10+ bit values. Now they are derived from the 32-bit float 
+  RGB definitions instead of upscaling a 8 bit precalculated YUV value.
+  Corrected the lower parts for 32-bit as well.
+* Fix: GreyScale + SSE2 + RGB32 + matrix="RGB" overflow. 
+  Rare usage; "RGB" matrix (Identity) uses a 1.0 coefficient which exceeds the signed 16-bit 
+  SIMD limit of 32767 at 15-bit precision. Added bounds checking to fallback to C-code for any 
+  coefficients >= 1.0 or < −1.0.
+* Fix: YUV->RGB limited range matrix accuracy for 10-16 bits.
+* Use a different rounding in matrix coefficient's integer approximation.
+* ConvertToPlanarRGB: add the rest of fused bit conversions to YUV->RGB conevrsion. 
+  - Full range target: 8-16 bits internal calculation is in 32-bit float.
+  - Limited range target: a quicker, bit accuracy optimized integer calculation path.
+* Fix: Speed degradation when in-constructor GetFrame(0) (e.g. frame-property getter) 
+  is used. Disable internal Cache object creation.
+* Avoid MTGuard and CacheGuard creation if filter returns one of its clip parameter unaltered.
+* Add some avx2 stuff to Layer and Invert
+* Optmization: Overlay "Blend": aarch64 NEON optimization
+
+20260203 3.7.5.r4483 (pre 3.7.6)
+--------------------------------
+* rst documentation update: RGBAdjust https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/adjust.html
+* rst documentation update: ColorYUV https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/coloryuv.html
+* optimization: add AVX2 TurnLeft/TurnRight/Turn180 (R/L: 1,5-3x speed).
+* optimization: ConvertBits AVX2 integer->float
+* optimization: ConvertToPlanarRGB(A): YUV->RGB add AVX2 (2-3x speed)
+* optimization: ConvertToPlanarRGB(A): YUV->RGB 16 bit: a quicker way (1,5x)
+* Fix: C version of 32-bit ConvertToPlanarRGB YUV->RGB to not clamp output RGB values.
+* ConvertToPlanarRGB(A): add bits parameter to alter target bit-depth.
+* ConvertToPlanarRGB(A): from YUV->RGB full range output: optimized in-process when bits=32, other cases call ConvertBits internally.
+* Fix: Packed RGB conversions altering the bit-depth (e.g. rgb32->ConvertToRGB64() worked always in full range.
+* Add more AVX512 resampler code. (WIP)
+* Add more AVX512_BASE code paths (Resamplers)
+* Build: add _avx512b.cpp/hpp pattern in CMake to detect source to compile with base (F,CD,BW,DQ,VL) flags.
+  However AVX512_BASE itself is set only when AVX512_FAST found.
+  For pre-Ice Lake (older AVX512) systems you can enable it with SetMaxCPU("avx512base+") and get the optimized AVX512_BASE functions.
+* Build: add new architecture z/Architecture  
+
 20260107 3.7.5.r44XX (pre 3.7.6)
 --------------------------------
   * add AVX512 code path (tuning by DTL2020)
