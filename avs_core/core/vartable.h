@@ -118,7 +118,7 @@ class StringDump {
    {
      if (block_pos + len + 1 > block_size) {
        char* new_block = new char[block_size = max(block_size, len + 1 + sizeof(char*))];
-       _RPT0(0, "StringDump: Allocating new stringblock.\r\n");
+       //_RPT0(0, "StringDump: Allocating new stringblock.\r\n");
        *(char**)new_block = current_block;   // beginning of block holds pointer to previous block
        current_block = new_block;
        block_pos = sizeof(char*);

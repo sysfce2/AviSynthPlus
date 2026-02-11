@@ -3518,7 +3518,7 @@ void ScriptEnvironment::ListFrameRegistry(size_t min_size, size_t max_size, bool
             // if (elapsed_seconds.count() > 100.0f && frame->refcount > 0)
             if (frame->refcount > 0)
             {
-              snprintf(buf, 1023, "  >> Frame#%6d: vfb=%p frame=%p frame_refcount=%3ld timestamp=%f ago\n", inner_frame_count, vfb, frame, frame->refcount, elapsed_seconds.count());
+              snprintf(buf, 1023, "  >> Frame#%6d: vfb=%p frame=%p frame_refcount=%3ld T=%f ago\n", inner_frame_count, vfb, frame, frame->refcount, elapsed_seconds.count());
               DebugOut(buf);
             }
           }
@@ -3645,6 +3645,10 @@ VideoFrame* ScriptEnvironment::GetFrameFromRegistry(size_t vfb_size, Device* dev
           it2.second.clear();
           it2.second.reserve(16); // initial capacity set to 16, avoid reallocation when 1st, 2nd, etc.. elements pushed later (possible speedup)
           it2.second.push_back(DebugTimestampedFrame(frame_found)); // keep only the first
+#ifdef _DEBUG
+          //ListFrameRegistry(vfb_size, vfb_size, true); // for chasing stuck frames
+          //ListFrameRegistry(0, vfb_size, true); // for chasing stuck frames
+#endif
           return frame_found;
         }
       }
