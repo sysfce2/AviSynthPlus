@@ -565,7 +565,7 @@ template void layer_yuy2_add_mmx<true>(BYTE* dstp, const BYTE* ovrp, int dst_pit
 
 
 
-void layer_yuy2_fast_sse2(BYTE* dstp, const BYTE* ovrp, int dst_pitch, int overlay_pitch, int width, int height, int level) {
+void layer_yuy2_or_rgb32_fast_sse2(BYTE* dstp, const BYTE* ovrp, int dst_pitch, int overlay_pitch, int width, int height, int level) {
   AVS_UNUSED(level);
   int width_bytes = width * 2;
   int width_mod16 = width_bytes / 16 * 16;
@@ -901,6 +901,7 @@ static AVS_FORCEINLINE __m64 calculate_luma_isse(const __m64& src, const __m64& 
 }
 #endif
 
+// must be unaligned load/store
 template<bool use_chroma>
 void layer_rgb32_mul_sse2(BYTE* dstp, const BYTE* ovrp, int dst_pitch, int overlay_pitch, int width, int height, int level) {
   int mod2_width = width / 2 * 2;
@@ -1019,6 +1020,7 @@ template void layer_rgb32_mul_isse<true>(BYTE* dstp, const BYTE* ovrp, int dst_p
 #endif
 
 
+// must be unaligned load/store
 template<bool use_chroma>
 void layer_rgb32_add_sse2(BYTE* dstp, const BYTE* ovrp, int dst_pitch, int overlay_pitch, int width, int height, int level) {
   int mod2_width = width / 2 * 2;
@@ -1141,7 +1143,7 @@ template void layer_rgb32_add_isse<true>(BYTE* dstp, const BYTE* ovrp, int dst_p
 
 
 void layer_rgb32_fast_sse2(BYTE* dstp, const BYTE* ovrp, int dst_pitch, int overlay_pitch, int width, int height, int level) {
-  layer_yuy2_fast_sse2(dstp, ovrp, dst_pitch, overlay_pitch, width * 2, height, level);
+  layer_yuy2_or_rgb32_fast_sse2(dstp, ovrp, dst_pitch, overlay_pitch, width * 2, height, level);
 }
 
 #ifdef X86_32

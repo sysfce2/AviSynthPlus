@@ -40,6 +40,7 @@
 #include "layer.h"
 #ifdef INTEL_INTRINSICS
 #include "intel/layer_sse.h"
+#include "intel/layer_avx2.h"
 #endif
 #ifdef AVS_WINDOWS
 #include <avs/win.h>
@@ -229,7 +230,11 @@ PVideoFrame __stdcall Mask::GetFrame(int n, IScriptEnvironment* env)
 
     // clip1_alpha = greyscale(clip2)
 #ifdef INTEL_INTRINSICS
-    if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(src1p, 16) && IsPtrAligned(src2p, 16))
+    if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2))
+    {
+      mask_avx2(src1p, src2p, src1_pitch, src2_pitch, vi.width, vi.height);
+    }
+    else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
     {
       mask_sse2(src1p, src2p, src1_pitch, src2_pitch, vi.width, vi.height);
     }
@@ -243,10 +248,10 @@ PVideoFrame __stdcall Mask::GetFrame(int n, IScriptEnvironment* env)
 #endif
 #endif
       {
-        if (pixelsize == 1) {
+        if (pixelsize == 1) { // RGB32
           mask_c<uint8_t>(src1p, src2p, src1_pitch, src2_pitch, vi.width, vi.height);
         }
-        else { // if (pixelsize == 2)
+        else { // if (pixelsize == 2) RGB64
           mask_c<uint16_t>(src1p, src2p, src1_pitch, src2_pitch, vi.width, vi.height);
         }
       }
@@ -381,7 +386,11 @@ PVideoFrame __stdcall ColorKeyMask::GetFrame(int n, IScriptEnvironment* env)
   else {
     // RGB32, RGB64
 #ifdef INTEL_INTRINSICS
-    if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(pf, 16))
+    if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2))
+    {
+      colorkeymask_avx2(pf, pitch, color, vi.height, rowsize, tolB, tolG, tolR);
+    }
+    else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
     {
       colorkeymask_sse2(pf, pitch, color, vi.height, rowsize, tolB, tolG, tolR);
     }
@@ -655,7 +664,14 @@ static void invert_plane_float_c(BYTE* frame, int pitch, int row_size, int heigh
 
 static void invert_frame(BYTE* frame, int pitch, int rowsize, int height, int mask, uint64_t mask64, int pixelsize, IScriptEnvironment* env) {
 #ifdef INTEL_INTRINSICS
-  if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(frame, 16))
+  if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_AVX2))
+  {
+    if (pixelsize == 1)
+      invert_frame_avx2(frame, pitch, rowsize, height, mask);
+    else
+      invert_frame_uint16_avx2(frame, pitch, rowsize, height, mask64);
+  }
+  else if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_SSE2))
   {
     if (pixelsize == 1)
       invert_frame_sse2(frame, pitch, rowsize, height, mask);
@@ -680,7 +696,14 @@ static void invert_frame(BYTE* frame, int pitch, int rowsize, int height, int ma
 
 static void invert_plane(BYTE* frame, int pitch, int rowsize, int height, int pixelsize, uint64_t mask64, bool chroma, IScriptEnvironment* env) {
 #ifdef INTEL_INTRINSICS
-  if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(frame, 16))
+  if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_AVX2))
+  {
+    if (pixelsize == 1)
+      invert_frame_avx2(frame, pitch, rowsize, height, 0xffffffff);
+    else if (pixelsize == 2)
+      invert_frame_uint16_avx2(frame, pitch, rowsize, height, mask64);
+  }
+  else if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_SSE2))
   {
     if (pixelsize == 1)
       invert_frame_sse2(frame, pitch, rowsize, height, 0xffffffff);
@@ -3478,6 +3501,7 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       if (chroma) // Use chroma of the overlay_clip.
       {
 #ifdef INTEL_INTRINSICS
+        // yes, alignment check, we can have x offsets
         if ((env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(src1p, 16) && IsPtrAligned(src2p, 16))
         {
           layer_yuy2_mul_sse2<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
@@ -3498,6 +3522,7 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       }
       else {
 #ifdef INTEL_INTRINSICS
+        // yes, alignment check, we can have x offsets
         if ((env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(src1p, 16) && IsPtrAligned(src2p, 16))
         {
           layer_yuy2_mul_sse2<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
@@ -3559,9 +3584,10 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
     {
       if (chroma) {
 #ifdef INTEL_INTRINSICS
+        // yes, alignment check, we can have x offsets
         if ((env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(src1p, 16) && IsPtrAligned(src2p, 16))
         {
-          layer_yuy2_fast_sse2(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
+          layer_yuy2_or_rgb32_fast_sse2(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
         }
 #ifdef X86_32
         else if (env->GetCPUFlags() & CPUF_INTEGER_SSE)
@@ -3657,7 +3683,7 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
         layer_yuy2_lighten_darken_c<DARKEN>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel, ThresholdParam);
       }
     }
-  }
+  } // end of YUY2
   else if (vi.IsRGB32() || vi.IsRGB64())
   {
     const int src1_pitch = src1->GetPitch();
@@ -3679,7 +3705,11 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       if (chroma)
       {
 #ifdef INTEL_INTRINSICS
-        if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
+        if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2))
+        {
+          layer_rgb32_mul_avx2<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
+        }
+        else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
         {
           layer_rgb32_mul_sse2<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
         }
@@ -3701,7 +3731,11 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       else // Mul, chroma==false
       {
 #ifdef INTEL_INTRINSICS
-        if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
+        if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2))
+        {
+          layer_rgb32_mul_avx2<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
+        }
+        else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
         {
           layer_rgb32_mul_sse2<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
         }
@@ -3729,7 +3763,11 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       if (chroma)
       {
 #ifdef INTEL_INTRINSICS
-        if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
+        if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2))
+        {
+          layer_rgb32_add_avx2<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
+        }
+        else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
         {
           layer_rgb32_add_sse2<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
         }
@@ -3751,7 +3789,11 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       else // Add, chroma == false
       {
 #ifdef INTEL_INTRINSICS
-        if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
+        if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2))
+        {
+          layer_rgb32_add_avx2<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
+        }
+        else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
         {
           layer_rgb32_add_sse2<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
         }
@@ -3776,7 +3818,11 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       // Copy overlay_clip over base_clip in areas where overlay_clip is lighter by threshold.
       // only chroma == true
 #ifdef INTEL_INTRINSICS
-      if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
+      if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2))
+      {
+        layer_rgb32_lighten_darken_avx2<LIGHTEN>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel, thresh);
+      }
+      else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
       {
         layer_rgb32_lighten_darken_sse2<LIGHTEN>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel, thresh);
       }
@@ -3800,7 +3846,11 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       // Copy overlay_clip over base_clip in areas where overlay_clip is darker by threshold.
       // only chroma == true
 #ifdef INTEL_INTRINSICS
-      if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
+      if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2))
+      {
+        layer_rgb32_lighten_darken_avx2<DARKEN>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel, thresh);
+      }
+      else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
       {
         layer_rgb32_lighten_darken_sse2<DARKEN>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel, thresh);
       }
@@ -3826,7 +3876,13 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       // The result is simply the average of base_clip and overlay_clip.
       // only chroma == true
 #ifdef INTEL_INTRINSICS
-      if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(src1p, 16) && IsPtrAligned(src2p, 16))
+      // yes, alignment check, we can have x offsets
+      // But this avx2 does not require it
+      if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2))
+      {
+        layer_rgb32_fast_avx2(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
+      }
+      else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(src1p, 16) && IsPtrAligned(src2p, 16))
       {
         layer_rgb32_fast_sse2(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
       }
@@ -3852,7 +3908,11 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       if (chroma)
       {
 #ifdef INTEL_INTRINSICS
-        if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
+        if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2))
+        {
+          layer_rgb32_subtract_avx2<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
+        }
+        else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
         {
           layer_rgb32_subtract_sse2<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
         }
@@ -3874,7 +3934,11 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       else
       {
 #ifdef INTEL_INTRINSICS
-        if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
+        if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2))
+        {
+          layer_rgb32_subtract_avx2<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
+        }
+        else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
         {
           layer_rgb32_subtract_sse2<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
         }
@@ -4257,7 +4321,14 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
         {
           // only chroma == true
 #ifdef INTEL_INTRINSICS
-          if (env->GetCPUFlags() & CPUF_SSE2 && bits_per_pixel != 32)
+          if (env->GetCPUFlags() & CPUF_AVX2 && bits_per_pixel != 32)
+          {
+            if (bits_per_pixel == 8)
+              layer_genericplane_fast_avx2<uint8_t>(src1p, src2p, src1_pitch, src2_pitch, currentwidth, currentheight, mylevel);
+            else if (bits_per_pixel <= 16) // simply averaging, no difference for 10-16 bits
+              layer_genericplane_fast_avx2<uint16_t>(src1p, src2p, src1_pitch, src2_pitch, currentwidth, currentheight, mylevel);
+          }
+          else if (env->GetCPUFlags() & CPUF_SSE2 && bits_per_pixel != 32)
           {
             if (bits_per_pixel == 8)
               layer_genericplane_fast_sse2<uint8_t>(src1p, src2p, src1_pitch, src2_pitch, currentwidth, currentheight, mylevel);
@@ -4574,7 +4645,14 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       // target alpha channel is unaffected
       for (int i = 0; i < std::min(vi.NumComponents(), 3); i++) {
 #ifdef INTEL_INTRINSICS
-        if (env->GetCPUFlags() & CPUF_SSE2 && bits_per_pixel != 32)
+        if (env->GetCPUFlags() & CPUF_AVX2 && bits_per_pixel != 32)
+        {
+          if (bits_per_pixel == 8)
+            layer_genericplane_fast_avx2<uint8_t>(dstp[i], ovrp[i], dstp_pitch, ovrp_pitch, width, height, mylevel);
+          else if (bits_per_pixel <= 16) // simply averaging, no difference for 10-16 bits
+            layer_genericplane_fast_avx2<uint16_t>(dstp[i], ovrp[i], dstp_pitch, ovrp_pitch, width, height, mylevel);
+        }
+        else if (env->GetCPUFlags() & CPUF_SSE2 && bits_per_pixel != 32)
         {
           if (bits_per_pixel == 8)
             layer_genericplane_fast_sse2<uint8_t>(dstp[i], ovrp[i], dstp_pitch, ovrp_pitch, width, height, mylevel);
