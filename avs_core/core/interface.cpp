@@ -509,7 +509,14 @@ void VideoFrame::Release() {
       delete properties; // if needed, frame registry will re-create
       properties = nullptr;
     }
+#ifdef ALTERNATIVE_VFB_TIMESTAMP
+    if (!InterlockedDecrement(&_vfb->refcount)) {
+      // all VideoFrameBuffer instances are actually VFBStorage, which has way mode admin fields
+      VFBHelper::UpdateVFBFreeTimestamp(_vfb);
+    }
+#else
     InterlockedDecrement(&_vfb->refcount);
+#endif
   }
 }
 

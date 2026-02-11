@@ -969,6 +969,65 @@ public:
 
   ThreadScriptEnvironment* GetMainThreadEnv() { return threadEnv.get(); }
 
+  class VFBStorage : public VideoFrameBuffer {
+  public:
+    std::atomic<int64_t> last_freed_timestamp;
+    int free_count;
+    int margin;
+    PGraphMemoryNode memory_node;
+
+    // Helper to update VFB timestamp from external code
+    static void UpdateVFBFreeTimestamp(VideoFrameBuffer* vfb) {
+      static std::atomic<int64_t> global_free_counter{ 0 };
+      static_cast<VFBStorage*>(vfb)->last_freed_timestamp = ++global_free_counter;
+    }
+
+    VFBStorage()
+      : VideoFrameBuffer(),
+      free_count(0),
+      margin(0)
+    {
+    }
+
+    VFBStorage(int size, int margin, Device* device)
+      : VideoFrameBuffer(size, margin, device),
+      free_count(0),
+      margin(margin)
+    {
+    }
+
+    void Attach(FilterGraphNode* node) {
+      if (memory_node) {
+        memory_node->OnFree(data_size, device);
+        memory_node = nullptr;
+      }
+      if (node != nullptr) {
+        memory_node = node->GetMemoryNode();
+        memory_node->OnAllocate(data_size, device);
+      }
+    }
+
+    ~VFBStorage() {
+      if (memory_node) {
+        memory_node->OnFree(data_size, device);
+        memory_node = nullptr;
+      }
+#ifdef _DEBUG
+      if (data && (device->device_type == DEV_TYPE_CPU)) {
+        // check buffer overrun
+        int* pInt = (int*)(data + margin + data_size);
+        if (pInt[0] != 0xDEADBEEF ||
+          pInt[1] != 0xDEADBEEF ||
+          pInt[2] != 0xDEADBEEF ||
+          pInt[3] != 0xDEADBEEF)
+        {
+          printf("Buffer overrun!!!\n");
+        }
+      }
+#endif
+    }
+  };
+
 private:
   typedef IScriptEnvironment::NotFound NotFound;
   typedef IScriptEnvironment::ApplyFunc ApplyFunc;
@@ -1018,56 +1077,6 @@ private:
       , timestamp(std::chrono::high_resolution_clock::now())
 #endif
     {}
-  };
-
-  class VFBStorage : public VideoFrameBuffer {
-  public:
-    int free_count;
-    int margin;
-    PGraphMemoryNode memory_node;
-
-    VFBStorage()
-      : VideoFrameBuffer(),
-      free_count(0),
-      margin(0)
-    { }
-
-    VFBStorage(int size, int margin, Device* device)
-      : VideoFrameBuffer(size, margin, device),
-      free_count(0),
-      margin(margin)
-    { }
-
-    void Attach(FilterGraphNode* node) {
-      if (memory_node) {
-        memory_node->OnFree(data_size, device);
-        memory_node = nullptr;
-      }
-      if (node != nullptr) {
-        memory_node = node->GetMemoryNode();
-        memory_node->OnAllocate(data_size, device);
-      }
-    }
-
-    ~VFBStorage() {
-      if (memory_node) {
-        memory_node->OnFree(data_size, device);
-        memory_node = nullptr;
-      }
-#ifdef _DEBUG
-      if (data && device->device_type == DEV_TYPE_CPU) {
-        // check buffer overrun
-        int *pInt = (int *)(data + margin + data_size);
-        if (pInt[0] != 0xDEADBEEF ||
-          pInt[1] != 0xDEADBEEF ||
-          pInt[2] != 0xDEADBEEF ||
-          pInt[3] != 0xDEADBEEF)
-        {
-          printf("Buffer overrun!!!\n");
-        }
-      }
-#endif
-    }
   };
 
   typedef std::vector<DebugTimestampedFrame> VideoFrameArrayType;
@@ -1163,6 +1172,15 @@ private:
 
   void InitMT();
 };
+
+#ifdef ALTERNATIVE_VFB_TIMESTAMP
+// wrapper for VideoFrameBuffer destroy
+namespace VFBHelper {
+  void UpdateVFBFreeTimestamp(VideoFrameBuffer* vfb) {
+    ScriptEnvironment::VFBStorage::UpdateVFBFreeTimestamp(vfb);
+  }
+}
+#endif
 
 const std::string ScriptEnvironment::DEFAULT_MODE_SPECIFIER = "DEFAULT_MT_MODE";
 
@@ -1568,7 +1586,7 @@ public:
   {
     return core->NewVideoFrameOnDevice(vi, align, DISPATCH(currentDevice), prop_src);
   }
-
+    
   void* __stdcall GetDeviceStream()
   {
     return DISPATCH(currentDevice)->GetComputeStream();
@@ -3494,10 +3512,14 @@ void ScriptEnvironment::ListFrameRegistry(size_t min_size, size_t max_size, bool
     for (auto &it2: it->second)
     {
       size2++;
-      VideoFrameBuffer* vfb = it2.first;
+      VFBStorage* vfb = static_cast<VFBStorage*>(it2.first);
       total_vfb_size += vfb->GetDataSize();
       size_t inner_frame_count_size = it2.second.size();
+#ifdef ALTERNATIVE_VFB_TIMESTAMP
+      snprintf(buf, 1023, ">>>> IterateLevel #3 %5zu frames in [%3d,%5d] --> vfb=%p vfb_refcount=%3ld vfb_timestamp=%" PRId64 " seqNum=%d\n", inner_frame_count_size, size1, size2, vfb, vfb->refcount, vfb->last_freed_timestamp.load(), vfb->GetSequenceNumber());
+#else
       snprintf(buf, 1023, ">>>> IterateLevel #3 %5zu frames in [%3d,%5d] --> vfb=%p vfb_refcount=%3ld seqNum=%d\n", inner_frame_count_size, size1, size2, vfb, vfb->refcount, vfb->GetSequenceNumber());
+#endif
       DebugOut(buf);
       // iterate the frame list of this vfb
       int inner_frame_count = 0;
@@ -3554,6 +3576,7 @@ void ScriptEnvironment::ListFrameRegistry(size_t min_size, size_t max_size, bool
 }
 #endif
 
+#ifndef ALTERNATIVE_VFB_TIMESTAMP
 VideoFrame* ScriptEnvironment::GetFrameFromRegistry(size_t vfb_size, Device* device)
 {
 #ifdef _DEBUG
@@ -3669,6 +3692,120 @@ VideoFrame* ScriptEnvironment::GetFrameFromRegistry(size_t vfb_size, Device* dev
 
   return NULL;
 }
+#else
+
+// A newer method which returns the most recently freed vfb
+VideoFrame* ScriptEnvironment::GetFrameFromRegistry(size_t vfb_size, Device* device)
+{
+#ifdef _DEBUG
+  std::chrono::time_point<std::chrono::high_resolution_clock> t_start, t_end;
+  t_start = std::chrono::high_resolution_clock::now();
+#endif
+
+  for (FrameRegistryType2::iterator it = FrameRegistry2.lower_bound(vfb_size), end_it = FrameRegistry2.upper_bound(vfb_size * 3 / 2);
+    it != end_it;
+    ++it)
+  {
+    // Find VFB with _highest_ last_freed_timestamp (most recently freed)
+    VFBStorage* best_vfb = nullptr;
+    int64_t best_timestamp = -1;
+    FrameBufferRegistryType::iterator best_it2 = it->second.end();
+
+    // FIXME: size of frame registry? - Here we do always full scan.
+    // Unlike the old method which returns first free.
+    for (auto it2 = it->second.begin(); it2 != it->second.end(); ++it2)
+    {
+      VFBStorage* vfb = static_cast<VFBStorage*>(it2->first);
+      if (device == vfb->device && 0 == vfb->refcount)
+      {
+        int64_t timestamp = vfb->last_freed_timestamp.load();
+        if (timestamp > best_timestamp)
+        {
+          best_timestamp = timestamp;
+          best_vfb = vfb;
+          best_it2 = it2;
+        }
+      }
+
+    }
+
+    if (best_vfb != nullptr)
+    {
+      auto& it2 = best_it2;
+      VFBStorage* vfb = best_vfb;
+
+      // Process the most recently freed VFB (LRU strategy for better cache locality)
+      // This new version is likely better because it prefers recently-used memory
+      // (better cache performance), while the old version just grabs the first available match.
+      size_t videoFrameListSize = it2->second.size();
+      VideoFrame* frame_found = nullptr;
+      bool found = false;
+
+      for (VideoFrameArrayType::iterator it3 = it2->second.begin(), end_it3 = it2->second.end();
+        it3 != end_it3;
+        /* ++it3 not here, because of the delete */)
+      {
+        VideoFrame* frame = it3->frame;
+        assert(0 == frame->refcount);
+
+        if (frame->properties != nullptr) {
+          delete frame->properties;
+          frame->properties = nullptr;
+        }
+
+        if (!found)
+        {
+          InterlockedIncrement(&(frame->vfb->refcount));
+          vfb->free_count = 0;
+          vfb->Attach(threadEnv->GetCurrentGraphNode());
+
+#ifdef _DEBUG
+          char buf[256];
+          t_end = std::chrono::high_resolution_clock::now();
+          std::chrono::duration<double> elapsed_seconds = t_end - t_start;
+          snprintf(buf, 255, "ScriptEnvironment::GetNewFrame NEW METHOD EXACT hit! VideoFrameListSize=%7zu GotSize=%7zu FrReg.Size=%6zu vfb=%p frame=%p timestamp=%" PRId64 " SeqNum=%d SeekTime:%f\n", videoFrameListSize, vfb_size, FrameRegistry2.size(), vfb, frame, vfb->last_freed_timestamp.load(), vfb->GetSequenceNumber(), elapsed_seconds.count());
+          _RPT0(0, buf);
+#endif
+
+          frame->properties = new AVSMap();
+          frame_found = frame;
+          found = true;
+
+#ifdef _DEBUG
+          it3->timestamp = std::chrono::high_resolution_clock::now();
+#endif
+          ++it3;
+        }
+        else {
+          delete frame;
+          ++it3;
+        }
+      } // for it3
+
+      if (found)
+      {
+        _RPT2(0, "ScriptEnvironment::GetNewFrame returning frame_found. clearing frames. List count: %7zu timestamp=%" PRId64 " SeqNum=%d\n", it2->second.size(), vfb->last_freed_timestamp.load(), vfb->GetSequenceNumber());
+        it2->second.clear();
+        it2->second.reserve(16);
+        it2->second.push_back(DebugTimestampedFrame(frame_found));
+
+#ifdef _DEBUG
+        ListFrameRegistry(vfb_size, vfb_size, true);
+        ListFrameRegistry(0, vfb_size, true);
+#endif
+        return frame_found;
+      }
+    }
+  } // for it
+
+  _RPT3(0, "ScriptEnvironment::GetNewFrame, no free entry in FrameRegistry. Requested vfb size=%zu memused=%" PRIu64 " memmax=%" PRIu64 "\n", vfb_size, device->memory_used.load(), device->memory_max);
+#ifdef _DEBUG
+  ListFrameRegistry(vfb_size, vfb_size, true);
+  ListFrameRegistry(0, vfb_size, true);
+#endif
+  return NULL;
+}
+#endif
 
 VideoFrame* ScriptEnvironment::GetNewFrame(size_t vfb_size, size_t margin, Device* device)
 {
@@ -5000,6 +5137,9 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
 
   MtModeEvaluator mthelper;
 
+  // Save clips whether one of them is returned unaltered after Invoke
+  std::vector<IClip*> clip_parameters_raw;
+
   bool foundClipArgument = false;
   for (int i = argbase; i < (int)args2.size(); ++i)
   {
@@ -5012,6 +5152,8 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
       const PClip &clip = argx.AsClip();
       IClip *clip_raw = (IClip*)((void*)clip);
       ClipDataStore *data = this->ClipData(clip_raw);
+      // Save clips whether one of them is returned unaltered after Invoke
+      clip_parameters_raw.push_back(clip_raw);
 
       if (!data->CreatedByInvoke)
       {
@@ -5036,6 +5178,9 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
 
   bool is_mtmode_forced;
   bool filterHasSpecialMT = this->GetFilterMTMode(f, &is_mtmode_forced) == MT_SPECIAL_MT;
+
+  bool instantiated_clip_unaltered = false;
+  bool cache_guard_called = false;
 
   if (filterHasSpecialMT) // pre-avs 3.6 workaround for MP_Pipeline
   {
@@ -5071,6 +5216,21 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
     try
     {
       fret = funcCtor->InstantiateFilter();
+
+      // Detect whether one of the parameter clip was returned unaltered.
+      // Introduce bool instantiated_clip_unaltered.
+      if (fret.IsClip()) {
+        const PClip& clip = fret.AsClip();
+        IClip* clip_raw = (IClip*)((void*)clip);
+        for (auto comparewith : clip_parameters_raw) {
+          if (comparewith == clip_raw) {
+            _RPT1(0, "ScriptEnvironment::Invoke funcCtor->InstantiateFilter %s returned the very same clip unaltered that was in a parameter\r\n", name);
+            instantiated_clip_unaltered = true;
+            break;
+          }
+        }
+      }
+
       invoke_stack.pop();
     }
     catch (...)
@@ -5124,49 +5284,59 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
         // pass current directory as well, in order to remember it when a MT_MULTI_INSTANCE filter is populated to threads during Prefetch
         auto current_directory = CWDChanger::GetCurrentWorkingDirectory(); // wstring on Windows, string on POSIX
 
-        *result = MTGuard::Create(mtmode, clip, std::move(funcCtor), current_directory.c_str(), threadEnv.get());
+        // Do dot create MTGuard on an already existing clip
+        if (!instantiated_clip_unaltered) {
+          *result = MTGuard::Create(mtmode, clip, std::move(funcCtor), current_directory.c_str(), threadEnv.get());
 
-        IClip *clip_raw = (IClip*)((void*)clip);
-        ClipDataStore *data = this->ClipData(clip_raw);
-        data->CreatedByInvoke = true;
+          IClip *clip_raw = (IClip*)((void*)clip);
+          ClipDataStore *data = this->ClipData(clip_raw);
+          data->CreatedByInvoke = true;
+        }
+        else {
+          *result = clip;
+        }
       } // if (chainedCtor)
 
       // Nekopanda: moved here from above.
       // some filters invoke complex filters in its constructor, and they need cache.
-      AVSValue args_cacheguard[2]{ *result, f->name };
-      *result = CacheGuard::Create(AVSValue(args_cacheguard, 2), NULL, threadEnv.get());
+      // pf: Do not introduce (another) cache on an existing PClip
+      if (!instantiated_clip_unaltered) {
+        AVSValue args_cacheguard[2]{ *result, f->name };
+        *result = CacheGuard::Create(AVSValue(args_cacheguard, 2), NULL, threadEnv.get());
+        cache_guard_called = true; // for debug
 
-      // Check that the filter returns zero for unknown queries in SetCacheHints().
-      // This is actually something we rely upon.
-      if ((clip->GetVersion() >= 5) && (0 != clip->SetCacheHints(CACHE_USER_CONSTANTS, 0)))
-      {
-        OneTimeLogTicket ticket(LOGTICKET_W1002, f);
-        LogMsgOnce(ticket, LOGLEVEL_WARNING, "%s() violates semantic contracts and may cause undefined behavior. Please inform the author of the plugin.", f->canon_name);
-      }
+        // Check that the filter returns zero for unknown queries in SetCacheHints().
+        // This is actually something we rely upon.
+        if ((clip->GetVersion() >= 5) && (0 != clip->SetCacheHints(CACHE_USER_CONSTANTS, 0)))
+        {
+          OneTimeLogTicket ticket(LOGTICKET_W1002, f);
+          LogMsgOnce(ticket, LOGLEVEL_WARNING, "%s() violates semantic contracts and may cause undefined behavior. Please inform the author of the plugin.", f->canon_name);
+        }
 
-      // Warn user if the MT-mode of this filter is unknown
-      if (MtModeEvaluator::UsesDefaultMtMode(clip, f, threadEnv.get()) && !isSourceFilter)
-      {
-        OneTimeLogTicket ticket(LOGTICKET_W1004, f);
-        LogMsgOnce(ticket, LOGLEVEL_WARNING, "%s() has no MT-mode set and will use the default MT-mode. This might be dangerous.", f->canon_name);
-      }
+        // Warn user if the MT-mode of this filter is unknown
+        if (MtModeEvaluator::UsesDefaultMtMode(clip, f, threadEnv.get()) && !isSourceFilter)
+        {
+          OneTimeLogTicket ticket(LOGTICKET_W1004, f);
+          LogMsgOnce(ticket, LOGLEVEL_WARNING, "%s() has no MT-mode set and will use the default MT-mode. This might be dangerous.", f->canon_name);
+        }
 
-      // Warn user if he forced an MT-mode that differs from the one specified by the filter itself
-      if (is_mtmode_forced
-        && MtModeEvaluator::ClipSpecifiesMtMode(clip)
-        && MtModeEvaluator::GetInstanceMode(clip) != mtmode)
-      {
-        OneTimeLogTicket ticket(LOGTICKET_W1005, f);
-        LogMsgOnce(ticket, LOGLEVEL_WARNING, "%s() specifies an MT-mode for itself, but a script forced a different one. Either the plugin or the script is erronous.", f->canon_name);
-      }
+        // Warn user if he forced an MT-mode that differs from the one specified by the filter itself
+        if (is_mtmode_forced
+          && MtModeEvaluator::ClipSpecifiesMtMode(clip)
+          && MtModeEvaluator::GetInstanceMode(clip) != mtmode)
+        {
+          OneTimeLogTicket ticket(LOGTICKET_W1005, f);
+          LogMsgOnce(ticket, LOGLEVEL_WARNING, "%s() specifies an MT-mode for itself, but a script forced a different one. Either the plugin or the script is erronous.", f->canon_name);
+        }
 
-      // Inform user if a script unnecessarily specifies an MT-mode for this filter
-      if (!is_mtmode_forced
-        && this->FilterHasMtMode(f)
-        && MtModeEvaluator::ClipSpecifiesMtMode(clip))
-      {
-        OneTimeLogTicket ticket(LOGTICKET_W1006, f);
-        LogMsgOnce(ticket, LOGLEVEL_INFO, "Ignoring unnecessary MT-mode specification for %s() by script.", f->canon_name);
+        // Inform user if a script unnecessarily specifies an MT-mode for this filter
+        if (!is_mtmode_forced
+          && this->FilterHasMtMode(f)
+          && MtModeEvaluator::ClipSpecifiesMtMode(clip))
+        {
+          OneTimeLogTicket ticket(LOGTICKET_W1006, f);
+          LogMsgOnce(ticket, LOGLEVEL_INFO, "Ignoring unnecessary MT-mode specification for %s() by script.", f->canon_name);
+        }
       }
 
     } // if (fret.IsClip())
@@ -5191,12 +5361,17 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
 #ifdef _DEBUG
     if (PrevFrontCache != FrontCache && FrontCache != NULL) // cache registering swaps frontcache to the current
     {
-      _RPT2(0, "ScriptEnvironment::Invoke done AvsCache::Create %s  cache_id=%p\r\n", name, (void*)FrontCache);
-      FrontCache->FuncName = name; // helps debugging. See also in cache.cpp
+      std::string real_function_name = name;
+      if (!cache_guard_called) {
+        real_function_name = "on behalf of " + real_function_name;
+        _RPT2(0, "ScriptEnvironment:: AvsCache FrontCache altered (but no direct AvsCache call) %s  cache_id=%p\r\n", real_function_name.c_str(), (void*)FrontCache);
+      }
+      else {
+        _RPT2(0, "ScriptEnvironment:: AvsCache FrontCache altered %s  cache_id=%p\r\n", real_function_name.c_str(), (void*)FrontCache);
+      }
+      FrontCache->FuncName = real_function_name; // helps debugging. See also in cache.cpp
     }
-    else {
-      _RPT1(0, "ScriptEnvironment::Invoke done AvsCache::Create %s\r\n", name);
-    }
+    _RPT1(0, "ScriptEnvironment::Invoke done %s\r\n", name);
 #endif
   }
 

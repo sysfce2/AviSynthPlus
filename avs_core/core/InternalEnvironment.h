@@ -77,7 +77,19 @@ public:
 	}
 };
 
-// Interface fransformation hack
+#ifdef ALTERNATIVE_VFB_TIMESTAMP
+class VideoFrameBuffer;
+
+// Forward declarations - don't expose full classes
+class ScriptEnvironment;
+
+namespace VFBHelper {
+  // Wrapper function to call the nested static method
+  void UpdateVFBFreeTimestamp(VideoFrameBuffer* vfb);
+}
+#endif
+
+// Interface transformation hack
 class InternalEnvironment; // forward
 InternalEnvironment* GetAndRevealCamouflagedEnv(IScriptEnvironment* env);
 
