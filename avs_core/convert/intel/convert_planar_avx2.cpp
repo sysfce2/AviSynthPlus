@@ -467,9 +467,12 @@ void convert_yuv_to_planarrgb_uintN_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], co
       }
 
       // Avisynth FRAME_ALIGN == 64, so when need_float_conversion, we cannot process 32 pixels at once at the end of the line
+      // Can I write all 32 pixels (blockA+B+C+D)?
+      // yes: write all 4 blocks (blockA, B, C, D)
+      // no : Write only first 2 blocks (blockA, B), 16 floats are guaranteed safe due to 64-byte alignment
       bool safe_last_16float_64bytes;
       if constexpr (need_float_conversion)
-        safe_last_16float_64bytes = (x + 16 * sizeof(pixel_t)) <= rowsize;
+        safe_last_16float_64bytes = (x + 32 * sizeof(pixel_t)) <= rowsize;
       else
         safe_last_16float_64bytes = false;
 
