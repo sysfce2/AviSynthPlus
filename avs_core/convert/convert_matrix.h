@@ -55,6 +55,13 @@ struct ConversionMatrix {
   float offset_y_f;
   int offset_rgb;
   float offset_rgb_f;
+
+  // Helper values for exact 32-bit target for hybric calculations, where
+  // conversion to 32-bits is done after the integer-integer conversion.
+  // E.g. yuv X-bit -> rgb X-bit -> rgb 32-bit
+  float target_span_f;
+  float target_span_f_32;
+  float offset_rgb_f_32;
 };
 
 bool do_BuildMatrix_Rgb2Yuv(int _Matrix, int _ColorRange, int _ColorRange_Out, int int_arith_shift, int bits_per_pixel, ConversionMatrix& matrix);

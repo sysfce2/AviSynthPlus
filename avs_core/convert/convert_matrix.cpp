@@ -41,42 +41,36 @@
 #else
 #include <avs/posix.h>
 #endif 
+#include <cmath>
 
+// Note on scaling factors and int16 range:
+// - int_arith_shift = 15: safe for most YUV transforms where coeffs < 1.0.
+// - matrix="RGB" (IDENTITY) exception: If Kr=Kb=0 (Identity), coeffs reach 1.0. (1.0 << 15) = 32768, 
+//   which overflows int16 (-32768 to 32767). Caller will check it and may diable int16 based SIMD optimization paths.
+// - int_arith_shift = 14: recommended for 3-element matrix addition using "madd" to avoid 32-bit accum overflow.
 static void BuildMatrix_Rgb2Yuv_core(double Kr, double Kb, int int_arith_shift, bool full_scale_s, bool full_scale_d, int bits_per_pixel, ConversionMatrix& matrix)
 {
-  int Sy, Suv, Oy, Orgb;
-  float Sy_f, Suv_f, Oy_f, Orgb_f;
+  bits_conv_constants luma, chroma;
 
-  if (bits_per_pixel <= 16) {
-    Oy = full_scale_d ? 0 : (16 << (bits_per_pixel - 8));
-    Oy_f = (float)Oy; // for 16 bits
+  // RGB is source, YUV is destination
+  // For RGB source / Y destination (both luma-like):
+  get_bits_conv_constants(luma, false, full_scale_s, full_scale_d, bits_per_pixel, bits_per_pixel);
+  // For UV destination (chroma behavior):
+  // Note: we only need dst_span for UV, so we use full_scale_d for both params
+  get_bits_conv_constants(chroma, true, full_scale_d, full_scale_d, bits_per_pixel, bits_per_pixel);
 
-    Orgb = full_scale_s ? 0 : (16 << (bits_per_pixel - 8));
-    Orgb_f = (float)Orgb; // for 16 bits
+  double Srgb_f = luma.src_span;      // RGB input range
+  double Sy_f = luma.dst_span;        // Y output range  
+  double Suv_f = chroma.dst_span;     // UV output range
+  double Orgb_f = luma.src_offset;    // RGB input offset
+  double Oy_f = luma.dst_offset;      // Y output offset
 
-    int ymin = (full_scale_d ? 0 : 16) << (bits_per_pixel - 8);
-    int max_pixel_value = (1 << bits_per_pixel) - 1;
-    int ymax = full_scale_d ? max_pixel_value : (235 << (bits_per_pixel - 8));
-    Sy = ymax - ymin;
-    Sy_f = (float)Sy;
-
-    int cmin = full_scale_d ? 0 : (16 << (bits_per_pixel - 8));
-    int cmax = full_scale_d ? max_pixel_value : (240 << (bits_per_pixel - 8));
-    Suv = (cmax - cmin) / 2;
-    Suv_f = (cmax - cmin) / 2.0f;
-
-  }
-  else {
-    Oy_f = full_scale_d ? 0.0f : (16.0f / 255.0f);
-    Oy = full_scale_d ? 0 : 16; // n/a
-
-    Orgb_f = full_scale_s ? 0.0f : (16.0f / 255.0f);
-    Orgb = full_scale_s ? 0 : 16; // n/a
-
-    Sy_f = full_scale_d ? c8tof(255) : (c8tof(235) - c8tof(16));
-    Suv_f = full_scale_d ? (0.5f - -0.5f) / 2 : (uv8tof(240) - uv8tof(16)) / 2;
-  }
-
+  // Derive integer versions (for <= 16 bit paths)
+  int Srgb = (int)Srgb_f;
+  int Sy = (int)Sy_f;
+  int Suv = (int)Suv_f;
+  int Orgb = (int)Orgb_f;
+  int Oy = (int)Oy_f;
 
   /*
     Kr   = {0.299, 0.2126}
@@ -87,102 +81,140 @@ static void BuildMatrix_Rgb2Yuv_core(double Kr, double Kb, int int_arith_shift, 
     Suv  = {112, 127}   // { (240-16)/2, (255-0)/2 }
     Oy   = {16, 0}
     Ouv  = 128
-
     R = r/Srgb                     // 0..1
     G = g/Srgb
-    B = b*Srgb
-
+    B = b/Srgb
     Y = Kr*R + Kg*G + Kb*B         // 0..1
     U = B - (Kr*R + Kg*G)/(1-Kb)   //-1..1
     V = R - (Kg*G + Kb*B)/(1-Kr)
-
     y = Y*Sy  + Oy                 // 16..235, 0..255
     u = U*Suv + Ouv                // 16..240, 1..255
     v = V*Suv + Ouv
   */
-  const int mulfac_int = 1 << int_arith_shift;
-  const double mulfac = double(mulfac_int); // integer aritmetic precision scale
 
+  const int mulfac_int = 1 << int_arith_shift;
+  const double mulfac = double(mulfac_int);
   const double Kg = 1. - Kr - Kb;
 
+  // Symmetric rounding for both positive and negative coefficients
+  auto round_coeff = [](double v) {
+    return (int)(v >= 0 ? (v + 0.5) : (v - 0.5));
+    };
+
+  // Calculate double-precision coefficients
+  double y_b_f = Sy_f * Kb / Srgb_f;
+  double y_g_f = Sy_f * Kg / Srgb_f;
+  double y_r_f = Sy_f * Kr / Srgb_f;
+
+  double u_b_f = Suv_f / Srgb_f;
+  double u_g_f = Suv_f * Kg / (Kb - 1) / Srgb_f;
+  double u_r_f = Suv_f * Kr / (Kb - 1) / Srgb_f;
+
+  double v_b_f = Suv_f * Kb / (Kr - 1) / Srgb_f;
+  double v_g_f = Suv_f * Kg / (Kr - 1) / Srgb_f;
+  double v_r_f = Suv_f / Srgb_f;
+
+  double offset_y_f = Oy_f;
+  double offset_rgb_f = -Orgb_f;  // Negative because addition is used
+
+  // Store float versions
+  matrix.y_b_f = (float)y_b_f;
+  matrix.y_g_f = (float)y_g_f;
+  matrix.y_r_f = (float)y_r_f;
+  matrix.u_b_f = (float)u_b_f;
+  matrix.u_g_f = (float)u_g_f;
+  matrix.u_r_f = (float)u_r_f;
+  matrix.v_b_f = (float)v_b_f;
+  matrix.v_g_f = (float)v_g_f;
+  matrix.v_r_f = (float)v_r_f;
+  matrix.offset_y_f = (float)offset_y_f;
+  matrix.offset_rgb_f = (float)offset_rgb_f;
+
   if (bits_per_pixel <= 16) {
-    const auto Srgb = (((1 << bits_per_pixel) - 1) * (full_scale_s ? 1.0 : 219.0 / 255.0) + 0.5);
-    matrix.y_b = (int)(Sy * Kb * mulfac / Srgb + 0.5); //B
-    matrix.y_g = (int)(Sy * Kg * mulfac / Srgb + 0.5); //G
-    matrix.y_r = (int)(Sy * Kr * mulfac / Srgb + 0.5); //R
-    matrix.u_b = (int)(Suv * mulfac / Srgb + 0.5);
-    matrix.u_g = (int)(Suv * Kg / (Kb - 1) * mulfac / Srgb + 0.5);
-    matrix.u_r = (int)(Suv * Kr / (Kb - 1) * mulfac / Srgb + 0.5);
-    matrix.v_b = (int)(Suv * Kb / (Kr - 1) * mulfac / Srgb + 0.5);
-    matrix.v_g = (int)(Suv * Kg / (Kr - 1) * mulfac / Srgb + 0.5);
-    matrix.v_r = (int)(Suv * mulfac / Srgb + 0.5);
+    // Derive integer versions from doubles with proper rounding
+    matrix.y_b = round_coeff(mulfac * y_b_f);
+    matrix.y_g = round_coeff(mulfac * y_g_f);
+    matrix.y_r = round_coeff(mulfac * y_r_f);
+
+    matrix.u_b = round_coeff(mulfac * u_b_f);
+    matrix.u_g = round_coeff(mulfac * u_g_f);
+    matrix.u_r = round_coeff(mulfac * u_r_f);
+
+    matrix.v_b = round_coeff(mulfac * v_b_f);
+    matrix.v_g = round_coeff(mulfac * v_g_f);
+    matrix.v_r = round_coeff(mulfac * v_r_f);
 
     matrix.offset_y = Oy;
-    matrix.offset_rgb = -Orgb; // yes, minus, because addition is used
+    matrix.offset_rgb = -Orgb;  // negative because addition is used
 
-    // FIXME: do we need it to expand for the other u and v constants?
-    // anti overflow e.g. for 15 bits the sum must not exceed 32768
-    if (matrix.offset_y == 0 && matrix.y_g + matrix.y_r + matrix.y_b != mulfac_int)
-      matrix.y_g = mulfac_int - (matrix.y_r + matrix.y_b);
+    // Luma gain check: ensure Y captures 100% of RGB energy
+    // Only applies when destination is full-range (no offset)
+    if (matrix.offset_y == 0) {
+      int y_sum = matrix.y_b + matrix.y_g + matrix.y_r;
+      if (y_sum != mulfac_int) {
+        matrix.y_g += (mulfac_int - y_sum);
+      }
+    }
 
-    // special precalculations for direct RGB to YUY2
-    double dku = Suv / (Srgb * (1.0 - Kb)) * mulfac;
-    double dkv = Suv / (Srgb * (1.0 - Kr)) * mulfac;
-    matrix.ku = (int)(dku + 0.5);
-    matrix.kv = (int)(dkv + 0.5);
-    matrix.ku_luma = -(int)(dku * Srgb / Sy + 0.5);
-    matrix.kv_luma = -(int)(dkv * Srgb / Sy + 0.5);
+    // U neutrality check: ensure R=G=B results in U = 0 (before offset)
+    int u_sum = matrix.u_b + matrix.u_g + matrix.u_r;
+    if (u_sum != 0) {
+      matrix.u_g -= u_sum;
+    }
+
+    // V neutrality check: ensure R=G=B results in V = 0 (before offset)
+    int v_sum = matrix.v_b + matrix.v_g + matrix.v_r;
+    if (v_sum != 0) {
+      matrix.v_g -= v_sum;
+    }
+
+    // Special precalculations for direct RGB to YUY2
+    double dku = Suv_f / (Srgb_f * (1.0 - Kb)) * mulfac;
+    double dkv = Suv_f / (Srgb_f * (1.0 - Kr)) * mulfac;
+    matrix.ku = round_coeff(dku);
+    matrix.kv = round_coeff(dkv);
+    matrix.ku_luma = -round_coeff(dku * Srgb_f / Sy_f);
+    matrix.kv_luma = -round_coeff(dkv * Srgb_f / Sy_f);
   }
-
-  // for 16 bits, float is used, no unsigned 16 bit arithmetic
-  double Srgb_f = (bits_per_pixel == 32 ? 1.0 : ((1 << bits_per_pixel) - 1)) * (full_scale_s ? 1.0 : 219.0 / 255.0);
-  matrix.y_b_f = (float)(Sy_f * Kb / Srgb_f); //B
-  matrix.y_g_f = (float)(Sy_f * Kg / Srgb_f); //G
-  matrix.y_r_f = (float)(Sy_f * Kr / Srgb_f); //R
-  matrix.u_b_f = (float)(Suv_f / Srgb_f);
-  matrix.u_g_f = (float)(Suv_f * Kg / (Kb - 1) / Srgb_f);
-  matrix.u_r_f = (float)(Suv_f * Kr / (Kb - 1) / Srgb_f);
-  matrix.v_b_f = (float)(Suv_f * Kb / (Kr - 1) / Srgb_f);
-  matrix.v_g_f = (float)(Suv_f * Kg / (Kr - 1) / Srgb_f);
-  matrix.v_r_f = (float)(Suv_f / Srgb_f);
-  matrix.offset_y_f = Oy_f;
-  matrix.offset_rgb_f = -Orgb_f; // yes, minus, because addition is used
 }
 
+/*
+ * WARNING: int_arith_shift MUST NOT exceed 13 for YUV -> RGB expansion.
+ * Example: BT.709 Limited -> Full Range
+ * The Blue expansion factor (u_b_f) is ~2.112.
+ * - At 14-bit shift: 2.112 * 16384 = 34603 (OVERFLOWS int16_t)
+ * - At 13-bit shift: 2.112 * 8192  = 17302 (SAFE)
+ * Use 13-bit shift to ensure coefficients fit in int16 for SIMD paths.
+ * Additionally, summing up to 3 components (Y, U, V) plus rounding constant must
+ * not overflow int32 accumulators in SIMD. (another 2 bits headroom needed)
+*/
 static void BuildMatrix_Yuv2Rgb_core(double Kr, double Kb, int int_arith_shift, bool full_scale_s, bool full_scale_d, int bits_per_pixel, ConversionMatrix& matrix)
 {
   int Sy, Suv, Oy, Orgb;
   float Sy_f, Suv_f, Oy_f, Orgb_f;
 
-  if (bits_per_pixel <= 16) {
-    Oy = full_scale_s ? 0 : (16 << (bits_per_pixel - 8));
-    Oy_f = (float)Oy; // for 16 bits
+  bits_conv_constants luma, chroma;
+  bits_conv_constants luma_to_32bit, luma_from_32bit;
 
-    Orgb = full_scale_d ? 0 : (16 << (bits_per_pixel - 8));
-    Orgb_f = (float)Orgb; // for 16 bits
+  // helpers for post-matrix conversion to 32-bit float (for high bit depth sources or targets, e.g. 16-bit to 32-bit float)
+  get_bits_conv_constants(luma_to_32bit, false, full_scale_s, full_scale_d, bits_per_pixel, 32);
+  // We use dstBitDepth = srcBitDepth because the matrix handles the magnitude 
+  // via the mulfac and Srgb calculations. We just need the standardized spans.
+  get_bits_conv_constants(luma, false, full_scale_s, full_scale_d, bits_per_pixel, bits_per_pixel);
+  get_bits_conv_constants(chroma, true, full_scale_s, full_scale_d, bits_per_pixel, bits_per_pixel);
 
-    int ymin = (full_scale_s ? 0 : 16) << (bits_per_pixel - 8);
-    int max_pixel_value = (1 << bits_per_pixel) - 1;
-    int ymax = full_scale_s ? max_pixel_value : (235 << (bits_per_pixel - 8));
-    Sy = ymax - ymin;
-    Sy_f = (float)Sy;
+  matrix.target_span_f = luma.dst_span;
+  matrix.target_span_f_32 = luma_to_32bit.dst_span;
+  matrix.offset_rgb_f_32 =  luma_to_32bit.dst_offset;
 
-    int cmin = full_scale_s ? 0 : (16 << (bits_per_pixel - 8));
-    int cmax = full_scale_s ? max_pixel_value : (240 << (bits_per_pixel - 8));
-    Suv = (cmax - cmin) / 2;
-    Suv_f = (cmax - cmin) / 2.0f;
-  }
-  else {
-    Oy_f = full_scale_s ? 0.0f : (16.0f / 255.0f);
-    Oy = full_scale_s ? 0 : 16; // n/a
-
-    Orgb_f = full_scale_d ? 0.0f : (16.0f / 255.0f);
-    Orgb = full_scale_d ? 0 : 16; // n/a
-
-    Sy_f = full_scale_s ? c8tof(255) : (c8tof(235) - c8tof(16));
-    Suv_f = full_scale_s ? (0.5f - -0.5f) / 2 : (uv8tof(240) - uv8tof(16)) / 2;
-  }
-
+  Sy_f = luma.src_span;
+  Suv_f = chroma.src_span;
+  Oy_f = luma.src_offset;
+  Orgb_f = luma.dst_offset;
+  Sy = (int)Sy_f;
+  Suv = (int)Suv_f;
+  Oy = (int)Oy_f;
+  Orgb = (int)Orgb_f;
 
   /*
     Kr   = {0.299, 0.2126}
@@ -208,41 +240,55 @@ static void BuildMatrix_Yuv2Rgb_core(double Kr, double Kb, int int_arith_shift, 
   */
 
 
-  const double mulfac = double(1 << int_arith_shift); // integer aritmetic precision scale
+  const double mulfac = (double)(1 << int_arith_shift); // integer aritmetic precision scale
 
   const double Kg = 1. - Kr - Kb;
 
-  if (bits_per_pixel <= 16) {
-    const auto Srgb = (((1 << bits_per_pixel) - 1) * (full_scale_d ? 1.0 : 219.0/255.0) + 0.5);
+  // The Srgb (destination span) is also just the dst_span (RGB is luma-like)!
+  const float Srgb_f = (float)luma.dst_span;
+  const int Srgb = (int)Srgb_f;
 
-    matrix.y_b = (int)(Srgb * 1.000 * mulfac / Sy + 0.5); //Y
-    matrix.u_b = (int)(Srgb * (1 - Kb) * mulfac / Suv + 0.5); //U
-    matrix.v_b = (int)(Srgb * 0.000 * mulfac / Suv + 0.5); //V
+  // symmetric rounding for both positive and negative coefficients
+  auto round_coeff = [](double v) {
+    return (int)(v >= 0 ? (v + 0.5) : (v - 0.5));
+    };
 
-    matrix.y_g = (int)(Srgb * 1.000 * mulfac / Sy + 0.5);
-    matrix.u_g = (int)(Srgb * (Kb - 1) * Kb / Kg * mulfac / Suv + 0.5);
-    matrix.v_g = (int)(Srgb * (Kr - 1) * Kr / Kg * mulfac / Suv + 0.5);
+  double y_b_f = (Srgb_f * 1.000 / Sy_f); //Y
+  double u_b_f = (Srgb_f * (1 - Kb) / Suv_f); //U
+  double v_b_f = (Srgb_f * 0.000 / Suv_f); //V
+  double y_g_f = (Srgb_f * 1.000 / Sy_f);
+  double u_g_f = (Srgb_f * (Kb - 1) * Kb / Kg / Suv_f);
+  double v_g_f = (Srgb_f * (Kr - 1) * Kr / Kg / Suv_f);
+  double y_r_f = (Srgb_f * 1.000 / Sy_f);
+  double u_r_f = (Srgb_f * 0.000 / Suv_f);
+  double v_r_f = (Srgb_f * (1 - Kr) / Suv_f);
+  double offset_y_f = -Oy_f; // negative, it will be added in the conversion, so we store the negative here
+  double offset_rgb_f = Orgb_f;
 
-    matrix.y_r = (int)(Srgb * 1.000 * mulfac / Sy + 0.5);
-    matrix.u_r = (int)(Srgb * 0.000 * mulfac / Suv + 0.5);
-    matrix.v_r = (int)(Srgb * (1 - Kr) * mulfac / Suv + 0.5);
+  matrix.y_b_f = (float)(y_b_f);
+  matrix.u_b_f = (float)(u_b_f);
+  matrix.v_b_f = (float)(v_b_f);
+  matrix.y_g_f = (float)(y_g_f);
+  matrix.u_g_f = (float)(u_g_f);
+  matrix.v_g_f = (float)(v_g_f);
+  matrix.y_r_f = (float)(y_r_f);
+  matrix.u_r_f = (float)(u_r_f);
+  matrix.v_r_f = (float)(v_r_f);
+  matrix.offset_y_f = (float)offset_y_f;
+  matrix.offset_rgb_f = (float)offset_rgb_f;
 
-    matrix.offset_y = -Oy;
-    matrix.offset_rgb = Orgb;
-  }
+  matrix.y_b = round_coeff(mulfac * y_b_f);
+  matrix.u_b = round_coeff(mulfac * u_b_f);
+  matrix.v_b = round_coeff(mulfac * v_b_f);
+  matrix.y_g = round_coeff(mulfac * y_g_f);
+  matrix.u_g = round_coeff(mulfac * u_g_f);
+  matrix.v_g = round_coeff(mulfac * v_g_f);
+  matrix.y_r = round_coeff(mulfac * y_r_f);
+  matrix.u_r = round_coeff(mulfac * u_r_f);
+  matrix.v_r = round_coeff(mulfac * v_r_f);
+  matrix.offset_y = round_coeff(offset_y_f);
+  matrix.offset_rgb = round_coeff(offset_rgb_f);
 
-  double Srgb_f = (bits_per_pixel == 32 ? 1.0 : ((1 << bits_per_pixel) - 1)) * (full_scale_d ? 1.0 : 219.0 / 255.0);
-  matrix.y_b_f = (float)(Srgb_f * 1.000 / Sy_f); //Y
-  matrix.u_b_f = (float)(Srgb_f * (1 - Kb) / Suv_f); //U
-  matrix.v_b_f = (float)(Srgb_f * 0.000 / Suv_f); //V
-  matrix.y_g_f = (float)(Srgb_f * 1.000 / Sy_f);
-  matrix.u_g_f = (float)(Srgb_f * (Kb - 1) * Kb / Kg / Suv_f);
-  matrix.v_g_f = (float)(Srgb_f * (Kr - 1) * Kr / Kg / Suv_f);
-  matrix.y_r_f = (float)(Srgb_f * 1.000 / Sy_f);
-  matrix.u_r_f = (float)(Srgb_f * 0.000 / Suv_f);
-  matrix.v_r_f = (float)(Srgb_f * (1 - Kr) / Suv_f);
-  matrix.offset_y_f = -Oy_f;
-  matrix.offset_rgb_f = Orgb_f;
 }
 
 bool do_BuildMatrix_Rgb2Yuv(int _Matrix, int _ColorRange, int _ColorRange_Out, int int_arith_shift, int bits_per_pixel, ConversionMatrix& matrix)
@@ -283,7 +329,7 @@ bool do_BuildMatrix_Rgb2Yuv(int _Matrix, int _ColorRange, int _ColorRange_Out, i
   else if (_Matrix == Matrix_e::AVS_MATRIX_ST240_M) {
     BuildMatrix_Rgb2Yuv_core(0.212, /* 0.701 */ 0.087, int_arith_shift, is_full_s, is_full_d, bits_per_pixel, matrix);
   }
-  else if (_Matrix == Matrix_e::AVS_MATRIX_RGB) {
+  else if (_Matrix == Matrix_e::AVS_MATRIX_RGB) { // copies Green to Y and sets UV to 0
     BuildMatrix_Rgb2Yuv_core(0.0, /*  */ 0.0, int_arith_shift, is_full_s, is_full_d, bits_per_pixel, matrix);
   }
   else if (_Matrix == Matrix_e::AVS_MATRIX_ICTCP) {
