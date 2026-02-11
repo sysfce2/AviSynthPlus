@@ -854,6 +854,15 @@ static void draw_colorbars_420_422_411(uint8_t *pY8, uint8_t *pU8, uint8_t *pV8,
   }
 }
 
+void GetYUVRec709fromRGB(double R, double G, double B, double& dY, double& dU, double& dV)
+{
+  // See 3.2 from https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.709-6-201506-I!!PDF-E.pdf
+  dY = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+
+  dU = (B - dY) / 1.8556;
+  dV = (R - dY) / 1.5748;
+}
+
 template<typename pixel_t, int bits_per_pixel>
 static void draw_colorbarsHD_444(uint8_t *pY8, uint8_t *pU8, uint8_t *pV8, int pitchY, int pitchUV, int w, int h)
 {
@@ -965,47 +974,58 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
   const int p23 = (h + 6) / 12;  // 1/12th of height
   const int p1 = h - p23 * 2 - p4; // remaining 7/12th of height
 
+  /*
   //               75%  Rec709 -- Grey40 Grey75 Yellow  Cyan   Green Magenta  Red   Blue
   static const BYTE pattern1Y[] = { 104,   180,   168,   145,   133,    63,    51,    28 };
   static const BYTE pattern1U[] = { 128,   128,    44,   147,    63,   193,   109,   212 };
   static const BYTE pattern1V[] = { 128,   128,   136,    44,    52,   204,   212,   120 };
-  for (; y < p1; ++y) { // Pattern 1
-    int x = 0;
-    for (; x < d; ++x) {
-      pY[x] = factor*(pattern1Y[0] << shift); // 40% Grey
-      if constexpr(sizeof(pixel_t) == 4) {
-        pU[x] = factor * (pattern1U[0] - chroma_offset_i) + (factor_t)chroma_offset_f;
-        pV[x] = factor * (pattern1V[0] - chroma_offset_i) + (factor_t)chroma_offset_f;
+  // 3.7.6: replaced the 8 bit table (inaccurate base for higher bitdepths) with accurate 
+  // RGB values with double precision RGB to YUV conversion.
+  */
+
+  // Define in double precision RGB and convert to rec.709 YUV later for target bitdepth
+
+  static const double pattern1R[] = { 0.4, 0.75, 0.75, 0.00, 0.00, 0.75, 0.75, 0.00 };
+  static const double pattern1G[] = { 0.4, 0.75, 0.75, 0.75, 0.75, 0.00, 0.00, 0.00 };
+  static const double pattern1B[] = { 0.4, 0.75, 0.00, 0.75, 0.00, 0.75, 0.00, 0.75 };
+
+  // Helper to process and write a pixel based on RGB input
+  auto ProcessPixel = [&](double r, double g, double b, int targetX) {
+    double dY, dU, dV;
+    GetYUVRec709fromRGB(r, g, b, dY, dU, dV);
+
+    if constexpr (sizeof(pixel_t) == 4) {
+      pY[targetX] = (pixel_t)(dY * float_scale + float_offset);
+      pU[targetX] = (pixel_t)(dU * float_uv_scale);
+      pV[targetX] = (pixel_t)(dV * float_uv_scale);
       }
       else {
-        pU[x] = factor * (pattern1U[0] << shift);
-        pV[x] = factor * (pattern1V[0] << shift);
+      // High-precision calculation for 10/12/16-bit
+      pY[targetX] = (pixel_t)(((dY * 219.0 + 16.0) * (1 << shift)) + 0.5);
+      pU[targetX] = (pixel_t)(((dU * 224.0 + 128.0) * (1 << shift)) + 0.5);
+      pV[targetX] = (pixel_t)(((dV * 224.0 + 128.0) * (1 << shift)) + 0.5);
       }
+    };
+
+  // ColorbarsHD produces "limited", and since Avisynth handles "limited" 32 bit float, so we adjust it as well.
+
+  // Pattern 1
+
+  for (; y < p1; ++y) {
+    int x = 0;
+    // 40% grey
+    for (; x < d; ++x) {
+      ProcessPixel(pattern1R[0], pattern1G[0], pattern1B[0], x);
     }
+    // 75% White, Yellow, Cyan, Green, Magenta, Red, Blue
     for (int i = 1; i < 8; i++) {
       for (int j = 0; j < c; ++j, ++x) {
-        pY[x] = factor*(pattern1Y[i] << shift); // 75% Colour bars
-        if constexpr(sizeof(pixel_t) == 4) {
-          pU[x] = factor * (pattern1U[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-          pV[x] = factor * (pattern1V[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
+        ProcessPixel(pattern1R[i], pattern1G[i], pattern1B[i], x);
         }
-        else {
-          pU[x] = factor * (pattern1U[i] << shift);
-          pV[x] = factor * (pattern1V[i] << shift);
         }
-      }
-    }
     for (; x < w; ++x) {
-      pY[x] = factor*(pattern1Y[0] << shift); // 40% Grey
-      if constexpr(sizeof(pixel_t) == 4) {
-        pU[x] = factor * (pattern1U[0] - chroma_offset_i) + (factor_t)chroma_offset_f;
-        pV[x] = factor * (pattern1V[0] - chroma_offset_i) + (factor_t)chroma_offset_f;
+      ProcessPixel(pattern1R[0], pattern1G[0], pattern1B[0], x);
       }
-      else {
-        pU[x] = factor * (pattern1U[0] << shift);
-        pV[x] = factor * (pattern1V[0] << shift);
-      }
-    }
     pY += pitchY; pU += pitchUV; pV += pitchUV;
   }
   //              100% Rec709       Cyan  Blue Yellow  Red    +I Grey75  White
