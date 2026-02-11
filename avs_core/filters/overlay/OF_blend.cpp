@@ -40,6 +40,9 @@
 #include "intel/blend_common_sse.h"
 #include "intel/blend_common_avx2.h"
 #endif
+#ifdef NEON_INTRINSICS
+#include "aarch64/blend_common_neon.h"
+#endif
 
 
 #include <stdint.h>
@@ -128,7 +131,22 @@ void OL_BlendImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInter
   }
   else
 #endif // INTEL_INTRINSICS
-  {
+#ifdef NEON_INTRINSICS
+    if (pixelsize == 4 && (env->GetCPUFlags() & CPUF_ARM_NEON)) {
+      blend_fn = overlay_blend_neon_float<true>;
+    }
+    else if (env->GetCPUFlags() & CPUF_ARM_NEON) {
+      switch (bits_per_pixel) {
+      case 8: blend_fn = overlay_blend_neon_uint<true, uint8_t>; break;
+      case 10:
+      case 12:
+      case 14:
+      case 16: blend_fn = overlay_blend_neon_uint<true, uint16_t>; break;
+      }
+    }
+    else
+#endif // NEON_INTRINSICS
+    {
     // pure C
     switch (bits_per_pixel) {
     case 8: blend_fn = overlay_blend_c_uint<true, uint8_t>; break;
@@ -222,7 +240,22 @@ void OL_BlendImage::BlendImage(ImageOverlayInternal* base, ImageOverlayInternal*
   }
   else
 #endif // INTEL_INTRINSICS
-  {
+#ifdef NEON_INTRINSICS
+    if (pixelsize == 4 && (env->GetCPUFlags() & CPUF_ARM_NEON)) {
+      blend_fn = overlay_blend_neon_float<false>;
+    }
+    else if (env->GetCPUFlags() & CPUF_ARM_NEON) {
+      switch (bits_per_pixel) {
+      case 8: blend_fn = overlay_blend_neon_uint<false, uint8_t>; break;
+      case 10:
+      case 12:
+      case 14:
+      case 16: blend_fn = overlay_blend_neon_uint<false, uint16_t>; break;
+      }
+    }
+    else
+#endif // NEON_INTRINSICS
+    {
     // pure C
     switch (bits_per_pixel) {
     case 8: blend_fn = overlay_blend_c_uint<false, uint8_t>; break;
