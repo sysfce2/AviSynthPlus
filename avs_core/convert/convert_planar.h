@@ -43,6 +43,13 @@
 #include "../filters/resample.h"
 #include "convert_bits.h"
 
+enum YuvRgbConversionType {
+  NATIVE_INT,           // Same depth, int math
+  FLOAT_OUTPUT,         // Float output
+  BITCONV_INT_LIMITED,  // Bit depth change, limited range
+  BITCONV_INT_FULL      // Bit depth change, full range (needs float coeffs!)
+};
+
 // useful functions
 template <typename pixel_t>
 void fill_chroma(uint8_t * dstp_u, uint8_t * dstp_v, int height, int row_size, int pitch, pixel_t val);

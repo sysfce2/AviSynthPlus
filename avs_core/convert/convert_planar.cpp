@@ -58,6 +58,9 @@
 #include <algorithm>
 #include <string>
 
+
+#include <vector>
+
 template <typename pixel_t>
 void fill_chroma(uint8_t * dstp_u, uint8_t * dstp_v, int height, int row_size, int pitch, pixel_t val)
 {
@@ -718,19 +721,31 @@ ConvertYUV444ToRGB::ConvertYUV444ToRGB(PClip src, const char *matrix_name, int _
   auto frame0 = child->GetFrame(0, env);
   const AVSMap* props = env->getFramePropsRO(frame0);
   matrix_parse_merge_with_props(false /*in yuv*/, true /*out rgb*/, matrix_name, props, theMatrix, theColorRange, theOutColorRange, env);
+  // Good to know:
+  // - When frame property "_ColorRange" exists, it overrides the default output RGB color range.
+  // - PC.xxx old-style matrix names leave the color range unchanged, whether they exist or not.
+  // - When using PC.xxx and YUV is limited => output RGB is narrow range (limited)
+  // - Other non PC.xxx old matrix names:
+  //   - input range is defined by the matrix name, even if _ColorRange frame property exists
+  //   - output range is default Full for RGB, unless _ColorRange exists, when its value defines the output RGB range (full or limited/narrow)
+  // - new style matrix definitions: see docs. Preserve what is not set, distinct :f or :l suffixes may tell the color range, not part of matrix name.
+  // - Matrix coefficients still need to know input and output color range (full or limited/narrow) so by this time we have these two.
 
-  const int shift = 13; // for integer arithmetic, over 13 bits would overflow the internal calculation
+  const int shift = 13; // for integer arithmetic, over 13 bits would overflow the matrix elements/internal calculation
   const int bits_per_pixel = vi.BitsPerComponent();
   source_bit_depth = bits_per_pixel;
 
   if (!do_BuildMatrix_Yuv2Rgb(theMatrix, theColorRange, theOutColorRange, shift, source_bit_depth, /*ref*/matrix))
     env->ThrowError("ConvertYUV444ToRGB: Unknown matrix.");
 
+  // target_bit_depth == -1: no conversion required
   // Bit-depth conversion happens only after conversion to RGB,
   // so the full-limited property comes from the output RGB requirement
   // What is not implemented in-process, we do the conversion with invoked ConvertBits()
-  if (target_bit_depth == 32 && theOutColorRange == ColorRange_e::AVS_RANGE_FULL) {
-    // implemented: float target with full range
+  if (target_bit_depth >= 8 && source_bit_depth != 32)
+  {
+    // supported conversions:
+    // 8-16-bits any range to 8-16, 32 bits any range
     bitdepthConverted = true;
 #ifdef INTEL_INTRINSICS
     const bool sse2 = !!(env->GetCPUFlags() & CPUF_SSE2);
@@ -886,72 +901,141 @@ static void convert_yuv444p16_to_rgb16_c(BYTE* dstp, const BYTE* srcY, const BYT
   }
 }
 
-// inline bit depth conversion support: only full-range float at the moment
-template<typename pixel_t, bool lessthan16bit, bool need_float_conversion>
-static void convert_yuv_to_planarrgb_uintN_c(BYTE* dstp[3], int dstPitch[3], const BYTE* srcp[3], const int srcPitch[3], int width, int height, const ConversionMatrix& matrix, const int bits_per_pixel)
+// inline bit depth conversion support. Both limited/full src/dst supported
+template<typename pixel_t, typename pixel_t_dst, bool lessthan16bit, YuvRgbConversionType conv_type>
+static void convert_yuv_to_planarrgb_uintN_c_internal(BYTE* dstp[3], int dstPitch[3], const BYTE* srcp[3], const int srcPitch[3], int width, int height, const ConversionMatrix& matrix,
+  int bits_per_pixel, int bits_per_pixel_target)
 {
-  // Float conversion extra rules
-  // - no rounding
-  // - no integer scaling back 13 bits
-  // - no clamping to bit depth limits
-  // - the 13-bit scaling factor is integrated into the bits_per_pixel shift
-
-  constexpr int ROUNDER = need_float_conversion ? 0 : (1 << 12); // 4096
-
-  auto round_mask_plus_rgb_offset_i = ROUNDER + (matrix.offset_rgb << 13);
 
   // int64_t needed for exact 16 bit pixels.
   // unlike SIMD versions which optimize it by moving into signed int16 then back to uint16, taking care of overflows.
   typedef typename std::conditional < sizeof(pixel_t) == 1 || lessthan16bit, int, int64_t>::type safe_int_t;
 
-  int half_pixel_value;
-  int max_pixel_value;
+
+  // int-Float conversion extra rules
+  // - no rounding
+  // - no integer scaling back 13 bits
+  // - no clamping to bit depth limits
+  // - the 13-bit scaling factor dependent on source/target span
+  // - narrow-range float offset if any, is added at the end
+  // Int-Int limited conversion extra rules (need_int_conversion_narrow_range)
+  // - rounding: matches the target bit depth
+  // - range conversion needed:
+  // - extra shift count: target bit depth - source bit depth
+  // Int-Int full scale conversion extra rules (need_int_conversion_full_range)
+  // - range conversion needed: full range float path
+  // - no rounding in integer (no shifts)
+  // - rounding in float->int conversion (0.5f), no target offset
+  // - clamp in integer as usual
+
+  // These helper constants are common for C/SSE2/AVX2
+  const bool full_s = matrix.offset_y == 0;
+  const bool full_d = matrix.offset_rgb == 0;
+  constexpr bool need_float_conversion = conv_type == YuvRgbConversionType::FLOAT_OUTPUT;
+  constexpr bool need_int_conversion_narrow_range = conv_type == YuvRgbConversionType::BITCONV_INT_LIMITED;       // full_d is false
+  constexpr bool need_int_conversion_full_range = conv_type == YuvRgbConversionType::BITCONV_INT_FULL; // full_d is true
+  constexpr bool need_int_conversion = conv_type == YuvRgbConversionType::BITCONV_INT_FULL || conv_type == YuvRgbConversionType::BITCONV_INT_LIMITED;
+  if constexpr (!need_int_conversion)
+    bits_per_pixel_target = bits_per_pixel; // make it quasi constexpr for optimizer
+  const int bit_diff = need_int_conversion ? bits_per_pixel_target - bits_per_pixel : 0;
+  const int target_shift = need_int_conversion_narrow_range ? 13 - bit_diff : 13; // int->int narrow range: integrate the bit depth conversion into the scaling back
+  const int target_rgb_offset_shift = need_int_conversion_narrow_range ? 13 + bit_diff : 13; // int->int narrow range: integrate the bit depth conversion into the scaling back
+
+  const int ROUNDER = (need_float_conversion || need_int_conversion_full_range) ? 0 : (1 << (target_shift - 1)); // 0 when float internal calculation is involved
+  const int round_mask_plus_rgb_offset_i = need_float_conversion ? 0 : ROUNDER + (matrix.offset_rgb << 13); // latter of same magnitude as coeffs, also in simd madd
+  const float rgb_offset_f = matrix.offset_rgb_f_32; // for post-32-bit float conversion
+
+  int half_pixel_offset;
+  int max_pixel_value_source, max_pixel_value_target;
   if constexpr(sizeof(pixel_t) == 1) {
     // 8 bit quasi constexpr
-    half_pixel_value = 128;
-    max_pixel_value = 255;
+    half_pixel_offset = 128;
+    max_pixel_value_source = 255;
   } else {
-    half_pixel_value = 1 << (bits_per_pixel - 1);
-    max_pixel_value = (1 << bits_per_pixel) - 1;
+    half_pixel_offset = 1 << (bits_per_pixel - 1);
+    max_pixel_value_source = (1 << bits_per_pixel) - 1;
+  }
+
+  if constexpr (sizeof(pixel_t_dst) == 1) {
+    max_pixel_value_target = 255;
+  }
+  else {
+    max_pixel_value_target = (1 << bits_per_pixel_target) - 1;
   }
 
   constexpr int int_arithmetic_shift = 1 << 13;
-  const float scale_f = 1.0f / static_cast<float>(int_arithmetic_shift * max_pixel_value);
+  const float scale_f =
+    need_float_conversion ? 1.0f / static_cast<float>(int_arithmetic_shift * matrix.target_span_f / matrix.target_span_f_32) : // X->X bits appear as float, before going to real 32-bit range
+    need_int_conversion_full_range ? (float)max_pixel_value_target / max_pixel_value_source:
+    1.0f; // n/a
 
   for (int y = 0; y < height; y++) {
     const pixel_t* srcY = reinterpret_cast<const pixel_t*>(srcp[0]);
     const pixel_t* srcU = reinterpret_cast<const pixel_t*>(srcp[1]);
     const pixel_t* srcV = reinterpret_cast<const pixel_t*>(srcp[2]);
-    // We use auto here to handle either float* or pixel_t* destinations
-    void* d0 = dstp[0]; void* d1 = dstp[1]; void* d2 = dstp[2];
+
+    pixel_t_dst* d0 = reinterpret_cast<pixel_t_dst*>(dstp[0]);
+    pixel_t_dst* d1 = reinterpret_cast<pixel_t_dst*>(dstp[1]);
+    pixel_t_dst* d2 = reinterpret_cast<pixel_t_dst*>(dstp[2]);
+
     for (int x = 0; x < width; x++) {
-      const int Y = static_cast<int>(srcY[x]) + matrix.offset_y;
-      const int U = static_cast<int>(srcU[x]) - half_pixel_value;
-      const int V = static_cast<int>(srcV[x]) - half_pixel_value;
+      int Y = static_cast<int>(srcY[x]) + matrix.offset_y;
+      int U = static_cast<int>(srcU[x]) - half_pixel_offset;
+      int V = static_cast<int>(srcV[x]) - half_pixel_offset;
 
-      int b = static_cast<int>(((safe_int_t)matrix.y_b * Y + (safe_int_t)matrix.u_b * U + (safe_int_t)matrix.v_b * V + round_mask_plus_rgb_offset_i));
-      int g = static_cast<int>(((safe_int_t)matrix.y_g * Y + (safe_int_t)matrix.u_g * U + (safe_int_t)matrix.v_g * V + round_mask_plus_rgb_offset_i));
-      int r = static_cast<int>(((safe_int_t)matrix.y_r * Y + (safe_int_t)matrix.u_r * U + (safe_int_t)matrix.v_r * V + round_mask_plus_rgb_offset_i));
+      int b, g, r;
+      float b_f, g_f, r_f;
 
-      if constexpr (need_float_conversion) {
-        // no clamp when converting to float, scale back integrated into scale_f
-        reinterpret_cast<float*>(d0)[x] = static_cast<float>(g) * scale_f;
-        reinterpret_cast<float*>(d1)[x] = static_cast<float>(b) * scale_f;
-        reinterpret_cast<float*>(d2)[x] = static_cast<float>(r) * scale_f;
+      if constexpr (need_int_conversion_full_range) {
+        b_f = matrix.y_b_f * Y + matrix.u_b_f * U + matrix.v_b_f * V + matrix.offset_rgb_f;
+        g_f = matrix.y_g_f * Y + matrix.u_g_f * U + matrix.v_g_f * V + matrix.offset_rgb_f;
+        r_f = matrix.y_r_f * Y + matrix.u_r_f * U + matrix.v_r_f * V + matrix.offset_rgb_f;
       }
       else {
-        // scale back
-        g = g >> 13;
-        b = b >> 13;
-        r = r >> 13;
-        // Clamp
-        g = clamp(g, 0, max_pixel_value);
-        b = clamp(b, 0, max_pixel_value);
-        r = clamp(r, 0, max_pixel_value);
+        b = static_cast<int>(((safe_int_t)matrix.y_b * Y + (safe_int_t)matrix.u_b * U + (safe_int_t)matrix.v_b * V + round_mask_plus_rgb_offset_i));
+        g = static_cast<int>(((safe_int_t)matrix.y_g * Y + (safe_int_t)matrix.u_g * U + (safe_int_t)matrix.v_g * V + round_mask_plus_rgb_offset_i));
+        r = static_cast<int>(((safe_int_t)matrix.y_r * Y + (safe_int_t)matrix.u_r * U + (safe_int_t)matrix.v_r * V + round_mask_plus_rgb_offset_i));
+      }
 
-        reinterpret_cast<pixel_t*>(d0)[x] = static_cast<pixel_t>(g);
-        reinterpret_cast<pixel_t*>(d1)[x] = static_cast<pixel_t>(b);
-        reinterpret_cast<pixel_t*>(d2)[x] = static_cast<pixel_t>(r);
+      if constexpr (need_float_conversion) {
+        // no clamp when converting to float, x bits integer arithmetic shift and bit_depth corr is in scale_f
+        // Note: only full-range on-the-fly float convertion can be implemented by one single scaling,
+        // limited range conversion is complex! (x_int - int_offset) / (219<<(bit_depth-8)) + 16/255f
+        float g_f = static_cast<float>(g) * scale_f;
+        float b_f = static_cast<float>(b) * scale_f;
+        float r_f = static_cast<float>(r) * scale_f;
+        // no rounder here, and round_mask_plus_rgb_offset_i was zero in the integer calculation
+        d0[x] = g_f + rgb_offset_f;
+        d1[x] = b_f + rgb_offset_f;
+        d2[x] = r_f + rgb_offset_f;
+      }
+      else {
+        // integer target
+        if constexpr (need_int_conversion_full_range)
+        {
+          // x bits integer arithmetic shift and the bit_depth correction is in scale_f
+          g_f = g_f * scale_f;
+          b_f = b_f * scale_f;
+          r_f = r_f * scale_f;
+
+          g = static_cast<int>(g_f + 0.5f); // rounder only
+          b = static_cast<int>(b_f + 0.5f);
+          r = static_cast<int>(r_f + 0.5f);
+        }
+        else {
+          // scale back. rounding was already applied in round_mask_plus_rgb_offset_i
+          g = g >> target_shift;
+          b = b >> target_shift;
+          r = r >> target_shift;
+        }
+        // Clamp
+        g = clamp(g, 0, max_pixel_value_target);
+        b = clamp(b, 0, max_pixel_value_target);
+        r = clamp(r, 0, max_pixel_value_target);
+
+        d0[x] = static_cast<pixel_t_dst>(g);
+        d1[x] = static_cast<pixel_t_dst>(b);
+        d2[x] = static_cast<pixel_t_dst>(r);
       }
     }
     dstp[0] += dstPitch[0];
@@ -963,7 +1047,44 @@ static void convert_yuv_to_planarrgb_uintN_c(BYTE* dstp[3], int dstPitch[3], con
   }
 }
 
+// Further separating cases inside, dispatcher remains relatively simple
+template<typename pixel_t_src, bool lessthan16bit>
+static void convert_yuv_to_planarrgb_uintN_c(BYTE* dstp[3], int dstPitch[3], const BYTE* srcp[3], const int srcPitch[3], int width, int height, const ConversionMatrix& matrix,
+  int bits_per_pixel, int bits_per_pixel_target)
+{
+  const bool need_conversion = bits_per_pixel_target != bits_per_pixel;
+  if (!need_conversion) {
+    // no conversion, just YUV to RGB
+    convert_yuv_to_planarrgb_uintN_c_internal<pixel_t_src, pixel_t_src, lessthan16bit, YuvRgbConversionType::NATIVE_INT>(dstp, dstPitch, srcp, srcPitch, width, height, matrix, bits_per_pixel, bits_per_pixel_target);
+    return;
+  }
 
+  const bool full_d = matrix.offset_rgb == 0;
+
+  if (bits_per_pixel_target >= 8 && bits_per_pixel <= 16 && bits_per_pixel_target <= 16) {
+    // int->int conversion with range conversion (limited<->full), or upscale with no range conversion (full->full or limited->limited)
+    if (bits_per_pixel_target == 8) {
+      if (full_d)
+        convert_yuv_to_planarrgb_uintN_c_internal<pixel_t_src, uint8_t, lessthan16bit, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, matrix, bits_per_pixel, bits_per_pixel_target);
+      else
+        convert_yuv_to_planarrgb_uintN_c_internal<pixel_t_src, uint8_t, lessthan16bit, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, matrix, bits_per_pixel, bits_per_pixel_target);
+    }
+    else {
+      if (full_d)
+        convert_yuv_to_planarrgb_uintN_c_internal<pixel_t_src, uint16_t, lessthan16bit, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, matrix, bits_per_pixel, bits_per_pixel_target);
+      else
+        convert_yuv_to_planarrgb_uintN_c_internal<pixel_t_src, uint16_t, lessthan16bit, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, matrix, bits_per_pixel, bits_per_pixel_target);
+    }
+  }
+  else {
+    // int->float conversion
+    // limited/full is handled automatically through scaling and offsets
+    // lessthan16bit_target doesn't matter since float output has no clamping
+    convert_yuv_to_planarrgb_uintN_c_internal<pixel_t_src, float, lessthan16bit, YuvRgbConversionType::FLOAT_OUTPUT>(dstp, dstPitch, srcp, srcPitch, width, height, matrix, bits_per_pixel, bits_per_pixel_target);
+  }
+}
+
+// FIXME: float to int, in-process bit-depth conversion
 static void convert_yuv_to_planarrgb_float_c(BYTE* dstp[3], int dstPitch[3], const BYTE* srcp[3], const int srcPitch[3], int width, int height, const ConversionMatrix& matrix) {
   for (int y = 0; y < height; y++) {
     const float* srcY = reinterpret_cast<const float*>(srcp[0]);
@@ -1152,8 +1273,6 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
     // always start from source bit depth
     int bits_per_pixel = source_bit_depth;
     const bool need_conversion = (source_bit_depth != target_bit_depth);
-    // only 32 bit float target conversion supported at the moment
-    assert(!(need_conversion && target_bit_depth != 32));
 
     const BYTE* srcp[3] = { src->GetReadPtr(PLANAR_Y), src->GetReadPtr(PLANAR_U), src->GetReadPtr(PLANAR_V) };
     const int srcPitch[3] = { src->GetPitch(PLANAR_Y), src->GetPitch(PLANAR_U), src->GetPitch(PLANAR_V) };
@@ -1165,21 +1284,14 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
 
     if (bits_per_pixel <= 16 && (env->GetCPUFlags() & CPUF_AVX2))
     {
-      // third template parameter: need_conversion
       switch (bits_per_pixel) {
-      case 8: need_conversion ?
-        convert_yuv_to_planarrgb_uintN_avx2<uint8_t, true, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel) :
-        convert_yuv_to_planarrgb_uintN_avx2<uint8_t, true, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel);
+      case 8: convert_yuv_to_planarrgb_uintN_avx2<uint8_t, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel, target_bit_depth);
         break;
       case 10:
       case 12:
-      case 14: need_conversion ?
-        convert_yuv_to_planarrgb_uintN_avx2<uint16_t, true, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel) :
-        convert_yuv_to_planarrgb_uintN_avx2<uint16_t, true, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel);
+      case 14: convert_yuv_to_planarrgb_uintN_avx2<uint16_t, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel, target_bit_depth);
         break;
-      case 16: need_conversion ?
-        convert_yuv_to_planarrgb_uintN_avx2<uint16_t, false, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel) :
-        convert_yuv_to_planarrgb_uintN_avx2<uint16_t, false, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel);
+      case 16: convert_yuv_to_planarrgb_uintN_avx2<uint16_t, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel, target_bit_depth);
         break;
       }
       return dst;
@@ -1188,24 +1300,18 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
     if (bits_per_pixel <= 16 && (env->GetCPUFlags() & CPUF_SSE2) )
     {
       switch (bits_per_pixel) {
-      case 8: need_conversion ?
-        convert_yuv_to_planarrgb_uintN_sse2<uint8_t, true, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel) :
-        convert_yuv_to_planarrgb_uintN_sse2<uint8_t, true, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel);
+      case 8: convert_yuv_to_planarrgb_uintN_sse2<uint8_t, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel, target_bit_depth);
         break;
       case 10:
       case 12:
-      case 14: need_conversion ?
-        convert_yuv_to_planarrgb_uintN_sse2<uint16_t, true, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel) :
-        convert_yuv_to_planarrgb_uintN_sse2<uint16_t, true, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel);
+      case 14: convert_yuv_to_planarrgb_uintN_sse2<uint16_t, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel, target_bit_depth);
         break;
-      case 16: need_conversion ?
-        convert_yuv_to_planarrgb_uintN_sse2<uint16_t, false, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel) :
-        convert_yuv_to_planarrgb_uintN_sse2<uint16_t, false, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel);
+      case 16: convert_yuv_to_planarrgb_uintN_sse2<uint16_t, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel, target_bit_depth);
         break;
       }
       return dst;
     }
-    
+
     if (bits_per_pixel == 32 && (env->GetCPUFlags() & CPUF_SSE2) ) {
       // no in-process bit depth conversion supported at the moment
       if ((env->GetCPUFlags() & CPUF_AVX2))
@@ -1220,19 +1326,13 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
     if (bits_per_pixel <= 16)
     {
       switch (bits_per_pixel) {
-      case 8: need_conversion ?
-        convert_yuv_to_planarrgb_uintN_c<uint8_t, true, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel) :
-        convert_yuv_to_planarrgb_uintN_c<uint8_t, false, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel);
+      case 8: convert_yuv_to_planarrgb_uintN_c<uint8_t, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel, target_bit_depth);
         break;
       case 10:
       case 12:
-      case 14: need_conversion ?
-        convert_yuv_to_planarrgb_uintN_c<uint16_t, true, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel) :
-        convert_yuv_to_planarrgb_uintN_c<uint16_t, false, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel);
+      case 14: convert_yuv_to_planarrgb_uintN_c<uint16_t, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel, target_bit_depth);
         break;
-      case 16: need_conversion ?
-        convert_yuv_to_planarrgb_uintN_c<uint16_t, false, true>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel) :
-        convert_yuv_to_planarrgb_uintN_c<uint16_t, false, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel);
+      case 16: convert_yuv_to_planarrgb_uintN_c<uint16_t, false>(dstp, dstPitch, srcp, srcPitch, vi.width, vi.height, matrix, bits_per_pixel, target_bit_depth);
         break;
       }
       return dst;

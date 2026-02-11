@@ -321,10 +321,11 @@ AVSValue __cdecl ConvertToRGB::Create(AVSValue args, void* user_data, IScriptEnv
     }
     if (reallyConvert) {
       bool bitdepthConverted = false;
-      if (needConvertFinalBitdepth && finalBitdepth == 32) {
+      if (needConvertFinalBitdepth) {
         // Optional bit-depth conversion in PackedRGBtoPlanarRGB.
-        // Presently we only support only full range float output conversion here.
+        // int->float full/narrow range, int-int full/narrow supported
         clip = new ConvertYUV444ToRGB(clip, matrix_name, rgbtype_param, finalBitdepth, /*ref*/bitdepthConverted, env);
+        vi = clip->GetVideoInfo();
         if (bitdepthConverted) {
           needConvertFinalBitdepth = false; // done in-process
         }
@@ -332,6 +333,7 @@ AVSValue __cdecl ConvertToRGB::Create(AVSValue args, void* user_data, IScriptEnv
         // pass -1 as finalBitdepth, signing that no conversion required
         // output bitdepthConverted is n/a
         clip = new ConvertYUV444ToRGB(clip, matrix_name, rgbtype_param, -1 /*no bit-depth conversion*/, /*ref*/bitdepthConverted, env);
+        vi = clip->GetVideoInfo();
       }
 
       if (needConvertFinalBitdepth) {
@@ -350,8 +352,6 @@ AVSValue __cdecl ConvertToRGB::Create(AVSValue args, void* user_data, IScriptEnv
         clip = new PlanarRGBtoPackedRGB(clip, isRGBA);
         vi = clip->GetVideoInfo();
       }
-      clip = env->Invoke("Cache", AVSValue(clip)).AsClip();
-
       return clip;
     }
   }
@@ -470,11 +470,11 @@ AVSValue __cdecl ConvertToRGB::Create(AVSValue args, void* user_data, IScriptEnv
     const bool isSrcRGBA = vi.IsRGB32() || vi.IsRGB64();
     const bool isTargetRGBA = target_rgbtype == -2;
     clip = new PackedRGBtoPlanarRGB(clip, isSrcRGBA, isTargetRGBA);
+    vi = clip->GetVideoInfo(); // new format
     // no embedded bitdepth conversion in PackedRGBtoPlanarRGB
     if (target_bits_per_pixel != vi.BitsPerComponent()) {
       AVSValue new_args[2] = { clip, target_bits_per_pixel };
       clip = env->Invoke("ConvertBits", AVSValue(new_args, 2)).AsClip();
-      clip = env->Invoke("Cache", AVSValue(clip)).AsClip();
       vi = clip->GetVideoInfo(); // new format
     }
   }
