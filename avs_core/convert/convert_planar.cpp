@@ -929,8 +929,8 @@ static void convert_yuv_to_planarrgb_uintN_c_internal(BYTE* dstp[3], int dstPitc
   // - clamp in integer as usual
 
   // These helper constants are common for C/SSE2/AVX2
-  const bool full_s = matrix.offset_y == 0;
-  const bool full_d = matrix.offset_rgb == 0;
+  //const bool full_s = matrix.offset_y == 0;
+  //const bool full_d = matrix.offset_rgb == 0;
   constexpr bool need_float_conversion = conv_type == YuvRgbConversionType::FLOAT_OUTPUT;
   constexpr bool need_int_conversion_narrow_range = conv_type == YuvRgbConversionType::BITCONV_INT_LIMITED;       // full_d is false
   constexpr bool need_int_conversion_full_range = conv_type == YuvRgbConversionType::BITCONV_INT_FULL; // full_d is true
@@ -939,7 +939,6 @@ static void convert_yuv_to_planarrgb_uintN_c_internal(BYTE* dstp[3], int dstPitc
     bits_per_pixel_target = bits_per_pixel; // make it quasi constexpr for optimizer
   const int bit_diff = need_int_conversion ? bits_per_pixel_target - bits_per_pixel : 0;
   const int target_shift = need_int_conversion_narrow_range ? 13 - bit_diff : 13; // int->int narrow range: integrate the bit depth conversion into the scaling back
-  const int target_rgb_offset_shift = need_int_conversion_narrow_range ? 13 + bit_diff : 13; // int->int narrow range: integrate the bit depth conversion into the scaling back
 
   const int ROUNDER = (need_float_conversion || need_int_conversion_full_range) ? 0 : (1 << (target_shift - 1)); // 0 when float internal calculation is involved
   const int round_mask_plus_rgb_offset_i = need_float_conversion ? 0 : ROUNDER + (matrix.offset_rgb << 13); // latter of same magnitude as coeffs, also in simd madd
@@ -1272,7 +1271,6 @@ PVideoFrame __stdcall ConvertYUV444ToRGB::GetFrame(int n, IScriptEnvironment* en
 
     // always start from source bit depth
     int bits_per_pixel = source_bit_depth;
-    const bool need_conversion = (source_bit_depth != target_bit_depth);
 
     const BYTE* srcp[3] = { src->GetReadPtr(PLANAR_Y), src->GetReadPtr(PLANAR_U), src->GetReadPtr(PLANAR_V) };
     const int srcPitch[3] = { src->GetPitch(PLANAR_Y), src->GetPitch(PLANAR_U), src->GetPitch(PLANAR_V) };

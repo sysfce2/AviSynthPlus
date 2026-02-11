@@ -66,9 +66,6 @@ static void BuildMatrix_Rgb2Yuv_core(double Kr, double Kb, int int_arith_shift, 
   double Oy_f = luma.dst_offset;      // Y output offset
 
   // Derive integer versions (for <= 16 bit paths)
-  int Srgb = (int)Srgb_f;
-  int Sy = (int)Sy_f;
-  int Suv = (int)Suv_f;
   int Orgb = (int)Orgb_f;
   int Oy = (int)Oy_f;
 
@@ -190,11 +187,10 @@ static void BuildMatrix_Rgb2Yuv_core(double Kr, double Kb, int int_arith_shift, 
 */
 static void BuildMatrix_Yuv2Rgb_core(double Kr, double Kb, int int_arith_shift, bool full_scale_s, bool full_scale_d, int bits_per_pixel, ConversionMatrix& matrix)
 {
-  int Sy, Suv, Oy, Orgb;
   float Sy_f, Suv_f, Oy_f, Orgb_f;
 
   bits_conv_constants luma, chroma;
-  bits_conv_constants luma_to_32bit, luma_from_32bit;
+  bits_conv_constants luma_to_32bit;
 
   // helpers for post-matrix conversion to 32-bit float (for high bit depth sources or targets, e.g. 16-bit to 32-bit float)
   get_bits_conv_constants(luma_to_32bit, false, full_scale_s, full_scale_d, bits_per_pixel, 32);
@@ -211,10 +207,6 @@ static void BuildMatrix_Yuv2Rgb_core(double Kr, double Kb, int int_arith_shift, 
   Suv_f = chroma.src_span;
   Oy_f = luma.src_offset;
   Orgb_f = luma.dst_offset;
-  Sy = (int)Sy_f;
-  Suv = (int)Suv_f;
-  Oy = (int)Oy_f;
-  Orgb = (int)Orgb_f;
 
   /*
     Kr   = {0.299, 0.2126}
@@ -246,7 +238,6 @@ static void BuildMatrix_Yuv2Rgb_core(double Kr, double Kb, int int_arith_shift, 
 
   // The Srgb (destination span) is also just the dst_span (RGB is luma-like)!
   const float Srgb_f = (float)luma.dst_span;
-  const int Srgb = (int)Srgb_f;
 
   // symmetric rounding for both positive and negative coefficients
   auto round_coeff = [](double v) {

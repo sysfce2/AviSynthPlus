@@ -218,11 +218,7 @@ static PVideoFrame CreateBlankFrame(const VideoInfo& vi, int color, int mode, co
         default: // case 4:
           float val_f;
           if (plane == PLANAR_U || plane == PLANAR_V) {
-#ifdef FLOAT_CHROMA_IS_HALF_CENTERED
-            float shift = 0.5f;
-#else
             float shift = 0.0f;
-#endif
             val_f = float(val_i - 128) / 255.0f + shift; // 32 bit float chroma 128=0.5
           }
           else {
@@ -591,8 +587,8 @@ AVSValue __cdecl Create_MessageClip(AVSValue args, void*, IScriptEnvironment* en
 ********************************************************************/
 
 
-template<typename pixel_t, int bits_per_pixel>
-static void draw_colorbars_444(uint8_t *pY8, uint8_t *pU8, uint8_t *pV8, int pitchY, int pitchUV, int w, int h)
+template<typename pixel_t>
+static void draw_colorbars_444(uint8_t *pY8, uint8_t *pU8, uint8_t *pV8, int pitchY, int pitchUV, int w, int h, int bits_per_pixel)
 {
   pixel_t *pY = reinterpret_cast<pixel_t *>(pY8);
   pixel_t *pU = reinterpret_cast<pixel_t *>(pU8);
@@ -710,13 +706,8 @@ static void draw_colorbars_420_422_411(uint8_t *pY8, uint8_t *pU8, uint8_t *pV8,
   typedef typename std::conditional < sizeof(pixel_t) == 4, float, int>::type factor_t; // float support
   factor_t factor = (pixel_t)(sizeof(pixel_t) == 4 ? 1 / 255.0f : 1);
 
-#ifdef FLOAT_CHROMA_IS_HALF_CENTERED
-  int chroma_offset_i = 128;
-  float chroma_offset_f = 0.5f;
-#else
   int chroma_offset_i = 128;
   float chroma_offset_f = 0.0f;
-#endif
 
 
 //                                                        LtGrey  Yellow    Cyan   Green Magenta     Red    Blue
@@ -858,8 +849,8 @@ void GetYUVRec709fromRGB(double R, double G, double B, double& dY, double& dU, d
   dV = (R - dY) / 1.5748;
 }
 
-template<typename pixel_t, int bits_per_pixel>
-static void draw_colorbarsHD_444(uint8_t *pY8, uint8_t *pU8, uint8_t *pV8, int pitchY, int pitchUV, int w, int h)
+template<typename pixel_t>
+static void draw_colorbarsHD_444(uint8_t *pY8, uint8_t *pU8, uint8_t *pV8, int pitchY, int pitchUV, int w, int h, int bits_per_pixel)
 {
   pixel_t *pY = reinterpret_cast<pixel_t *>(pY8);
   pixel_t *pU = reinterpret_cast<pixel_t *>(pU8);
@@ -868,10 +859,6 @@ static void draw_colorbarsHD_444(uint8_t *pY8, uint8_t *pU8, uint8_t *pV8, int p
   pitchUV /= sizeof(pixel_t);
 
   const int shift = sizeof(pixel_t) == 4 ? 0 : (bits_per_pixel - 8);
-  typedef typename std::conditional < sizeof(pixel_t) == 4, float, int>::type factor_t; // float support
-  factor_t factor = (pixel_t)(sizeof(pixel_t) == 4 ? 1 / 255.0f : 1);
-
-  int chroma_offset_i = 128;
 
   // Also for float target we make "limited" range
   bits_conv_constants luma, chroma;
@@ -1033,7 +1020,6 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
   }
 
   /*
-/**
   SMPTE RP 219 / EG 1: +I Signal Reference (Rec. 709 / HD)
   * The +I (In-phase) signal is defined by its analog IRE levels:
     R = 41.2545 IRE, G = 16.6946 IRE, B = 0 IRE.
@@ -1055,7 +1041,7 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
   static const BYTE pattern23U[] = { 154,  240,   16,  102,  103,  128,  128 };
   static const BYTE pattern23V[] = {  16,  118,  138,  240,  157,  128,  128 };
 
- */
+  */
   // Pattern 2
 
   // 0: Cyan100, 1: Blue100, 2: Yellow100, 3: Red100, 4: +I, 5: Grey75, 6: White100
@@ -1629,7 +1615,7 @@ public:
     update_Matrix_and_ColorRange(props, theMatrix, theColorRange, env);
 
   // HD colorbars arib_std_b28
-  // Rec709 yuv values calculated by jmac698, Jan 2010, for Midzuki
+  // Rec709 yuv values
   if (type) { // ColorbarsHD
     BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
     BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
@@ -1638,12 +1624,12 @@ public:
     const int pitchUV = frame->GetPitch(PLANAR_U);
 
     switch (bits_per_pixel) {
-    case 8: draw_colorbarsHD_444<uint8_t, 8>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 10: draw_colorbarsHD_444<uint16_t, 10>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 12: draw_colorbarsHD_444<uint16_t, 12>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 14: draw_colorbarsHD_444<uint16_t, 14>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 16: draw_colorbarsHD_444<uint16_t, 16>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 32: draw_colorbarsHD_444<float, 8 /* n/a */>(pY, pU, pV, pitchY, pitchUV, w, h); break;
+    case 8: draw_colorbarsHD_444<uint8_t>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel); break;
+    case 10: 
+    case 12: 
+    case 14: 
+    case 16: draw_colorbarsHD_444<uint16_t>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel); break;
+    case 32: draw_colorbarsHD_444<float>(pY, pU, pV, pitchY, pitchUV, w, h,bits_per_pixel); break;
     }
 
   }
@@ -1656,12 +1642,12 @@ public:
     const int pitchUV = frame->GetPitch(PLANAR_U);
 
     switch (bits_per_pixel) {
-    case 8: draw_colorbars_444<uint8_t, 8>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 10: draw_colorbars_444<uint16_t, 10>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 12: draw_colorbars_444<uint16_t, 12>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 14: draw_colorbars_444<uint16_t, 14>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 16: draw_colorbars_444<uint16_t, 16>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 32: draw_colorbars_444<float, 8 /* n/a */>(pY, pU, pV, pitchY, pitchUV, w, h); break;
+    case 8: draw_colorbars_444<uint8_t>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel); break;
+    case 10:
+    case 12:
+    case 14:
+    case 16: draw_colorbars_444<uint16_t>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel); break;
+    case 32: draw_colorbars_444<float>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel); break;
     }
   }
   else if (vi.IsRGB() && vi.IsPlanar()) {

@@ -5180,7 +5180,9 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
   bool filterHasSpecialMT = this->GetFilterMTMode(f, &is_mtmode_forced) == MT_SPECIAL_MT;
 
   bool instantiated_clip_unaltered = false;
+#ifdef _DEBUG
   bool cache_guard_called = false;
+#endif
 
   if (filterHasSpecialMT) // pre-avs 3.6 workaround for MP_Pipeline
   {
@@ -5303,7 +5305,9 @@ bool ScriptEnvironment::Invoke_(AVSValue *result, const AVSValue& implicit_last,
       if (!instantiated_clip_unaltered) {
         AVSValue args_cacheguard[2]{ *result, f->name };
         *result = CacheGuard::Create(AVSValue(args_cacheguard, 2), NULL, threadEnv.get());
-        cache_guard_called = true; // for debug
+#ifdef _DEBUG
+        cache_guard_called = true;
+#endif
 
         // Check that the filter returns zero for unknown queries in SetCacheHints().
         // This is actually something we rely upon.

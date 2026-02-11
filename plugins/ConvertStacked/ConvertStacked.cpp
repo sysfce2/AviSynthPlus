@@ -41,13 +41,10 @@
 
 // Intrinsics base header + really required extension headers
 #if defined(_MSC_VER)
-#include <intrin.h> // MSVC, Clang-CL, and Intel C++ (in MSVC mode)
+#include <intrin.h> // MSVC
 #else 
-#include <x86intrin.h> // GCC/MinGW, Clang (Linux/GNU mode), and Intel C++ (in non-MSVC mode) (__GNUC__, __clang__, __INTEL_COMPILER, etc.)
+#include <x86intrin.h> // GCC/MinGW/Clang/LLVM
 #endif
-#include <emmintrin.h> // SSE2
-#include <tmmintrin.h> // SSSE3
-#include <smmintrin.h> // SSE4.1
 
 #endif // INTEL_INTRINSICS
 
@@ -97,7 +94,6 @@ public:
                     for (int x = 0; x < width; x += 16) {
                         __m128i data16_1, data16_2;
                         __m128i masklo = _mm_set1_epi16(0x00FF);
-                        // no gain when sse4.1 _mm_stream_load_si128 is used
                         data16_1 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp + x));       // 16 bytes, 8 words ABCDEFGH
                         data16_2 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp + x + 8));   // 16 bytes, 8 words
                         _mm_stream_si128(reinterpret_cast<__m128i*>(msb + x), _mm_packus_epi16(_mm_srli_epi16(data16_1, 8), _mm_srli_epi16(data16_2, 8))); // ABCDEFGH Hi
