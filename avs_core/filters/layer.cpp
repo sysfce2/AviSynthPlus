@@ -2174,14 +2174,13 @@ static void layer_yuy2_add_c(BYTE* dstp, const BYTE* ovrp, int dst_pitch, int ov
 // when chroma is processed, one can use/not use source chroma
 // Only when use_alpha: maskMode defines mask generation for chroma planes
 // When use_alpha == false -> maskMode ignored
-// allow_leftminus1: prepare for to be called from SIMD code, remaining non-mod pixel's C function. For such non x=0 pos calculations there already exist valid [x-1] pixels
 
 DISABLE_WARNING_PUSH
 DISABLE_WARNING_UNREFERENCED_LOCAL_VARIABLE
 
 // warning C4101 : 'mask_right' : unreferenced local variable
-template<MaskMode maskMode, typename pixel_t, int bits_per_pixel, bool is_chroma, bool use_chroma, bool has_alpha, bool subtract, bool allow_leftminus1>
-static void layer_yuv_add_subtract_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE* mask8, int dst_pitch, int overlay_pitch, int mask_pitch, int width, int height, int level) {
+template<MaskMode maskMode, typename pixel_t, bool lessthan16bits, bool is_chroma, bool use_chroma, bool has_alpha, bool subtract>
+static void layer_yuv_add_subtract_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE* mask8, int dst_pitch, int overlay_pitch, int mask_pitch, int width, int height, int level, int bits_per_pixel) {
   pixel_t* dstp = reinterpret_cast<pixel_t*>(dstp8);
   const pixel_t* ovrp = reinterpret_cast<const pixel_t*>(ovrp8);
   const pixel_t* maskp = reinterpret_cast<const pixel_t*>(mask8);
@@ -2189,9 +2188,12 @@ static void layer_yuv_add_subtract_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE*
   overlay_pitch /= sizeof(pixel_t);
   mask_pitch /= sizeof(pixel_t);
 
-  typedef typename std::conditional < bits_per_pixel < 16, int, int64_t>::type calc_t;
+  typedef typename std::conditional < lessthan16bits, int, int64_t>::type calc_t;
 
-  constexpr int max_pixel_value = (1 << bits_per_pixel) - 1;
+  if constexpr (sizeof(pixel_t) == 1)
+    bits_per_pixel = 255; // make quasi constexpr
+
+  const int max_pixel_value = (1 << bits_per_pixel) - 1;
 
   for (int y = 0; y < height; ++y) {
 
@@ -2199,10 +2201,10 @@ static void layer_yuv_add_subtract_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE*
     if constexpr (has_alpha) {
       // dstp is the source (and in-place destination) luma, compared to overlay luma
       if constexpr (maskMode == MASK420_MPEG2) {
-        mask_right = allow_leftminus1 ? maskp[-1] + maskp[-1 + mask_pitch] : maskp[0] + maskp[0 + mask_pitch];
+        mask_right = maskp[0] + maskp[0 + mask_pitch];
       }
       else if constexpr (maskMode == MASK422_MPEG2) {
-        mask_right = allow_leftminus1 ? maskp[-1] : maskp[0];
+        mask_right = maskp[0];
       }
     }
 
@@ -2258,13 +2260,13 @@ static void layer_yuv_add_subtract_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE*
 
       alpha_mask = has_alpha ? (int)(((calc_t)effective_mask * level + 1) >> bits_per_pixel) : level;
 
-      constexpr int rounder = 1 << (bits_per_pixel - 1);
+      const int rounder = 1 << (bits_per_pixel - 1);
 
       if constexpr (subtract) {
         if constexpr (!is_chroma || use_chroma)
           dstp[x] = (pixel_t)(dstp[x] + (((calc_t)(max_pixel_value - ovrp[x] - dstp[x]) * alpha_mask + rounder) >> bits_per_pixel));
         else {
-          constexpr int half = 1 << (bits_per_pixel - 1);
+          const int half = 1 << (bits_per_pixel - 1);
           dstp[x] = (pixel_t)(dstp[x] + (((calc_t)(/*max_pixel_value - */half - dstp[x]) * alpha_mask + rounder) >> bits_per_pixel));
         }
       }
@@ -2272,7 +2274,7 @@ static void layer_yuv_add_subtract_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE*
         if constexpr (!is_chroma || use_chroma)
           dstp[x] = (pixel_t)(dstp[x] + (((calc_t)(ovrp[x] - dstp[x]) * alpha_mask + rounder) >> bits_per_pixel));
         else {
-          constexpr pixel_t half = 1 << (bits_per_pixel - 1);
+          const pixel_t half = 1 << (bits_per_pixel - 1);
           dstp[x] = (pixel_t)(dstp[x] + (((calc_t)(half - dstp[x]) * alpha_mask + rounder) >> bits_per_pixel));
         }
       }
@@ -2400,14 +2402,14 @@ static void layer_yuv_add_subtract_f_c(BYTE* dstp8, const BYTE* ovrp8, const BYT
 }
 DISABLE_WARNING_POP
 
-template<MaskMode maskMode, typename pixel_t, int bits_per_pixel, bool is_chroma, bool use_chroma, bool has_alpha>
-static void layer_yuv_add_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE* mask8, int dst_pitch, int overlay_pitch, int mask_pitch, int width, int height, int level) {
-  layer_yuv_add_subtract_c<maskMode, pixel_t, bits_per_pixel, is_chroma, use_chroma, has_alpha, false, false>(dstp8, ovrp8, mask8, dst_pitch, overlay_pitch, mask_pitch, width, height, level);
+template<MaskMode maskMode, typename pixel_t, bool lessthan16bits, bool is_chroma, bool use_chroma, bool has_alpha>
+static void layer_yuv_add_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE* mask8, int dst_pitch, int overlay_pitch, int mask_pitch, int width, int height, int level, int bits_per_pixel) {
+  layer_yuv_add_subtract_c<maskMode, pixel_t, lessthan16bits, is_chroma, use_chroma, has_alpha, false>(dstp8, ovrp8, mask8, dst_pitch, overlay_pitch, mask_pitch, width, height, level, bits_per_pixel);
 }
 
-template<MaskMode maskMode, typename pixel_t, int bits_per_pixel, bool is_chroma, bool use_chroma, bool has_alpha>
-static void layer_yuv_subtract_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE* mask8, int dst_pitch, int overlay_pitch, int mask_pitch, int width, int height, int level) {
-  layer_yuv_add_subtract_c<maskMode, pixel_t, bits_per_pixel, is_chroma, use_chroma, has_alpha, true, false>(dstp8, ovrp8, mask8, dst_pitch, overlay_pitch, mask_pitch, width, height, level);
+template<MaskMode maskMode, typename pixel_t, bool lessthan16bits, bool is_chroma, bool use_chroma, bool has_alpha>
+static void layer_yuv_subtract_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE* mask8, int dst_pitch, int overlay_pitch, int mask_pitch, int width, int height, int level, int bits_per_pixel) {
+  layer_yuv_add_subtract_c<maskMode, pixel_t, lessthan16bits, is_chroma, use_chroma, has_alpha, true>(dstp8, ovrp8, mask8, dst_pitch, overlay_pitch, mask_pitch, width, height, level, bits_per_pixel);
 }
 
 template<MaskMode maskMode, bool is_chroma, bool use_chroma, bool has_alpha>
@@ -4228,24 +4230,18 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
 #define YUV_ADD_CHROMA_DISPATCH(MaskType, has_alpha) \
             switch (bits_per_pixel) { \
             case 8: \
-              if (chroma) layer_yuv_add_c<MaskType, uint8_t, 8, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              else layer_yuv_add_c<MaskType, uint8_t, 8, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
+              if (chroma) layer_yuv_add_c<MaskType, uint8_t, true /*lessthan16bits*/, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
+              else layer_yuv_add_c<MaskType, uint8_t, true /*lessthan16bits*/, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
               break; \
             case 10: \
-              if (chroma) layer_yuv_add_c<MaskType, uint16_t, 10, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              else layer_yuv_add_c<MaskType, uint16_t, 10, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              break; \
             case 12: \
-              if (chroma) layer_yuv_add_c<MaskType, uint16_t, 12, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              else layer_yuv_add_c<MaskType, uint16_t, 12, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              break; \
             case 14: \
-              if (chroma) layer_yuv_add_c<MaskType, uint16_t, 14, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              else layer_yuv_add_c<MaskType, uint16_t, 14, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
+              if (chroma) layer_yuv_add_c<MaskType, uint16_t, true /*lessthan16bits*/, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
+              else layer_yuv_add_c<MaskType, uint16_t, true /*lessthan16bits*/, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
               break; \
             case 16: \
-              if (chroma) layer_yuv_add_c<MaskType, uint16_t, 16, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              else layer_yuv_add_c<MaskType, uint16_t, 16, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
+              if (chroma) layer_yuv_add_c<MaskType, uint16_t, false /*lessthan16bits*/, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
+              else layer_yuv_add_c<MaskType, uint16_t, false /*lessthan16bits*/, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
               break; \
             case 32: \
               if (chroma) layer_yuv_add_f_c<MaskType, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, opacity); \
@@ -4255,11 +4251,11 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
 
 #define YUV_ADD_LUMA_DISPATCH(MaskType, has_alpha) \
             switch (bits_per_pixel) { \
-            case 8: layer_yuv_add_c<MaskType, uint8_t, 8, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); break; \
-            case 10: layer_yuv_add_c<MaskType, uint16_t, 10, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); break; \
-            case 12: layer_yuv_add_c<MaskType, uint16_t, 12, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); break; \
-            case 14: layer_yuv_add_c<MaskType, uint16_t, 14, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); break; \
-            case 16: layer_yuv_add_c<MaskType, uint16_t, 16, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); break; \
+            case 8: layer_yuv_add_c<MaskType, uint8_t, true /*lessthan16bits*/, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); break; \
+            case 10: \
+            case 12: \
+            case 14: layer_yuv_add_c<MaskType, uint16_t, true /*lessthan16bits*/, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); break; \
+            case 16: layer_yuv_add_c<MaskType, uint16_t, false /*lessthan16bits*/, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); break; \
             case 32: layer_yuv_add_f_c<MaskType, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, opacity); break; \
             }
 
@@ -4270,8 +4266,8 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
           {
             if (vi.IsYV411())
             {
-              if (chroma) layer_yuv_add_c<MASK411, uint8_t, 8, true, true, false/*has_alpha*/>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              else layer_yuv_add_c<MASK411, uint8_t, 8, true, false, false /*has_alpha*/>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
+              if (chroma) layer_yuv_add_c<MASK411, uint8_t, true /*lessthan16bits*/, true, true, false/*has_alpha*/>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
+              else layer_yuv_add_c<MASK411, uint8_t, true /*lessthan16bits*/, true, false, false /*has_alpha*/>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
                 // no alpha for 411
             }
             else if (vi.Is420())
@@ -4351,24 +4347,18 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
 #define YUV_SUBTRACT_CHROMA_DISPATCH(MaskType, has_alpha) \
             switch (bits_per_pixel) { \
             case 8: \
-              if (chroma) layer_yuv_subtract_c<MaskType, uint8_t, 8, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              else layer_yuv_subtract_c<MaskType, uint8_t, 8, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
+              if (chroma) layer_yuv_subtract_c<MaskType, uint8_t, true /*lessthan16bits*/, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
+              else layer_yuv_subtract_c<MaskType, uint8_t, true /*lessthan16bits*/, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
               break; \
             case 10: \
-              if (chroma) layer_yuv_subtract_c<MaskType, uint16_t, 10, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              else layer_yuv_subtract_c<MaskType, uint16_t, 10, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              break; \
             case 12: \
-              if (chroma) layer_yuv_subtract_c<MaskType, uint16_t, 12, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              else layer_yuv_subtract_c<MaskType, uint16_t, 12, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              break; \
             case 14: \
-              if (chroma) layer_yuv_subtract_c<MaskType, uint16_t, 14, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              else layer_yuv_subtract_c<MaskType, uint16_t, 14, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
+              if (chroma) layer_yuv_subtract_c<MaskType, uint16_t, true /*lessthan16bits*/, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
+              else layer_yuv_subtract_c<MaskType, uint16_t, true /*lessthan16bits*/, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
               break; \
             case 16: \
-              if (chroma) layer_yuv_subtract_c<MaskType, uint16_t, 16, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              else layer_yuv_subtract_c<MaskType, uint16_t, 16, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
+              if (chroma) layer_yuv_subtract_c<MaskType, uint16_t, false /*lessthan16bits*/, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
+              else layer_yuv_subtract_c<MaskType, uint16_t, false /*lessthan16bits*/, true, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
               break; \
             case 32: \
               if (chroma) layer_yuv_subtract_f_c<MaskType, true, true, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, opacity); \
@@ -4378,11 +4368,11 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
 
 #define YUV_SUBTRACT_LUMA_DISPATCH(MaskType, has_alpha) \
             switch (bits_per_pixel) { \
-            case 8: layer_yuv_subtract_c<MaskType, uint8_t, 8, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); break; \
-            case 10: layer_yuv_subtract_c<MaskType, uint16_t, 10, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); break; \
-            case 12: layer_yuv_subtract_c<MaskType, uint16_t, 12, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); break; \
-            case 14: layer_yuv_subtract_c<MaskType, uint16_t, 14, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); break; \
-            case 16: layer_yuv_subtract_c<MaskType, uint16_t, 16, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); break; \
+            case 8: layer_yuv_subtract_c<MaskType, uint8_t, true /*lessthan16bits*/, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); break; \
+            case 10:\
+            case 12:\
+            case 14: layer_yuv_subtract_c<MaskType, uint16_t, true /*lessthan16bits*/, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); break; \
+            case 16: layer_yuv_subtract_c<MaskType, uint16_t, false /*lessthan16bits*/, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); break; \
             case 32: layer_yuv_subtract_f_c<MaskType, false, false, has_alpha>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, opacity); break; \
             }
 
@@ -4393,8 +4383,8 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
           {
             if (vi.IsYV411())
             {
-              if (chroma) layer_yuv_subtract_c<MASK411, uint8_t, 8, true, true, false>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
-              else layer_yuv_subtract_c<MASK411, uint8_t, 8, true, false, false>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel); \
+              if (chroma) layer_yuv_subtract_c<MASK411, uint8_t, true /*lessthan16bits*/, true, true, false>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
+              else layer_yuv_subtract_c<MASK411, uint8_t, true /*lessthan16bits*/, true, false, false>(src1p, src2p, maskp, src1_pitch, src2_pitch, mask_pitch, currentwidth, currentheight, mylevel, bits_per_pixel); \
             }
             else if (vi.Is420())
             {
