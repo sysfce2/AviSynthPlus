@@ -57,7 +57,7 @@
 
 #ifdef _MSC_VER
 #pragma warning(push)
-#pragma warning(disable: 4305 4309)
+#pragma warning(disable: 4305)
 #endif
 
 template<typename pixel_t, bool chroma, bool fulls, bool fulld>

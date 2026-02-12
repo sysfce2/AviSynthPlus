@@ -198,11 +198,11 @@ void convert_yv24_to_rgb_avx2(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, co
         _mm256_storeu_si256(reinterpret_cast<__m256i*>(dstp + x * 3), result_0_15); // not necessarily 32 bytes aligned
 
         // => x  x  x  x  x  x  x  x  x  x  x  x  bB gB rB bA
-        __m128i shuffle_hi_lo_2 = _mm_set_epi8(0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 14, 13, 12, 10);
+        __m128i shuffle_hi_lo_2 = _mm_set_epi8((char)0x80, (char)0x80, (char)0x80, (char)0x80, (char)0x80, (char)0x80, (char)0x80, (char)0x80, (char)0x80, (char)0x80, (char)0x80, (char)0x80, 14, 13, 12, 10);
         __m128i xmm4 = _mm_shuffle_epi8(result_hi_lo, shuffle_hi_lo_2);
 
         // => bF gF rF bE gE rE bD gD rD bC gC rC x  x  x  x
-        __m128i shuffle_hi_hi = _mm_set_epi8(14, 13, 12, 10, 9, 8, 6, 5, 4, 2, 1, 0, 0x80, 0x80, 0x80, 0x80);
+        __m128i shuffle_hi_hi = _mm_set_epi8(14, 13, 12, 10, 9, 8, 6, 5, 4, 2, 1, 0, (char)0x80, (char)0x80, (char)0x80, (char)0x80);
         __m128i xmm5 = _mm_shuffle_epi8(result_hi_hi, shuffle_hi_hi);
 
         // => bF gF rF bE gE rE bD gD rD bC gC rC bB gB rB bA

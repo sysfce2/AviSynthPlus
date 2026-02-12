@@ -473,10 +473,8 @@ void af_horizontal_rgb32_sse2(BYTE* dstp, const BYTE* srcp, size_t dst_pitch, si
   __m128i outer_weight = _mm_set1_epi16(64 - t);
   __m128i round_mask = _mm_set1_epi16(0x40);
   __m128i zero = _mm_setzero_si128();
-//#pragma warning(disable: 4309)
   __m128i left_mask = _mm_set_epi32(0, 0, 0, 0xFFFFFFFF);
   __m128i right_mask = _mm_set_epi32(0xFFFFFFFF, 0, 0, 0);
-//#pragma warning(default: 4309)
 
   __m128i center, right, left, result;
 
@@ -523,10 +521,8 @@ void af_horizontal_rgb64_sse2(BYTE* dstp, const BYTE* srcp, size_t dst_pitch, si
   __m128i outer_weight = _mm_set1_epi32(64 - t);
   __m128i round_mask = _mm_set1_epi32(0x40);
   __m128i zero = _mm_setzero_si128();
-  //#pragma warning(disable: 4309)
   __m128i left_mask = _mm_set_epi32(0, 0, 0xFFFFFFFF, 0xFFFFFFFF);
   __m128i right_mask = _mm_set_epi32(0xFFFFFFFF, 0xFFFFFFFF, 0, 0);
-  //#pragma warning(default: 4309)
 
   __m128i center, right, left, result;
 
@@ -577,10 +573,8 @@ void af_horizontal_rgb64_sse41(BYTE* dstp, const BYTE* srcp, size_t dst_pitch, s
   __m128i outer_weight = _mm_set1_epi32(64 - t);
   __m128i round_mask = _mm_set1_epi32(0x40);
   __m128i zero = _mm_setzero_si128();
-  //#pragma warning(disable: 4309)
   __m128i left_mask = _mm_set_epi32(0, 0, 0xFFFFFFFF, 0xFFFFFFFF);
   __m128i right_mask = _mm_set_epi32(0xFFFFFFFF, 0xFFFFFFFF, 0, 0);
-  //#pragma warning(default: 4309)
 
   __m128i center, right, left, result;
 
@@ -630,10 +624,8 @@ void af_horizontal_rgb32_mmx(BYTE* dstp, const BYTE* srcp, size_t dst_pitch, siz
   __m64 outer_weight = _mm_set1_pi16(64 - t);
   __m64 round_mask = _mm_set1_pi16(0x40);
   __m64 zero = _mm_setzero_si64();
-  //#pragma warning(disable: 4309)
   __m64 left_mask = _mm_set_pi32(0, 0xFFFFFFFF);
   __m64 right_mask = _mm_set_pi32(0xFFFFFFFF, 0);
-  //#pragma warning(default: 4309)
 
   __m64 center, right, left, result;
 
@@ -712,18 +704,11 @@ void af_horizontal_yuy2_sse2(BYTE* dstp, const BYTE* srcp, size_t dst_pitch, siz
   __m128i center_weight = _mm_set1_epi16(t);
   __m128i outer_weight = _mm_set1_epi16(64 - t);
   __m128i round_mask = _mm_set1_epi16(0x40);
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
   __m128i left_mask = _mm_set_epi32(0, 0, 0, 0xFFFFFFFF);
   __m128i right_mask = _mm_set_epi32(0xFFFFFFFF, 0, 0, 0);
   __m128i left_mask_small = _mm_set_epi16(0, 0, 0, 0, 0, 0, 0x00FF, 0);
   __m128i right_mask_small = _mm_set_epi16(0, 0x00FF, 0, 0, 0, 0, 0, 0);
   __m128i luma_mask = _mm_set1_epi16(0xFF);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
   __m128i center, right, left, result;
 
@@ -823,18 +808,11 @@ void af_horizontal_yuy2_mmx(BYTE* dstp, const BYTE* srcp, size_t dst_pitch, size
   __m64 center_weight = _mm_set1_pi16(t);
   __m64 outer_weight = _mm_set1_pi16(64 - t);
   __m64 round_mask = _mm_set1_pi16(0x40);
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
   __m64 left_mask = _mm_set_pi32(0, 0xFFFFFFFF);
   __m64 right_mask = _mm_set_pi32(0xFFFFFFFF, 0);
   __m64 left_mask_small = _mm_set_pi16(0, 0, 0x00FF, 0);
   __m64 right_mask_small = _mm_set_pi16(0, 0x00FF, 0, 0);
   __m64 luma_mask = _mm_set1_pi16(0xFF);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
   __m64 center, right, left, result;
 
@@ -905,14 +883,7 @@ void af_horizontal_planar_sse2(BYTE* dstp, size_t height, size_t pitch, size_t w
   __m128i round_mask = _mm_set1_epi16(0x40);
   __m128i zero = _mm_setzero_si128();
   __m128i left_mask = _mm_set_epi32(0, 0, 0, 0xFF);
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
-  __m128i right_mask = _mm_set_epi8(0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+  __m128i right_mask = _mm_set_epi8((char)0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
   __m128i left;
 
@@ -967,15 +938,8 @@ void af_horizontal_planar_uint16_t_sse2(BYTE* dstp, size_t height, size_t pitch,
   __m128i outer_weight = _mm_set1_epi32(64 - t);
   __m128i round_mask = _mm_set1_epi32(0x40);
   __m128i zero = _mm_setzero_si128();
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
-  __m128i left_mask = _mm_set_epi16(0, 0, 0, 0, 0, 0, 0, 0xFFFF); // 0, 0, 0, 0, 0, 0, 0, FFFF
-  __m128i right_mask = _mm_set_epi16(0xFFFF, 0, 0, 0, 0, 0, 0, 0);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+  __m128i left_mask = _mm_set_epi16(0, 0, 0, 0, 0, 0, 0, (short)0xFFFF); // 0, 0, 0, 0, 0, 0, 0, FFFF
+  __m128i right_mask = _mm_set_epi16((short)0xFFFF, 0, 0, 0, 0, 0, 0, 0);
 
   __m128i left;
 
@@ -1034,15 +998,8 @@ void af_horizontal_planar_uint16_t_sse41(BYTE* dstp, size_t height, size_t pitch
   __m128i outer_weight = _mm_set1_epi32(64 - t);
   __m128i round_mask = _mm_set1_epi32(0x40);
   __m128i zero = _mm_setzero_si128();
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
-  __m128i left_mask = _mm_set_epi16(0, 0, 0, 0, 0, 0, 0, 0xFFFF); // 0, 0, 0, 0, 0, 0, 0, FFFF
-  __m128i right_mask = _mm_set_epi16(0xFFFF, 0, 0, 0, 0, 0, 0, 0);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+  __m128i left_mask = _mm_set_epi16(0, 0, 0, 0, 0, 0, 0, (short)0xFFFF); // 0, 0, 0, 0, 0, 0, 0, FFFF
+  __m128i right_mask = _mm_set_epi16((short)0xFFFF, 0, 0, 0, 0, 0, 0, 0);
 
   __m128i left;
 
@@ -1096,15 +1053,8 @@ void af_horizontal_planar_float_sse2(BYTE* dstp, size_t height, size_t pitch, si
   size_t mod16_width = (row_size / 16) * 16;
   size_t sse_loop_limit = row_size == mod16_width ? mod16_width - 16 : mod16_width;
 
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
   __m128i left_mask = _mm_set_epi32(0, 0, 0, 0xFFFFFFFF);
   __m128i right_mask = _mm_set_epi32(0xFFFFFFFF, 0, 0, 0);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
   __m128 left;
 
@@ -1162,15 +1112,8 @@ void af_horizontal_planar_mmx(BYTE* dstp, size_t height, size_t pitch, size_t wi
   __m64 outer_weight = _mm_set1_pi16(64 - t);
   __m64 round_mask = _mm_set1_pi16(0x40);
   __m64 zero = _mm_setzero_si64();
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
-  __m64 left_mask = _mm_set_pi8(0, 0, 0, 0, 0, 0, 0, 0xFF);
-  __m64 right_mask = _mm_set_pi8(0xFF, 0, 0, 0, 0, 0, 0, 0);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+  __m64 left_mask = _mm_set_pi8(0, 0, 0, 0, 0, 0, 0, (char)0xFF);
+  __m64 right_mask = _mm_set_pi8((char)0xFF, 0, 0, 0, 0, 0, 0, 0);
 
   __m64 left;
 

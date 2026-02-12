@@ -165,14 +165,7 @@ void weighted_merge_luma_yuy2_sse2(BYTE *src, const BYTE *luma, int pitch, int l
   __m128i round_mask = _mm_set1_epi32(0x4000);
   __m128i mask = _mm_set_epi16(weight, invweight, weight, invweight, weight, invweight, weight, invweight);
   __m128i luma_mask = _mm_set1_epi16(0x00FF);
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
-  __m128i chroma_mask = _mm_set1_epi16(0xFF00);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+  __m128i chroma_mask = _mm_set1_epi16((short)0xFF00);
 
   int wMod16 = (width/16) * 16;
 
@@ -219,14 +212,7 @@ void weighted_merge_luma_yuy2_mmx(BYTE *src, const BYTE *luma, int pitch, int lu
   __m64 round_mask = _mm_set1_pi32(0x4000);
   __m64 mask = _mm_set_pi16(weight, invweight, weight, invweight);
   __m64 luma_mask = _mm_set1_pi16(0x00FF);
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
-  __m64 chroma_mask = _mm_set1_pi16(0xFF00);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+  __m64 chroma_mask = _mm_set1_pi16((short)0xFF00);
 
   int wMod8 = (width/8) * 8;
 
@@ -278,14 +264,7 @@ void replace_luma_yuy2_sse2(BYTE *src, const BYTE *luma, int pitch, int luma_pit
 {
   int mod16_width = width / 16 * 16;
   __m128i luma_mask = _mm_set1_epi16(0x00FF);
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
-  __m128i chroma_mask = _mm_set1_epi16(0xFF00);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+  __m128i chroma_mask = _mm_set1_epi16((short)0xFF00);
 
   for(int y = 0; y < height; y++) {
     for(int x = 0; x < mod16_width; x+=16) {
@@ -313,14 +292,7 @@ void replace_luma_yuy2_mmx(BYTE *src, const BYTE *luma, int pitch, int luma_pitc
 {
   int mod8_width = width / 8 * 8;
   __m64 luma_mask = _mm_set1_pi16(0x00FF);
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
-  __m64 chroma_mask = _mm_set1_pi16(0xFF00);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+  __m64 chroma_mask = _mm_set1_pi16((short)0xFF00);
 
   for(int y = 0; y < height; y++) {
     for(int x = 0; x < mod8_width; x+=8) {

@@ -236,15 +236,11 @@ public:
   return _mm_unpacklo_epi32(_mm_shuffle_epi32(tmp1, _MM_SHUFFLE (0,0,2,0)), _mm_shuffle_epi32(tmp2, _MM_SHUFFLE (0,0,2,0)));
 }
 
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4309)
-#endif
 // fake _mm_packus_epi32 (orig is SSE4.1 only)
 [[maybe_unused]] static AVS_FORCEINLINE __m128i _MM_PACKUS_EPI32( __m128i a, __m128i b )
 {
   const __m128i val_32 = _mm_set1_epi32(0x8000);
-  const __m128i val_16 = _mm_set1_epi16(0x8000);
+  const __m128i val_16 = _mm_set1_epi16((short)0x8000);
 
   a = _mm_sub_epi32(a, val_32);
   b = _mm_sub_epi32(b, val_32);
@@ -253,9 +249,6 @@ public:
   return a;
 }
 
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 // fake _mm_packus_epi32 (orig is SSE4.1 only)
 // only for packing 00000000..0000FFFF range integers, does not clamp properly above that, e.g. 00010001
 [[maybe_unused]] static AVS_FORCEINLINE __m128i _MM_PACKUS_EPI32_SRC_TRUEWORD(__m128i a, __m128i b)
