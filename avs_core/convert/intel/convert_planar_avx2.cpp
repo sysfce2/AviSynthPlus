@@ -49,10 +49,8 @@
 #define _mm256_set_m128i(v0, v1) _mm256_insertf128_si256(_mm256_castsi128_si256(v1), (v0), 1)
 #endif
 
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable:4309)
-#endif
+DISABLE_WARNING_PUSH
+DISABLE_WARNING_UNREFERENCED_LOCAL_VARIABLE
 
 // packed rgb helper
 static AVS_FORCEINLINE __m256i convert_yuv_to_rgb_avx2_core(const __m256i& px0189, const __m256i& px23AB, const __m256i& px45CD, const __m256i& px67EF, const __m256i& zero, const __m256i& matrix, const __m256i& round_mask_plus_rgb_offset) {
@@ -352,6 +350,8 @@ template void convert_planarrgb_to_yuv_uint16_avx2<12>(BYTE* (&dstp)[3], int(&ds
 template void convert_planarrgb_to_yuv_uint16_avx2<14>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m);
 template void convert_planarrgb_to_yuv_uint16_avx2<16>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m);
 
+#define XP_LAMBDA_CAPTURE_FIX(x) (void)(x)
+
 template<typename pixel_t, bool lessthan16bit, bool lessthan16bit_target, typename pixel_t_dst, YuvRgbConversionType conv_type>
 static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m,
   const int bits_per_pixel, int bits_per_pixel_target)
@@ -629,9 +629,10 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
         r_f_lo = _mm_mul_ps(r_f_lo, scale_f_sse2);
         r_f_hi = _mm_mul_ps(r_f_hi, scale_f_sse2);
         */
-#define XP_LAMBDA_CAPTURE_FIX(x) (void)(x)
 
         auto process_from_float_plane_avx2 = [&](BYTE* plane_ptr, __m256 lo_1, __m256 hi_1, __m256 lo_2, __m256 hi_2) {
+          XP_LAMBDA_CAPTURE_FIX(zero);
+          XP_LAMBDA_CAPTURE_FIX(limit);
           /*
           g = static_cast<int>(g_f + 0.5f);
           b = static_cast<int>(b_f + 0.5f);
@@ -729,17 +730,21 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
 
         // For v141_xp compatibility: forces the compiler to capture a const variable
         // that would otherwise be optimized out of nested lambda scopes.
-#define XP_LAMBDA_CAPTURE_FIX(x) (void)(x)
 
         auto process_plane = [&](BYTE* plane_ptr, __m256i m_uy, __m256i m_vr, __m256i v_patch) {
           XP_LAMBDA_CAPTURE_FIX(limit);
           XP_LAMBDA_CAPTURE_FIX(safe_last_16float_64bytes);
           auto madd_scale = [&](__m256i uy, __m256i vr) {
             XP_LAMBDA_CAPTURE_FIX(v_patch);
+            XP_LAMBDA_CAPTURE_FIX(target_shift);
             __m256i sum = _mm256_add_epi32(_mm256_madd_epi16(m_uy, uy), _mm256_madd_epi16(m_vr, vr));
             // 16-bit adjustment (signed patch, offset, output rgb offset)
             if constexpr (!lessthan16bit) sum = _mm256_add_epi32(sum, v_patch);
+#ifdef XP_TLS
+            if (!need_float_conversion)
+#else
             if constexpr (!need_float_conversion)
+#endif
               sum = _mm256_srai_epi32(sum, target_shift); // 13 bit fixed point shift
             return sum;
             };
@@ -749,7 +754,11 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
           __m256i res2_lo = madd_scale(uy2_lo, vr2_lo); // Pixels 16-19, 24-27
           __m256i res2_hi = madd_scale(uy2_hi, vr2_hi); // Pixels 20-23, 28-31
 
+#ifdef XP_TLS
+          if (need_float_conversion) {
+#else
           if constexpr (need_float_conversion) {
+#endif
             // when float output is needed, convert after scaling, mimic a post-ConvertBits
             const int pix_idx = x / sizeof(pixel_t);
             float* f_dst = reinterpret_cast<float*>(plane_ptr) + pix_idx;
@@ -823,8 +832,6 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
           }
           };
 
-#undef XP_LAMBDA_CAPTURE_FIX
-
         // Process planes, using pre-packed coefficient, and the 16 bit patch if needed
         process_plane(dstp[0], m_uy_G, m_vr_G, v_patch_G);
         process_plane(dstp[1], m_uy_B, m_vr_B, v_patch_B);
@@ -839,6 +846,8 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
     dstp[2] += dstPitch[2];
   }
 }
+
+#undef XP_LAMBDA_CAPTURE_FIX
 
 // Further separating cases inside, dispatcher remains relatively simple
 template<typename pixel_t_src, bool lessthan16bit>
@@ -949,6 +958,4 @@ void convert_yuv_to_planarrgb_float_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], co
   }
 }
 
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+DISABLE_WARNING_POP

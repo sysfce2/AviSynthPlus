@@ -979,8 +979,14 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
   static const double pattern1G[] = { 0.4, 0.75, 0.75, 0.75, 0.75, 0.00, 0.00, 0.00 };
   static const double pattern1B[] = { 0.4, 0.75, 0.00, 0.75, 0.00, 0.75, 0.00, 0.75 };
 
+#define XP_LAMBDA_CAPTURE_FIX(x) (void)(x)
+
   // Helper to process and write a pixel based on RGB input
   auto ProcessPixel = [&](double r, double g, double b, int targetX) {
+    XP_LAMBDA_CAPTURE_FIX(float_scale);
+    XP_LAMBDA_CAPTURE_FIX(float_offset);
+    XP_LAMBDA_CAPTURE_FIX(float_uv_scale);
+    XP_LAMBDA_CAPTURE_FIX(shift);
     double dY, dU, dV;
     GetYUVRec709fromRGB(r, g, b, dY, dU, dV);
 
@@ -1051,6 +1057,10 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
 
   // For pattern 2 and 3
   auto ProcessBar = [&](int index, int endX, int& currentX) {
+    XP_LAMBDA_CAPTURE_FIX(float_scale);
+    XP_LAMBDA_CAPTURE_FIX(float_offset);
+    XP_LAMBDA_CAPTURE_FIX(float_uv_scale);
+    XP_LAMBDA_CAPTURE_FIX(shift);
     double dY, dU, dV;
     GetYUVRec709fromRGB(pattern23R[index], pattern23G[index], pattern23B[index], dY, dU, dV);
 
@@ -1067,6 +1077,7 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
       }
     }
     };
+#undef XP_LAMBDA_CAPTURE_FIX
 
   for (; y < p1 + p23; ++y) {
     int x = 0;
