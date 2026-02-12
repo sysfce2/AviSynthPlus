@@ -684,7 +684,8 @@ PVideoFrame __stdcall CacheGuard::GetFrame(int n, IScriptEnvironment* env_)
   */
 
   // do not create cache from inside Invoke (e.g. when calling GetFrame(0) from constructor during instantation)
-  const bool chainedCtor = IEnv->GetInvokeStackSize() > 0;
+  //const bool chainedCtor = IEnv->GetInvokeStackSize() > 0;
+  const bool chainedCtor = false;
  
   return GetCache(env, chainedCtor, child)->GetFrame(n, env);
 }
@@ -697,7 +698,9 @@ void __stdcall CacheGuard::GetAudio(void* buf, int64_t start, int64_t count, ISc
   ScopedCounter getframe_counter(IEnv->GetFrameRecursiveCount());
 
   // do not create cache from inside Invoke (e.g. when calling GetFrame(0) from constructor during instantation)
-  const bool chainedCtor = IEnv->GetInvokeStackSize() > 0;
+  //const bool chainedCtor = IEnv->GetInvokeStackSize() > 0;
+  const bool chainedCtor = false;
+
   return GetCache(env, chainedCtor, child)->GetAudio(buf, start, count, env);
 }
 
