@@ -59,7 +59,7 @@ void OL_DifferenceImage::DoBlendImage(ImageOverlayInternal* base, ImageOverlayIn
   //  BlendImage<float>(base, overlay);
 }
 
-
+// no float support
 template<typename pixel_t, bool maskMode>
 void OL_DifferenceImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask) {
   pixel_t* baseY = reinterpret_cast<pixel_t *>(base->GetPtr(PLANAR_Y));
@@ -86,7 +86,7 @@ void OL_DifferenceImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlay
   const int maskpitch = maskMode ? (mask->pitch) / sizeof(pixel_t) : 0;
 
   // avoid "uint16*uint16 can't get into int32" overflows
-  typedef typename std::conditional < sizeof(pixel_t) == 1, int, typename std::conditional < sizeof(pixel_t) == 2, int64_t, float>::type >::type result_t;
+  using result_t = typename std::conditional<sizeof(pixel_t) == 1, int, int64_t>::type;
 
   int w = base->w();
   int h = base->h();
@@ -97,7 +97,7 @@ void OL_DifferenceImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlay
         int Y = abs((int)baseY[x] - (int)ovY[x]) + half_pixel_value;
         int U = abs((int)baseU[x] - (int)ovU[x]) + half_pixel_value;
         int V = abs((int)baseV[x] - (int)ovV[x]) + half_pixel_value;
-        if(maskMode) {
+        if constexpr (maskMode) {
           result_t mY = maskY[x];
           result_t mU = maskU[x];
           result_t mV = maskV[x];
@@ -128,7 +128,7 @@ void OL_DifferenceImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlay
       ovU += overlaypitch;
       ovV += overlaypitch;
 
-      if(maskMode) {
+      if constexpr (maskMode) {
         maskY += maskpitch;
         maskU += maskpitch;
         maskV += maskpitch;
@@ -140,7 +140,7 @@ void OL_DifferenceImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlay
         int Y = abs((int)baseY[x] - (int)ovY[x]) + half_pixel_value;
         int U = abs((int)baseU[x] - (int)ovU[x]) + half_pixel_value;
         int V = abs((int)baseV[x] - (int)ovV[x]) + half_pixel_value;
-        if(maskMode) {
+        if constexpr (maskMode) {
           result_t  mY = (maskY[x] * opacity) >> OPACITY_SHIFT;
           result_t  mU = (maskU[x] * opacity) >> OPACITY_SHIFT;
           result_t  mV = (maskV[x] * opacity) >> OPACITY_SHIFT;
@@ -176,7 +176,7 @@ void OL_DifferenceImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlay
       ovU += overlaypitch;
       ovV += overlaypitch;
 
-      if(maskMode) {
+      if constexpr (maskMode) {
         maskY += maskpitch;
         maskU += maskpitch;
         maskV += maskpitch;

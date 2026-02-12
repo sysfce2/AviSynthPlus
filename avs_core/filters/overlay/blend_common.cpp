@@ -121,7 +121,7 @@ template void overlay_blend_c_float<true>(BYTE* p1, const BYTE* p2, const BYTE* 
 typedef int (OverlayCCompare)(BYTE, BYTE);
 
 template<typename pixel_t, bool darken /* OverlayCCompare<pixel_t> compare*/>
-AVS_FORCEINLINE void overlay_darklighten_c(BYTE *p1Y_8, BYTE *p1U_8, BYTE *p1V_8, const BYTE *p2Y_8, const BYTE *p2U_8, const BYTE *p2V_8, int p1_pitch, int p2_pitch, int width, int height) {
+static void overlay_darklighten_c(BYTE *p1Y_8, BYTE *p1U_8, BYTE *p1V_8, const BYTE *p2Y_8, const BYTE *p2U_8, const BYTE *p2V_8, int p1_pitch, int p2_pitch, int width, int height) {
   pixel_t* p1Y = reinterpret_cast<pixel_t *>(p1Y_8);
   pixel_t* p1U = reinterpret_cast<pixel_t *>(p1U_8);
   pixel_t* p1V = reinterpret_cast<pixel_t *>(p1V_8);

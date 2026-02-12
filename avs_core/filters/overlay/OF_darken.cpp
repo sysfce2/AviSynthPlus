@@ -84,7 +84,7 @@ void OL_DarkenImage::DoBlendImage(ImageOverlayInternal* base, ImageOverlayIntern
   }
 }
 
-
+// float not supported yet
 template<typename pixel_t, bool maskMode, bool of_darken>
 void OL_DarkenImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInternal* overlay, ImageOverlayInternal* mask) {
 
@@ -110,17 +110,18 @@ void OL_DarkenImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInte
   const int maskpitch = maskMode ? (mask->pitch) / sizeof(pixel_t) : 0;
 
   // avoid "uint16*uint16 can't get into int32" overflows
-  typedef typename std::conditional < sizeof(pixel_t) == 1, int, typename std::conditional < sizeof(pixel_t) == 2, int64_t, float>::type >::type result_t;
+  using result_t = typename std::conditional<sizeof(pixel_t) == 1, int, int64_t>::type;
 
   int w = base->w();
   int h = base->h();
   if (opacity == 256) {
-    if(maskMode) {
+    // full opacity - optimize
+    if constexpr (maskMode) {
       // opacity == 256 && maskMode
       for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
           bool cmp;
-          if (of_darken)
+          if constexpr (of_darken)
             cmp = ovY[x] < baseY[x];
           else
             cmp = ovY[x] > baseY[x];
@@ -147,7 +148,7 @@ void OL_DarkenImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInte
       }
     } else {
       // opacity == 256 && !maskMode
-      if(of_darken) {
+      if constexpr (of_darken) {
 #ifdef INTEL_INTRINSICS
         if (sizeof(pixel_t)==1 && (env->GetCPUFlags() & CPUF_SSE4_1)) {
           overlay_darken_sse41((BYTE *)baseY, (BYTE *)baseU, (BYTE *)baseV, (BYTE *)ovY, (BYTE *)ovU, (BYTE *)ovV, basepitch, overlaypitch, w, h);
@@ -189,12 +190,12 @@ void OL_DarkenImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInte
     for (int y = 0; y < h; y++) {
       for (int x = 0; x < w; x++) {
         bool cmp;
-        if (of_darken)
+        if constexpr (of_darken)
           cmp = ovY[x] < baseY[x];
         else
           cmp = ovY[x] > baseY[x];
         if (cmp)  {
-          if (maskMode) {
+          if constexpr (maskMode) {
             result_t mY = (maskY[x] * opacity) >> OPACITY_SHIFT;
             result_t mU = (maskU[x] * opacity) >> OPACITY_SHIFT;
             result_t mV = (maskV[x] * opacity) >> OPACITY_SHIFT;
@@ -217,7 +218,7 @@ void OL_DarkenImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInte
       ovU += overlaypitch;
       ovV += overlaypitch;
 
-      if(maskMode) {
+      if constexpr (maskMode) {
         maskY += maskpitch;
         maskU += maskpitch;
         maskV += maskpitch;

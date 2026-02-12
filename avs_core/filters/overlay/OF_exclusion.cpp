@@ -98,7 +98,7 @@ void OL_ExclusionImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayI
         int Y = (int)(((baseY[x] ^ xor_mask)*ovYx + (ovYx ^ xor_mask)*baseY[x]) >> MASK_CORR_SHIFT);
         int U = (int)(((baseU[x] ^ xor_mask)*ovYx + (ovYx ^ xor_mask)*baseU[x]) >> MASK_CORR_SHIFT);
         int V = (int)(((baseV[x] ^ xor_mask)*ovYx + (ovYx ^ xor_mask)*baseV[x]) >> MASK_CORR_SHIFT);
-        if(maskMode) {
+        if constexpr (maskMode) {
           result_t mY = maskY[x];
           result_t mU = maskU[x];
           result_t mV = maskV[x];
@@ -129,7 +129,7 @@ void OL_ExclusionImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayI
       ovU += overlaypitch;
       ovV += overlaypitch;
 
-      if(maskMode) {
+      if constexpr (maskMode) {
         maskY += maskpitch;
         maskU += maskpitch;
         maskV += maskpitch;
@@ -142,7 +142,7 @@ void OL_ExclusionImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayI
         int Y = (int)(((baseY[x] ^ xor_mask)*ovYx + (ovYx^xor_mask)*baseY[x]) >> MASK_CORR_SHIFT);
         int U = (int)(((baseU[x] ^ xor_mask)*ovYx + (ovYx^xor_mask)*baseU[x]) >> MASK_CORR_SHIFT);
         int V = (int)(((baseV[x] ^ xor_mask)*ovYx + (ovYx^xor_mask)*baseV[x]) >> MASK_CORR_SHIFT);
-        if(maskMode) {
+        if constexpr (maskMode) {
           result_t  mY = (maskY[x] * opacity) >> OPACITY_SHIFT;
           result_t  mU = (maskU[x] * opacity) >> OPACITY_SHIFT;
           result_t  mV = (maskV[x] * opacity) >> OPACITY_SHIFT;
@@ -178,7 +178,7 @@ void OL_ExclusionImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayI
       ovU += overlaypitch;
       ovV += overlaypitch;
 
-      if(maskMode) {
+      if constexpr (maskMode) {
         maskY += maskpitch;
         maskU += maskpitch;
         maskV += maskpitch;
