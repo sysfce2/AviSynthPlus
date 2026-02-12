@@ -23,6 +23,8 @@ Additions, changes
     On Windows, only up-to DOTPROD can be detected due to OS limitations.
   * New CPU flags in ``cpuid.h`` and ``avisynth_c.h``: CPUF_ARM_NEON, CPUF_ARM_DOTPROD, CPUF_ARM_SVE2
   * "SetMaxCPU": add "neon", "dotprod", "sve2" options to enable/disable ARM64 (aarch64) features.
+- "ConvertToPlanarRGB": ``bits`` parameter: on-the-fly bit-depth conversions to YUV->RGB conversion.
+  See :doc:`ConvertToPlanarRGB <./corefilters/convert>`
 
 
 Build environment, Interface
@@ -82,6 +84,15 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix: Speed degradation when in-constructor GetFrame(0) (e.g. frame-property getter) is used: disable internal Cache object creation.
+- Fix: YUV->RGB limited range matrix accuracy for 10-16 bits, plus use a symmetric rounding in matrix 
+  coefficient's integer approximation.
+- Fix: inaccurate ColorBarsHD 10+ bit values. Now they are derived from the 32-bit float 
+  RGB definitions instead of upscaling a 8 bit precalculated YUV value. Add Ramp section the lead-in-lead-out.
+- Fix: GreyScale + SSE2 + RGB32 + matrix="RGB" overflow. 
+  Rare usage; "RGB" matrix (Identity) uses a 1.0 coefficient which exceeds the signed 16-bit 
+  SIMD limit of 32767 at 15-bit precision. Added bounds checking to fallback to C-code for any 
+  coefficients >= 1.0 or < −1.0.
 - Fix #448: Resolved an issue where MT_MULTI_INSTANCE filters using relative paths 
   (e.g. "video.mp4" or "../image.png") failed under Prefetch() when used in imported 
   scripts from different directories. The problem occurred because new thread instances did 
@@ -133,6 +144,9 @@ Optimizations
 
 - add NEON optimizations for ARM64 (aarch64) for TurnLeft/TurnRight/Turn180.
   (First aarch64 code in Avisynth)
+- add NEON optimizatons for Overlay blend
+- (filter graph) avoid MTGuard and CacheGuard creation if a filter returns one of its clip parameter unaltered.
+- Add some avx2 stuff to Invert (no really gain, filter is too simple) and some Layer subfilter.
 
 Documentation
 ~~~~~~~~~~~~~
@@ -149,6 +163,7 @@ Documentation
 - Update :ref:`SetMaxCPU <setmaxcpu>` with AVX512 and ARM64 features
 - Update :ref:`AvsEnvProperty<cplusplus_getenvproperty>` with L2 cache size entry
 - Update Russian GPL notice in UTF-8 format
+- Update :doc:`ConvertToPlanarRGB <./corefilters/convert>` with `"bits"` and "matrix" syntax `":same"`
 - Add another Ubuntu->Windows DLL cross-compilation guide:
   See :ref:`Ubuntu->Windows mingw crosscompilation<compiling_avsplus_crosscompiling2>`
 
@@ -156,7 +171,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/01/17 21:50:00 $
+$Date: 2026/02/12 10:59:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

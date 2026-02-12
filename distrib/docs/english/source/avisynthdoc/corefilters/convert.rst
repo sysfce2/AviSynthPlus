@@ -37,11 +37,13 @@ ConvertToXXXX function
     ConvertToPlanarRGB(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
          string chromaresample,
-         float param1, float param2, float param3 ] )
+         float param1, float param2, float param3,
+         int bits] )
     ConvertToPlanarRGBA(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
          string chromaresample,
-         float param1, float param2, float param3 ] )
+         float param1, float param2, float param3,
+         int bits] )
 
 
 *YUV444, YUVA444*
@@ -221,8 +223,8 @@ How conversion detects whether full or limited (narrow range for RGB) conversion
   - ``limited`` for YUV or Y (greyscale) sources
   
   is assumed.
-- Along with frame properties, the matrix string can contain additional "hints", such as ``:f`` or ``:l``.
-- When no other hint is given, some old-style Avisynth matrix name can specify limited/full: e.g. Rec.709 implies limited range.
+- Along with frame properties, the matrix string can contain additional "hints", such as ``:f``, ``:l``, , ``:auto``, ``:same``.
+- When no other hint is given, some old-style Avisynth matrix name can specify limited/full: e.g. ``"Rec.709"`` implies limited range.
   Note: unlike ``PC.709`` or ``PC.601``: these matrix names do not force the clip being full or limited.
 
 See also: :doc:`ConvertBits <convertbits>` to convert between bit depths and/or between full-limited range. 
@@ -249,7 +251,7 @@ Syntax and parameters
     Additional matrix constants:
 
     New syntax: more matrix string constants with separate full/limited range markers.
-    ``"matrixname:full_or_limited"`` where 
+    ``"matrixname:full_or_limited_or_auto_or_same"`` where 
     ``"matrixname"`` can be set as (for developers, internal _Matrix integer constant are given in parenthesys)
 
     - "rgb" (0 - AVS_MATRIX_RGB)
@@ -269,21 +271,32 @@ Syntax and parameters
     - "chromancl" (12 - AVS_MATRIX_CHROMATICITY_DERIVED_NCL not supported)
     - "ictcp" (14 - AVS_MATRIX_ICTCP not supported) 
 
-    The above "matrix" parameters can be followed by a ``"full"`` or ``"f"`` and ``"limited"`` or ``"l"`` or 
-    ``"auto"`` marker after a ``":"``
+    The above "matrix" parameters can be followed by a 
+    
+    - ``"full"`` or ``"f"`` 
+    - ``"limited"`` or ``"l"``
+    - ``"auto"``
+    - ``"same"``
+    
+    marker after a ``":"``.
 
-    e.g. ``"709:l"`` means the same as the old "Rec709"
+    e.g. ``"709:l"`` means the same as the old "Rec709", since it defaults to limited to full conversion.
 
-    When there is no limited-ness marker, or is set to "auto" then value of _ColorRange frame property is used 
+    When there is no limited-ness marker, or is set to "auto" then value of _ColorRange frame property is used.
+    Using "same" will assume the input range for the output's range.
 
-    Note: old-style "matrix" parameters are kept, their name indicate the full/limited except ``"PC.601"`` and ``"PC.709"``
+    Note: Avisynth+ defines a new matrix syntax, but old-style "matrix" parameter names are still valid.
+    Using old-style matrix names imply the full/limited range, except ``"PC.601"`` and ``"PC.709"`` which 
+    do not alter the input's range.
 
     For memo and the similar new string
 
-    - "rec601" same as "470bg:l"
-    - "rec709" "709:l"
-    - "pc.601" and "pc601" "470bg:f" - but only if source has _ColorRange = 0 (full) 
-    - "pc.709" and "pc709" "709:f" - but only if source has _ColorRange = 0 (full)
+    - "rec601" same as "470bg:l" (limited to full)
+    - "rec709" "709:l" (limited to full)
+    - "pc.601" and "pc601" same as "470bg:f" - but only if source has _ColorRange = 0 (full) 
+    - "pc.709" and "pc709" same as "709:f" - but only if source has _ColorRange = 0 (full)
+    - "pc.601" and "pc601" same as "470bg:same" (keep input range)
+    - "pc.709" and "pc709" same as "709:same" (keep input range)
     - "average" - kept for compatibility, really it has no standard _Matrix equivalent
     - "rec2020" "2020cl:l"
     - "pc.2020" and "pc2020" "2020cl:f" - but only if source has _ColorRange = 0 (full)
@@ -354,7 +367,24 @@ Syntax and parameters
     resamplers. Some resizer algorithms would need and can be fine tuned with up to 3 parameters.
     Their default values depend on the selected chromaresample resizer kernel,
 
+.. describe:: bits
 
+    Used by ConvertToPlanarRGB(A) to perform on-the-fly output bit-depth conversion.
+
+    **Internal calculation methods:** (when conversion is needed)
+        
+        ========================  ===================  ================================
+        Target Range              Internal Math        Output Handling
+        ========================  ===================  ================================
+        Full-range                32-bit float         Direct output
+        Limited-range → integer   S18.13 fixed-point   Truncated to target bit depth
+        Limited-range → float     S18.13 fixed-point   Converted to float (no truncation)
+        ========================  ===================  ================================
+        
+        Note: Limited-range to float conversion preserves the full precision of the 
+        S18.13 fixed-point calculation by converting directly to 32-bit float without 
+        the truncation that occurs with integer targets.
+    
 Frame properties
 ----------------
 
@@ -434,6 +464,9 @@ Color conversions
 +----------+------------------------------------------------------------+
 | Changes: |                                                            |
 +==========+============================================================+
+| v3.7.6   || Add "bits" parameter to ConvertToPlanarRGB()              |
+|          || Document ":same" in matrix specifier                      |
++----------+------------------------------------------------------------+
 | v3.7.3   || Added "sinpow",  "sinclin2" and "userdefined2" to         |
 |          |  chromaresampler options                                   |
 |          || Add "param1", "param2" and "param3" to ConvertToXXXX where|
@@ -454,4 +487,4 @@ Color conversions
 | v2.50    | ConvertToYV12                                              |
 +----------+------------------------------------------------------------+
 
-$Date: 2024/12/18 13:23:00 $
+$Date: 2026/02/12 10:44:00 $

@@ -13,21 +13,21 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 --------------------------------
 * Fix: inaccurate ColorBarsHD 10+ bit values. Now they are derived from the 32-bit float 
   RGB definitions instead of upscaling a 8 bit precalculated YUV value.
-  Corrected the lower parts for 32-bit as well.
+  Add Ramp section the lead-in-lead-out.
 * Fix: GreyScale + SSE2 + RGB32 + matrix="RGB" overflow. 
   Rare usage; "RGB" matrix (Identity) uses a 1.0 coefficient which exceeds the signed 16-bit 
   SIMD limit of 32767 at 15-bit precision. Added bounds checking to fallback to C-code for any 
   coefficients >= 1.0 or < −1.0.
 * Fix: YUV->RGB limited range matrix accuracy for 10-16 bits.
 * Use a different rounding in matrix coefficient's integer approximation.
-* ConvertToPlanarRGB: add the rest of fused bit conversions to YUV->RGB conevrsion. 
+* "ConvertToPlanarRGB": ``bits`` parameter: on-the-fly bit-depth conversions to YUV->RGB conversion. 
   - Full range target: 8-16 bits internal calculation is in 32-bit float.
   - Limited range target: a quicker, bit accuracy optimized integer calculation path.
 * Fix: Speed degradation when in-constructor GetFrame(0) (e.g. frame-property getter) 
   is used. Disable internal Cache object creation.
 * Avoid MTGuard and CacheGuard creation if filter returns one of its clip parameter unaltered.
 * Add some avx2 stuff to Layer and Invert
-* Optmization: Overlay "Blend": aarch64 NEON optimization
+* Optimization: Overlay "Blend": aarch64 NEON optimization
 
 20260203 3.7.5.r4483 (pre 3.7.6)
 --------------------------------
