@@ -742,7 +742,7 @@ int __stdcall CacheGuard::SetCacheHints(int cachehints, int frame_range)
     if (hintname == "")
       _RPT3(0, "CacheGuard::SetCacheHints called. cache=%p hint=%d frame_range=%d\n", (void*)this, cachehints, frame_range); // P.F.
     else
-      _RPT3(0, "CacheGuard::SetCacheHints called. cache=%p hint=%d (%s) frame_range=%d\n", (void*)this, cachehints, hintname.c_str(), frame_range); // P.F.
+      _RPT4(0, "CacheGuard::SetCacheHints called. cache=%p hint=%d (%s) frame_range=%d\n", (void*)this, cachehints, hintname.c_str(), frame_range); // P.F.
   }
 #endif
   switch (cachehints)
