@@ -901,6 +901,9 @@ static void convert_yuv444p16_to_rgb16_c(BYTE* dstp, const BYTE* srcY, const BYT
   }
 }
 
+DISABLE_WARNING_PUSH
+DISABLE_WARNING_UNREFERENCED_LOCAL_VARIABLE
+
 // inline bit depth conversion support. Both limited/full src/dst supported
 template<typename pixel_t, typename pixel_t_dst, bool lessthan16bit, YuvRgbConversionType conv_type>
 static void convert_yuv_to_planarrgb_uintN_c_internal(BYTE* dstp[3], int dstPitch[3], const BYTE* srcp[3], const int srcPitch[3], int width, int height, const ConversionMatrix& matrix,
@@ -1045,6 +1048,8 @@ static void convert_yuv_to_planarrgb_uintN_c_internal(BYTE* dstp[3], int dstPitc
     srcp[2] += srcPitch[2];
   }
 }
+
+DISABLE_WARNING_POP
 
 // Further separating cases inside, dispatcher remains relatively simple
 template<typename pixel_t_src, bool lessthan16bit>
