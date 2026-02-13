@@ -9,7 +9,11 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
-20260211 3.7.5.r44?? (pre 3.7.6)
+20260213 3.7.5.r45?? (pre 3.7.6)
+--------------------------------
+Fix Layer "add" 8 bit, regression in r4504
+
+20260212 3.7.5.r4504 (pre 3.7.6)
 --------------------------------
 * Fix: inaccurate ColorBarsHD 10+ bit values. Now they are derived from the 32-bit float 
   RGB definitions instead of upscaling a 8 bit precalculated YUV value.
@@ -23,8 +27,9 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 * "ConvertToPlanarRGB": ``bits`` parameter: on-the-fly bit-depth conversions to YUV->RGB conversion. 
   - Full range target: 8-16 bits internal calculation is in 32-bit float.
   - Limited range target: a quicker, bit accuracy optimized integer calculation path.
-* Fix: Speed degradation when in-constructor GetFrame(0) (e.g. frame-property getter) 
-  is used. Disable internal Cache object creation.
+* Not Fixed: Speed degradation when in-constructor GetFrame(0) (e.g. frame-property getter) 
+  is used. Disable internal Cache object creation. Does not work in complex scripts, preparation 
+  is 5-10 min instead of <1 sec. Investigation continues (Issue #476: https://github.com/AviSynth/AviSynthPlus/issues/476)
 * Avoid MTGuard and CacheGuard creation if filter returns one of its clip parameter unaltered.
 * Add some avx2 stuff to Layer and Invert
 * Optimization: Overlay "Blend": aarch64 NEON optimization

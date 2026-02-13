@@ -118,7 +118,7 @@ Note that some modes can be similar to :doc:`Overlay <overlay>`, but the two fil
 
     Use chroma of the ``overlay_clip``, default=true. 
     
-    When false only luma is used. Must be true for op = "darken", "lighten", "add."
+    When false only luma is used. Must be true for op = "darken", "lighten", "fast."
 
 .. describe:: opacity
 
