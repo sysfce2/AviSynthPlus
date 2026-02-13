@@ -2191,7 +2191,7 @@ static void layer_yuv_add_subtract_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE*
   typedef typename std::conditional < lessthan16bits, int, int64_t>::type calc_t;
 
   if constexpr (sizeof(pixel_t) == 1)
-    bits_per_pixel = 255; // make quasi constexpr
+    bits_per_pixel = 8; // make quasi constexpr
 
   const int max_pixel_value = (1 << bits_per_pixel) - 1;
 
