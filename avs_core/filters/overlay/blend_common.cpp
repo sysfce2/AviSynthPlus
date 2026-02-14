@@ -58,12 +58,11 @@ void overlay_blend_c_uint(BYTE* p1, const BYTE* p2, const BYTE* mask,
 
   for (int y = 0; y < height; y++) {
     for (int x = 0; x < width; x++) {
-      const float new_mask = has_mask ? (float)reinterpret_cast<const pixel_t*>(mask)[x] * factor : factor;
-      auto result = overlay_blend_c_core_simple(
-        reinterpret_cast<pixel_t*>(p1)[x],
-        reinterpret_cast<const pixel_t*>(p2)[x],
-        new_mask);
-      reinterpret_cast<pixel_t*>(p1)[x] = (pixel_t)(result + 0.5f);
+      const float new_factor = has_mask ? static_cast<float>(reinterpret_cast<const pixel_t*>(mask)[x]) * factor : factor;
+      const pixel_t pix1 = reinterpret_cast<pixel_t*>(p1)[x];
+      const pixel_t pix2 = reinterpret_cast<const pixel_t*>(p2)[x];
+      pixel_t result = pix1 + (int)((pix2 - pix1) * new_factor + 0.5f);
+      reinterpret_cast<pixel_t*>(p1)[x] = result;
     }
 
     p1 += p1_pitch;

@@ -41,18 +41,7 @@
 
 // Mode: Overlay
 
-template<bool has_mask, typename pixel_t>
-#if defined(GCC) || defined(CLANG)
-__attribute__((__target__("sse4.1")))
-#endif
-void overlay_blend_sse41_uint(BYTE* p1, const BYTE* p2, const BYTE* mask,
-  const int p1_pitch, const int p2_pitch, const int mask_pitch,
-  const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
-
-template<bool has_mask, typename pixel_t>
-#if defined(GCC) || defined(CLANG)
-__attribute__((__target__("sse2")))
-#endif
+template<bool has_mask, typename pixel_t, bool lessthan16bits>
 void overlay_blend_sse2_uint(BYTE* p1, const BYTE* p2, const BYTE* mask,
   const int p1_pitch, const int p2_pitch, const int mask_pitch,
   const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);

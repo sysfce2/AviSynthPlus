@@ -104,29 +104,20 @@ void OL_BlendImage::BlendImageMask(ImageOverlayInternal* base, ImageOverlayInter
   }
   else if (env->GetCPUFlags() & CPUF_AVX2) {
     switch (bits_per_pixel) {
-    case 8: blend_fn = overlay_blend_avx2_uint<true, uint8_t>; break;
+    case 8: blend_fn = overlay_blend_avx2_uint<true, uint8_t, true>; break;
     case 10:
     case 12:
-    case 14:
-    case 16: blend_fn = overlay_blend_avx2_uint<true, uint16_t>; break;
-    }
-  }
-  else if (env->GetCPUFlags() & CPUF_SSE4_1) {
-    switch (bits_per_pixel) {
-    case 8: blend_fn = overlay_blend_sse41_uint<true, uint8_t>; break;
-    case 10:
-    case 12:
-    case 14:
-    case 16: blend_fn = overlay_blend_sse41_uint<true, uint16_t>; break;
+    case 14: blend_fn = overlay_blend_avx2_uint<true, uint16_t, true>; break;
+    case 16: blend_fn = overlay_blend_avx2_uint<true, uint16_t, false>; break;
     }
   }
   else if (env->GetCPUFlags() & CPUF_SSE2) {
     switch (bits_per_pixel) {
-    case 8: blend_fn = overlay_blend_sse2_uint<true, uint8_t>; break;
+    case 8: blend_fn = overlay_blend_sse2_uint<true, uint8_t, true>; break;
     case 10:
     case 12:
-    case 14:
-    case 16: blend_fn = overlay_blend_sse2_uint<true, uint16_t>; break;
+    case 14: blend_fn = overlay_blend_sse2_uint<true, uint16_t, true>; break;
+    case 16: blend_fn = overlay_blend_sse2_uint<true, uint16_t, false>; break;
     }
   }
   else
@@ -213,29 +204,20 @@ void OL_BlendImage::BlendImage(ImageOverlayInternal* base, ImageOverlayInternal*
   }
   else if (env->GetCPUFlags() & CPUF_AVX2) {
     switch (bits_per_pixel) {
-    case 8: blend_fn = overlay_blend_avx2_uint<false, uint8_t>; break;
+    case 8: blend_fn = overlay_blend_avx2_uint<false, uint8_t, true>; break;
     case 10:
     case 12:
-    case 14:
-    case 16: blend_fn = overlay_blend_avx2_uint<false, uint16_t>; break;
-    }
-  }
-  else if (env->GetCPUFlags() & CPUF_SSE4_1) {
-    switch (bits_per_pixel) {
-    case 8: blend_fn = overlay_blend_sse41_uint<false, uint8_t>; break;
-    case 10:
-    case 12:
-    case 14:
-    case 16: blend_fn = overlay_blend_sse41_uint<false, uint16_t>; break;
+    case 14: blend_fn = overlay_blend_avx2_uint<false, uint16_t, true>; break;
+    case 16: blend_fn = overlay_blend_avx2_uint<false, uint16_t, false>; break;
     }
   }
   else if (env->GetCPUFlags() & CPUF_SSE2) {
     switch (bits_per_pixel) {
-    case 8: blend_fn = overlay_blend_sse2_uint<false, uint8_t>; break;
+    case 8: blend_fn = overlay_blend_sse2_uint<false, uint8_t, true>; break;
     case 10:
     case 12:
-    case 14:
-    case 16: blend_fn = overlay_blend_sse2_uint<false, uint16_t>; break;
+    case 14: blend_fn = overlay_blend_sse2_uint<false, uint16_t, true>; break;
+    case 16: blend_fn = overlay_blend_sse2_uint<false, uint16_t, false>; break;
     }
   }
   else

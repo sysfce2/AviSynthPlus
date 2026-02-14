@@ -45,106 +45,198 @@
 #endif
 #include  <immintrin.h>
 
-template<typename pixel_t>
-static AVS_FORCEINLINE __m256 Eightpixels_to_floats(const pixel_t* src) {
-  __m256i srci;
-  if constexpr (sizeof(pixel_t) == 1) {
-    srci = _mm256_cvtepu8_epi32(_mm_loadl_epi64(reinterpret_cast<const __m128i*>(src)));
-  }
-  else {
-    srci = _mm256_cvtepu16_epi32(_mm_loadu_si128(reinterpret_cast<const __m128i*>(src)));
-  }
-  return _mm256_cvtepi32_ps(srci);
-}
 
-template<typename pixel_t>
-static AVS_FORCEINLINE void Store_Eightpixels(pixel_t* dst, __m256 what, const __m256 rounder) {
-  // trunc(x + 0.5f)
-  what = _mm256_add_ps(what, rounder); // round
-  __m256i si32 = _mm256_cvttps_epi32(what); // truncate
-  __m256i result = _mm256_packus_epi32(si32, si32); // only low 8 words needed
-  result = _mm256_permute4x64_epi64(result, (0 << 0) | (2 << 2) | (1 << 4) | (3 << 6));
-  __m128i result128 = _mm256_castsi256_si128(result);
-  if constexpr (sizeof(pixel_t) == 1) {
-    __m128i result64 = _mm_packus_epi16(result128, result128);
-    _mm_storel_epi64(reinterpret_cast<__m128i*>(dst), result64);
-  } else {
-    /* when mask is 0..1 checked then this is not possible
-    if constexpr (bits_per_pixel < 16) { // otherwise no clamp needed
-      constexpr int max_pixel_value = (1 << bits_per_pixel) - 1;
-      auto max_pixel_value_v = _mm_set1_epi16(static_cast<uint16_t>(max_pixel_value));
-      result128 = _mm_min_epu16(result128, max_pixel_value_v);
-    }
-    */
-    _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), result128);
-  }
-}
 
-AVS_FORCEINLINE static __m256 overlay_blend_avx2_core_new(const __m256& p1_f, const __m256& p2_f, const __m256& factor) {
-  /*
-  //  p1*(1-mask_f) + p2*mask_f -> p1 + (p2-p1)*mask_f
-  constexpr int max_pixel_value = (1 << bits_per_pixel) - 1;
-  constexpr float factor = 1.0f / max_pixel_value;
-  constexpr float half_rounder = 0.5f;
-  const float mask_f = mask * factor;
-  const float res = p1 + (p2 - p1) * mask_f;
-  int result = (int)(res + 0.5f);
-  */
-  // rounding not here, but before storage
-  auto res = _mm256_add_ps(p1_f, _mm256_mul_ps(_mm256_sub_ps(p2_f, p1_f), factor));
-  return res;
-} 
 
-template<bool has_mask, typename pixel_t>
+template<bool has_mask, typename pixel_t, bool lessthan16bits>
 void overlay_blend_avx2_uint(BYTE* p1, const BYTE* p2, const BYTE* mask,
   const int p1_pitch, const int p2_pitch, const int mask_pitch,
   const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel)
 {
-
-  auto rounder = _mm256_set1_ps(0.5f);
+  const auto rounder = _mm256_set1_ps(0.5f);
   const int max_pixel_value = (1 << bits_per_pixel) - 1;
-  auto factor = has_mask ? opacity_f / max_pixel_value : opacity_f;
-  auto factor_v = _mm256_set1_ps(factor);
+  const auto factor = has_mask ? opacity_f / max_pixel_value : opacity_f;
+  const auto factor_v = _mm256_set1_ps(factor);
 
-  const int realwidth = width * sizeof(pixel_t);
+  constexpr int pixels_per_cycle = 16;
+  constexpr int bytes_per_cycle = pixels_per_cycle * sizeof(pixel_t);
+  const int wMod = (width * sizeof(pixel_t) / bytes_per_cycle) * bytes_per_cycle;
 
-  // 2x8 pixels at a time
-  constexpr int bytes_per_cycle = 16 * sizeof(pixel_t);
-  int wMod16 = (realwidth / bytes_per_cycle) * bytes_per_cycle;
-
+  // key formula: p1*(1-factor)+p2*factor -> p1 + (p2 - p1) * factor 
   for (int y = 0; y < height; y++) {
-    for (int x = 0; x < wMod16; x += bytes_per_cycle) {
-      auto unpacked_p1 = Eightpixels_to_floats<pixel_t>((const pixel_t*)(p1 + x)); // 8x32
-      auto unpacked_p2 = Eightpixels_to_floats<pixel_t>((const pixel_t*)(p2 + x)); // 8x32
+    for (int x = 0; x < wMod; x += bytes_per_cycle) {
+      if constexpr (lessthan16bits) {
+        // 8-14 bits: int16 delta -> float factor -> int16 delta_scaled -->
+        // int16 result = p1 + delta_scaled (all in int16 domain except factor!)
+        __m256i p1_i16, p2_i16, delta_i16;
+        __m256i mask_i16;
 
-      auto unpacked_p1_2 = Eightpixels_to_floats<pixel_t>((const pixel_t*)(p1 + x + bytes_per_cycle / 2)); // 8x32
-      auto unpacked_p2_2 = Eightpixels_to_floats<pixel_t>((const pixel_t*)(p2 + x + bytes_per_cycle / 2)); // 8x32
+        if constexpr (sizeof(pixel_t) == 1) {
+          // 8 bits
+          __m128i p1_u8 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(p1 + x));
+          __m128i p2_u8 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(p2 + x));
 
-      __m256 result, result_2;
-      if constexpr (has_mask) {
-        auto unpacked_mask = Eightpixels_to_floats<pixel_t>((const pixel_t*)(mask + x)); // 8x32
-        unpacked_mask = _mm256_mul_ps(unpacked_mask, factor_v);
-        result = overlay_blend_avx2_core_new(unpacked_p1, unpacked_p2, unpacked_mask);
-        
-        auto unpacked_mask_2 = Eightpixels_to_floats<pixel_t>((const pixel_t*)(mask + x + bytes_per_cycle / 2)); // 8x32
-        unpacked_mask_2 = _mm256_mul_ps(unpacked_mask_2, factor_v);
-        result_2 = overlay_blend_avx2_core_new(unpacked_p1_2, unpacked_p2_2, unpacked_mask_2);
+          p1_i16 = _mm256_cvtepu8_epi16(p1_u8);
+          p2_i16 = _mm256_cvtepu8_epi16(p2_u8);
+
+          if constexpr (has_mask) {
+            __m128i mask_u8 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(mask + x));
+            mask_i16 = _mm256_cvtepu8_epi16(mask_u8);
+          }
+        }
+        else { // 10/12/14 bits
+          p1_i16 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p1 + x));
+          p2_i16 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p2 + x));
+
+          if constexpr (has_mask) {
+            mask_i16 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(mask + x));
+          }
+        }
+
+        delta_i16 = _mm256_sub_epi16(p2_i16, p1_i16);
+
+        // split for 32-bit processing
+        __m128i delta_i16_lo = _mm256_castsi256_si128(delta_i16);
+        __m128i delta_i16_hi = _mm256_extracti128_si256(delta_i16, 1);
+
+        // convert _only_ delta and mask to 32-bit
+        __m256i delta_lo_i32 = _mm256_cvtepi16_epi32(delta_i16_lo);
+        __m256i delta_hi_i32 = _mm256_cvtepi16_epi32(delta_i16_hi);
+
+        // convert _only_ delta to float
+        __m256 delta_lo_f = _mm256_cvtepi32_ps(delta_lo_i32);
+        __m256 delta_hi_f = _mm256_cvtepi32_ps(delta_hi_i32);
+
+        __m256 delta_scaled_lo, delta_scaled_hi;
+
+        if constexpr (has_mask) {
+          __m128i mask_i16_lo = _mm256_castsi256_si128(mask_i16);
+          __m128i mask_i16_hi = _mm256_extracti128_si256(mask_i16, 1);
+
+          __m256i mask_lo_i32 = _mm256_cvtepu16_epi32(mask_i16_lo);
+          __m256i mask_hi_i32 = _mm256_cvtepu16_epi32(mask_i16_hi);
+
+          __m256 mask_lo_f = _mm256_cvtepi32_ps(mask_lo_i32);
+          __m256 mask_hi_f = _mm256_cvtepi32_ps(mask_hi_i32);
+
+          __m256 new_factor_lo = _mm256_mul_ps(mask_lo_f, factor_v);
+          __m256 new_factor_hi = _mm256_mul_ps(mask_hi_f, factor_v);
+
+          // scale delta: delta * factor
+          delta_scaled_lo = _mm256_mul_ps(delta_lo_f, new_factor_lo);
+          delta_scaled_hi = _mm256_mul_ps(delta_hi_f, new_factor_hi);
+        }
+        else {
+          delta_scaled_lo = _mm256_mul_ps(delta_lo_f, factor_v);
+          delta_scaled_hi = _mm256_mul_ps(delta_hi_f, factor_v);
+        }
+
+        // round and truncate to int32
+        delta_scaled_lo = _mm256_add_ps(delta_scaled_lo, rounder);
+        delta_scaled_hi = _mm256_add_ps(delta_scaled_hi, rounder);
+        __m256i delta_scaled_i32_lo = _mm256_cvttps_epi32(delta_scaled_lo);
+        __m256i delta_scaled_i32_hi = _mm256_cvttps_epi32(delta_scaled_hi);
+
+        // scaled delta back to int16
+        __m256i delta_scaled_i16 = _mm256_packs_epi32(delta_scaled_i32_lo, delta_scaled_i32_hi);
+        delta_scaled_i16 = _mm256_permute4x64_epi64(delta_scaled_i16, 0xD8);
+
+        // +p1
+        __m256i result_i16 = _mm256_add_epi16(p1_i16, delta_scaled_i16);
+
+        if constexpr (sizeof(pixel_t) == 1) {
+          __m128i i16_lo_128 = _mm256_castsi256_si128(result_i16);
+          __m128i i16_hi_128 = _mm256_extracti128_si256(result_i16, 1);
+          __m128i result_u8 = _mm_packus_epi16(i16_lo_128, i16_hi_128);
+
+          _mm_storeu_si128(reinterpret_cast<__m128i*>(p1 + x), result_u8);
+        }
+        else {
+          _mm256_storeu_si256(reinterpret_cast<__m256i*>(p1 + x), result_i16);
+        }
       }
-      else {
-        result = overlay_blend_avx2_core_new(unpacked_p1, unpacked_p2, factor_v);
-        result_2 = overlay_blend_avx2_core_new(unpacked_p1_2, unpacked_p2_2, factor_v);
-      }
+      else { // 16-bit overflow-safe, int32 and float
+        static_assert(sizeof(pixel_t) == 2, "lessthan16bits=false only for uint16_t");
 
-      Store_Eightpixels<pixel_t>((pixel_t*)(p1 + x), result, rounder);
-      Store_Eightpixels<pixel_t>((pixel_t*)(p1 + x + bytes_per_cycle / 2), result_2, rounder);
+        // 16xuint16_t pixels
+        __m256i p1_u16 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p1 + x));
+        __m256i p2_u16 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p2 + x));
+
+        __m128i p1_u16_lo = _mm256_castsi256_si128(p1_u16);
+        __m128i p1_u16_hi = _mm256_extracti128_si256(p1_u16, 1);
+        __m128i p2_u16_lo = _mm256_castsi256_si128(p2_u16);
+        __m128i p2_u16_hi = _mm256_extracti128_si256(p2_u16, 1);
+
+        // to int32 (8 pixels per __m256i)
+        __m256i p1_i32_lo = _mm256_cvtepu16_epi32(p1_u16_lo);
+        __m256i p1_i32_hi = _mm256_cvtepu16_epi32(p1_u16_hi);
+        __m256i p2_i32_lo = _mm256_cvtepu16_epi32(p2_u16_lo);
+        __m256i p2_i32_hi = _mm256_cvtepu16_epi32(p2_u16_hi);
+
+        // p2-p1 in int32 and only then float
+        __m256 delta_lo_32 = _mm256_sub_epi32(p2_i32_lo, p1_i32_lo);
+        __m256 delta_hi_32 = _mm256_sub_epi32(p2_i32_hi, p1_i32_hi);
+        __m256 delta_f_lo = _mm256_cvtepi32_ps(delta_lo_32);
+        __m256 delta_f_hi = _mm256_cvtepi32_ps(delta_hi_32);
+
+        __m256 delta_scaled_lo, delta_scaled_hi;
+        if constexpr (has_mask) {
+          __m256i mask_u16 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(mask + x));
+          __m128i mask_u16_lo = _mm256_castsi256_si128(mask_u16);
+          __m128i mask_u16_hi = _mm256_extracti128_si256(mask_u16, 1);
+
+          __m256i mask_i32_lo = _mm256_cvtepu16_epi32(mask_u16_lo);
+          __m256i mask_i32_hi = _mm256_cvtepu16_epi32(mask_u16_hi);
+          __m256 mask_f_lo = _mm256_cvtepi32_ps(mask_i32_lo);
+          __m256 mask_f_hi = _mm256_cvtepi32_ps(mask_i32_hi);
+
+          __m256 new_factor_lo = _mm256_mul_ps(mask_f_lo, factor_v);
+          __m256 new_factor_hi = _mm256_mul_ps(mask_f_hi, factor_v);
+
+          delta_scaled_lo = _mm256_mul_ps(delta_f_lo, new_factor_lo);
+          delta_scaled_hi = _mm256_mul_ps(delta_f_hi, new_factor_hi);
+        }
+        else {
+          delta_scaled_lo = _mm256_mul_ps(delta_f_lo, factor_v);
+          delta_scaled_hi = _mm256_mul_ps(delta_f_hi, factor_v);
+        }
+
+        // round and truncate to int32
+        delta_scaled_lo = _mm256_add_ps(delta_scaled_lo, rounder);
+        delta_scaled_hi = _mm256_add_ps(delta_scaled_hi, rounder);
+        __m256i delta_scaled_i32_lo = _mm256_cvttps_epi32(delta_scaled_lo);
+        __m256i delta_scaled_i32_hi = _mm256_cvttps_epi32(delta_scaled_hi);
+
+        // p1 + delta_scaled still in int32
+        __m256i result_i32_lo = _mm256_add_epi32(p1_i32_lo, delta_scaled_i32_lo);
+        __m256i result_i32_hi = _mm256_add_epi32(p1_i32_hi, delta_scaled_i32_hi);
+
+        // 8 int32 -> 8 uint16 in lower half
+        __m256i i16_lo = _mm256_packus_epi32(result_i32_lo, result_i32_lo);
+        __m256i i16_hi = _mm256_packus_epi32(result_i32_hi, result_i32_hi);
+
+        // get correct layout
+        i16_lo = _mm256_permute4x64_epi64(i16_lo, 0xD8);
+        i16_hi = _mm256_permute4x64_epi64(i16_hi, 0xD8);
+
+        // Extract lower 128 bits from each
+        __m128i result_u16_lo = _mm256_castsi256_si128(i16_lo);
+        __m128i result_u16_hi = _mm256_castsi256_si128(i16_hi);
+
+        // Combine back into a single __m256i and store
+        __m256i result_u16 = _mm256_setr_m128i(result_u16_lo, result_u16_hi);
+        _mm256_storeu_si256(reinterpret_cast<__m256i*>(p1 + x), result_u16);
+      }
     }
 
-    // Leftover value
+    // Scalar tail
     // Working with exact dimension, overlay is possible atop an existing frame at any position
-    for (int x = wMod16 / sizeof(pixel_t); x < width; x++) {
+    for (int x = wMod / sizeof(pixel_t); x < width; x++) {
       const float new_factor = has_mask ? static_cast<float>(reinterpret_cast<const pixel_t*>(mask)[x]) * factor : factor;
-      auto result = overlay_blend_c_core_simple(reinterpret_cast<pixel_t*>(p1)[x], reinterpret_cast<const pixel_t*>(p2)[x], new_factor);
-      reinterpret_cast<pixel_t*>(p1)[x] = (pixel_t)(result + 0.5f);
+      const pixel_t pix1 = reinterpret_cast<pixel_t*>(p1)[x];
+      const pixel_t pix2 = reinterpret_cast<const pixel_t*>(p2)[x];
+      pixel_t result = pix1 + (int)((pix2 - pix1) * new_factor + 0.5f);
+      reinterpret_cast<pixel_t*>(p1)[x] = result;
     }
 
     p1 += p1_pitch;
@@ -156,14 +248,18 @@ void overlay_blend_avx2_uint(BYTE* p1, const BYTE* p2, const BYTE* mask,
 
 // instantiate
 // mask yes/no
-template void overlay_blend_avx2_uint<true, uint8_t>(BYTE* p1, const BYTE* p2, const BYTE* mask,
+template void overlay_blend_avx2_uint<true, uint8_t, true>(BYTE* p1, const BYTE* p2, const BYTE* mask,
   const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
-template void overlay_blend_avx2_uint<true, uint16_t>(BYTE* p1, const BYTE* p2, const BYTE* mask,
+template void overlay_blend_avx2_uint<true, uint16_t, true>(BYTE* p1, const BYTE* p2, const BYTE* mask,
+  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
+template void overlay_blend_avx2_uint<true, uint16_t, false>(BYTE* p1, const BYTE* p2, const BYTE* mask,
   const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
 //--
-template void overlay_blend_avx2_uint<false, uint8_t>(BYTE* p1, const BYTE* p2, const BYTE* mask,
+template void overlay_blend_avx2_uint<false, uint8_t, true>(BYTE* p1, const BYTE* p2, const BYTE* mask,
   const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
-template void overlay_blend_avx2_uint<false, uint16_t>(BYTE* p1, const BYTE* p2, const BYTE* mask,
+template void overlay_blend_avx2_uint<false, uint16_t, true>(BYTE* p1, const BYTE* p2, const BYTE* mask,
+  const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
+template void overlay_blend_avx2_uint<false, uint16_t, false>(BYTE* p1, const BYTE* p2, const BYTE* mask,
   const int p1_pitch, const int p2_pitch, const int mask_pitch, const int width, const int height, const int opacity, const float opacity_f, const int bits_per_pixel);
 
 template<bool has_mask>
