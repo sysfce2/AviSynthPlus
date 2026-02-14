@@ -88,7 +88,7 @@ static int getPlacement(const AVSValue& _placement, IScriptEnvironment* env) {
 extern const AVSFunction Layer_filters[] = {
   { "Mask",         BUILTIN_FUNC_PREFIX, "cc", Mask::Create },     // clip, mask
   { "ColorKeyMask", BUILTIN_FUNC_PREFIX, "ci[]i[]i[]i", ColorKeyMask::Create },    // clip, color, tolerance[B, toleranceG, toleranceR]
-  { "ResetMask",    BUILTIN_FUNC_PREFIX, "c[mask]f", ResetMask::Create },
+  { "ResetMask",    BUILTIN_FUNC_PREFIX, "c[mask]f[opacity]f", ResetMask::Create },
   { "Invert",       BUILTIN_FUNC_PREFIX, "c[channels]s", Invert::Create },
   { "ShowAlpha",    BUILTIN_FUNC_PREFIX, "c[pixel_type]s", ShowChannel::Create, (void*)3 }, // AVS+ also for YUVA, PRGBA
   { "ShowRed",      BUILTIN_FUNC_PREFIX, "c[pixel_type]s", ShowChannel::Create, (void*)2 },
@@ -438,27 +438,59 @@ AVSValue __cdecl ColorKeyMask::Create(AVSValue args, void*, IScriptEnvironment* 
  ********************************/
 
 
-ResetMask::ResetMask(PClip _child, float _mask_f, IScriptEnvironment* env)
+ResetMask::ResetMask(PClip _child, AVSValue _mask_f, AVSValue _opacity_f, IScriptEnvironment* env)
   : GenericVideoFilter(_child)
 {
   if (!(vi.IsRGB32() || vi.IsRGB64() || vi.IsPlanarRGBA() || vi.IsYUVA()))
     env->ThrowError("ResetMask: format has no alpha channel");
 
-  // new: resetmask has parameter. If none->max transparency
-
-  int max_pixel_value = (1 << vi.BitsPerComponent()) - 1;
-  if (_mask_f < 0) {
+  mask_f = _mask_f.AsFloatf(-1.0f);
+  const bool mask_defined = _mask_f.Defined();
+  const bool opacity_defined = _opacity_f.Defined();
+  if (mask_defined && mask_f < 0.0f) {
+    env->ThrowError("ResetMask: mask value must be non-negative");
+  }
+  // only for integers
+  int max_pixel_value = vi.BitsPerComponent() <= 16 ? (1 << vi.BitsPerComponent()) - 1 : /*n/a*/ 255;
+  // mask and mask_f are the exact unscaled values to put into A channel (integer/float)
+  if (!mask_defined) {
     mask_f = 1.0f;
     mask = max_pixel_value;
   }
   else {
-    mask_f = _mask_f;
-    if (mask_f < 0) mask_f = 0;
-    mask = (int)mask_f;
-
-    mask = clamp(mask, 0, max_pixel_value);
-    mask_f = clamp(mask_f, 0.0f, 1.0f);
+    // mask is defined - convert to integer for non-float formats
+    if (vi.ComponentSize() < 4) {
+      // integer format - use mask value directly
+      mask = (int)(mask_f + 0.5f);
+    }
+    // for float formats, mask_f is already set correctly
   }
+  // no check, allow rounding errors
+  /*
+  if (opacity_defined && _opacity_f.AsFloat(1.0f) < 0.0f) {
+    env->ThrowError("ResetMask: opacity value must be non-negative");
+  }
+  if (opacity_defined && _opacity_f.AsFloat(1.0f) > 1.0f) {
+    env->ThrowError("ResetMask: opacity value must be between 0.0 and 1.0");
+  }
+  */
+  if (opacity_defined) {
+    // if opacity is defined, calculate mask_f from opacity
+    mask_f = _opacity_f.AsFloatf(1.0f);
+    if (mask_f < 0.0f) mask_f = 0.0f;
+    if (mask_f > 1.0f) mask_f = 1.0f;
+    mask = (int)(mask_f * max_pixel_value + 0.5f);
+  }
+
+  // mask (bit depth dependent): unscaled value. If none -> max OPACITY (fully opaque)
+  //
+  // opacity parameter (0.0 to 1.0):
+  // opacity = 1.0 means OPAQUE (fully visible, mask value 255/1023/etc. : white)
+  // opacity = 0.0 means TRANSPARENT (invisible, mask value 0 : black)
+  // when opacity is set, it overrides mask
+
+  mask = clamp(mask, 0, max_pixel_value);
+  mask_f = clamp(mask_f, 0.0f, 1.0f);
 }
 
 
@@ -518,7 +550,7 @@ PVideoFrame ResetMask::GetFrame(int n, IScriptEnvironment* env)
 
 AVSValue ResetMask::Create(AVSValue args, void*, IScriptEnvironment* env)
 {
-  return new ResetMask(args[0].AsClip(), (float)args[1].AsFloat(-1.0f), env);
+  return new ResetMask(args[0].AsClip(), args[1], args[2], env);
 }
 
 
