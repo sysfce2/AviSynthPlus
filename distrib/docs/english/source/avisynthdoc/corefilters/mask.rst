@@ -16,7 +16,6 @@ Set of filters to manipulate the alpha channel:
 
 AddAlphaPlane
 -------------
-
 **AddAlphaPlane** adds an alpha plane to the source clip. It can also be used to
 replace the existing alpha plane of the source clip. Note that the color format
 changes after using ``AddAlphaPlane()`` on an alpha-less format, for example,
@@ -29,7 +28,7 @@ RGBP16 becomes RGBAP16.
     AddAlphaPlane (clip, clip mask)
     AddAlphaPlane (clip, float mask)
     AddAlphaPlane (clip, int mask)
-
+    AddAlphaPlane (clip, float "opacity")
 
 .. describe:: clip
 
@@ -40,18 +39,18 @@ RGBP16 becomes RGBAP16.
 
     The ``mask`` parameter can be specified in 3 different ways, as a clip, an
     integer or a float value.
-
-    The alpha source clip can either be a single channel greyscale (Y) or an
-    alpha capable format (such as RGBAP8 or RGB64). If a clip is supplied,
+    
+    **Clip:** The alpha source clip can either be a single channel greyscale (Y) 
+    or an alpha capable format (such as RGBAP8 or RGB64). If a clip is supplied,
     depending on the type, either the greyscale clip or the alpha channel is
     then copied onto the alpha channel of the source clip. The alpha source
     clip must be the same bit depth and dimensions as the source clip.
-
-    Pixel value in integer or float. If the numeric-type mask parameter is
+    
+    **Pixel value (integer or float):** If the numeric-type mask parameter is
     supplied, it will be used as filler value of the resulting alpha plane. No
     bit depth scaling happens, parameter value is used as-is. For reference,
     the table below shows all of the maximum values in regards to bit depth.
-
+    
     .. table::
         :widths: auto
 
@@ -64,8 +63,28 @@ RGBP16 becomes RGBAP16.
     A value of 0 creates a fully transparent mask (black) and the maximum pixel
     value creates a completely opaque mask (white). Range for all bit depths is
     from 0 to the max value. 32-bit Float clips are specified in the range of
-    [0.0 - 1.0]. To set the alpha channel to the maximum value, it's easier to
-    use `ResetMask`_.
+    [0.0 - 1.0].
+    
+    Example for 8-bit: ``mask=128`` sets the alpha channel to 128 (50% opacity).
+    
+    Note: Cannot be used together with ``opacity`` parameter.
+
+.. describe:: opacity
+
+    Sets the opacity level in the range of [0.0 - 1.0], where:
+    
+    - **opacity = 1.0** means fully **opaque** (completely visible, white mask)
+    - **opacity = 0.0** means fully **transparent** (invisible, black mask)
+    
+    This parameter is more intuitive than ``mask`` as it automatically scales to 
+    the correct bit depth.
+    
+    Example for 8-bit: ``opacity=0.5`` automatically sets the alpha channel to 
+    128 (which is 0.5 × 255).
+    
+    Note: Cannot be used together with ``mask`` parameter. To set the alpha 
+    channel to the maximum value, it's easier to use `ResetMask`_.
+
 
 .. _RemoveAlphaPlane:
 
@@ -120,16 +139,14 @@ channels to an alpha channel. Using `AddAlphaPlane`_ is recommended.
 
 ResetMask
 ---------
-
 **ResetMask** by default sets all of the pixels in the alpha channel to the
 maximum value, effectively making it white (completely opaque).
-
 
 .. rubric:: Syntax and Parameters
 
 ::
 
-    ResetMask (clip, float "mask")
+    ResetMask (clip, float "mask", float "opacity")
 
 .. describe:: clip
 
@@ -137,9 +154,9 @@ maximum value, effectively making it white (completely opaque).
 
 .. describe:: mask
 
-    Sets the pixel value of the mask channel. By default, it is set to the maximum
-    value of the pixel format. For reference, the table below shows all of the
-    maximum values in regards to bit depth.
+    Sets the pixel value of the mask channel directly. By default, it is set to 
+    the maximum value of the pixel format. For reference, the table below shows 
+    all of the maximum values in regards to bit depth.
 
     .. table::
         :widths: auto
@@ -154,6 +171,26 @@ maximum value, effectively making it white (completely opaque).
     value creates a completely opaque mask (white). Range for all bit depths is
     from 0 to the max value. 32-bit Float clips are specified in the range of
     [0.0 - 1.0].
+    
+    Note: No bit-depth scaling occurs; the parameter value is used as-is.
+    
+    Example for 8-bit: ``mask=128`` sets the alpha channel to 128 (50% opacity).
+
+.. describe:: opacity
+
+    Sets the opacity level in the range of [0.0 - 1.0], where:
+    
+    - **opacity = 1.0** means fully **opaque** (completely visible, white mask)
+    - **opacity = 0.0** means fully **transparent** (invisible, black mask)
+    
+    This parameter is more intuitive than ``mask`` as it automatically scales to 
+    the correct bit depth. When ``opacity`` is specified, it overrides ``mask``.
+    
+    Example for 8-bit: ``opacity=0.5`` automatically sets the alpha channel to 
+    128 (which is 0.5 × 255).
+    
+    Default: 1.0 (fully opaque)
+
 
 .. _ColorKeyMask:
 
