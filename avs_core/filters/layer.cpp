@@ -1960,6 +1960,7 @@ AVSValue MergeRGB::Create(AVSValue args, void* mode, IScriptEnvironment* env)
  *******   Layer Filter   ******
  *******************************/
 
+// YUY2 in pre- and post-converted to YV16. No YUY2 here.
 Layer::Layer(PClip _child1, PClip _child2, const char _op[], int _lev, int _x, int _y,
   int _t, bool _chroma, float _opacity, int _placement, IScriptEnvironment* env)
   : child1(_child1), child2(_child2), Op(_op), levelB(_lev), ofsX(_x), ofsY(_y),
@@ -2001,7 +2002,6 @@ Layer::Layer(PClip _child1, PClip _child2, const char _op[], int _lev, int _x, i
     ofsY = vi.height - vi2.height - ofsY; // packed RGB is upside down
   else if ((vi.IsYUV() || vi.IsYUVA()) && !vi.IsY()) {
     // make offsets subsampling friendly
-    // e.g. for YUY2: ofsX = ofsX & 0xFFFFFFFE; // X offset for YUY2 must be aligned on even pixels
     ofsX = ofsX & ~((1 << vi.GetPlaneWidthSubsampling(PLANAR_U)) - 1);
     ofsY = ofsY & ~((1 << vi.GetPlaneHeightSubsampling(PLANAR_U)) - 1);
   }
@@ -2037,30 +2037,7 @@ Layer::Layer(PClip _child1, PClip _child2, const char _op[], int _lev, int _x, i
   overlay_frames = vi2.num_frames;
 }
 
-/* YUY2 */
 
-template<bool use_chroma>
-static void layer_yuy2_mul_c(BYTE* dstp, const BYTE* ovrp, int dst_pitch, int overlay_pitch, int width, int height, int level) {
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
-      // luma
-      dstp[x * 2] = dstp[x * 2] + (((((ovrp[x * 2] * dstp[x * 2]) >> 8) - dstp[x * 2]) * level) >> 8);
-      // chroma
-      if (use_chroma) {
-        dstp[x * 2 + 1] = dstp[x * 2 + 1] + (((ovrp[x * 2 + 1] - dstp[x * 2 + 1]) * level) >> 8);
-        // U = U + ( ((Uovr - U)*level) >> 8 )
-        // V = V + ( ((Vovr - V)*level) >> 8 )
-      }
-      else {
-        dstp[x * 2 + 1] = dstp[x * 2 + 1] + (((128 - dstp[x * 2 + 1]) * (level / 2)) >> 8);
-        // U = U + ( ((128 - U)*(level/2)) >> 8 )
-        // V = V + ( ((128 - V)*(level/2)) >> 8 )
-      }
-    }
-    dstp += dst_pitch;
-    ovrp += overlay_pitch;
-  }
-}
 
 DISABLE_WARNING_PUSH
 DISABLE_WARNING_UNREFERENCED_LOCAL_VARIABLE
@@ -2551,24 +2528,6 @@ static void layer_yuv_subtract_f_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE* m
   layer_yuv_add_subtract_f_c<maskMode, is_chroma, use_chroma, has_alpha, true, false>(dstp8, ovrp8, mask8, dst_pitch, overlay_pitch, mask_pitch, width, height, opacity);
 }
 
-// simple averaging, watch out for width!
-template<typename pixel_t>
-static void layer_yuy2_fast_c(BYTE* dstp8, const BYTE* ovrp8, int dst_pitch, int overlay_pitch, int width, int height, int level) {
-  AVS_UNUSED(level);
-  pixel_t* dstp = reinterpret_cast<pixel_t*>(dstp8);
-  const pixel_t* ovrp = reinterpret_cast<const pixel_t*>(ovrp8);
-  dst_pitch /= sizeof(pixel_t);
-  overlay_pitch /= sizeof(pixel_t);
-
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width * 2; ++x) {
-      dstp[x] = (dstp[x] + ovrp[x] + 1) / 2;
-    }
-    dstp += dst_pitch;
-    ovrp += overlay_pitch;
-  }
-}
-
 // simple averaging
 template<typename pixel_t>
 static void layer_genericplane_fast_c(BYTE* dstp8, const BYTE* ovrp8, int dst_pitch, int overlay_pitch, int width, int height, int level) {
@@ -2597,45 +2556,6 @@ static void layer_genericplane_fast_f_c(BYTE* dstp8, const BYTE* ovrp8, int dst_
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
       dstp[x] = (dstp[x] + ovrp[x]) * 0.5f;
-    }
-    dstp += dst_pitch;
-    ovrp += overlay_pitch;
-  }
-}
-
-template<bool use_chroma>
-static void layer_yuy2_subtract_c(BYTE* dstp, const BYTE* ovrp, int dst_pitch, int overlay_pitch, int width, int height, int level) {
-  constexpr int rounder = 128;
-
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
-      dstp[x * 2] = dstp[x * 2] + (((255 - ovrp[x * 2] - dstp[x * 2]) * level + rounder) >> 8);
-      if (use_chroma) {
-        dstp[x * 2 + 1] = dstp[x * 2 + 1] + (((255 - ovrp[x * 2 + 1] - dstp[x * 2 + 1]) * level + rounder) >> 8);
-      }
-      else {
-        dstp[x * 2 + 1] = dstp[x * 2 + 1] + (((128 - dstp[x * 2 + 1]) * level + rounder) >> 8);
-      }
-    }
-    dstp += dst_pitch;
-    ovrp += overlay_pitch;
-  }
-}
-
-template<int mode>
-static void layer_yuy2_lighten_darken_c(BYTE* dstp, const BYTE* ovrp, int dst_pitch, int overlay_pitch, int width, int height, int level, int thresh) {
-  constexpr int rounder = 128;
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
-      int alpha_mask;
-      if constexpr (mode == LIGHTEN)
-        alpha_mask = ovrp[x * 2] > (dstp[x * 2] + thresh) ? level : 0;
-      else // DARKEN
-        alpha_mask = ovrp[x * 2] < (dstp[x * 2] - thresh) ? level : 0;
-
-      dstp[x * 2] = dstp[x * 2] + (((ovrp[x * 2] - dstp[x * 2]) * alpha_mask + rounder) >> 8);
-      // fixme: not too correct but probably fast. U is masked by even Y, V is masked by odd Y
-      dstp[x * 2 + 1] = dstp[x * 2 + 1] + (((ovrp[x * 2 + 1] - dstp[x * 2 + 1]) * alpha_mask + rounder) >> 8);
     }
     dstp += dst_pitch;
     ovrp += overlay_pitch;
@@ -3618,204 +3538,7 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
   const int height = ycount; // these may be divided by subsampling factor
   const int width = xcount;
 
-  if (vi.IsYUY2()) {
-    const int src1_pitch = src1->GetPitch();
-    const int src2_pitch = src2->GetPitch();
-    BYTE* src1p = src1->GetWritePtr();
-    const BYTE* src2p = src2->GetReadPtr();
-
-    src1p += (src1_pitch * ydest) + (xdest * 2); // *2: Y U Y V
-    src2p += (src2_pitch * ysrc) + (xsrc * 2);
-
-    if (!lstrcmpi(Op, "Mul"))
-    {
-      if (chroma) // Use chroma of the overlay_clip.
-      {
-#ifdef INTEL_INTRINSICS
-        // yes, alignment check, we can have x offsets
-        if ((env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(src1p, 16) && IsPtrAligned(src2p, 16))
-        {
-          layer_yuy2_mul_sse2<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#ifdef X86_32
-        else if (env->GetCPUFlags() & CPUF_MMX)
-        {
-          layer_yuy2_mul_mmx<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#endif
-        else
-#endif
-        {
-
-          layer_yuy2_mul_c<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-
-      }
-      else {
-#ifdef INTEL_INTRINSICS
-        // yes, alignment check, we can have x offsets
-        if ((env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(src1p, 16) && IsPtrAligned(src2p, 16))
-        {
-          layer_yuy2_mul_sse2<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#ifdef X86_32
-        else if (env->GetCPUFlags() & CPUF_MMX)
-        {
-          layer_yuy2_mul_mmx<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#endif
-        else
-#endif
-        {
-          layer_yuy2_mul_c<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-      }
-    }
-    if (!lstrcmpi(Op, "Add"))
-    {
-      if (chroma)
-      {
-#ifdef INTEL_INTRINSICS
-        if (env->GetCPUFlags() & CPUF_SSE2)
-        {
-          layer_yuy2_add_sse2<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#ifdef X86_32
-        else if (env->GetCPUFlags() & CPUF_MMX)
-        {
-          layer_yuy2_add_mmx<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#endif
-        else
-#endif
-        {
-          layer_yuy2_add_c<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-      }
-      else {
-#ifdef INTEL_INTRINSICS
-        if (env->GetCPUFlags() & CPUF_SSE2)
-        {
-          layer_yuy2_add_sse2<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#ifdef X86_32
-        else if (env->GetCPUFlags() & CPUF_MMX)
-        {
-          layer_yuy2_add_mmx<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#endif
-        else
-#endif
-        {
-          layer_yuy2_add_c<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-      }
-    }
-    if (!lstrcmpi(Op, "Fast"))
-    {
-      if (chroma) {
-#ifdef INTEL_INTRINSICS
-        // yes, alignment check, we can have x offsets
-        if ((env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(src1p, 16) && IsPtrAligned(src2p, 16))
-        {
-          layer_yuy2_or_rgb32_fast_sse2(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#ifdef X86_32
-        else if (env->GetCPUFlags() & CPUF_INTEGER_SSE)
-        {
-          layer_yuy2_fast_isse(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#endif
-        else
-#endif
-        {
-          layer_yuy2_fast_c<uint8_t>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-      }
-      else
-      {
-        env->ThrowError("Layer: this mode not allowed in FAST; use ADD instead");
-      }
-    }
-    if (!lstrcmpi(Op, "Subtract"))
-    {
-      if (chroma) {
-#ifdef INTEL_INTRINSICS
-        if (env->GetCPUFlags() & CPUF_SSE2)
-        {
-          layer_yuy2_subtract_sse2<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#ifdef X86_32
-        else if (env->GetCPUFlags() & CPUF_MMX)
-        {
-          layer_yuy2_subtract_mmx<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#endif
-        else
-#endif
-        {
-          layer_yuy2_subtract_c<true>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-      }
-      else {
-#ifdef INTEL_INTRINSICS
-        if (env->GetCPUFlags() & CPUF_SSE2)
-        {
-          layer_yuy2_subtract_sse2<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#ifdef X86_32
-        else if (env->GetCPUFlags() & CPUF_MMX)
-        {
-          layer_yuy2_subtract_mmx<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-#endif
-        else
-#endif
-        {
-          layer_yuy2_subtract_c<false>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-        }
-      }
-    }
-    if (!lstrcmpi(Op, "Lighten")) {
-      // only chroma == true
-#ifdef INTEL_INTRINSICS
-      if (env->GetCPUFlags() & CPUF_SSE2)
-      {
-        layer_yuy2_lighten_darken_sse2<LIGHTEN>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel, ThresholdParam);
-      }
-#ifdef X86_32
-      else if (env->GetCPUFlags() & CPUF_INTEGER_SSE)
-      {
-        layer_yuy2_lighten_darken_isse<LIGHTEN>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel, ThresholdParam);
-      }
-#endif
-      else
-#endif
-      {
-        layer_yuy2_lighten_darken_c<LIGHTEN>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel, ThresholdParam);
-      }
-    }
-    if (!lstrcmpi(Op, "Darken")) {
-      // only chroma == true
-#ifdef INTEL_INTRINSICS
-      if (env->GetCPUFlags() & CPUF_SSE2)
-      {
-        layer_yuy2_lighten_darken_sse2<DARKEN>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel, ThresholdParam);
-      }
-#ifdef X86_32
-      else if (env->GetCPUFlags() & CPUF_INTEGER_SSE)
-      {
-        layer_yuy2_lighten_darken_isse<DARKEN>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel, ThresholdParam);
-      }
-#endif
-      else
-#endif
-      {
-        layer_yuy2_lighten_darken_c<DARKEN>(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel, ThresholdParam);
-      }
-    }
-  } // end of YUY2
-  else if (vi.IsRGB32() || vi.IsRGB64())
+  if (vi.IsRGB32() || vi.IsRGB64())
   {
     const int src1_pitch = src1->GetPitch();
     const int src2_pitch = src2->GetPitch();
@@ -4017,12 +3740,6 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
       {
         layer_rgb32_fast_sse2(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
       }
-#ifdef X86_32
-      else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_INTEGER_SSE))
-      {
-        layer_rgb32_fast_isse(src1p, src2p, src1_pitch, src2_pitch, width, height, mylevel);
-      }
-#endif
       else
 #endif
       {
@@ -4813,11 +4530,11 @@ AVSValue __cdecl Layer::Create(AVSValue args, void*, IScriptEnvironment* env)
     AVSValue new_args[1] = { args[0].AsClip() };
     clip1 = env->Invoke("ConvertToPlanarRGBA", AVSValue(new_args, 1)).AsClip();
   }
+  */
   else if (vi1.IsYUY2()) {
     AVSValue new_args[1] = { args[0].AsClip() };
     clip1 = env->Invoke("ConvertToYV16", AVSValue(new_args, 1)).AsClip();
   }
-  */
   else {
     clip1 = args[0].AsClip();
   }
@@ -4832,17 +4549,18 @@ AVSValue __cdecl Layer::Create(AVSValue args, void*, IScriptEnvironment* env)
     AVSValue new_args[1] = { args[1].AsClip() };
     clip2 = env->Invoke("ConvertToPlanarRGBA", AVSValue(new_args, 1)).AsClip();
   }
-  else if (vi_orig.IsYUY2()) {
+  */
+  else if (vi2.IsYUY2()) {
     AVSValue new_args[1] = { args[1].AsClip() };
     clip2 = env->Invoke("ConvertToYV16", AVSValue(new_args, 1)).AsClip();
   }
-  */
   else {
     clip2 = args[1].AsClip();
   }
 
   Layer* Result = new Layer(clip1, clip2, args[2].AsString("Add"), args[3].AsInt(-1),
-    args[4].AsInt(0), args[5].AsInt(0), args[6].AsInt(0), args[7].AsBool(true),
+    args[4].AsInt(0), args[5].AsInt(0), args[6].AsInt(0),
+    args[7].AsBool(true), // chroma
     args[8].AsFloatf(-1.0f), // opacity
     getPlacement(args[9], env), // chroma placement
     env);
@@ -4864,11 +4582,12 @@ AVSValue __cdecl Layer::Create(AVSValue args, void*, IScriptEnvironment* env)
     AVSValue new_args2[1] = { Result };
     return env->Invoke("ConvertToRGB64", AVSValue(new_args2, 1)).AsClip();
   }
+  */
   else if (vi1.IsYUY2()) {
+    // convert back to original
     AVSValue new_args2[1] = { Result };
     return env->Invoke("ConvertToYUY2", AVSValue(new_args2, 1)).AsClip();
   }
-  */
 
   return Result;
 
