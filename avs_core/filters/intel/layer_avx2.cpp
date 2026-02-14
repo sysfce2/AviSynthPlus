@@ -133,7 +133,7 @@ void colorkeymask_avx2(BYTE* pf, int pitch, int color, int height, int width, in
 
 // by 4 bytes, when rgba mask can be separate FF bytes, for plane FF FF FF FF
 // to simple, even C is identical speed
-void invert_frame_avx2(BYTE* frame, int pitch, int width, int height, int mask) {
+void invert_frame_inplace_avx2(BYTE* frame, int pitch, int width, int height, int mask) {
   __m256i maskv = _mm256_set1_epi32(mask);
 
   BYTE* endp = frame + pitch * height;
@@ -147,7 +147,7 @@ void invert_frame_avx2(BYTE* frame, int pitch, int width, int height, int mask) 
 }
 
 // to simple, even C is identical speed
-void invert_frame_uint16_avx2(BYTE* frame, int pitch, int width, int height, uint64_t mask64) {
+void invert_frame_uint16_inplace_avx2(BYTE* frame, int pitch, int width, int height, uint64_t mask64) {
   __m256i maskv = _mm256_set_epi32(
     (uint32_t)(mask64 >> 32), (uint32_t)mask64, (uint32_t)(mask64 >> 32), (uint32_t)mask64,
     (uint32_t)(mask64 >> 32), (uint32_t)mask64, (uint32_t)(mask64 >> 32), (uint32_t)mask64);
@@ -161,6 +161,114 @@ void invert_frame_uint16_avx2(BYTE* frame, int pitch, int width, int height, uin
     frame += 32;
   }
 }
+
+// called for uint8_t, uint16_t and float planar, chroma planes are inverted differently than luma plane
+// R G B are treated the same way as luma.
+// We assume full-range.
+// 3.7.6 minor change: chroma: uint8_t, uint16_t: pivot around half and not xor FF/FFFF for chroma
+// Note: this filter is so simple that it is optimized from C to same speed as SIMD in release
+// Also, it is memory-bound AVX2 is not quicker than SSE2.
+// lessthan16bits helps optimizing the exact 16 bit case.
+// We use this very same C source for AVX2, where it is optimized even with 2x256 bit paths
+template<typename pixel_t, bool lessthan16bits, bool chroma>
+void invert_plane_c_avx2(uint8_t* dstp, const uint8_t* srcp, int src_pitch, int dst_pitch, int width, int height, int bits_per_pixel) {
+  if constexpr (std::is_same_v<pixel_t, float>) {
+    if constexpr (chroma) {
+      // For chroma planes, invert around 0.0 -> negate
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          reinterpret_cast<float*>(dstp)[x] = -reinterpret_cast<const float*>(srcp)[x];
+        }
+        srcp += src_pitch;
+        dstp += dst_pitch;
+      }
+    }
+    else {
+      // For luma plane, invert around 1.0 -> 1.0 - value
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          reinterpret_cast<float*>(dstp)[x] = 1.0f - reinterpret_cast<const float*>(srcp)[x];
+        }
+        srcp += src_pitch;
+        dstp += dst_pitch;
+      }
+    }
+    return;
+  }
+  // 8 bit
+  if constexpr (std::is_same_v<pixel_t, uint8_t>) {
+    constexpr int max_pixel_value = 255;
+    if constexpr (chroma) {
+      constexpr int half = 128;
+      // For chroma planes, invert around 128 -> negate
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          reinterpret_cast<uint8_t*>(dstp)[x] = std::min(2 * half - reinterpret_cast<const uint8_t*>(srcp)[x], max_pixel_value);
+          // chroma invert: -(srcp[x] - half) + half
+          // = 2*half - srcp[x] = (1 << bits_per_pixel) - srcp[x]
+          // Watch for src==0, must top at max_pixel_value
+        }
+        srcp += src_pitch;
+        dstp += dst_pitch;
+      }
+    }
+    else {
+      // For luma plane, 255-x which is xor 0xff
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          reinterpret_cast<uint8_t*>(dstp)[x] = max_pixel_value - reinterpret_cast<const uint8_t*>(srcp)[x];
+        }
+        srcp += src_pitch;
+        dstp += dst_pitch;
+      }
+    }
+    return;
+  }
+  // 10-16 bit uint16_t, luma: max_pixel_value - x which is xor with max_pixel_value, chroma: half - x
+  if constexpr (std::is_same_v<pixel_t, uint16_t>) {
+    if constexpr (!lessthan16bits)
+      bits_per_pixel = 16; // quasi constexpr for optimization
+    const int max_pixel_value = (1 << bits_per_pixel) - 1;
+    if constexpr (chroma) {
+      const int half = 1 << (bits_per_pixel - 1);
+      // For chroma planes, invert around mid-point (2^(bits-1))
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          reinterpret_cast<uint16_t*>(dstp)[x] = std::min(2 * half - reinterpret_cast<const uint16_t*>(srcp)[x], max_pixel_value);
+          // chroma invert: -(srcp[x] - half) + half
+          // = 2*half - srcp[x] = (1 << bits_per_pixel) - srcp[x]
+          // Watch for src==0, must top at max_pixel_value
+        }
+        srcp += src_pitch;
+        dstp += dst_pitch;
+      }
+    }
+    else {
+      // For luma plane, max_pixel_value - x
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          reinterpret_cast<uint16_t*>(dstp)[x] = max_pixel_value - reinterpret_cast<const uint16_t*>(srcp)[x];
+        }
+        srcp += src_pitch;
+        dstp += dst_pitch;
+      }
+    }
+  }
+}
+
+// Instantiate all AVX2 combinations
+template void invert_plane_c_avx2<uint8_t, true /*n/a*/, false>(uint8_t*, const uint8_t*, int, int, int, int, int);
+template void invert_plane_c_avx2<uint8_t, true /*n/a*/, true>(uint8_t*, const uint8_t*, int, int, int, int, int);
+
+template void invert_plane_c_avx2<uint16_t, true, false>(uint8_t*, const uint8_t*, int, int, int, int, int);
+template void invert_plane_c_avx2<uint16_t, true, true>(uint8_t*, const uint8_t*, int, int, int, int, int);
+
+template void invert_plane_c_avx2<uint16_t, false, false>(uint8_t*, const uint8_t*, int, int, int, int, int);
+template void invert_plane_c_avx2<uint16_t, false, true>(uint8_t*, const uint8_t*, int, int, int, int, int);
+
+template void invert_plane_c_avx2<float, false /*n/a*/, false>(uint8_t*, const uint8_t*, int, int, int, int, int);
+template void invert_plane_c_avx2<float, false /*n/a*/, true>(uint8_t*, const uint8_t*, int, int, int, int, int);
+
 
 /*******************************
  *******   Layer Filter   ******

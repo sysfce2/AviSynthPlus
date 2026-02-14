@@ -627,7 +627,7 @@ Invert::Invert(PClip _child, const char* _channels, IScriptEnvironment* env)
 
 
 //mod4 width is required
-static void invert_frame_c(BYTE* frame, int pitch, int width, int height, int mask) {
+static void invert_frame_inplace_c(BYTE* frame, int pitch, int width, int height, int mask) {
   for (int y = 0; y < height; ++y) {
     int* intptr = reinterpret_cast<int*>(frame);
 
@@ -638,7 +638,7 @@ static void invert_frame_c(BYTE* frame, int pitch, int width, int height, int ma
   }
 }
 
-static void invert_frame_uint16_c(BYTE* frame, int pitch, int width, int height, uint64_t mask64) {
+static void invert_frame_uint16_inplace_c(BYTE* frame, int pitch, int width, int height, uint64_t mask64) {
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width / 8; ++x) {
       reinterpret_cast<uint64_t*>(frame)[x] = reinterpret_cast<uint64_t*>(frame)[x] ^ mask64;
@@ -647,156 +647,253 @@ static void invert_frame_uint16_c(BYTE* frame, int pitch, int width, int height,
   }
 }
 
-static void invert_plane_c(BYTE* frame, int pitch, int row_size, int height) {
-  int mod4_width = row_size / 4 * 4;
-  for (int y = 0; y < height; ++y) {
-    int* intptr = reinterpret_cast<int*>(frame);
-
-    for (int x = 0; x < mod4_width / 4; ++x) {
-      intptr[x] = intptr[x] ^ 0xFFFFFFFF;
+// called for uint8_t, uint16_t and float planar, chroma planes are inverted differently than luma plane
+// R G B are treated the same way as luma.
+// We assume full-range.
+// 3.7.6 minor change: chroma: uint8_t, uint16_t: pivot around half and not xor FF/FFFF for chroma
+// Note: this filter is so simple that it is optimized from C to same speed as SIMD in release
+// Also, it is memory-bound AVX2 is not quicker than SSE2.
+// lessthan16bits helps optimizing the exact 16 bit case.
+// We use this very same C source for AVX2, where it is optimized even with 2x256 bit paths
+template<typename pixel_t, bool lessthan16bits, bool chroma>
+static void invert_plane_c(uint8_t* dstp, const uint8_t* srcp, int src_pitch, int dst_pitch, int width, int height, int bits_per_pixel) {
+  if constexpr (std::is_same_v<pixel_t, float>) {
+    if constexpr (chroma) {
+      // For chroma planes, invert around 0.0 -> negate
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          reinterpret_cast<float*>(dstp)[x] = -reinterpret_cast<const float*>(srcp)[x];
+        }
+        srcp += src_pitch;
+        dstp += dst_pitch;
+      }
     }
-
-    for (int x = mod4_width; x < row_size; ++x) {
-      frame[x] = frame[x] ^ 255;
-    }
-    frame += pitch;
-  }
-}
-
-static void invert_plane_uint16_c(BYTE* frame, int pitch, int row_size, int height, uint64_t mask64) {
-  int mod8_width = row_size / 8 * 8;
-  uint16_t mask16 = mask64 & 0xFFFF; // for planes, all 16 bit parts of 64 bit mask is the same
-  for (int y = 0; y < height; ++y) {
-
-    for (int x = 0; x < mod8_width / 8; ++x) {
-      reinterpret_cast<uint64_t*>(frame)[x] ^= mask64;
-    }
-
-    for (int x = mod8_width; x < row_size; ++x) {
-      reinterpret_cast<uint16_t*>(frame)[x] ^= mask16;
-    }
-    frame += pitch;
-  }
-}
-
-static void invert_plane_float_c(BYTE* frame, int pitch, int row_size, int height, bool chroma) {
-  const int width = row_size / sizeof(float);
-#ifdef FLOAT_CHROMA_IS_HALF_CENTERED
-  const float max = 1.0f;
-#else
-  const float max = chroma ? 0.0f : 1.0f;
-#endif
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
-      reinterpret_cast<float*>(frame)[x] = max - reinterpret_cast<float*>(frame)[x];
-    }
-    frame += pitch;
-  }
-}
-
-static void invert_frame(BYTE* frame, int pitch, int rowsize, int height, int mask, uint64_t mask64, int pixelsize, IScriptEnvironment* env) {
-#ifdef INTEL_INTRINSICS
-  if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_AVX2))
-  {
-    if (pixelsize == 1)
-      invert_frame_avx2(frame, pitch, rowsize, height, mask);
-    else
-      invert_frame_uint16_avx2(frame, pitch, rowsize, height, mask64);
-  }
-  else if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_SSE2))
-  {
-    if (pixelsize == 1)
-      invert_frame_sse2(frame, pitch, rowsize, height, mask);
-    else
-      invert_frame_uint16_sse2(frame, pitch, rowsize, height, mask64);
-  }
-#ifdef X86_32
-  else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_MMX))
-  {
-    invert_frame_mmx(frame, pitch, rowsize, height, mask);
-  }
-#endif
-  else
-#endif
-  {
-    if (pixelsize == 1)
-      invert_frame_c(frame, pitch, rowsize, height, mask);
-    else
-      invert_frame_uint16_c(frame, pitch, rowsize, height, mask64);
-  }
-}
-
-static void invert_plane(BYTE* frame, int pitch, int rowsize, int height, int pixelsize, uint64_t mask64, bool chroma, IScriptEnvironment* env) {
-#ifdef INTEL_INTRINSICS
-  if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_AVX2))
-  {
-    if (pixelsize == 1)
-      invert_frame_avx2(frame, pitch, rowsize, height, 0xffffffff);
-    else if (pixelsize == 2)
-      invert_frame_uint16_avx2(frame, pitch, rowsize, height, mask64);
-  }
-  else if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_SSE2))
-  {
-    if (pixelsize == 1)
-      invert_frame_sse2(frame, pitch, rowsize, height, 0xffffffff);
-    else if (pixelsize == 2)
-      invert_frame_uint16_sse2(frame, pitch, rowsize, height, mask64);
-  }
-#ifdef X86_32
-  else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_MMX))
-  {
-    invert_plane_mmx(frame, pitch, rowsize, height);
-  }
-#endif
-  else
-#endif
-  {
-    if (pixelsize == 1)
-      invert_plane_c(frame, pitch, rowsize, height);
-    else if (pixelsize == 2)
-      invert_plane_uint16_c(frame, pitch, rowsize, height, mask64);
     else {
-      invert_plane_float_c(frame, pitch, rowsize, height, chroma);
+      // For luma plane, invert around 1.0 -> 1.0 - value
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          reinterpret_cast<float*>(dstp)[x] = 1.0f - reinterpret_cast<const float*>(srcp)[x];
+        }
+        srcp += src_pitch;
+        dstp += dst_pitch;
+      }
+    }
+    return;
+  }
+  // 8 bit
+  if constexpr (std::is_same_v<pixel_t, uint8_t>) {
+    constexpr int max_pixel_value = 255;
+    if constexpr (chroma) {
+      constexpr int half = 128;
+      // For chroma planes, invert around 128 -> negate
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          reinterpret_cast<uint8_t*>(dstp)[x] = std::min(2 * half - reinterpret_cast<const uint8_t*>(srcp)[x], max_pixel_value);
+          // chroma invert: -(srcp[x] - half) + half
+          // = 2*half - srcp[x] = (1 << bits_per_pixel) - srcp[x]
+          // Watch for src==0, must top at max_pixel_value
+        }
+        srcp += src_pitch;
+        dstp += dst_pitch;
+      }
+    }
+    else {
+      // For luma plane, 255-x which is xor 0xff
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          reinterpret_cast<uint8_t*>(dstp)[x] = max_pixel_value - reinterpret_cast<const uint8_t*>(srcp)[x];
+        }
+        srcp += src_pitch;
+        dstp += dst_pitch;
+      }
+    }
+    return;
+  }
+  // 10-16 bit uint16_t, luma: max_pixel_value - x which is xor with max_pixel_value, chroma: half - x
+  if constexpr (std::is_same_v<pixel_t, uint16_t>) {
+    if constexpr (!lessthan16bits)
+      bits_per_pixel = 16; // quasi constexpr for optimization
+    const int max_pixel_value = (1 << bits_per_pixel) - 1;
+    if constexpr (chroma) {
+      const int half = 1 << (bits_per_pixel - 1);
+      // For chroma planes, invert around mid-point (2^(bits-1))
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          reinterpret_cast<uint16_t*>(dstp)[x] = std::min(2 * half - reinterpret_cast<const uint16_t*>(srcp)[x], max_pixel_value);
+          // chroma invert: -(srcp[x] - half) + half
+          // = 2*half - srcp[x] = (1 << bits_per_pixel) - srcp[x]
+          // Watch for src==0, must top at max_pixel_value
+        }
+        srcp += src_pitch;
+        dstp += dst_pitch;
+      }
+    }
+    else {
+      // For luma plane, max_pixel_value - x
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          reinterpret_cast<uint16_t*>(dstp)[x] = max_pixel_value - reinterpret_cast<const uint16_t*>(srcp)[x];
+        }
+        srcp += src_pitch;
+        dstp += dst_pitch;
+      }
     }
   }
+}
+
+// YUY2 and packed RGB formats
+static void invert_frame_inplace(BYTE* frame, int pitch, int rowsize, int height, int mask, uint64_t mask64, int pixelsize, IScriptEnvironment* env) {
+#ifdef INTEL_INTRINSICS
+  if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_AVX2))
+  {
+    if (pixelsize == 1)
+      invert_frame_inplace_avx2(frame, pitch, rowsize, height, mask);
+    else
+      invert_frame_uint16_inplace_avx2(frame, pitch, rowsize, height, mask64);
+  }
+  else if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_SSE2))
+  {
+    if (pixelsize == 1)
+      invert_frame_inplace_sse2(frame, pitch, rowsize, height, mask);
+    else
+      invert_frame_uint16_inplace_sse2(frame, pitch, rowsize, height, mask64);
+  }
+  else
+#endif
+  {
+    if (pixelsize == 1)
+      invert_frame_inplace_c(frame, pitch, rowsize, height, mask);
+    else
+      invert_frame_uint16_inplace_c(frame, pitch, rowsize, height, mask64);
+  }
+}
+
+// Function pointer type definition
+using invert_plane_fn_t = void(*)(uint8_t*, const uint8_t*, int, int, int, int, int);
+
+// width is in pixels, not bytes.
+// Invoking only C functions, since optimizers do a decent work, code is not slower than manual SIMD for this easy filter.
+static void invert_plane(uint8_t* dstp, const uint8_t* srcp, int src_pitch, int dst_pitch, int width, int height, int bits_per_pixel, bool chroma, IScriptEnvironment* env) {
+  const int pixelsize = bits_per_pixel == 8 ? 1 : bits_per_pixel <= 16 ? 2 : 4; // 8 bit = 1 byte, 10-16 bit = 2 bytes, float = 4 bytes
+#ifdef INTEL_INTRINSICS
+  const bool avx2 = env->GetCPUFlags() & CPUF_AVX2;
+#endif
+
+  invert_plane_fn_t fn = nullptr;
+
+  switch (pixelsize) {
+  case 1:
+#ifdef INTEL_INTRINSICS
+    if (avx2)
+      fn = chroma ? invert_plane_c_avx2<uint8_t, true /*lt16b* n/a */, true> : invert_plane_c_avx2<uint8_t, true /*lt16b* n/a */, false>;
+    else
+#endif
+      fn = chroma ? invert_plane_c<uint8_t, true /*lt16b* n/a */, true> : invert_plane_c<uint8_t, true /*lt16b* n/a */, false>;
+    break;
+  case 2:
+    if (bits_per_pixel < 16) {
+#ifdef INTEL_INTRINSICS
+      if (avx2)
+        fn = chroma ? invert_plane_c_avx2<uint16_t, true /*lt16b**/, true> : invert_plane_c_avx2<uint16_t, true /*lt16b**/, false>;
+      else
+#endif
+        fn = chroma ? invert_plane_c<uint16_t, true /*lt16b**/, true> : invert_plane_c<uint16_t, true /*lt16b**/, false>;
+    }
+    else {
+#ifdef INTEL_INTRINSICS
+      if (avx2)
+        fn = chroma ? invert_plane_c_avx2<uint16_t, false /*lt16b**/, true> : invert_plane_c_avx2<uint16_t, false /*lt16b**/, false>;
+      else
+#endif
+        fn = chroma ? invert_plane_c<uint16_t, false /*lt16b**/, true> : invert_plane_c<uint16_t, false /*lt16b**/, false>;
+    }
+    break;
+  case 4:
+#ifdef INTEL_INTRINSICS
+    if (avx2)
+      fn = chroma ? invert_plane_c_avx2<float, false /*lt16b* n/a */, true> : invert_plane_c_avx2<float, false /*lt16b* n/a */, false>;
+    else
+#endif
+      fn = chroma ? invert_plane_c<float, false /*lt16b* n/a */, true> : invert_plane_c<float, false /*lt16b* n/a */, false>;
+    break;
+  }
+
+  fn(dstp, srcp, src_pitch, dst_pitch, width, height, bits_per_pixel);
 }
 
 PVideoFrame Invert::GetFrame(int n, IScriptEnvironment* env)
 {
-  PVideoFrame f = child->GetFrame(n, env);
-
-  env->MakeWritable(&f);
-
-  BYTE* pf = f->GetWritePtr();
-  int pitch = f->GetPitch();
-  int rowsize = f->GetRowSize();
-  int height = f->GetHeight();
+  PVideoFrame src = child->GetFrame(n, env);
 
   if (vi.IsPlanar()) {
-    // planar YUV
+
+    // We do not use worst case MakeWritable, do it per plane.
+    // Read and Invert only those planes which are needed, BitBlt the rest.
+
+    PVideoFrame dst = env->NewVideoFrameP(vi, &src);
+
+    // Helper function to process or copy a plane
+    auto process_plane = [&](int plane, bool do_process, bool is_chroma) {
+      if (do_process) {
+        invert_plane(
+          dst->GetWritePtr(plane),
+          src->GetReadPtr(plane),
+          src->GetPitch(plane),
+          dst->GetPitch(plane),
+          dst->GetRowSize(plane) / pixelsize,
+          dst->GetHeight(plane),
+          bits_per_pixel,
+          is_chroma,
+          env
+        );
+      }
+      else {
+        env->BitBlt(
+          dst->GetWritePtr(plane),
+          dst->GetPitch(plane),
+          src->GetReadPtr(plane),
+          src->GetPitch(plane),
+          src->GetRowSize(plane | PLANAR_ALIGNED),  // Use aligned row size for BitBlt optimization
+          src->GetHeight(plane)
+        );
+      }
+      };
+
+    // YUV/YUVA
     if (vi.IsYUV() || vi.IsYUVA()) {
-      if (doY)
-        invert_plane(pf, pitch, f->GetRowSize(PLANAR_Y_ALIGNED), height, pixelsize, mask64, false, env);
-      if (doU)
-        invert_plane(f->GetWritePtr(PLANAR_U), f->GetPitch(PLANAR_U), f->GetRowSize(PLANAR_U_ALIGNED), f->GetHeight(PLANAR_U), pixelsize, mask64, true, env);
-      if (doV)
-        invert_plane(f->GetWritePtr(PLANAR_V), f->GetPitch(PLANAR_V), f->GetRowSize(PLANAR_V_ALIGNED), f->GetHeight(PLANAR_V), pixelsize, mask64, true, env);
+      process_plane(PLANAR_Y, doY, false);
+      process_plane(PLANAR_U, doU, true);
+      process_plane(PLANAR_V, doV, true);
     }
-    // planar RGB
+
+    // Planar RGB/RGBA
     if (vi.IsPlanarRGB() || vi.IsPlanarRGBA()) {
-      if (doG) // first plane, GetWritePtr w/o parameters
-        invert_plane(pf, pitch, f->GetRowSize(PLANAR_G_ALIGNED), height, pixelsize, mask64, false, env);
-      if (doB)
-        invert_plane(f->GetWritePtr(PLANAR_B), f->GetPitch(PLANAR_B), f->GetRowSize(PLANAR_B_ALIGNED), f->GetHeight(PLANAR_B), pixelsize, mask64, false, env);
-      if (doR)
-        invert_plane(f->GetWritePtr(PLANAR_R), f->GetPitch(PLANAR_R), f->GetRowSize(PLANAR_R_ALIGNED), f->GetHeight(PLANAR_R), pixelsize, mask64, false, env);
+      process_plane(PLANAR_G, doG, false);
+      process_plane(PLANAR_B, doB, false);
+      process_plane(PLANAR_R, doR, false);
     }
-    // alpha
-    if (doA && (vi.IsPlanarRGBA() || vi.IsYUVA()))
-      invert_plane(f->GetWritePtr(PLANAR_A), f->GetPitch(PLANAR_A), f->GetRowSize(PLANAR_A_ALIGNED), f->GetHeight(PLANAR_A), pixelsize, mask64, false, env);
+
+    // Alpha channel
+    if (vi.IsPlanarRGBA() || vi.IsYUVA()) {
+      process_plane(PLANAR_A, doA, false);
+    }
+
+    return dst;
   }
-  else if (vi.IsYUY2() || vi.IsRGB32() || vi.IsRGB64()) {
-    invert_frame(pf, pitch, rowsize, height, mask, mask64, pixelsize, env);
+
+  // packed formats, we do a full copy of the frame before inverting
+  env->MakeWritable(&src);
+
+  BYTE* pf = src->GetWritePtr();
+  int pitch = src->GetPitch();
+  int rowsize = src->GetRowSize();
+  int height = src->GetHeight();
+
+  if (vi.IsYUY2() || vi.IsRGB32() || vi.IsRGB64()) {
+    // packed pixels, 4x1 or 4x2 bytes, all can be treated the same way with a mask
+    // YUY2 is simply xored even in its chroma component. Not really correct, but YUY2 is a compability format.
+    // we won't convert it to and from YV16, keep its pre-3.7.6 behavior.
+    invert_frame_inplace(pf, pitch, rowsize, height, mask, mask64, pixelsize, env);
   }
   else if (vi.IsRGB24()) {
     int rMask = doR ? 0xff : 0;
@@ -826,7 +923,7 @@ PVideoFrame Invert::GetFrame(int n, IScriptEnvironment* env)
     }
   }
 
-  return f;
+  return src;
 }
 
 
