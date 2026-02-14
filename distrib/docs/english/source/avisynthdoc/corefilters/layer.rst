@@ -114,11 +114,88 @@ Note that some modes can be similar to :doc:`Overlay <overlay>`, but the two fil
 
     Automatically scaled for bit depths over 8, keep it between 0 and 255 
 
-.. describe:: use_chroma
 
+.. describe:: use_chroma
     Use chroma of the ``overlay_clip``, default=true. 
+
+    When false, different behavior applies depending on color space. Must be true for op = "darken", "lighten", "fast."
     
-    When false only luma is used. Must be true for op = "darken", "lighten", "fast."
+    **Effect on YUV/YUVA color spaces:**
+    
+    When ``use_chroma=false``:
+    
+    - Luma (Y) channel is processed normally using the overlay's Y values
+    - Chroma (U/V) channels **ignore the overlay** and instead blend toward neutral (128 for 8-bit integer, 0.0 for float)
+    - The result is **progressive desaturation** controlled by opacity:
+      
+      * opacity=0.0 → no change (keeps base chroma)
+      * opacity=0.5 → halfway desaturated  
+      * opacity=1.0 → fully neutral/grayscale
+    
+    **YUV Use Cases:**
+    
+    1. **Luminance-only compositing** - Adjust brightness using overlay's luma while preserving base clip's color:
+    
+       ::
+       
+           # Brighten image using luma overlay, keep original colors
+           Layer(color_clip, bright_overlay, op="add", use_chroma=false, opacity=0.5)
+    
+    2. **Selective desaturation** - Use overlay's alpha channel to control where desaturation occurs:
+    
+       ::
+       
+           # Desaturate regions based on alpha matte
+           Layer(color_clip, alpha_matte, use_chroma=false, opacity=0.8)
+    
+    3. **Overlay graphics without color contamination** - Add logos/text that affect only brightness:
+    
+       ::
+       
+           # Logo affects brightness but doesn't introduce colors
+           Layer(video, logo_rgba, use_chroma=false)
+    
+    **Effect on Planar RGB/RGBA color spaces:**
+    
+    When ``use_chroma=false``:
+    
+    - Overlay RGB is **converted to grayscale** using standard luma coefficients (Rec.709: R×0.2126 + G×0.7152 + B×0.0722)
+    - **All channels** (R, G, B, and A if present) of the base clip blend toward this grayscale luma value
+    - The result is **desaturation** where all RGB channels approach the same value
+    
+    **RGB Use Cases:**
+    
+    1. **Grayscale overlay effect** - Use only the luminance information from a colored overlay:
+    
+       ::
+       
+           # Apply colored overlay as grayscale
+           Layer(color_base, color_overlay, use_chroma=false, opacity=1.0)
+    
+    2. **Luminance-based blending** - Mix clips using only brightness information:
+    
+       ::
+       
+           # Blend two clips ignoring color information from overlay
+           Layer(clip1, clip2, use_chroma=false, opacity=0.5)
+    
+    3. **Controlled desaturation** - Desaturate based on overlay's alpha channel:
+    
+       ::
+       
+           # More transparent areas remain colorful, opaque areas become gray
+           Layer(color_clip, alpha_gradient, use_chroma=false, opacity=0.7)
+    
+    **Summary:**
+    
+    - **YUV with use_chroma=true**: Normal color blending using overlay's U/V values
+    - **YUV with use_chroma=false**: Chroma neutralizes (desaturates), luma blends normally
+    - **RGB with use_chroma=true**: Normal color blending using overlay's R/G/B values  
+    - **RGB with use_chroma=false**: All channels blend toward overlay's grayscale luma (desaturates)
+    
+    In both color spaces, ``use_chroma=false`` produces desaturation, but through different mechanisms 
+    appropriate to each color model.
+
 
 .. describe:: opacity
 
