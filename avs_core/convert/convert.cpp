@@ -90,7 +90,7 @@ extern const AVSFunction Convert_filters[] = {       // matrix can be "rec601", 
   { "ConvertTo16bit", BUILTIN_FUNC_PREFIX, "c[bits]i[truerange]b[dither]i[dither_bits]i[fulls]b[fulld]b", ConvertBits::Create, (void *)16 },
   { "ConvertToFloat", BUILTIN_FUNC_PREFIX, "c[bits]i[truerange]b[dither]i[dither_bits]i[fulls]b[fulld]b", ConvertBits::Create, (void *)32 },
   { "ConvertBits",    BUILTIN_FUNC_PREFIX, "c[bits]i[truerange]b[dither]i[dither_bits]i[fulls]b[fulld]b", ConvertBits::Create, (void *)0 },
-  { "AddAlphaPlane",  BUILTIN_FUNC_PREFIX, "c[mask].", AddAlphaPlane::Create},
+  { "AddAlphaPlane",  BUILTIN_FUNC_PREFIX, "c[mask].[opacity]f", AddAlphaPlane::Create},
   { "RemoveAlphaPlane",  BUILTIN_FUNC_PREFIX, "c", RemoveAlphaPlane::Create},
   { 0 }
 };
@@ -590,44 +590,75 @@ AVSValue __cdecl ConvertToYV12::Create(AVSValue args, void* user_data, IScriptEn
 AVSValue AddAlphaPlane::Create(AVSValue args, void*, IScriptEnvironment* env)
 {
   bool isMaskDefined = args[1].Defined();
+  bool isOpacityDefined = args[2].Defined();
   bool maskIsClip = false;
+
   // if mask is not defined and videoformat has Alpha then we return
-  if(isMaskDefined && !args[1].IsClip() && !args[1].IsFloat())
+  if (isMaskDefined && !args[1].IsClip() && !args[1].IsFloat())
     env->ThrowError("AddAlphaPlane: mask parameter should be clip or number");
+
+  if (isOpacityDefined && !args[2].IsFloat())
+    env->ThrowError("AddAlphaPlane: opacity parameter should be a number");
+
+  if (isMaskDefined && isOpacityDefined)
+    env->ThrowError("AddAlphaPlane: cannot specify both mask and opacity parameters");
+
   const VideoInfo& vi = args[0].AsClip()->GetVideoInfo();
-  if (!isMaskDefined && (vi.IsPlanarRGBA() || vi.IsYUVA() || vi.IsRGB32() || vi.IsRGB64()))
+  if (!isMaskDefined && !isOpacityDefined && (vi.IsPlanarRGBA() || vi.IsYUVA() || vi.IsRGB32() || vi.IsRGB64()))
     return args[0].AsClip();
+
   PClip alphaClip = nullptr;
   if (isMaskDefined && args[1].IsClip()) {
     const VideoInfo& viAlphaClip = args[1].AsClip()->GetVideoInfo();
     maskIsClip = true;
-    if(viAlphaClip.BitsPerComponent() != vi.BitsPerComponent())
+    if (viAlphaClip.BitsPerComponent() != vi.BitsPerComponent())
       env->ThrowError("AddAlphaPlane: alpha clip is of different bit depth");
-    if(viAlphaClip.width != vi.width || viAlphaClip.height != vi.height )
+    if (viAlphaClip.width != vi.width || viAlphaClip.height != vi.height)
       env->ThrowError("AddAlphaPlane: alpha clip is of different size");
     if (viAlphaClip.IsY())
       alphaClip = args[1].AsClip();
     else if (viAlphaClip.NumComponents() == 4) {
       AVSValue new_args[1] = { args[1].AsClip() };
       alphaClip = env->Invoke("ExtractA", AVSValue(new_args, 1)).AsClip();
-    } else {
+    }
+    else {
       env->ThrowError("AddAlphaPlane: alpha clip should be greyscale or should have alpha plane");
     }
     // alphaClip is always greyscale here
   }
+
   float maskAsFloat = -1.0f;
-  if (!maskIsClip)
-    maskAsFloat = (float)args[1].AsFloat(-1.0f);
+  if (!maskIsClip) {
+    if (isOpacityDefined) {
+      // Handle opacity parameter (0.0 to 1.0)
+      float opacity = args[2].AsFloatf(1.0f);
+      if (opacity < 0.0f || opacity > 1.0f)
+        env->ThrowError("AddAlphaPlane: opacity must be between 0.0 and 1.0");
+      if (vi.BitsPerComponent() <= 16) {
+        int max_pixel_value = (1 << vi.BitsPerComponent()) - 1;
+        maskAsFloat = opacity * max_pixel_value;
+      }
+      else {
+        maskAsFloat = opacity;
+      }
+    }
+    else {
+      // Handle mask parameter (direct value)
+      maskAsFloat = (float)args[1].AsFloat(-1.0f);
+    }
+  }
+
   if (vi.IsRGB24()) {
     AVSValue new_args[1] = { args[0].AsClip() };
     PClip child = env->Invoke("ConvertToRGB32", AVSValue(new_args, 1)).AsClip();
-    return new AddAlphaPlane(child, alphaClip, maskAsFloat, isMaskDefined, env);
-  } else if(vi.IsRGB48()) {
+    return new AddAlphaPlane(child, alphaClip, maskAsFloat, isMaskDefined || isOpacityDefined, env);
+  }
+  else if (vi.IsRGB48()) {
     AVSValue new_args[1] = { args[0].AsClip() };
     PClip child = env->Invoke("ConvertToRGB64", AVSValue(new_args, 1)).AsClip();
-    return new AddAlphaPlane(child, alphaClip, maskAsFloat, isMaskDefined, env);
+    return new AddAlphaPlane(child, alphaClip, maskAsFloat, isMaskDefined || isOpacityDefined, env);
   }
-  return new AddAlphaPlane(args[0].AsClip(), alphaClip, maskAsFloat, isMaskDefined, env);
+  return new AddAlphaPlane(args[0].AsClip(), alphaClip, maskAsFloat, isMaskDefined || isOpacityDefined, env);
 }
 
 AddAlphaPlane::AddAlphaPlane(PClip _child, PClip _alphaClip, float _mask_f, bool isMaskDefined, IScriptEnvironment* env)
@@ -660,7 +691,7 @@ AddAlphaPlane::AddAlphaPlane(PClip _child, PClip _alphaClip, float _mask_f, bool
   // RGB24 and RGB48 already converted to 32/64
   // RGB32, RGB64, YUVA and RGBA: no change
 
-  // mask parameter. If none->max transparency
+  // mask parameter. If none->max opacity
 
   if (!alphaClip) {
     int max_pixel_value = (1 << bits_per_pixel) - 1; // n/a for float
@@ -670,7 +701,7 @@ AddAlphaPlane::AddAlphaPlane(PClip _child, PClip _alphaClip, float _mask_f, bool
     }
     else {
       mask_f = _mask_f;
-      mask = (mask_f < 0) ? 0 : (mask_f > max_pixel_value) ? max_pixel_value : (int)mask_f;
+      mask = (mask_f < 0) ? 0 : (mask_f > max_pixel_value) ? max_pixel_value : (int)(mask_f + 0.5f);
       mask = clamp(mask, 0, max_pixel_value);
       // no clamp for float
     }
