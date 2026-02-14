@@ -174,8 +174,8 @@ void overlay_blend_avx2_uint(BYTE* p1, const BYTE* p2, const BYTE* mask,
         __m256i p2_i32_hi = _mm256_cvtepu16_epi32(p2_u16_hi);
 
         // p2-p1 in int32 and only then float
-        __m256 delta_lo_32 = _mm256_sub_epi32(p2_i32_lo, p1_i32_lo);
-        __m256 delta_hi_32 = _mm256_sub_epi32(p2_i32_hi, p1_i32_hi);
+        __m256i delta_lo_32 = _mm256_sub_epi32(p2_i32_lo, p1_i32_lo);
+        __m256i delta_hi_32 = _mm256_sub_epi32(p2_i32_hi, p1_i32_hi);
         __m256 delta_f_lo = _mm256_cvtepi32_ps(delta_lo_32);
         __m256 delta_f_hi = _mm256_cvtepi32_ps(delta_hi_32);
 
