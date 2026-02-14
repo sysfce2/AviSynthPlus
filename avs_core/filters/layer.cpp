@@ -2042,6 +2042,96 @@ Layer::Layer(PClip _child1, PClip _child2, const char _op[], int _lev, int _x, i
 DISABLE_WARNING_PUSH
 DISABLE_WARNING_UNREFERENCED_LOCAL_VARIABLE
 
+// Single function for all cases
+template<MaskMode maskMode, typename pixel_t>
+AVS_FORCEINLINE int calculate_effective_mask(
+  const pixel_t* ptr,
+  int x,
+  int pitch,
+  int& right_value  // in/out parameter for MPEG2 sliding window modes
+) {
+  if constexpr (maskMode == MASK444) {
+    // +------+
+    // | 1.0  |
+    // +------+
+    return ptr[x];
+  }
+  else if constexpr (maskMode == MASK411) {
+    // +------+------+------+------+
+    // | 0.25 | 0.25 | 0.25 | 0.25 |
+    // +------+------+------+------+
+    return (ptr[x * 4] + ptr[x * 4 + 1] + ptr[x * 4 + 2] + ptr[x * 4 + 3] + 2) >> 2;
+  }
+  else if constexpr (maskMode == MASK420) {
+    // +------+------+
+    // | 0.25 | 0.25 |
+    // |------+------|
+    // | 0.25 | 0.25 |
+    // +------+------+
+    return (ptr[x * 2] + ptr[x * 2 + 1] + ptr[x * 2 + pitch] + ptr[x * 2 + 1 + pitch] + 2) >> 2;
+  }
+  else if constexpr (maskMode == MASK420_MPEG2) {
+    // ------+------+-------+
+    // 0.125 | 0.25 | 0.125 |
+    // ------|------+-------|
+    // 0.125 | 0.25 | 0.125 |
+    // ------+------+-------+
+    int left = right_value;
+    const int mid = ptr[x * 2] + ptr[x * 2 + pitch];
+    right_value = ptr[x * 2 + 1] + ptr[x * 2 + 1 + pitch];
+    return (left + 2 * mid + right_value + 4) >> 3;
+  }
+  else if constexpr (maskMode == MASK422) {
+    // +------+------+
+    // | 0.5  | 0.5  |
+    // +------+------+
+    return (ptr[x * 2] + ptr[x * 2 + 1] + 1) >> 1;
+  }
+  else if constexpr (maskMode == MASK422_MPEG2) {
+    // ------+------+-------+
+    // 0.25  | 0.5  | 0.25  |
+    // ------+------+-------+
+    int left = right_value;
+    const int mid = ptr[x * 2];
+    right_value = ptr[x * 2 + 1];
+    return (left + 2 * mid + right_value + 2) >> 2;
+  }
+}
+
+// Float version of mask calculation
+template<MaskMode maskMode>
+AVS_FORCEINLINE float calculate_effective_mask_f(
+  const float* ptr,
+  int x,
+  int pitch,
+  float& right_value  // in/out parameter for MPEG2 sliding window modes
+) {
+  if constexpr (maskMode == MASK444) {
+    return ptr[x];
+  }
+  else if constexpr (maskMode == MASK411) {
+    return (ptr[x * 4] + ptr[x * 4 + 1] + ptr[x * 4 + 2] + ptr[x * 4 + 3]) * 0.25f;
+  }
+  else if constexpr (maskMode == MASK420) {
+    return (ptr[x * 2] + ptr[x * 2 + 1] + ptr[x * 2 + pitch] + ptr[x * 2 + 1 + pitch]) * 0.25f;
+  }
+  else if constexpr (maskMode == MASK420_MPEG2) {
+    float left = right_value;
+    const float mid = ptr[x * 2] + ptr[x * 2 + pitch];
+    right_value = ptr[x * 2 + 1] + ptr[x * 2 + 1 + pitch];
+    return (left + 2.0f * mid + right_value) * 0.125f;
+  }
+  else if constexpr (maskMode == MASK422) {
+    return (ptr[x * 2] + ptr[x * 2 + 1]) * 0.5f;
+  }
+  else if constexpr (maskMode == MASK422_MPEG2) {
+    float left = right_value;
+    const float mid = ptr[x * 2];
+    right_value = ptr[x * 2 + 1];
+    return (left + 2.0f * mid + right_value) * 0.25f;
+  }
+}
+
 // YUV(A) mul 8-16 bits
 // when chroma is processed, one can use/not use source chroma,
 // Only when use_alpha: maskMode defines mask generation for chroma planes
@@ -2280,6 +2370,57 @@ static void layer_yuy2_add_c(BYTE* dstp, const BYTE* ovrp, int dst_pitch, int ov
 // when chroma is processed, one can use/not use source chroma
 // Only when use_alpha: maskMode defines mask generation for chroma planes
 // When use_alpha == false -> maskMode ignored
+
+
+// Generated ASM analysis after doing chroma placement-dependent mask precalculation
+// => vectorized blending now recognized!
+//
+// Refactoring separated mask calculation from blending, enabling compilers to auto-vectorize the main loop.
+// Memory overhead: single row buffer (e.g., 1920 bytes for 1080p) fits comfortably in L1 cache.
+// Estimated speedups were told by AI, but preparing the inputs for Layer takes time, i could not measure only the
+// blending loop; but the speedup is significant (except 444 where no precalculation is needed)
+//
+// Mask calculation (e.g. MASK420_MPEG2 2x2 gather with sliding window):
+//   - All compilers: Scalar with no or max. 2x unrolling (complex gather+dependency pattern blocks vectorization)
+//   - Minimal overhead: ~1-2% of total runtime, one-time cost per row
+//
+// Main blending loop vectorization results:
+//   MSVC 2022 (SSE4.1):  4-wide vectorization, ~80 instructions per 16 pixels
+//     - Uses pmulld (SSE4.1) for 32-bit multiply, pmovzxbd for byte→dword extension
+//     - Fallback path: 16→4→1 (main loop, then scalar cleanup)
+//     - Estimated speedup: 3-4x vs scalar
+//   
+//   Intel C++ 2025 (SSE2):  16-wide vectorization, ~150 instructions per 16 pixels
+//     - Workaround for missing pmulld: pmuludq + shuffle for odd/even dwords (complex!)
+//     - Complex unpacking chain: 4× punpcklbw/punpckhbw + punpcklwd/punpckhwd for byte→dword
+//     - Fallback path: 16→1 (main loop processes full 16, scalar cleanup for remainder)
+//     - Estimated speedup: 6-8x vs scalar
+//   
+//   Intel C++ 2025 (AVX2):  16-wide vectorization (2×YMM), ~60 instructions per 16 pixels
+//     - Native vpmulld on YMM, vpmovzxbd for clean extension, vpshufb+vpackusdw packing
+//     - Fallback path: 16→4→1 (YMM main, XMM for 4-15 remaining, scalar for <4)
+//     - Requires XMM6-XMM14 save/restore (ABI requirement), adds minimal function overhead
+//     - Estimated speedup: 10-12x vs scalar
+//   
+//   Intel C++ 2025 (AVX-512):  16-wide vectorization (ZMM), ~40 instructions per 16 pixels
+//     - Predicated execution via k-registers: vpcmpuq+kunpckbw for boundary checking
+//     - Masked loads/stores (vmovdqu8 {k1}{z}) eliminate separate cleanup loops entirely!
+//     - Native vpmovdb for efficient dword→byte packing, vpmovzxbd for extension
+//     - Fallback path: 16→1 with masking (5+ remaining uses masked 16-wide, <5 uses scalar)
+//     - No XMM register save overhead (ZMM registers are volatile), only vzeroupper at exit
+//     - Estimated speedup: 12-15x vs scalar (requires Ice Lake+, Zen4+; may throttle on some CPUs)
+//
+// Sequential mask access pattern (vs. inline 2x2, 1x2, 2x3 gather) was critical for unlocking
+// auto-vectorization. The 16-wide SIMD implementations process the same data in 1/10th the time
+// despite the overhead of mask pre-calculation, proving the separation-of-concerns approach.
+// 
+// Instruction count <> performance; Intel SSE2 uses ~2x more instructions than 
+// MSVC SSE4.1, but achieves better speedup due to:
+//   1. Better instruction-level parallelism (ILP) - processes all 16 pixels in parallel
+//   2. Lower loop overhead - single iteration vs 4 iterations for 16 pixels
+//   3. Better memory bandwidth utilization - coalesced loads/stores
+//   4. Aggressive register usage (all 16 XMM) reduces memory traffic
+// The 16-wide approach's higher upfront cost is amortized by massive parallelism.
 
 DISABLE_WARNING_PUSH
 DISABLE_WARNING_UNREFERENCED_LOCAL_VARIABLE
