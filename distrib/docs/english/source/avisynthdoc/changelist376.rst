@@ -24,7 +24,12 @@ Additions, changes
   * New CPU flags in ``cpuid.h`` and ``avisynth_c.h``: CPUF_ARM_NEON, CPUF_ARM_DOTPROD, CPUF_ARM_SVE2
   * "SetMaxCPU": add "neon", "dotprod", "sve2" options to enable/disable ARM64 (aarch64) features.
 - "ConvertToPlanarRGB": ``bits`` parameter: on-the-fly bit-depth conversions to YUV->RGB conversion.
-  See :doc:`ConvertToPlanarRGB <./corefilters/convert>`
+  See :doc:`ConvertToPlanarRGB <./corefilters/convert>`.
+- "ResetMask": add parameter float "opacity"
+- "AddAlphaPlane": add parameter float "opacity"
+- "Layer": YUY2 is handled as YV16 (lessen source code bloat)
+- "Invert": corrected chroma inversion to pivot around signed 0 instead of xoring with max_pixel_value
+- "Invert": planar formats work without pre-copying all planes from source before conversion, only those which are unchanged.
 
 
 Build environment, Interface
@@ -84,7 +89,8 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
-- Fix: Speed degradation when in-constructor GetFrame(0) (e.g. frame-property getter) is used: disable internal Cache object creation.
+- (not fixed: Speed degradation when in-constructor GetFrame(0) (e.g. frame-property getter) is used
+   maybe not even a bug, just a lucky processor cache coincidence is not gained in a synthetic test?)
 - Fix: YUV->RGB limited range matrix accuracy for 10-16 bits, plus use a symmetric rounding in matrix 
   coefficient's integer approximation.
 - Fix: inaccurate ColorBarsHD 10+ bit values. Now they are derived from the 32-bit float 
@@ -125,6 +131,10 @@ Bugfixes
 
 Optimizations
 ~~~~~~~~~~~~~
+- Layer YUVA "add", "subtract", "mul", "darken", "lighten": main algorithm SIMD vectorization
+  is now possible for non-444 chroma placements by precalculation mask for the actual row.
+- Invert: planar formats not pre-copy all planes from source before conversion, only those 
+  which are unchanged.
 - TurnLeft, TurnRight: AVX2 support (1,5-3x speed on i7-11700 compared to SSE2 version)
 - Turn180 AVX2 support (very slight speed gain)
 - Resamplers: 
@@ -164,6 +174,8 @@ Documentation
 - Update :ref:`AvsEnvProperty<cplusplus_getenvproperty>` with L2 cache size entry
 - Update Russian GPL notice in UTF-8 format
 - Update :doc:`ConvertToPlanarRGB <./corefilters/convert>` with `"bits"` and "matrix" syntax `":same"`
+- Update :doc:`ResetMask <./corefilters/mask>` with `"opacity"` and additional insights
+- Update :doc:`AddAlphaPlane <./corefilters/mask>` with `"opacity"` and additional insights
 - Add another Ubuntu->Windows DLL cross-compilation guide:
   See :ref:`Ubuntu->Windows mingw crosscompilation<compiling_avsplus_crosscompiling2>`
 
@@ -171,7 +183,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/02/12 10:59:00 $
+$Date: 2026/02/14 23:42:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
