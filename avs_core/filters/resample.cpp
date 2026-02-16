@@ -520,9 +520,9 @@ void resize_v_c_planar_uint8_16_t_auto_vectorized(BYTE* dst8, const BYTE* src8, 
     // 4 pixels at a time
     for (int x = 0; x < width; x += 4) {
       Int32x4 result(rounder); // master accumulator and the initial first coeff part
-      Int32x4 result_2(rounder);
-      Int32x4 result_3(rounder);
-      Int32x4 result_4(rounder);
+      Int32x4 result_2(0);
+      Int32x4 result_3(0);
+      Int32x4 result_4(0);
       const pixel_t* AVS_RESTRICT src2_ptr = src_ptr + x; // __restrict here
       int i = 0;
       // Process coefficients in pairs or quads for better instruction parallelism.
