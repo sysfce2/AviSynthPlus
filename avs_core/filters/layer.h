@@ -45,6 +45,71 @@
 #include <avisynth.h>
 #include <stdint.h>
 
+enum { PLACEMENT_MPEG2, PLACEMENT_MPEG1 }; // for Layer 420, 422
+
+// For "Layer"
+enum MaskMode {
+  MASK411,
+  MASK420,
+  MASK420_MPEG2,
+  MASK422,
+  MASK422_MPEG2,
+  MASK444
+};
+
+// called only once, for all planes
+// integer 8-16 bits version
+using layer_yuv_lighten_darken_c_t = void (BYTE* dstp8, BYTE* dstp8_u, BYTE* dstp8_v,
+  const BYTE* ovrp8, const BYTE* ovrp8_u, const BYTE* ovrp8_v, const BYTE* mask8,
+  int dst_pitch, int dst_pitchUV,
+  int overlay_pitch, int overlay_pitchUV,
+  int mask_pitch,
+  int width, int height, int level, int thresh,
+  int bits_per_pixel);
+
+// 32 bit float version
+using layer_yuv_lighten_darken_f_c_t = void (BYTE* dstp8, BYTE* dstp8_u, BYTE* dstp8_v,
+  const BYTE* ovrp8, const BYTE* ovrp8_u, const BYTE* ovrp8_v, const BYTE* mask8,
+  int dst_pitch, int dst_pitchUV,
+  int overlay_pitch, int overlay_pitchUV,
+  int mask_pitch,
+  int width, int height, float level, float thresh);
+
+using layer_planarrgb_lighten_darken_c_t = void(BYTE** dstp8, const BYTE** ovrp8, int dst_pitch, int overlay_pitch, int width, int height, int level, int thresh, int bits_per_pixel);
+using layer_planarrgb_lighten_darken_f_c_t = void(BYTE** dstp8, const BYTE** ovrp8, int dst_pitch, int overlay_pitch, int width, int height, float opacity, float thresh);
+
+// YUV Mul function pointers
+// integer 8-16 bits version
+using layer_yuv_mul_c_t = void(BYTE* dstp8, const BYTE* ovrp8, const BYTE* maskp8,
+  int dst_pitch, int overlay_pitch, int mask_pitch,
+  int width, int height, int level, int bits_per_pixel);
+
+// 32 bit float version
+using layer_yuv_mul_f_c_t = void(BYTE* dstp8, const BYTE* ovrp8, const BYTE* maskp8,
+  int dst_pitch, int overlay_pitch, int mask_pitch,
+  int width, int height, float opacity);
+
+// YUV Add/Subtract function pointers (same signatures for both)
+using layer_yuv_add_subtract_c_t = void(BYTE* dstp8, const BYTE* ovrp8, const BYTE* mask8,
+  int dst_pitch, int overlay_pitch, int mask_pitch,
+  int width, int height, int level, int bits_per_pixel);
+
+using layer_yuv_add_subtract_f_c_t = void(BYTE* dstp8, const BYTE* ovrp8, const BYTE* mask8,
+  int dst_pitch, int overlay_pitch, int mask_pitch,
+  int width, int height, float opacity);
+
+// integer 8-16 bits version
+using layer_planarrgb_add_subtract_c_t = void(BYTE** dstp8, const BYTE** ovrp8, int dst_pitch, int overlay_pitch, int width, int height, int level, int bits_per_pixel);
+// 32 bit float version
+using layer_planarrgb_add_subtract_f_c_t = void(BYTE** dstp8, const BYTE** ovrp8, int dst_pitch, int overlay_pitch, int width, int height, float opacity);
+
+// Planar RGB mul function pointers
+// integer 8-16 bits version
+using layer_planarrgb_mul_c_t = void(BYTE** dstp8, const BYTE** ovrp8,
+  int dst_pitch, int overlay_pitch, int width, int height, int level, int bits_per_pixel);
+// 32 bit float version
+using layer_planarrgb_mul_f_c_t = void(BYTE** dstp8, const BYTE** ovrp8,
+  int dst_pitch, int overlay_pitch, int width, int height, float opacity);
 
 /********************************************************************
 ********************************************************************/
