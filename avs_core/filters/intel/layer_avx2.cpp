@@ -50,6 +50,7 @@
 
 #include "../convert/convert_planar.h"
 #include <algorithm>
+#include <vector>
 
 // Mostly RGB32 stuff, unaligned addresses, pixels grouped by 4
 
@@ -273,6 +274,88 @@ template void invert_plane_c_avx2<float, false /*n/a*/, true>(uint8_t*, const ui
 /*******************************
  *******   Layer Filter   ******
  *******************************/
+
+ // chroma placement to mask helpers
+ // yuv add, subtract, mul, lighten, darken
+ // included in base and the avx2 source module, to get different optimizations
+#include "../layer.hpp"
+
+
+// Wrapper function that calls the local scoped get_layer_yuv_mul_functions
+// This ensures the AVX2-compiled versions of the functions are selected
+void get_layer_yuv_mul_functions_avx2(
+  bool is_chroma, bool use_chroma, bool hasAlpha,
+  int placement, VideoInfo& vi, int bits_per_pixel,
+  /*out*/layer_yuv_mul_c_t** layer_fn,
+  /*out*/layer_yuv_mul_f_c_t** layer_f_fn)
+{
+  get_layer_yuv_mul_functions(is_chroma, use_chroma, hasAlpha, placement, vi, bits_per_pixel, layer_fn, layer_f_fn);
+}
+
+// Template wrapper for add/subtract
+template<bool is_subtract>
+void get_layer_yuv_add_subtract_functions_avx2(
+  bool is_chroma, bool use_chroma, bool hasAlpha,
+  int placement, VideoInfo& vi, int bits_per_pixel,
+  /*out*/layer_yuv_add_subtract_c_t** layer_fn,
+  /*out*/layer_yuv_add_subtract_f_c_t** layer_f_fn)
+{
+  get_layer_yuv_add_subtract_functions<is_subtract>(is_chroma, use_chroma, hasAlpha, placement, vi, bits_per_pixel, layer_fn, layer_f_fn);
+}
+
+// Explicit template instantiations - forces the linker to generate both versions
+template void get_layer_yuv_add_subtract_functions_avx2<false>(
+  bool is_chroma, bool use_chroma, bool hasAlpha,
+  int placement, VideoInfo& vi, int bits_per_pixel,
+  layer_yuv_add_subtract_c_t** layer_fn,
+  layer_yuv_add_subtract_f_c_t** layer_f_fn);
+
+template void get_layer_yuv_add_subtract_functions_avx2<true>(
+  bool is_chroma, bool use_chroma, bool hasAlpha,
+  int placement, VideoInfo& vi, int bits_per_pixel,
+  layer_yuv_add_subtract_c_t** layer_fn,
+  layer_yuv_add_subtract_f_c_t** layer_f_fn);
+
+
+void get_layer_planarrgb_lighten_darken_functions_avx2(bool isLighten, bool hasAlpha, int bits_per_pixel, /*out*/layer_planarrgb_lighten_darken_c_t** layer_fn, /*out*/layer_planarrgb_lighten_darken_f_c_t** layer_f_fn) {
+  get_layer_planarrgb_lighten_darken_functions(isLighten, hasAlpha, bits_per_pixel, layer_fn, layer_f_fn);
+}
+
+
+// In layer_avx2.cpp
+template<bool is_subtract>
+void get_layer_planarrgb_add_subtract_functions_avx2(
+  bool chroma, bool hasAlpha, int bits_per_pixel,
+  /*out*/layer_planarrgb_add_subtract_c_t** layer_fn,
+  /*out*/layer_planarrgb_add_subtract_f_c_t** layer_f_fn)
+{
+  get_layer_planarrgb_add_subtract_functions<is_subtract>(chroma, hasAlpha, bits_per_pixel, layer_fn, layer_f_fn);
+}
+
+// Explicit instantiations
+template void get_layer_planarrgb_add_subtract_functions_avx2<false>(
+  bool chroma, bool hasAlpha, int bits_per_pixel,
+  layer_planarrgb_add_subtract_c_t** layer_fn,
+  layer_planarrgb_add_subtract_f_c_t** layer_f_fn);
+
+template void get_layer_planarrgb_add_subtract_functions_avx2<true>(
+  bool chroma, bool hasAlpha, int bits_per_pixel,
+  layer_planarrgb_add_subtract_c_t** layer_fn,
+  layer_planarrgb_add_subtract_f_c_t** layer_f_fn);
+
+
+void get_layer_planarrgb_mul_functions_avx2(
+  bool chroma, bool hasAlpha, int bits_per_pixel,
+  /*out*/layer_planarrgb_mul_c_t** layer_fn,
+  /*out*/layer_planarrgb_mul_f_c_t** layer_f_fn)
+{
+  get_layer_planarrgb_mul_functions(chroma, hasAlpha, bits_per_pixel, layer_fn, layer_f_fn);
+}
+
+
+
+
+
 
 // "fast" blend is simple averaging
 template<typename pixel_t>

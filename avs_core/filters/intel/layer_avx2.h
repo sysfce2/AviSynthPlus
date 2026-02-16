@@ -37,6 +37,7 @@
 
 #include <avisynth.h>
 #include <stdint.h>
+#include "../layer.h"
 
 void mask_avx2(BYTE* srcp, const BYTE* alphap, int src_pitch, int alpha_pitch, size_t width, size_t height);
 void colorkeymask_avx2(BYTE* pf, int pitch, int color, int height, int width, int tolB, int tolG, int tolR);
@@ -58,5 +59,31 @@ template<bool use_chroma>
 void layer_rgb32_subtract_avx2(BYTE* dstp, const BYTE* ovrp, int dst_pitch, int overlay_pitch, int width, int height, int level);
 template<int mode>
 void layer_rgb32_lighten_darken_avx2(BYTE* dstp, const BYTE* ovrp, int dst_pitch, int overlay_pitch, int width, int height, int level, int thresh);
+
+void get_layer_yuv_mul_functions_avx2(
+  bool is_chroma, bool use_chroma, bool hasAlpha,
+  int placement, VideoInfo& vi, int bits_per_pixel,
+  layer_yuv_mul_c_t** layer_fn,
+  layer_yuv_mul_f_c_t** layer_f_fn);
+
+template<bool is_subtract>
+void get_layer_yuv_add_subtract_functions_avx2(
+  bool is_chroma, bool use_chroma, bool hasAlpha,
+  int placement, VideoInfo& vi, int bits_per_pixel,
+  layer_yuv_add_subtract_c_t** layer_fn,
+  layer_yuv_add_subtract_f_c_t** layer_f_fn);
+
+void get_layer_planarrgb_lighten_darken_functions_avx2(bool isLighten, bool hasAlpha, int bits_per_pixel, /*out*/layer_planarrgb_lighten_darken_c_t** layer_fn, /*out*/layer_planarrgb_lighten_darken_f_c_t** layer_f_fn);
+
+template<bool is_subtract>
+void get_layer_planarrgb_add_subtract_functions_avx2(
+  bool chroma, bool hasAlpha, int bits_per_pixel,
+  /*out*/layer_planarrgb_add_subtract_c_t** layer_fn,
+  /*out*/layer_planarrgb_add_subtract_f_c_t** layer_f_fn);
+
+void get_layer_planarrgb_mul_functions_avx2(
+  bool chroma, bool hasAlpha, int bits_per_pixel,
+  layer_planarrgb_mul_c_t** layer_fn,
+  layer_planarrgb_mul_f_c_t** layer_f_fn);
 
 #endif  // __Layer_SSE_H__
