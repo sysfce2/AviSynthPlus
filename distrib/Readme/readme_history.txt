@@ -9,7 +9,21 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
-20260213 3.7.5.r45?? (pre 3.7.6)
+20260216 3.7.5.r4523 (pre 3.7.6)
+--------------------------------
+- Fix r4504 regression YUV->RGBP bit-depth changing full-scale SSE2/AVX2 bug (exchanged G,B storage)
+- "Layer" YUV mul/add/subtract/lighten/darken: refactor chroma placement calculation, allowing SIMD optimization in the main frame processing
+- "Layer" YUV/RGBP mul/add/subtract/lighten/darken: refactor function dispatchers, add AVX2 path (LLVM/clangcl recommended)
+- Fix C-only vertical resampling code which added more rounding than needed (regression since pre-3.7.5 20250427)
+- Invert: per-plane processing for planar formats, use C even in AVX2, proper chroma inversion
+- New: AddAlphaPlane opacity parameter
+- New: ResetMask opacity parameter
+- rstdoc: document "opacity" in AddAlphaPlane and ResetMask
+- rstdoc: detail Layer "use_chroma" and opacity
+- Overlay "Blend": more speed, but keep accuracy, use float only where really needed
+- Layer: use YV16 internally for YUY2 (lessen source bloat)
+
+20260213 3.7.5.r4507 (pre 3.7.6)
 --------------------------------
 Fix Layer "add" 8 bit, regression in r4504
 
