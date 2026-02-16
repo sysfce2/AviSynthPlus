@@ -681,8 +681,8 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
           }
           };
 
-        process_from_float_plane_avx2(dstp[0], b1_f_lo, b1_f_hi, b2_f_lo, b2_f_hi);
-        process_from_float_plane_avx2(dstp[1], g1_f_lo, g1_f_hi, g2_f_lo, g2_f_hi);
+        process_from_float_plane_avx2(dstp[0], g1_f_lo, g1_f_hi, g2_f_lo, g2_f_hi);
+        process_from_float_plane_avx2(dstp[1], b1_f_lo, b1_f_hi, b2_f_lo, b2_f_hi);
         process_from_float_plane_avx2(dstp[2], r1_f_lo, r1_f_hi, r2_f_lo, r2_f_hi);
 
       }
