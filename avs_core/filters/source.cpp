@@ -36,6 +36,7 @@
 #include "../core/internal.h"
 #include "../convert/convert_matrix.h"
 #include "../convert/convert_helper.h"
+#include "colorbars_const.h"
 #include "transform.h"
 #ifdef AVS_WINDOWS
 #include "AviSource/avi_source.h"
@@ -49,6 +50,8 @@
 #include <cassert>
 #include <stdint.h>
 #include <algorithm>
+
+#define XP_LAMBDA_CAPTURE_FIX(x) (void)(x)
 
 /********************************************************************
 ********************************************************************/
@@ -583,270 +586,20 @@ AVSValue __cdecl Create_MessageClip(AVSValue args, void*, IScriptEnvironment* en
 }
 
 
-/********************************************************************
-********************************************************************/
-
-
-template<typename pixel_t>
-static void draw_colorbars_444(uint8_t *pY8, uint8_t *pU8, uint8_t *pV8, int pitchY, int pitchUV, int w, int h, int bits_per_pixel)
-{
-  pixel_t *pY = reinterpret_cast<pixel_t *>(pY8);
-  pixel_t *pU = reinterpret_cast<pixel_t *>(pU8);
-  pixel_t *pV = reinterpret_cast<pixel_t *>(pV8);
-  pitchY /= sizeof(pixel_t);
-  pitchUV /= sizeof(pixel_t);
-
-  int chroma_offset_i = 128;
-  float chroma_offset_f = 0.0f;
-
-  const int shift = sizeof(pixel_t) == 4 ? 0 : (bits_per_pixel - 8);
-  typedef typename std::conditional < sizeof(pixel_t) == 4, float, int>::type factor_t; // float support
-  factor_t factor = (pixel_t)(sizeof(pixel_t) == 4 ? 1 / 255.0f : 1);
-
-  //                                              LtGrey  Yellow    Cyan   Green Magenta     Red    Blue (all 75%, BT.601)
-  static const BYTE top_two_thirdsY[] = { 0xb4,   0xa2,   0x83,   0x70,   0x54,   0x41,   0x23 };
-  static const BYTE top_two_thirdsU[] = { 0x80,   0x2c,   0x9c,   0x48,   0xb8,   0x64,   0xd4 };
-  static const BYTE top_two_thirdsV[] = { 0x80,   0x8e,   0x2c,   0x3a,   0xc6,   0xd4,   0x72 };
-
-  int y = 0;
-
-  for (; y * 3 < h * 2; ++y) {
-    int x = 0;
-    for (int i = 0; i < 7; i++) {
-      for (; x < (w*(i + 1) + 3) / 7; ++x) {
-        pY[x] = factor*(top_two_thirdsY[i] << shift);
-        if constexpr(sizeof(pixel_t) == 4) {
-          pU[x] = factor * (top_two_thirdsU[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-          pV[x] = factor * (top_two_thirdsV[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-        }
-        else {
-          pU[x] = factor * (top_two_thirdsU[i] << shift);
-          pV[x] = factor * (top_two_thirdsV[i] << shift);
-        }
-      }
-    }
-    pY += pitchY; pU += pitchUV; pV += pitchUV;
-  } //                                                    Blue   Black Magenta   Black    Cyan   Black  LtGrey
-  static const BYTE two_thirds_to_three_quartersY[] = { 0x23,   0x10,   0x54,   0x10,   0x83,   0x10,   0xb4 };
-  static const BYTE two_thirds_to_three_quartersU[] = { 0xd4,   0x80,   0xb8,   0x80,   0x9c,   0x80,   0x80 };
-  static const BYTE two_thirds_to_three_quartersV[] = { 0x72,   0x80,   0xc6,   0x80,   0x2c,   0x80,   0x80 };
-  for (; y * 4 < h * 3; ++y) {
-    int x = 0;
-    for (int i = 0; i < 7; i++) {
-      for (; x < (w*(i + 1) + 3) / 7; ++x) {
-        pY[x] = factor*(two_thirds_to_three_quartersY[i] << shift);
-        if constexpr(sizeof(pixel_t) == 4) {
-          pU[x] = factor * (two_thirds_to_three_quartersU[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-          pV[x] = factor * (two_thirds_to_three_quartersV[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-        }
-        else {
-          pU[x] = factor * (two_thirds_to_three_quartersU[i] << shift);
-          pV[x] = factor * (two_thirds_to_three_quartersV[i] << shift);
-        }
-      }
-    }
-    pY += pitchY; pU += pitchUV; pV += pitchUV;
-  } //                                        -I   white      +Q   Black   -4ire   Black   +4ire   Black
-  static const BYTE bottom_quarterY[] = { 0x10,   0xeb,   0x10,   0x10,   0x07,   0x10,   0x19,   0x10 };
-  static const BYTE bottom_quarterU[] = { 0x9e,   0x80,   0xae,   0x80,   0x80,   0x80,   0x80,   0x80 };
-  static const BYTE bottom_quarterV[] = { 0x5f,   0x80,   0x95,   0x80,   0x80,   0x80,   0x80,   0x80 };
-  for (; y < h; ++y) {
-    int x = 0;
-    for (int i = 0; i < 4; ++i) {
-      for (; x < (w*(i + 1) * 5 + 14) / 28; ++x) {
-        pY[x] = factor*(bottom_quarterY[i] << shift);
-        if constexpr(sizeof(pixel_t) == 4) {
-          pU[x] = factor * (bottom_quarterU[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-          pV[x] = factor * (bottom_quarterV[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-        }
-        else {
-          pU[x] = factor * (bottom_quarterU[i] << shift);
-          pV[x] = factor * (bottom_quarterV[i] << shift);
-        }
-      }
-    }
-    for (int j = 4; j < 7; ++j) {
-      for (; x < (w*(j + 12) + 10) / 21; ++x) {
-        pY[x] = factor*(bottom_quarterY[j] << shift);
-        if constexpr(sizeof(pixel_t) == 4) {
-          pU[x] = factor * (bottom_quarterU[j] - chroma_offset_i) + (factor_t)chroma_offset_f;
-          pV[x] = factor * (bottom_quarterV[j] - chroma_offset_i) + (factor_t)chroma_offset_f;
-        }
-        else {
-          pU[x] = factor * (bottom_quarterU[j] << shift);
-          pV[x] = factor * (bottom_quarterV[j] << shift);
-        }
-      }
-    }
-    for (; x < w; ++x) {
-      pY[x] = factor*(bottom_quarterY[7] << shift);
-      if constexpr(sizeof(pixel_t) == 4) {
-        pU[x] = factor * (bottom_quarterU[7] - chroma_offset_i) + (factor_t)chroma_offset_f;
-        pV[x] = factor * (bottom_quarterV[7] - chroma_offset_i) + (factor_t)chroma_offset_f;
-      }
-      else {
-        pU[x] = factor * (bottom_quarterU[7] << shift);
-        pV[x] = factor * (bottom_quarterV[7] << shift);
-      }
-    }
-    pY += pitchY; pU += pitchUV; pV += pitchUV;
-  }
-}
-
-template<typename pixel_t, int bits_per_pixel, bool is420, bool is422, bool is411>
-static void draw_colorbars_420_422_411(uint8_t *pY8, uint8_t *pU8, uint8_t *pV8, int pitchY, int pitchUV, int w, int h)
-{
-  pixel_t *pY = reinterpret_cast<pixel_t *>(pY8);
-  pixel_t *pU = reinterpret_cast<pixel_t *>(pU8);
-  pixel_t *pV = reinterpret_cast<pixel_t *>(pV8);
-  pitchY /= sizeof(pixel_t);
-  pitchUV /= sizeof(pixel_t);
-
-  const int shift = sizeof(pixel_t) == 4 ? 0 : (bits_per_pixel - 8);
-  typedef typename std::conditional < sizeof(pixel_t) == 4, float, int>::type factor_t; // float support
-  factor_t factor = (pixel_t)(sizeof(pixel_t) == 4 ? 1 / 255.0f : 1);
-
-  int chroma_offset_i = 128;
-  float chroma_offset_f = 0.0f;
-
-
-//                                                        LtGrey  Yellow    Cyan   Green Magenta     Red    Blue
-  static const BYTE top_two_thirdsY[] = { 0xb4,   0xa2,   0x83,   0x70,   0x54,   0x41,   0x23 };
-  static const BYTE top_two_thirdsU[] = { 0x80,   0x2c,   0x9c,   0x48,   0xb8,   0x64,   0xd4 };
-  static const BYTE top_two_thirdsV[] = { 0x80,   0x8e,   0x2c,   0x3a,   0xc6,   0xd4,   0x72 };
-
-  if(is420 || is422)
-    w >>= 1; // 4:2:0, 4:2:2 !!!
-  if (is411)
-    w >>= 2; // 4:1:1
-  if (is420)
-    h >>= 1;
-
-  int y = 0;
-
-  for (; y * 3 < h * 2; ++y) {
-    int x = 0;
-    for (int i = 0; i < 7; i++) {
-      for (; x < (w*(i + 1) + 3) / 7; ++x) {
-        pixel_t pix = factor * (top_two_thirdsY[i] << shift);
-        if constexpr (is420) pY[x * 2 + 0] = pY[x * 2 + 1] = pY[x * 2 + pitchY] = pY[x * 2 + 1 + pitchY] = pix;
-        else if constexpr(is422) pY[x * 2 + 0] = pY[x * 2 + 1] = pix;
-        else if constexpr(is411) pY[x * 4 + 0] = pY[x * 4 + 1] = pY[x * 4 + 2] = pY[x * 4 + 3] = pix;
-        if constexpr(sizeof(pixel_t) == 4) {
-          pU[x] = factor * (top_two_thirdsU[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-          pV[x] = factor * (top_two_thirdsV[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-        }
-        else {
-          pU[x] = factor * (top_two_thirdsU[i] << shift);
-          pV[x] = factor * (top_two_thirdsV[i] << shift);
-        }
-      }
-    }
-    if constexpr(is420)
-      pY += pitchY * 2;
-    else
-      pY += pitchY; // no vertical subsampling
-    pU += pitchUV; pV += pitchUV;
-  }
-  //                                                    Blue   Black Magenta   Black    Cyan   Black  LtGrey
-  static const BYTE two_thirds_to_three_quartersY[] = { 0x23,   0x10,   0x54,   0x10,   0x83,   0x10,   0xb4 };
-  static const BYTE two_thirds_to_three_quartersU[] = { 0xd4,   0x80,   0xb8,   0x80,   0x9c,   0x80,   0x80 };
-  static const BYTE two_thirds_to_three_quartersV[] = { 0x72,   0x80,   0xc6,   0x80,   0x2c,   0x80,   0x80 };
-  for (; y * 4 < h * 3; ++y) {
-    int x = 0;
-    for (int i = 0; i < 7; i++) {
-      for (; x < (w*(i + 1) + 3) / 7; ++x) {
-        pixel_t pix = factor * (two_thirds_to_three_quartersY[i] << shift);
-        if constexpr (is420) pY[x * 2 + 0] = pY[x * 2 + 1] = pY[x * 2 + pitchY] = pY[x * 2 + 1 + pitchY] = pix;
-        else if constexpr (is422) pY[x * 2 + 0] = pY[x * 2 + 1] = pix;
-        else if constexpr (is411) pY[x * 4 + 0] = pY[x * 4 + 1] = pY[x * 4 + 2] = pY[x * 4 + 3] = pix;
-
-        if constexpr(sizeof(pixel_t) == 4) {
-          pU[x] = factor * (two_thirds_to_three_quartersU[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-          pV[x] = factor * (two_thirds_to_three_quartersV[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-        }
-        else {
-          pU[x] = factor * (two_thirds_to_three_quartersU[i] << shift);
-          pV[x] = factor * (two_thirds_to_three_quartersV[i] << shift);
-        }
-      }
-    }
-    if constexpr (is420)
-      pY += pitchY * 2;
-    else
-      pY += pitchY; // no vertical subsampling
-    pU += pitchUV; pV += pitchUV;
-  }
-  //                                        -I   white      +Q   Black   -4ire   Black   +4ire   Black
-  static const BYTE bottom_quarterY[] = { 0x10,   0xeb,   0x10,   0x10,   0x07,   0x10,   0x19,   0x10 };
-  static const BYTE bottom_quarterU[] = { 0x9e,   0x80,   0xae,   0x80,   0x80,   0x80,   0x80,   0x80 };
-  static const BYTE bottom_quarterV[] = { 0x5f,   0x80,   0x95,   0x80,   0x80,   0x80,   0x80,   0x80 };
-  for (; y < h; ++y) {
-    int x = 0;
-    for (int i = 0; i < 4; ++i) {
-      for (; x < (w*(i + 1) * 5 + 14) / 28; ++x) {
-        pixel_t pix = factor * (bottom_quarterY[i] << shift);
-        if constexpr (is420) pY[x * 2 + 0] = pY[x * 2 + 1] = pY[x * 2 + pitchY] = pY[x * 2 + 1 + pitchY] = pix;
-        else if constexpr (is422) pY[x * 2 + 0] = pY[x * 2 + 1] = pix;
-        else if constexpr (is411) pY[x * 4 + 0] = pY[x * 4 + 1] = pY[x * 4 + 2] = pY[x * 4 + 3] = pix;
-
-        if constexpr(sizeof(pixel_t) == 4) {
-          pU[x] = factor * (bottom_quarterU[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-          pV[x] = factor * (bottom_quarterV[i] - chroma_offset_i) + (factor_t)chroma_offset_f;
-        }
-        else {
-          pU[x] = factor * (bottom_quarterU[i] << shift);
-          pV[x] = factor * (bottom_quarterV[i] << shift);
-        }
-      }
-    }
-    for (int j = 4; j < 7; ++j) {
-      for (; x < (w*(j + 12) + 10) / 21; ++x) {
-        pixel_t pix = factor * (bottom_quarterY[j] << shift);
-        if constexpr (is420) pY[x * 2 + 0] = pY[x * 2 + 1] = pY[x * 2 + pitchY] = pY[x * 2 + 1 + pitchY] = pix;
-        else if constexpr (is422) pY[x * 2 + 0] = pY[x * 2 + 1] = pix;
-        else if constexpr (is411) pY[x * 4 + 0] = pY[x * 4 + 1] = pY[x * 4 + 2] = pY[x * 4 + 3] = pix;
-
-        if constexpr(sizeof(pixel_t) == 4) {
-          pU[x] = factor * (bottom_quarterU[j] - chroma_offset_i) + (factor_t)chroma_offset_f;
-          pV[x] = factor * (bottom_quarterV[j] - chroma_offset_i) + (factor_t)chroma_offset_f;
-        }
-        else {
-          pU[x] = factor * (bottom_quarterU[j] << shift);
-          pV[x] = factor * (bottom_quarterV[j] << shift);
-        }
-      }
-    }
-    for (; x < w; ++x) {
-      pixel_t pix = factor * (bottom_quarterY[7] << shift);
-        if constexpr (is420) pY[x * 2 + 0] = pY[x * 2 + 1] = pY[x * 2 + pitchY] = pY[x * 2 + 1 + pitchY] = pix;
-        else if constexpr (is422) pY[x * 2 + 0] = pY[x * 2 + 1] = pix;
-        else if constexpr (is411) pY[x * 4 + 0] = pY[x * 4 + 1] = pY[x * 4 + 2] = pY[x * 4 + 3] = pix;
-
-      if constexpr(sizeof(pixel_t) == 4) {
-        pU[x] = factor * (bottom_quarterU[7] - chroma_offset_i) + (factor_t)chroma_offset_f;
-        pV[x] = factor * (bottom_quarterV[7] - chroma_offset_i) + (factor_t)chroma_offset_f;
-      }
-      else {
-        pU[x] = factor * (bottom_quarterU[7] << shift);
-        pV[x] = factor * (bottom_quarterV[7] << shift);
-      }
-    }
-    if constexpr (is420)
-      pY += pitchY * 2;
-    else
-      pY += pitchY; // no vertical subsampling
-    pU += pitchUV; pV += pitchUV;
-  }
-}
+/*******************************************************************
+*
+* ColorBarsHD for YUV 444 formats (Rec.709)
+*
+*********************************************************************/
 
 static void GetYUVRec709fromRGB(double R, double G, double B, double& dY, double& dU, double& dV)
 {
   // See 3.2 from https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.709-6-201506-I!!PDF-E.pdf
-  dY = 0.2126 * R + 0.7152 * G + 0.0722 * B;
-
-  dU = (B - dY) / 1.8556;
-  dV = (R - dY) / 1.5748;
+  double Kr, Kb;
+  GetKrKb(AVS_MATRIX_BT709, Kr, Kb);
+  dY = Kr * R + (1.0 - Kr - Kb) * G + Kb * B;
+  dU = (B - dY) / (2.0 * (1.0 - Kb));
+  dV = (R - dY) / (2.0 * (1.0 - Kr));
 }
 
 template<typename pixel_t>
@@ -979,8 +732,6 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
   static const double pattern1G[] = { 0.4, 0.75, 0.75, 0.75, 0.75, 0.00, 0.00, 0.00 };
   static const double pattern1B[] = { 0.4, 0.75, 0.00, 0.75, 0.00, 0.75, 0.00, 0.75 };
 
-#define XP_LAMBDA_CAPTURE_FIX(x) (void)(x)
-
   // Helper to process and write a pixel based on RGB input
   auto ProcessPixel = [&](double r, double g, double b, int targetX) {
     XP_LAMBDA_CAPTURE_FIX(float_scale);
@@ -990,7 +741,7 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
     double dY, dU, dV;
     GetYUVRec709fromRGB(r, g, b, dY, dU, dV);
 
-    if constexpr (sizeof(pixel_t) == 4) {
+    if constexpr (std::is_same<pixel_t, float>::value) {
       pY[targetX] = (pixel_t)(dY * float_scale + float_offset);
       pU[targetX] = (pixel_t)(dU * float_uv_scale);
       pV[targetX] = (pixel_t)(dV * float_uv_scale);
@@ -1051,9 +802,9 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
   // Pattern 2
 
   // 0: Cyan100, 1: Blue100, 2: Yellow100, 3: Red100, 4: +I, 5: Grey75, 6: White100
-  static const double pattern23R[] = { 0.0, 0.0, 1.0, 1.0, 0.412545, 0.75, 1.0 };
-  static const double pattern23G[] = { 1.0, 0.0, 1.0, 0.0, 0.166946, 0.75, 1.0 };
-  static const double pattern23B[] = { 1.0, 1.0, 0.0, 0.0, 0.0,      0.75, 1.0 };
+  static const double pattern23R[] = { 0.0, 0.0, 1.0, 1.0, PLUS_I_R_YUV, 0.75, 1.0 };
+  static const double pattern23G[] = { 1.0, 0.0, 1.0, 0.0, PLUS_I_G_YUV, 0.75, 1.0 };
+  static const double pattern23B[] = { 1.0, 1.0, 0.0, 0.0, PLUS_I_B_YUV, 0.75, 1.0 };
 
   // For pattern 2 and 3
   auto ProcessBar = [&](int index, int endX, int& currentX) {
@@ -1065,7 +816,7 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
     GetYUVRec709fromRGB(pattern23R[index], pattern23G[index], pattern23B[index], dY, dU, dV);
 
     for (; currentX < endX && currentX < w; ++currentX) {
-      if constexpr (sizeof(pixel_t) == 4) {
+      if constexpr(std::is_same<pixel_t, float>::value) {
         pY[currentX] = (pixel_t)(dY * float_scale + float_offset);
         pU[currentX] = (pixel_t)(dU * float_uv_scale);
         pV[currentX] = (pixel_t)(dV * float_uv_scale);
@@ -1077,7 +828,6 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
       }
     }
     };
-#undef XP_LAMBDA_CAPTURE_FIX
 
   for (; y < p1 + p23; ++y) {
     int x = 0;
@@ -1104,20 +854,21 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
     // Y ramp section: 0% Black, Ramp, 100% White
     // FIXED in 3.7.6: Y-ramp to conform SMPTE RP 219-1:2014, put 0% Black before and 100% White after
     // Divide the c * 7 area: 
-    // - 1x - 0% Black
+    // - 1x - 0% Black (or optional +Q)
     // - 5x - Ramp
     // - 1x - 100% White
 
-    int rampStartX = x + c;         // End of Black step
+    int rampStartX = x + c;         // End of Black (+Q) step
     int rampEndX = x + (c * 6);     // Start of White step
     int sectionEndX = x + (c * 7);  // End of this whole middle section
 
-    // A. 0% black
+    // A. 0% black (or optional +Q) step
     for (; x < rampStartX; ++x) {
       ProcessPixel(0.0, 0.0, 0.0, x);
+      // ProcessPixel(PLUS_Q_R_YUV, PLUS_Q_G_YUV, PLUS_Q_B_YUV, x); // For +Q instead of 0% Black
     }
 
-    // B. Y-ramp (0.0 to 1.0)
+    // B. Y-ramp (0.0 to 1.0) - 5 units wide
     int rampWidth = rampEndX - rampStartX;
     for (int j = 0; x < rampEndX; ++x, ++j) {
       double v = (double)j / (rampWidth - 1);
@@ -1168,373 +919,550 @@ Pattern 4     |     15%     |0% Blk or SubBlck|100%White/SuperWhtePeak|   0%  |-
 
     pY += pitchY; pU += pitchUV; pV += pitchUV;
   }
-}
+} // ColorBarsHD
 
-static uint16_t rgbcolor8to16(uint8_t color8, int max_pixel_value)
-{
-  return (uint16_t)(color8 * max_pixel_value / 255);
-};
+/*******************************************************************
+*
+* ColorBars for YUV formats (BT.601) and and RGB
+*
+*********************************************************************/
+// See also: http://avisynth.nl/index.php/ColorBars_theory
+// and https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/colorbars.html
 
-
-static uint64_t rgbcolor32to64(uint32_t color32_8)
-{
-  return (uint64_t)(
-    (uint64_t(rgbcolor8to16(uint8_t((color32_8 >> 24) & 0xFF), 65535)) << 48) +
-    (uint64_t(rgbcolor8to16(uint8_t((color32_8 >> 16) & 0xFF), 65535)) << 32) +
-    (uint64_t(rgbcolor8to16(uint8_t((color32_8 >> 8) & 0xFF), 65535)) << 16) +
-    (uint64_t(rgbcolor8to16(uint8_t((color32_8) & 0xFF), 65535)))
-    );
-}
+/*
+* Integer 8 bit tables not used anymore, replaced by double-precision RGB tables with
+* accurate RGB and RGB->YUV conversion for better precision and correctness, especially
+* for higher bitdepths.
 
 // Studio RGB constants for ColorBars
 static const uint32_t bottom_quarter[] =
 // RGB[16..235]     -I     white        +Q     Black     -4% Black     Black     +4% Black     Black
-{ 0x10466a, 0xebebeb, 0x481076, 0x101010,  0x070707, 0x101010, 0x191919,  0x101010 }; // Qlum=Ilum=13.4%
+               { 0x10466a, 0xebebeb, 0x481076, 0x101010,  0x070707, 0x101010, 0x191919,  0x101010 }; // Qlum=Ilum=13.4%
 static const int two_thirds_to_three_quarters[] =
 // RGB[16..235]   Blue     Black  Magenta      Black      Cyan     Black    LtGrey
-{ 0x1010b4, 0x101010, 0xb410b4, 0x101010, 0x10b4b4, 0x101010, 0xb4b4b4 };
+               { 0x1010b4, 0x101010, 0xb410b4, 0x101010, 0x10b4b4, 0x101010, 0xb4b4b4 };
 static const int top_two_thirds[] =
 // RGB[16..235] LtGrey    Yellow      Cyan     Green   Magenta       Red      Blue
-{ 0xb4b4b4, 0xb4b410, 0x10b4b4, 0x10b410, 0xb410b4, 0xb41010, 0x1010b4 };
+               { 0xb4b4b4, 0xb4b410, 0x10b4b4, 0x10b410, 0xb410b4, 0xb41010, 0x1010b4 };
+*/
 
-template<typename pixel_t>
-static void draw_colorbars_rgb3264(uint8_t *p8, int pitch, int w, int h)
+// Ground truth linear RGB for ColorBars (Rec. ITU-R BT.801-1)
+// Values are normalised linear RGB [0.0 .. 1.0], limited range reference.
+// Reproduce 8-bit studio values via: (int)(R * 219.0 + 16.0 + 0.5)
+
+// Top 2/3: LtGrey, Yellow, Cyan, Green, Magenta, Red, Blue
+static const double top_two_thirdsR[] = { 0.75, 0.75, 0.0,  0.0,  0.75, 0.75, 0.0 };
+static const double top_two_thirdsG[] = { 0.75, 0.75, 0.75, 0.75, 0.0,  0.0,  0.0 };
+static const double top_two_thirdsB[] = { 0.75, 0.0,  0.75, 0.0,  0.75, 0.0,  0.75 };
+
+// 2/3 to 3/4: Blue, Black, Magenta, Black, Cyan, Black, LtGrey
+static const double two_thirds_to_three_quartersR[] = { 0.0,  0.0, 0.75, 0.0, 0.0,  0.0, 0.75 };
+static const double two_thirds_to_three_quartersG[] = { 0.0,  0.0, 0.0,  0.0, 0.75, 0.0, 0.75 };
+static const double two_thirds_to_three_quartersB[] = { 0.75, 0.0, 0.75, 0.0, 0.75, 0.0, 0.75 };
+
+/*
+   BOTTOM QUARTER BAR DEFINITIONS (-I, White, +Q, Black, -4%, Black, +4%, Black)
+
+   ============================================================================
+   DERIVATION OF -I AND +Q VALUES
+   ============================================================================
+
+   The -I and +Q signals are defined in the YIQ colorspace as pure chroma-axis
+   signals with zero luma and 20 IRE saturation (0.2162 normalized):
+
+     -I:  I = -0.2162,  Q = 0
+     +Q:  I = 0,        Q = +0.2162
+
+   Converting via the BT.601 UV rotation (Poynton eq. 33, with UV swap):
+
+     -I raw RGB (Y=0):  R = -0.2067,  G = +0.0588,  B = +0.2394
+     +Q raw RGB (Y=0):  R = +0.1343,  G = -0.1400,  B = +0.3685
+
+   Both signals contain out-of-range (negative) RGB components. Three
+   interpretations exist in the literature:
+
+   ───────────────────────────────────────────────────────────────────────────
+   OPTION 1 — Zero-luma, lift to studio black (legacy YUV implementation)
+   ───────────────────────────────────────────────────────────────────────────
+   Y = 16 (studio black). The most negative RGB component is left negative
+   and will encode to a super-black code (0-15 range), or must be clipped
+   when rendering as RGB, distorting the color.
+
+   This is a HACK that had to be applied differently for RGB vs YUV:
+
+   For YUV output (bottom_quarterR/G/B_for_YUV):
+     No lift applied - use raw zero-luma RGB values
+     Result: Y = 16, perfectly preserved chroma-axis definition
+     Consequence: RGB contains super-black components (codes < 16)
+
+   For RGB output (legacy AviSynth approach, NOT current implementation):
+     Each component individually clamped/adjusted to avoid codes < 16
+     Result: RGB codes all ≥ 16, but YUV back-conversion doesn't match
+     Consequence: Loss of theoretical purity, inconsistent RGB↔YUV round-trip
+
+   This was the legacy AviSynth ColorBars implementation:
+     RGB path used bitmap-derived values:  -I = RGB(16, 70, 106)
+     YUV path used zero-luma calculation:  -I = Y16 Cb158 Cr95
+     These two specifications are fundamentally incompatible.
+
+   ───────────────────────────────────────────────────────────────────────────
+   OPTION 2 — Luma-corrected to studio black (CURRENT RGB IMPLEMENTATION)
+   ───────────────────────────────────────────────────────────────────────────
+   Luma is raised until the most negative component reaches code 16
+   (studio black). The lift calculation:
+
+     For -I: Y_lift = 0.2067 - 16/219 = 0.13364
+     For +Q: Y_lift = 0.1400 - 16/219 = 0.06694
+
+   After lifting (bottom_quarterR/G/B arrays, RGB-native):
+     -I: R = 16 (studio black), G = 90, B = 130, Y ≈ 77
+     +Q: R = 92, G = 16 (studio black), B = 143, Y ≈ 63
+
+   This gives a consistent, broadcast-safe signal for RGB output with all
+   components within valid studio range (16-235), but produces different
+   YUV values than the legacy zero-luma specification (Y=77/63 vs Y=16).
+
+   We maintain TWO separate ground truth tables to preserve legacy compatibility:
+
+   1. bottom_quarterR/G/B (Option 2):
+      - Used for RGB output formats
+      - all I and Q codes >= 16
+      - Colorimetrically consistent RGB↔YUV conversion
+
+   2. bottom_quarterR/G/B_for_YUV (Option 1 YUV side):
+      - Used for YUV output formats
+      - Produces exact legacy values: -I Y=16, +Q Y=16
+      - Contains out-of-range RGB components (will clip if rendered as RGB)
+
+   This dual-table approach acknowledges the historical reality: the original
+   AviSynth ColorBars had two independent specifications that don't convert
+   to each other via standard matrix math. The -I and +Q signals were analog
+   broadcast test signals (voltage levels), not digital RGB/YUV values, and
+   their digital representation requires compromises.
+
+   So we use different linear RGB tables for -I and +Q bars, depending on whether
+   the target is RGB or YUV, to best match legacy values in each domain.
+   Note that moving I and Q values to provide legal RGB and YUV values is a "hack".
+   These values match the legacy Avisynth.
+*/
+
+// ===== RGB-NATIVE GROUND TRUTH =====
+// For RGB output formats only.
+// Luma-corrected: most negative component lifted to studio black (code 16).
+// -I: R lifted to code 16  →  RGB(16, 90, 130) at 8-bit
+// +Q: G lifted to code 16  →  RGB(92, 16, 143) at 8-bit
+// Convention: 0.0 = code 16 (studio black), 1.0 = code 235 (studio white)
+static const double bottom_quarterR[] = { MINUS_I_R, 1.0, PLUS_Q_R, 0.0, -0.04, 0.0, 0.04, 0.0 };
+static const double bottom_quarterG[] = { MINUS_I_G, 1.0, PLUS_Q_G, 0.0, -0.04, 0.0, 0.04, 0.0 };
+static const double bottom_quarterB[] = { MINUS_I_B, 1.0, PLUS_Q_B, 0.0, -0.04, 0.0, 0.04, 0.0 };
+
+// ===== YUV-TARGETED RGB GROUND TRUTH =====
+// For YUV output formats only.
+// When converted via GetYUVBT601fromRGB, produces legacy YUV values:
+// -I: Y=16, Cb=158, Cr=95   (zero-luma, pure chroma definition)
+// +Q: Y=16, Cb=174, Cr=149  (zero-luma, pure chroma definition)
+// Note: Contains out-of-range values (R < 0 for -I, G < 0 for +Q)
+//       which will be clamped when rendering RGB formats.
+// Convention: 0.0 = code 16 (studio black), 1.0 = code 235 (studio white)
+static const double bottom_quarterR_for_YUV[] = { MINUS_I_R_YUV, 1.0, PLUS_Q_R_YUV, 0.0, -0.04, 0.0, 0.04, 0.0 };
+static const double bottom_quarterG_for_YUV[] = { MINUS_I_G_YUV, 1.0, PLUS_Q_G_YUV, 0.0, -0.04, 0.0, 0.04, 0.0 };
+static const double bottom_quarterB_for_YUV[] = { MINUS_I_B_YUV, 1.0, PLUS_Q_B_YUV, 0.0, -0.04, 0.0, 0.04, 0.0 };
+
+/*******************************************************************
+* ColorBars for YUV 
+*********************************************************************/
+
+static void GetYUVBT601fromRGB(double R, double G, double B, double& dY, double& dU, double& dV)
 {
-  typedef typename std::conditional < sizeof(pixel_t) == 2, uint64_t, uint32_t>::type internal_pixel_t;
+  // See https://www.itu.int/rec/R-REC-BT.601/en
+  double Kr, Kb;
+  GetKrKb(AVS_MATRIX_ST170_M, Kr, Kb); // BT601: Kr=0.299, Kb=0.114
+  dY = Kr * R + (1.0 - Kr - Kb) * G + Kb * B;
+  dU = (B - dY) / (2.0 * (1.0 - Kb));
+  dV = (R - dY) / (2.0 * (1.0 - Kr));
+}
 
-  internal_pixel_t *p = reinterpret_cast<internal_pixel_t *>(p8);
-  pitch /= sizeof(pixel_t);
+// BT.601 YUV conversion constants for ColorBars (Rec. ITU-R BT.801-1)
+// Ground truth linear RGB -> BT.601 YUV, integer and float limited range output.
+// Replaces the old hardcoded 8-bit tables.
 
-  // note we go bottom->top
+// Bar boundaries are computed in chroma coordinates so that color transitions
+// always fall on chroma-aligned luma positions (a multiple of the horizontal
+// subsampling factor). This satisfies the requirement from Rec. ITU-R BT.801-1
+// that transitions occur on chroma-aligned boundaries.
+// Note: due to integer rounding, boundary positions may differ by ±1 luma pixel
+// compared to a 4:4:4 or RGB rendering of the same width, which is unavoidable
+// when 7 bars do not divide evenly into the frame width.
+template<typename pixel_t, bool is420, bool is422, bool is411>
+static void draw_colorbars_yuv(uint8_t* pY8, uint8_t* pU8, uint8_t* pV8, int pitchY, int pitchUV, int w, int h, int bits_per_pixel)
+{
+  pixel_t* pY = reinterpret_cast<pixel_t*>(pY8);
+  pixel_t* pU = reinterpret_cast<pixel_t*>(pU8);
+  pixel_t* pV = reinterpret_cast<pixel_t*>(pV8);
+  pitchY /= sizeof(pixel_t);
+  pitchUV /= sizeof(pixel_t);
+
+  constexpr bool is_float = std::is_same<pixel_t, float>::value;
+
+  const int shift = sizeof(pixel_t) == 4 ? 0 : (bits_per_pixel - 8);
+
+  // Pre-compute conversion constants for float limited range,
+  // using the same centralized function as ColorbarsHD.
+
+  // Also for float target we make "limited" range
+  bits_conv_constants luma, chroma;
+  // RGB is source, YUV is destination
+  // For RGB source / Y destination (both luma-like):
+  const bool full_scale_s = true; // full scale reference
+  const bool full_scale_d = false; // narrow range reference
+  get_bits_conv_constants(luma, false, full_scale_s, full_scale_d, 32, 32);
+  // For UV destination (chroma behavior):
+  // Note: we only need dst_span for UV, so we use full_scale_d for both params
+  get_bits_conv_constants(chroma, true, full_scale_s, full_scale_d, 32, 32);
+
+  double float_offset = luma.dst_offset;
+  double float_scale = luma.mul_factor; // 219.0 / 255.0;
+  double float_uv_scale = chroma.mul_factor;
+
+  // Convert one RGB triplet to a YUV pixel triplet at target bit depth.
+  struct YUV3 { pixel_t y, u, v; };
+
+  // Helper to process and write a pixel based on RGB input
+  auto make_yuv = [&](double r, double g, double b) -> YUV3 {
+    XP_LAMBDA_CAPTURE_FIX(float_scale);
+    XP_LAMBDA_CAPTURE_FIX(float_offset);
+    XP_LAMBDA_CAPTURE_FIX(float_uv_scale);
+    XP_LAMBDA_CAPTURE_FIX(shift);
+    double dY, dU, dV;
+    GetYUVBT601fromRGB(r, g, b, dY, dU, dV);
+
+    if constexpr (std::is_same<pixel_t, float>::value) {
+      return {
+        (pixel_t)(dY * float_scale + float_offset),
+        (pixel_t)(dU * float_uv_scale),
+        (pixel_t)(dV * float_uv_scale)
+      };
+    }
+    else {
+      // High-precision calculation for 10/12/16-bit
+      return {
+        (pixel_t)(((dY * 219.0 + 16.0) * (1 << shift)) + 0.5),
+        (pixel_t)(((dU * 224.0 + 128.0) * (1 << shift)) + 0.5),
+        (pixel_t)(((dV * 224.0 + 128.0) * (1 << shift)) + 0.5)
+      };
+    }
+    };
+
+  // Pre-compute all bar entries from ground truth RGB tables.
+  YUV3 bq[8], ttq[7], ttt[7];
+  for (int i = 0; i < 8; ++i)
+    bq[i] = make_yuv(bottom_quarterR_for_YUV[i], bottom_quarterG_for_YUV[i], bottom_quarterB_for_YUV[i]);
+  for (int i = 0; i < 7; ++i)
+    ttq[i] = make_yuv(two_thirds_to_three_quartersR[i], two_thirds_to_three_quartersG[i], two_thirds_to_three_quartersB[i]);
+  for (int i = 0; i < 7; ++i)
+    ttt[i] = make_yuv(top_two_thirdsR[i], top_two_thirdsG[i], top_two_thirdsB[i]);
+
+  // Write luma for one chroma-sample position x.
+  // For subsampled formats, each chroma x covers multiple luma pixels.
+  // For 444, chromaX == lumaX directly.
+  auto write_luma = [&](int x, pixel_t yval) {
+    XP_LAMBDA_CAPTURE_FIX(pitchY);
+    if constexpr (is420)
+      pY[x * 2 + 0] = pY[x * 2 + 1] = pY[x * 2 + pitchY] = pY[x * 2 + 1 + pitchY] = yval;
+    else if constexpr (is422)
+      pY[x * 2 + 0] = pY[x * 2 + 1] = yval;
+    else if constexpr (is411)
+      pY[x * 4 + 0] = pY[x * 4 + 1] = pY[x * 4 + 2] = pY[x * 4 + 3] = yval;
+    else // 444
+      pY[x] = yval;
+    };
+
+  auto write_yuv = [&](int x, const YUV3& c) {
+    write_luma(x, c.y);
+    pU[x] = c.u;
+    pV[x] = c.v;
+    };
+
+  // For subsampled formats the chroma plane is narrower/shorter.
+  // We iterate in chroma coordinates; write_luma expands to luma coordinates.
+  int wUV = w;
+  int hUV = h;
+  if constexpr (is420 || is422) wUV >>= 1;
+  if constexpr (is411)          wUV >>= 2;
+  if constexpr (is420)          hUV >>= 1;
 
   int y = 0;
 
-  bool isRGB32 = sizeof(pixel_t) == 1;
+  // Top 2/3
+  for (; y * 3 < hUV * 2; ++y) {
+    int x = 0;
+    for (int i = 0; i < 7; ++i)
+      for (; x < (wUV * (i + 1) + 3) / 7; ++x)
+        write_yuv(x, ttt[i]);
+    if constexpr (is420)
+      pY += pitchY * 2;
+    else
+      pY += pitchY;
+    pU += pitchUV; pV += pitchUV;
+  }
 
+  // Middle band (2/3 to 3/4)
+  for (; y * 4 < hUV * 3; ++y) {
+    int x = 0;
+    for (int i = 0; i < 7; ++i)
+      for (; x < (wUV * (i + 1) + 3) / 7; ++x)
+        write_yuv(x, ttq[i]);
+    if constexpr (is420)
+      pY += pitchY * 2;
+    else
+      pY += pitchY;
+    pU += pitchUV; pV += pitchUV;
+  }
+
+  // Bottom quarter
+  for (; y < hUV; ++y) {
+    int x = 0;
+    for (int i = 0; i < 4; ++i)
+      for (; x < (wUV * (i + 1) * 5 + 14) / 28; ++x)
+        write_yuv(x, bq[i]);
+    for (int j = 4; j < 7; ++j)
+      for (; x < (wUV * (j + 12) + 10) / 21; ++x)
+        write_yuv(x, bq[j]);
+    for (; x < wUV; ++x)
+      write_yuv(x, bq[7]);
+    if constexpr (is420)
+      pY += pitchY * 2;
+    else
+      pY += pitchY;
+    pU += pitchUV; pV += pitchUV;
+  }
+}
+
+/*******************************************************************
+* ColorBars for RGB (packed 32/64, 24/48, planar RGB)
+*********************************************************************/
+
+// Convert normalised linear RGB [0.0..1.0] to integer studio/limited RGB at any bit depth.
+// Limited range: black = 16 << (bpp-8), white = 235 << (bpp-8)
+// Values outside [0.0..1.0] (e.g. PLUGE -4%, +4%) are handled naturally.
+static int studio_rgb_to_integer(double value, int bits_per_pixel)
+{
+  const int offset = 16 << (bits_per_pixel - 8);
+  const int range = 219 << (bits_per_pixel - 8);
+  return (int)(value * range + offset + 0.5);
+}
+
+template<typename pixel_t>
+static void draw_colorbars_rgb3264(uint8_t* p8, int pitch, int w, int h)
+{
+  typedef typename std::conditional<sizeof(pixel_t) == 2, uint64_t, uint32_t>::type internal_pixel_t;
+  internal_pixel_t* p = reinterpret_cast<internal_pixel_t*>(p8);
+  pitch /= sizeof(pixel_t);
+
+  // Pre-compute packed pixel values from ground truth double tables at target bit depth.
+  // Pack order in uint32: 0x00RRGGBB, in uint64: RR(16)GG(16)BB(16) (alpha/padding zero)
+  // RGB32/64 pixel layout (bottom byte = B, then G, then R, then pad/alpha)
+  auto make_pixel = [&](double r, double g, double b) -> internal_pixel_t {
+    if constexpr (sizeof(pixel_t) == 1) {
+      // RGB32: 8-bit per channel, packed as 0x00RRGGBB
+      uint32_t ri = (uint32_t)studio_rgb_to_integer(r, 8);
+      uint32_t gi = (uint32_t)studio_rgb_to_integer(g, 8);
+      uint32_t bi = (uint32_t)studio_rgb_to_integer(b, 8);
+      return (internal_pixel_t)((ri << 16) | (gi << 8) | bi);
+    }
+    else {
+      // RGB64: 16-bit per channel
+      uint64_t ri = (uint64_t)studio_rgb_to_integer(r, 16);
+      uint64_t gi = (uint64_t)studio_rgb_to_integer(g, 16);
+      uint64_t bi = (uint64_t)studio_rgb_to_integer(b, 16);
+      return (internal_pixel_t)((ri << 32) | (gi << 16) | bi);
+    }
+    };
+
+  // Pre-compute all entries (bottom->top scan order matches original)
+  internal_pixel_t bq[8], ttq[7], ttt[7];
+  for (int i = 0; i < 8; ++i)
+    bq[i] = make_pixel(bottom_quarterR[i], bottom_quarterG[i], bottom_quarterB[i]);
+  for (int i = 0; i < 7; ++i)
+    ttq[i] = make_pixel(two_thirds_to_three_quartersR[i], two_thirds_to_three_quartersG[i], two_thirds_to_three_quartersB[i]);
+  for (int i = 0; i < 7; ++i)
+    ttt[i] = make_pixel(top_two_thirdsR[i], top_two_thirdsG[i], top_two_thirdsB[i]);
+
+  // note we go bottom->top
+  int y = 0;
   for (; y < h / 4; ++y) {
     int x = 0;
-    for (int i = 0; i < 4; ++i) {
-      for (; x < (w*(i + 1) * 5 + 14) / 28; ++x) {
-        p[x] = (internal_pixel_t)(isRGB32 ? bottom_quarter[i] : rgbcolor32to64(bottom_quarter[i]));
-      }
-    }
-    for (int j = 4; j < 7; ++j) {
-      for (; x < (w*(j + 12) + 10) / 21; ++x) {
-        p[x] = (internal_pixel_t)(isRGB32 ? bottom_quarter[j] : rgbcolor32to64(bottom_quarter[j]));
-      }
-    }
-    for (; x < w; ++x) {
-      p[x] = (internal_pixel_t)(isRGB32 ? bottom_quarter[7] : rgbcolor32to64(bottom_quarter[7]));
-    }
+    for (int i = 0; i < 4; ++i)
+      for (; x < (w * (i + 1) * 5 + 14) / 28; ++x)
+        p[x] = bq[i];
+    for (int j = 4; j < 7; ++j)
+      for (; x < (w * (j + 12) + 10) / 21; ++x)
+        p[x] = bq[j];
+    for (; x < w; ++x)
+      p[x] = bq[7];
     p += pitch;
   }
-
   for (; y < h / 3; ++y) {
     int x = 0;
-    for (int i = 0; i < 7; ++i) {
-      for (; x < (w*(i + 1) + 3) / 7; ++x)
-        p[x] = (internal_pixel_t)(isRGB32 ? two_thirds_to_three_quarters[i] : rgbcolor32to64(two_thirds_to_three_quarters[i]));
-    }
+    for (int i = 0; i < 7; ++i)
+      for (; x < (w * (i + 1) + 3) / 7; ++x)
+        p[x] = ttq[i];
     p += pitch;
   }
-
   for (; y < h; ++y) {
     int x = 0;
-    for (int i = 0; i < 7; ++i) {
-      for (; x < (w*(i + 1) + 3) / 7; ++x)
-        p[x] = (internal_pixel_t)(isRGB32 ? top_two_thirds[i] : rgbcolor32to64(top_two_thirds[i]));
-    }
+    for (int i = 0; i < 7; ++i)
+      for (; x < (w * (i + 1) + 3) / 7; ++x)
+        p[x] = ttt[i];
     p += pitch;
   }
 }
+
 
 template<typename pixel_t>
 static void draw_colorbars_rgb2448(uint8_t* p8, int pitch, int w, int h)
 {
-  typedef typename std::conditional < sizeof(pixel_t) == 2, uint64_t, uint32_t>::type internal_pixel_t;
-
   pixel_t* p = reinterpret_cast<pixel_t*>(p8);
   pitch /= sizeof(pixel_t);
 
+  // Pre-computed triplets from ground truth double tables
+  struct RGB3 { pixel_t r, g, b; };
+
+  auto make_rgb3 = [&](double r, double g, double b) -> RGB3 {
+    return {
+      (pixel_t)studio_rgb_to_integer(r, sizeof(pixel_t) == 1 ? 8 : 16),
+      (pixel_t)studio_rgb_to_integer(g, sizeof(pixel_t) == 1 ? 8 : 16),
+      (pixel_t)studio_rgb_to_integer(b, sizeof(pixel_t) == 1 ? 8 : 16)
+    };
+    };
+
+  // Pre-compute all entries (bottom->top scan order matches original)
+  RGB3 bq[8], ttq[7], ttt[7];
+  for (int i = 0; i < 8; ++i)
+    bq[i] = make_rgb3(bottom_quarterR[i], bottom_quarterG[i], bottom_quarterB[i]);
+  for (int i = 0; i < 7; ++i)
+    ttq[i] = make_rgb3(two_thirds_to_three_quartersR[i], two_thirds_to_three_quartersG[i], two_thirds_to_three_quartersB[i]);
+  for (int i = 0; i < 7; ++i)
+    ttt[i] = make_rgb3(top_two_thirdsR[i], top_two_thirdsG[i], top_two_thirdsB[i]);
+
+  auto write_pixel = [&](int x, const RGB3& c) {
+    p[x * 3 + 0] = c.b;  // RGB24/48 memory layout: B, G, R
+    p[x * 3 + 1] = c.g;
+    p[x * 3 + 2] = c.r;
+    };
+
   // note we go bottom->top
   int y = 0;
-
-  constexpr bool isRGB24 = sizeof(pixel_t) == 1;
-  constexpr pixel_t mask = isRGB24 ? 0xFF : 0xFFFF;
-  constexpr int shift = isRGB24 ? 8 : 16;
-
   for (; y < h / 4; ++y) {
     int x = 0;
-    for (int i = 0; i < 4; ++i) {
-      for (; x < (w * (i + 1) * 5 + 14) / 28; ++x) {
-        internal_pixel_t pix = (internal_pixel_t)(isRGB24 ? bottom_quarter[i] : rgbcolor32to64(bottom_quarter[i]));
-        p[x * 3 + 0] = pix & mask; pix >>= shift;
-        p[x * 3 + 1] = pix & mask; pix >>= shift;
-        p[x * 3 + 2] = pix & mask;
-      }
-    }
-    for (int j = 4; j < 7; ++j) {
-      for (; x < (w * (j + 12) + 10) / 21; ++x) {
-        internal_pixel_t pix = (internal_pixel_t)(isRGB24 ? bottom_quarter[j] : rgbcolor32to64(bottom_quarter[j]));
-        p[x * 3 + 0] = pix & mask; pix >>= shift;
-        p[x * 3 + 1] = pix & mask; pix >>= shift;
-        p[x * 3 + 2] = pix & mask;
-      }
-    }
-    for (; x < w; ++x) {
-      internal_pixel_t pix = (internal_pixel_t)(isRGB24 ? bottom_quarter[7] : rgbcolor32to64(bottom_quarter[7]));
-      p[x * 3 + 0] = pix & mask; pix >>= shift;
-      p[x * 3 + 1] = pix & mask; pix >>= shift;
-      p[x * 3 + 2] = pix & mask;
-    }
+    for (int i = 0; i < 4; ++i)
+      for (; x < (w * (i + 1) * 5 + 14) / 28; ++x)
+        write_pixel(x, bq[i]);
+    for (int j = 4; j < 7; ++j)
+      for (; x < (w * (j + 12) + 10) / 21; ++x)
+        write_pixel(x, bq[j]);
+    for (; x < w; ++x)
+      write_pixel(x, bq[7]);
     p += pitch;
   }
-
   for (; y < h / 3; ++y) {
     int x = 0;
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < 7; ++i)
       for (; x < (w * (i + 1) + 3) / 7; ++x)
-      {
-        internal_pixel_t pix = (internal_pixel_t)(isRGB24 ? two_thirds_to_three_quarters[i] : rgbcolor32to64(two_thirds_to_three_quarters[i]));
-        p[x * 3 + 0] = pix & mask; pix >>= shift;
-        p[x * 3 + 1] = pix & mask; pix >>= shift;
-        p[x * 3 + 2] = pix & mask;
-      }
-    }
+        write_pixel(x, ttq[i]);
     p += pitch;
   }
-
   for (; y < h; ++y) {
     int x = 0;
-    for (int i = 0; i < 7; ++i) {
-      for (; x < (w * (i + 1) + 3) / 7; ++x) {
-        internal_pixel_t pix = (internal_pixel_t)(isRGB24 ? top_two_thirds[i] : rgbcolor32to64(top_two_thirds[i]));
-        p[x * 3 + 0] = pix & mask; pix >>= shift;
-        p[x * 3 + 1] = pix & mask; pix >>= shift;
-        p[x * 3 + 2] = pix & mask;
-      }
-    }
+    for (int i = 0; i < 7; ++i)
+      for (; x < (w * (i + 1) + 3) / 7; ++x)
+        write_pixel(x, ttt[i]);
     p += pitch;
   }
 }
 
-template<typename pixel_t, int bits_per_pixel>
-static void draw_colorbars_rgbp(uint8_t *pR8, uint8_t *pG8, uint8_t *pB8, int pitch, int w, int h)
+template<typename pixel_t>
+static void draw_colorbars_rgbp(uint8_t* pR8, uint8_t* pG8, uint8_t* pB8, int pitch, int w, int h, int bits_per_pixel)
 {
-  pixel_t *pR = reinterpret_cast<pixel_t *>(pR8);
-  pixel_t *pG = reinterpret_cast<pixel_t *>(pG8);
-  pixel_t *pB = reinterpret_cast<pixel_t *>(pB8);
+  pixel_t* pR = reinterpret_cast<pixel_t*>(pR8);
+  pixel_t* pG = reinterpret_cast<pixel_t*>(pG8);
+  pixel_t* pB = reinterpret_cast<pixel_t*>(pB8);
   pitch /= sizeof(pixel_t);
 
-  // note we go bottom->top
-  // original code sample came from packed RGB32 so we are going backward for planar
+  struct RGB3 { pixel_t r, g, b; };
 
-  pR += (h - 1)*pitch;
-  pG += (h - 1)*pitch;
-  pB += (h - 1)*pitch;
+  bits_conv_constants rgb_luma_f;
+  // source: full range [0..1] RGB, destination: limited range float
+  // rgb_luma_f.mul_factor = 219.0/255.0
+  // rgb_luma_f.dst_offset = 16.0/255.0
+  get_bits_conv_constants(rgb_luma_f, false /*use_chroma*/, true /*fulls*/, false/*fulld*/, 32, 32);
 
+  auto make_rgb3 = [&](double r, double g, double b) -> RGB3 {
+
+    if constexpr(std::is_same<pixel_t, float>::value) {
+      return {
+        (float)(r * rgb_luma_f.mul_factor + rgb_luma_f.dst_offset),
+        (float)(g * rgb_luma_f.mul_factor + rgb_luma_f.dst_offset),
+        (float)(b * rgb_luma_f.mul_factor + rgb_luma_f.dst_offset)
+      };
+    }
+    else {
+      return {
+        (pixel_t)studio_rgb_to_integer(r, bits_per_pixel),
+        (pixel_t)studio_rgb_to_integer(g, bits_per_pixel),
+        (pixel_t)studio_rgb_to_integer(b, bits_per_pixel)
+      };
+    }
+    };
+
+  RGB3 bq[8], ttq[7], ttt[7];
+  for (int i = 0; i < 8; ++i)
+    bq[i] = make_rgb3(bottom_quarterR[i], bottom_quarterG[i], bottom_quarterB[i]);
+  for (int i = 0; i < 7; ++i)
+    ttq[i] = make_rgb3(two_thirds_to_three_quartersR[i], two_thirds_to_three_quartersG[i], two_thirds_to_three_quartersB[i]);
+  for (int i = 0; i < 7; ++i)
+    ttt[i] = make_rgb3(top_two_thirdsR[i], top_two_thirdsG[i], top_two_thirdsB[i]);
+
+  auto write_pixel = [&](int x, const RGB3& c) {
+    pR[x] = c.r;
+    pG[x] = c.g;
+    pB[x] = c.b;
+    };
+
+  // Planar RGB is top-to-bottom natively, no bottom-up workaround needed.
+  // layout top->bottom: top_two_thirds, two_thirds_to_three_quarters, bottom_quarter
   int y = 0;
 
-  const int max_pixel_value = (1 << bits_per_pixel) - 1;
-
-  const bool is8bit = sizeof(pixel_t) == 1;
-
-  for (; y < h / 4; ++y) {
+  // Top 2/3
+  for (; y * 3 < h * 2; ++y) {
     int x = 0;
-    for (int i = 0; i < 4; ++i) {
-      int color = bottom_quarter[i];
-
-      int color_r = (color >> 16) & 0xFF;
-      int color_g = (color >> 8) & 0xFF;
-      int color_b = (color) & 0xFF;
-      if (!is8bit) {
-        color_r = rgbcolor8to16(color_r, max_pixel_value);
-        color_g = rgbcolor8to16(color_g, max_pixel_value);
-        color_b = rgbcolor8to16(color_b, max_pixel_value);
-      }
-      for (; x < (w*(i + 1) * 5 + 14) / 28; ++x) {
-        pR[x] = color_r;
-        pG[x] = color_g;
-        pB[x] = color_b;
-      }
-    }
-    for (int j = 4; j < 7; ++j) {
-      int color = bottom_quarter[j];
-      int color_r = (color >> 16) & 0xFF;
-      int color_g = (color >> 8) & 0xFF;
-      int color_b = (color) & 0xFF;
-      if (!is8bit) {
-        color_r = rgbcolor8to16(color_r, max_pixel_value);
-        color_g = rgbcolor8to16(color_g, max_pixel_value);
-        color_b = rgbcolor8to16(color_b, max_pixel_value);
-      }
-
-      for (; x < (w*(j + 12) + 10) / 21; ++x) {
-        pR[x] = color_r;
-        pG[x] = color_g;
-        pB[x] = color_b;
-      }
-    }
-
-    int color = bottom_quarter[7];
-    int color_r = (color >> 16) & 0xFF;
-    int color_g = (color >> 8) & 0xFF;
-    int color_b = (color) & 0xFF;
-    if (!is8bit) {
-      color_r = rgbcolor8to16(color_r, max_pixel_value);
-      color_g = rgbcolor8to16(color_g, max_pixel_value);
-      color_b = rgbcolor8to16(color_b, max_pixel_value);
-    }
-    for (; x < w; ++x) {
-      pR[x] = color_r;
-      pG[x] = color_g;
-      pB[x] = color_b;
-    }
-    pR -= pitch;
-    pG -= pitch;
-    pB -= pitch;
+    for (int i = 0; i < 7; ++i)
+      for (; x < (w * (i + 1) + 3) / 7; ++x)
+        write_pixel(x, ttt[i]);
+    pR += pitch; pG += pitch; pB += pitch;
   }
 
-  for (; y < h / 3; ++y) {
+  // Middle band (2/3 to 3/4)
+  for (; y * 4 < h * 3; ++y) {
     int x = 0;
-    for (int i = 0; i < 7; ++i) {
-      int color = two_thirds_to_three_quarters[i];
-      int color_r = (color >> 16) & 0xFF;
-      int color_g = (color >> 8) & 0xFF;
-      int color_b = (color) & 0xFF;
-      if (!is8bit) {
-        color_r = rgbcolor8to16(color_r, max_pixel_value);
-        color_g = rgbcolor8to16(color_g, max_pixel_value);
-        color_b = rgbcolor8to16(color_b, max_pixel_value);
-      }
-      for (; x < (w*(i + 1) + 3) / 7; ++x) {
-        pR[x] = color_r;
-        pG[x] = color_g;
-        pB[x] = color_b;
-      }
-    }
-    pR -= pitch;
-    pG -= pitch;
-    pB -= pitch;
+    for (int i = 0; i < 7; ++i)
+      for (; x < (w * (i + 1) + 3) / 7; ++x)
+        write_pixel(x, ttq[i]);
+    pR += pitch; pG += pitch; pB += pitch;
   }
 
+  // Bottom quarter
   for (; y < h; ++y) {
     int x = 0;
-    for (int i = 0; i < 7; ++i) {
-      int color = top_two_thirds[i];
-      int color_r = (color >> 16) & 0xFF;
-      int color_g = (color >> 8) & 0xFF;
-      int color_b = (color) & 0xFF;
-      if (!is8bit) {
-        color_r = rgbcolor8to16(color_r, max_pixel_value);
-        color_g = rgbcolor8to16(color_g, max_pixel_value);
-        color_b = rgbcolor8to16(color_b, max_pixel_value);
-      }
-      for (; x < (w*(i + 1) + 3) / 7; ++x) {
-        pR[x] = color_r;
-        pG[x] = color_g;
-        pB[x] = color_b;
-      }
-    }
-    pR -= pitch;
-    pG -= pitch;
-    pB -= pitch;
-  }
-}
-
-static void draw_colorbars_rgbp_f(uint8_t *pR8, uint8_t *pG8, uint8_t *pB8, int pitch, int w, int h)
-{
-  float *pR = reinterpret_cast<float *>(pR8);
-  float *pG = reinterpret_cast<float *>(pG8);
-  float *pB = reinterpret_cast<float *>(pB8);
-  pitch /= sizeof(float);
-
-  // note we go bottom->top
-  // original code sample from packed RGB32 so we are going backward for planar
-
-  pR += (h - 1)*pitch;
-  pG += (h - 1)*pitch;
-  pB += (h - 1)*pitch;
-
-  int y = 0;
-
-  const float factor = 1.0f / 255;
-
-  for (; y < h / 4; ++y) {
-    int x = 0;
-    for (int i = 0; i < 4; ++i) {
-      int color = bottom_quarter[i];
-
-      float color_r = factor * ((color >> 16) & 0xFF);
-      float color_g = factor * ((color >> 8) & 0xFF);
-      float color_b = factor * ((color) & 0xFF);
-      for (; x < (w*(i + 1) * 5 + 14) / 28; ++x) {
-        pR[x] = color_r;
-        pG[x] = color_g;
-        pB[x] = color_b;
-      }
-    }
-    for (int j = 4; j < 7; ++j) {
-      int color = bottom_quarter[j];
-      float color_r = factor * ((color >> 16) & 0xFF);
-      float color_g = factor * ((color >> 8) & 0xFF);
-      float color_b = factor * ((color) & 0xFF);
-
-      for (; x < (w*(j + 12) + 10) / 21; ++x) {
-        pR[x] = color_r;
-        pG[x] = color_g;
-        pB[x] = color_b;
-      }
-    }
-
-    int color = bottom_quarter[7];
-    float color_r = factor * ((color >> 16) & 0xFF);
-    float color_g = factor * ((color >> 8) & 0xFF);
-    float color_b = factor * ((color) & 0xFF);
-    for (; x < w; ++x) {
-      pR[x] = color_r;
-      pG[x] = color_g;
-      pB[x] = color_b;
-    }
-    pR -= pitch;
-    pG -= pitch;
-    pB -= pitch;
-  }
-
-  for (; y < h / 3; ++y) {
-    int x = 0;
-    for (int i = 0; i < 7; ++i) {
-      int color = two_thirds_to_three_quarters[i];
-      float color_r = factor * ((color >> 16) & 0xFF);
-      float color_g = factor * ((color >> 8) & 0xFF);
-      float color_b = factor * ((color) & 0xFF);
-      for (; x < (w*(i + 1) + 3) / 7; ++x) {
-        pR[x] = color_r;
-        pG[x] = color_g;
-        pB[x] = color_b;
-      }
-    }
-    pR -= pitch;
-    pG -= pitch;
-    pB -= pitch;
-  }
-
-  for (; y < h; ++y) {
-    int x = 0;
-    for (int i = 0; i < 7; ++i) {
-      int color = top_two_thirds[i];
-      float color_r = factor * ((color >> 16) & 0xFF);
-      float color_g = factor * ((color >> 8) & 0xFF);
-      float color_b = factor * ((color) & 0xFF);
-      for (; x < (w*(i + 1) + 3) / 7; ++x) {
-        pR[x] = color_r;
-        pG[x] = color_g;
-        pB[x] = color_b;
-      }
-    }
-    pR -= pitch;
-    pG -= pitch;
-    pB -= pitch;
+    for (int i = 0; i < 4; ++i)
+      for (; x < (w * (i + 1) * 5 + 14) / 28; ++x)
+        write_pixel(x, bq[i]);
+    for (int j = 4; j < 7; ++j)
+      for (; x < (w * (j + 12) + 10) / 21; ++x)
+        write_pixel(x, bq[j]);
+    for (; x < w; ++x)
+      write_pixel(x, bq[7]);
+    pR += pitch; pG += pitch; pB += pitch;
   }
 }
 
@@ -1543,7 +1471,7 @@ class ColorBars : public IClip {
   PVideoFrame frame;
   SFLOAT *audio;
   unsigned nsamples;
-  bool staticframes; // P.F. false: a bit better for synthetic tests. Still defaults to true (one static frame is served)
+  bool staticframes; // P.F. false: re-draw each frame. Defaults to true (one pre-computed static frame is served).
 
   enum { Hz = 440 } ;
 
@@ -1555,7 +1483,7 @@ public:
 
   ColorBars(int w, int h, const char* pixel_type, bool _staticframes, int type, IScriptEnvironment* env) {
     memset(&vi, 0, sizeof(VideoInfo));
-    staticframes = _staticframes; // P.F.
+    staticframes = _staticframes;
     vi.width = w;
     vi.height = h;
     vi.fps_numerator = 30000;
@@ -1565,7 +1493,10 @@ public:
     vi.pixel_type = i_pixel_type;
     int bits_per_pixel = vi.BitsPerComponent();
 
-    if (type) { // ColorbarsHD
+    const bool IsColorbars = (type == 0);
+    const bool IsColorbarsHD = (type == 1);
+
+    if (IsColorbarsHD) { // ColorbarsHD
         if (!vi.Is444())
           env->ThrowError("ColorBarsHD: pixel_type must be \"YV24\" or other 4:4:4 video format");
     }
@@ -1612,12 +1543,13 @@ public:
     auto props = env->getFramePropsRW(frame);
     int theMatrix;
     int theColorRange;
-    if (type) {
+    if (IsColorbarsHD) {
       // ColorBarsHD 444 only
       theMatrix = Matrix_e::AVS_MATRIX_BT709;
       theColorRange = ColorRange_e::AVS_RANGE_LIMITED;
     }
     else {
+      // IsColorBars
       // ColorBars can be rgb or yuv
       theMatrix = vi.IsRGB() ? Matrix_e::AVS_MATRIX_RGB : Matrix_e::AVS_MATRIX_ST170_M;
       // Studio RGB: limited!
@@ -1627,163 +1559,140 @@ public:
 
   // HD colorbars arib_std_b28
   // Rec709 yuv values
-  if (type) { // ColorbarsHD
+  if (IsColorbarsHD) { // ColorbarsHD
     BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
     BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
     BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
     const int pitchY  = frame->GetPitch(PLANAR_Y);
     const int pitchUV = frame->GetPitch(PLANAR_U);
 
-    switch (bits_per_pixel) {
-    case 8: draw_colorbarsHD_444<uint8_t>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel); break;
-    case 10: 
-    case 12: 
-    case 14: 
-    case 16: draw_colorbarsHD_444<uint16_t>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel); break;
-    case 32: draw_colorbarsHD_444<float>(pY, pU, pV, pitchY, pitchUV, w, h,bits_per_pixel); break;
-    }
+    if (bits_per_pixel == 8)
+      draw_colorbarsHD_444<uint8_t>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
+    else if (bits_per_pixel <= 16)
+      draw_colorbarsHD_444<uint16_t>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel);
+    else if (bits_per_pixel == 32)
+      draw_colorbarsHD_444<float>(pY, pU, pV, pitchY, pitchUV, w, h,32);
+  }
+  else if (IsColorbars) {
+    // Rec. ITU-R BT.801-1
+      // "ColorBars" pattern is defined in Rec. ITU-R BT.801-1, with studio RGB values that are then converted to YUV for YUV formats.
+    // Optional YUV output calculation uses 170_ST (601) independent from the actual frame dimensions.
+    if (vi.IsRGB() && vi.IsPlanar()) {
+      BYTE* pG = (BYTE*)frame->GetWritePtr(PLANAR_G);
+      BYTE* pB = (BYTE*)frame->GetWritePtr(PLANAR_B);
+      BYTE* pR = (BYTE*)frame->GetWritePtr(PLANAR_R);
+      const int pitch = frame->GetPitch(PLANAR_G);
 
-  }
-  // Rec. ITU-R BT.801-1
-  else if (vi.Is444()) {
-    BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
-    BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
-    BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
-    const int pitchY = frame->GetPitch(PLANAR_Y);
-    const int pitchUV = frame->GetPitch(PLANAR_U);
-
-    switch (bits_per_pixel) {
-    case 8: draw_colorbars_444<uint8_t>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel); break;
-    case 10:
-    case 12:
-    case 14:
-    case 16: draw_colorbars_444<uint16_t>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel); break;
-    case 32: draw_colorbars_444<float>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel); break;
+      if (bits_per_pixel == 8)
+        draw_colorbars_rgbp<uint8_t>(pR, pG, pB, pitch, w, h, 8);
+      else if (bits_per_pixel <= 16)
+        draw_colorbars_rgbp<uint16_t>(pR, pG, pB, pitch, w, h, bits_per_pixel);
+      else if (bits_per_pixel == 32)
+        draw_colorbars_rgbp<float>(pR, pG, pB, pitch, w, h, 32);
     }
-  }
-  else if (vi.IsRGB() && vi.IsPlanar()) {
-    BYTE* pG = (BYTE*)frame->GetWritePtr(PLANAR_G);
-    BYTE* pB = (BYTE*)frame->GetWritePtr(PLANAR_B);
-    BYTE* pR = (BYTE*)frame->GetWritePtr(PLANAR_R);
-    const int pitch = frame->GetPitch(PLANAR_G);
-
-    switch (bits_per_pixel) {
-    case 8: draw_colorbars_rgbp<uint8_t, 8>(pR, pG, pB, pitch, w, h); break;
-    case 10: draw_colorbars_rgbp<uint16_t, 10>(pR, pG, pB, pitch, w, h); break;
-    case 12: draw_colorbars_rgbp<uint16_t, 12>(pR, pG, pB, pitch, w, h); break;
-    case 14: draw_colorbars_rgbp<uint16_t, 14>(pR, pG, pB, pitch, w, h); break;
-    case 16: draw_colorbars_rgbp<uint16_t, 16>(pR, pG, pB, pitch, w, h); break;
-    case 32: draw_colorbars_rgbp_f(pR, pG, pB, pitch, w, h); break;
-    }
-  }
-  else if (vi.IsRGB32() || vi.IsRGB64()) {
-    const int pitch = frame->GetPitch() / 4;
-    switch (bits_per_pixel) {
-    case 8: draw_colorbars_rgb3264<uint8_t>((uint8_t *)p, pitch, w, h); break;
-    case 16: draw_colorbars_rgb3264<uint16_t>((uint8_t *)p, pitch, w, h); break;
-    }
-  }
-  else if (vi.IsRGB24() || vi.IsRGB48()) {
-    const int pitch = frame->GetPitch();
-    switch (bits_per_pixel) {
-    case 8: draw_colorbars_rgb2448<uint8_t>((uint8_t*)p, pitch, w, h); break;
-    case 16: draw_colorbars_rgb2448<uint16_t>((uint8_t*)p, pitch, w, h); break;
-    }
-  }
-  else if (vi.IsYUY2()) {
-    const int pitch = frame->GetPitch() / 4;
-    static const unsigned int top_two_thirds_yuy2[] =
-//                LtGrey      Yellow        Cyan       Green     Magenta         Red        Blue
-    { 0x80b480b4, 0x8ea22ca2, 0x2c839c83, 0x3a704870, 0xc654b854, 0xd4416441, 0x7223d423 }; //VYUY
-    w >>= 1;
-    for (; y * 3 < h * 2; ++y) {
-      int x = 0;
-      for (int i = 0; i < 7; i++) {
-        for (; x < (w*(i + 1) + 3) / 7; ++x)
-          p[x] = top_two_thirds_yuy2[i];
+    else if (vi.IsRGB32() || vi.IsRGB64()) {
+      const int pitch = frame->GetPitch() / 4;
+      switch (bits_per_pixel) {
+      case 8: draw_colorbars_rgb3264<uint8_t>((uint8_t*)p, pitch, w, h); break;
+      case 16: draw_colorbars_rgb3264<uint16_t>((uint8_t*)p, pitch, w, h); break;
       }
-      p += pitch;
     }
-
-    static const unsigned  int two_thirds_to_three_quarters_yuy2[] =
-//                 Blue        Black     Magenta       Black        Cyan       Black      LtGrey
-    { 0x7223d423, 0x80108010, 0xc654b854, 0x80108010, 0x2c839c83, 0x80108010, 0x80b480b4 }; //VYUY
-    for (; y * 4 < h * 3; ++y) {
-      int x = 0;
-      for (int i = 0; i < 7; i++) {
-        for (; x < (w*(i + 1) + 3) / 7; ++x)
-          p[x] = two_thirds_to_three_quarters_yuy2[i];
+    else if (vi.IsRGB24() || vi.IsRGB48()) {
+      const int pitch = frame->GetPitch();
+      switch (bits_per_pixel) {
+      case 8: draw_colorbars_rgb2448<uint8_t>((uint8_t*)p, pitch, w, h); break;
+      case 16: draw_colorbars_rgb2448<uint16_t>((uint8_t*)p, pitch, w, h); break;
       }
-      p += pitch;
     }
+    else if (vi.IsYUY2()) {
+      // YUY2 is a packed 4:2:2 format: Y0 U0 Y1 V0 (alternating luma/chroma samples)
+      // We treat it as planar internally, then pack the results
+      const int pitch = frame->GetPitch();
+      uint8_t* dst = frame->GetWritePtr();
 
-    static const unsigned int bottom_quarter_yuy2[] =
-//                    -I       white          +Q       Black       -4ire       Black       +4ire       Black
-    { 0x5f109e10, 0x80eb80eb, 0x9510ae10, 0x80108010, 0x80078007, 0x80108010, 0x80198019, 0x80108010 }; //VYUY
-    for (; y < h; ++y) {
-      int x = 0;
-      for (int i = 0; i < 4; ++i) {
-        for (; x < (w*(i + 1) * 5 + 14) / 28; ++x)
-          p[x] = bottom_quarter_yuy2[i];
+      // Allocate temporary planar buffers for 8-bit YUV
+      std::vector<uint8_t> tempY(w * h);
+      std::vector<uint8_t> tempU((w >> 1) * h);
+      std::vector<uint8_t> tempV((w >> 1) * h);
+
+      // Use the unified YUV drawing function to generate planar data
+      draw_colorbars_yuv<uint8_t, false, true, false>(
+        tempY.data(), tempU.data(), tempV.data(),
+        w, w >> 1, w, h, 8
+      );
+
+      // Pack planar YUV 4:2:2 into YUY2 format (Y0 U0 Y1 V0)
+      for (int y = 0; y < h; ++y) {
+        const uint8_t* srcY = tempY.data() + y * w;
+        const uint8_t* srcU = tempU.data() + y * (w >> 1);
+        const uint8_t* srcV = tempV.data() + y * (w >> 1);
+        uint8_t* dstRow = dst + y * pitch;
+
+        for (int x = 0; x < w >> 1; ++x) {
+          dstRow[x * 4 + 0] = srcY[x * 2 + 0];  // Y0
+          dstRow[x * 4 + 1] = srcU[x];          // U0
+          dstRow[x * 4 + 2] = srcY[x * 2 + 1];  // Y1
+          dstRow[x * 4 + 3] = srcV[x];          // V0
+        }
       }
-      for (int j = 4; j < 7; ++j) {
-        for (; x < (w*(j + 12) + 10) / 21; ++x)
-          p[x] = bottom_quarter_yuy2[j];
-      }
-      for (; x < w; ++x)
-        p[x] = bottom_quarter_yuy2[7];
-      p += pitch;
     }
-  }
-  else if (vi.Is420()) {
-
-    BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
-    BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
-    BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
-    const int pitchY = frame->GetPitch(PLANAR_Y);
-    const int pitchUV = frame->GetPitch(PLANAR_U);
-
-    switch (bits_per_pixel) {
-    case 8: draw_colorbars_420_422_411<uint8_t, 8, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 10: draw_colorbars_420_422_411<uint16_t, 10, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 12: draw_colorbars_420_422_411<uint16_t, 12, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 14: draw_colorbars_420_422_411<uint16_t, 14, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 16: draw_colorbars_420_422_411<uint16_t, 16, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 32: draw_colorbars_420_422_411<float, 8 /* n/a */, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h); break;
+    if (vi.Is444()) {
+      BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
+      BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
+      BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
+      const int pitchY = frame->GetPitch(PLANAR_Y);
+      const int pitchUV = frame->GetPitch(PLANAR_U);
+      if (bits_per_pixel == 8)
+        draw_colorbars_yuv<uint8_t, false, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
+      else if (bits_per_pixel <= 16)
+        draw_colorbars_yuv<uint16_t, false, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel);
+      else
+        draw_colorbars_yuv<float, false, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, 32);
     }
-  }
-  else if (vi.Is422()) {
-
-    BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
-    BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
-    BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
-    const int pitchY = frame->GetPitch(PLANAR_Y);
-    const int pitchUV = frame->GetPitch(PLANAR_U);
-
-    switch (bits_per_pixel) {
-    case 8: draw_colorbars_420_422_411<uint8_t, 8, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 10: draw_colorbars_420_422_411<uint16_t, 10, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 12: draw_colorbars_420_422_411<uint16_t, 12, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 14: draw_colorbars_420_422_411<uint16_t, 14, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 16: draw_colorbars_420_422_411<uint16_t, 16, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h); break;
-    case 32: draw_colorbars_420_422_411<float, 8 /* n/a */, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h); break;
+    else if (vi.Is420()) {
+      BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
+      BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
+      BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
+      const int pitchY = frame->GetPitch(PLANAR_Y);
+      const int pitchUV = frame->GetPitch(PLANAR_U);
+      if (bits_per_pixel == 8)
+        draw_colorbars_yuv<uint8_t, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
+      else if (bits_per_pixel <= 16)
+        draw_colorbars_yuv<uint16_t, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel);
+      else
+        draw_colorbars_yuv<float, true, false, false>(pY, pU, pV, pitchY, pitchUV, w, h, 32);
     }
+    else if (vi.Is422()) {
+      BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
+      BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
+      BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
+      const int pitchY = frame->GetPitch(PLANAR_Y);
+      const int pitchUV = frame->GetPitch(PLANAR_U);
+      if (bits_per_pixel == 8)
+        draw_colorbars_yuv<uint8_t, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
+      else if (bits_per_pixel <= 16)
+        draw_colorbars_yuv<uint16_t, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h, bits_per_pixel);
+      else
+        draw_colorbars_yuv<float, false, true, false>(pY, pU, pV, pitchY, pitchUV, w, h, 32);
+    }
+    else if (vi.IsYV411()) {
+      BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
+      BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
+      BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
+      const int pitchY = frame->GetPitch(PLANAR_Y);
+      const int pitchUV = frame->GetPitch(PLANAR_U);
+      // YV411 is 8-bit only
+      draw_colorbars_yuv<uint8_t, false, false, true>(pY, pU, pV, pitchY, pitchUV, w, h, 8);
+    }
+  } // "ColorBars" pattern generation
+  else {
+    // future other ColorBars types can be added here
   }
-  else if (vi.IsYV411()) {
 
-    BYTE* pY = (BYTE*)frame->GetWritePtr(PLANAR_Y);
-    BYTE* pU = (BYTE*)frame->GetWritePtr(PLANAR_U);
-    BYTE* pV = (BYTE*)frame->GetWritePtr(PLANAR_V);
-    const int pitchY = frame->GetPitch(PLANAR_Y);
-    const int pitchUV = frame->GetPitch(PLANAR_U);
-
-    // only 8 bits
-    draw_colorbars_420_422_411<uint8_t, 8, false, false, true>(pY, pU, pV, pitchY, pitchUV, w, h);
-  }
-
+  // Alpha cnannel - if any - is common. RGB32/64 has already filled alpha.
   if (vi.IsYUVA() || vi.IsPlanarRGBA()) {
     // initialize planar alpha planes with zero (no transparency), like RGB32 does
-    BYTE *dstp = frame->GetWritePtr(PLANAR_A);
+    BYTE* dstp = frame->GetWritePtr(PLANAR_A);
     int rowsize = frame->GetRowSize(PLANAR_A);
     int pitch = frame->GetPitch(PLANAR_A);
     int height = frame->GetHeight(PLANAR_A);
@@ -1824,6 +1733,7 @@ public:
       return frame; // original default method returns precomputed static frame.
     else {
       PVideoFrame result = env->NewVideoFrameP(vi, &frame);
+      // BitBlts are safe to call on all planes, planes with zero-size height or row-size are ignored.
       env->BitBlt(result->GetWritePtr(), result->GetPitch(), frame->GetReadPtr(), frame->GetPitch(), frame->GetRowSize(), frame->GetHeight());
       env->BitBlt(result->GetWritePtr(PLANAR_V), result->GetPitch(PLANAR_V), frame->GetReadPtr(PLANAR_V), frame->GetPitch(PLANAR_V), frame->GetRowSize(PLANAR_V), frame->GetHeight(PLANAR_V));
       env->BitBlt(result->GetWritePtr(PLANAR_U), result->GetPitch(PLANAR_U), frame->GetReadPtr(PLANAR_U), frame->GetPitch(PLANAR_U), frame->GetRowSize(PLANAR_U), frame->GetHeight(PLANAR_U));
@@ -1921,12 +1831,17 @@ public:
 
   static AVSValue __cdecl Create(AVSValue args, void* _type, IScriptEnvironment* env) {
     const int type = (int)(size_t)_type;
+    // 0: ColorBars, 1: ColorBarsHD
     bool staticframes = args[3].AsBool(true);
 
-    PClip clip = new ColorBars(args[0].AsInt(   type ? 1288 : 640),
-                         args[1].AsInt(   type ?  720 : 480),
-                         args[2].AsString(type ? "YV24" : "RGB32"),
-                         staticframes, // new staticframes parameter
+    const int default_width = type ? 1288 : 640;
+    const int default_height = type ? 720 : 480;
+    const char* default_pixel_type = type ? "YV24" : "RGB32";
+
+    PClip clip = new ColorBars(args[0].AsInt(default_width),
+                         args[1].AsInt(default_height),
+                         args[2].AsString(default_pixel_type),
+                         staticframes,
                          type, env);
     // wrap in OnCPU to support multi devices
     AVSValue arg[2]{ clip, 1 }; // prefetch=1: enable cache but not thread
@@ -2215,3 +2130,5 @@ extern const AVSFunction Source_filters[] = {
 
   { NULL }
 };
+
+#undef XP_LAMBDA_CAPTURE_FIX
