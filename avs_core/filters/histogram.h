@@ -37,10 +37,25 @@
 #include <avisynth.h>
 #include <vector>
 #include "stdint.h"
+#include "../convert/convert_matrix.h"
+#include <string>
 
 /********************************************************************
 ********************************************************************/
 
+struct histogram_color2_params {
+  enum GraticuleType {
+    GRATICULE_OFF=0,
+    GRATICULE_ON,
+    GRATICULE_AUTO
+  };
+  GraticuleType graticule_type; // paint graticule on histogram on off auto
+  bool targets; // the 6 color bar boxes
+  bool axes; // paint axes horizontal + vertical cross
+  bool iq; // paint +-I/+Q boxes on histogram
+  bool iq_lines; // paint I/Q diagonal lines on histogram
+  bool circle; // paint circle on histogram, originally only at "color2"
+};
 
 class Histogram : public GenericVideoFilter
 /**
@@ -60,7 +75,7 @@ public:
 	ModeAudioLevels
   };
 
-  Histogram(PClip _child, Mode _mode, AVSValue _option, int _show_bits, bool _keepsource, bool _markers, IScriptEnvironment* env);
+  Histogram(PClip _child, Mode _mode, AVSValue _option, int _show_bits, bool _keepsource, bool _markers, const char* _matrix_name, histogram_color2_params _color2_params, IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
   PVideoFrame DrawModeClassic    (int n, IScriptEnvironment* env);
   PVideoFrame DrawModeLevels     (int n, IScriptEnvironment* env);
@@ -86,13 +101,32 @@ private:
   int bits_per_pixel;
   int show_bits; // e.g. levels for 10 bits
   bool keepsource; // return only the Histogram drawing
-  bool markers; // paint hazardous YUV area
+  bool markers; // paint hazardous YUV area "levels": draw unsafe zone, "classic"
+
+  histogram_color2_params color2_params;
+
   int origwidth;
   int origheight;
+
+  // for color2
+  int theMatrix;
+  int theColorRange;
+  // separate out set for rgb target
+  int theOutColorRange;
+  ConversionMatrix matrix;
 
   int E167;
   std::vector<uint16_t> exptab;
   void ClassicLUTInit();
+  PVideoFrame VectorscopePrelude(
+    int n, IScriptEnvironment* env,
+    PVideoFrame& src,
+    // out:
+    bool& full_range,
+    int& dst_pitch, int& dst_height,
+    int& dst_pitchUV, int& dst_heightUV,
+    int& dst_pitchA, int& dst_heightA,
+    BYTE*& panel, BYTE*& panelU, BYTE*& panelV, BYTE*& panelA);
 };
 
 

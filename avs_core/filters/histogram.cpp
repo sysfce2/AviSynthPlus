@@ -44,6 +44,8 @@
 #include "../convert/convert_planar.h"
 #include "../convert/convert_audio.h"
 #include "../convert/convert_helper.h"
+#include "../convert/convert_matrix.h"
+#include "colorbars_const.h"
 
 #ifdef AVS_WINDOWS
     #include <avs/win.h>
@@ -56,6 +58,7 @@
 #include <cstdio>
 #include <cmath>
 #include <stdint.h>
+#include <vector>
 
 
 constexpr double PI = 3.14159265358979323846; 
@@ -64,9 +67,8 @@ constexpr double PI = 3.14159265358979323846;
 /********************************************************************
 ***** Declare index of new filters for Avisynth's filter engine *****
 ********************************************************************/
-
 extern const AVSFunction Histogram_filters[] = {
-  { "Histogram", BUILTIN_FUNC_PREFIX, "c[mode]s[factor]f[bits]i[keepsource]b[markers]b", Histogram::Create },   // src clip, avs+ new bits, keepsource and markers param
+  { "Histogram", BUILTIN_FUNC_PREFIX, "c[mode]s[factor]f[bits]i[keepsource]b[markers]b[matrix]s[graticule]s[targets]b[axes]b[iq]b[iq_lines]b[circle]b", Histogram::Create },
   { 0 }
 };
 
@@ -74,8 +76,8 @@ extern const AVSFunction Histogram_filters[] = {
  *******   Histogram Filter   ******
  **********************************/
 
-Histogram::Histogram(PClip _child, Mode _mode, AVSValue _option, int _show_bits, bool _keepsource, bool _markers, IScriptEnvironment* env)
-  : GenericVideoFilter(_child), mode(_mode), option(_option), show_bits(_show_bits), keepsource(_keepsource), markers(_markers)
+Histogram::Histogram(PClip _child, Mode _mode, AVSValue _option, int _show_bits, bool _keepsource, bool _markers, const char* _matrix_name, histogram_color2_params _color2_params, IScriptEnvironment* env)
+  : GenericVideoFilter(_child), mode(_mode), option(_option), show_bits(_show_bits), keepsource(_keepsource), markers(_markers), color2_params(_color2_params)
 {
   bool optionValid = false;
 
@@ -91,6 +93,21 @@ Histogram::Histogram(PClip _child, Mode _mode, AVSValue _option, int _show_bits,
   if (non8bit && mode != ModeClassic && mode != ModeLevels && mode != ModeColor && mode != ModeColor2 && mode != ModeLuma)
   {
     env->ThrowError("Histogram: this histogram type is available only for 8 bit formats and parameters");
+  }
+
+  if (mode == ModeColor || mode == ModeColor2) {
+    // need to obtain actual YUV matrix to properly draw the pure color boxes around UV coordinates
+    // We input linear RGB
+    auto frame0 = child->GetFrame(0, env);
+    const AVSMap* props = env->getFramePropsRO(frame0);
+    // default matrix AVS_MATRIX_ST170_M (BT 601)
+    matrix_parse_merge_with_props(false, false, _matrix_name, props, theMatrix, theColorRange, theOutColorRange, env);
+    const int shift = 13; // not used here, we only get the floating point matrix
+    if (!do_BuildMatrix_Rgb2Yuv(theMatrix, theColorRange, theOutColorRange, shift, 32, /*ref*/matrix))
+      env->ThrowError("ConvertToY: Unknown matrix.");
+
+    // n/a
+    theColorRange = theOutColorRange; // final frame property, not used here
   }
 
   origwidth = vi.width;
@@ -126,15 +143,15 @@ Histogram::Histogram(PClip _child, Mode _mode, AVSValue _option, int _show_bits,
     }
   }
 
-  if (mode == ModeColor) {
+  if (mode == ModeColor || mode == ModeColor2) {
     if (vi.IsRGB()) {
-      env->ThrowError("Histogram: Color mode is not available in RGB.");
+      env->ThrowError("Histogram: VectorScope modes (color, color2) are not available in RGB.");
     }
     if (!vi.IsPlanar()) {
-      env->ThrowError("Histogram: Color mode only available in PLANAR.");
+      env->ThrowError("Histogram: VectorScope modes (color, color2) only available in PLANAR.");
     }
     if (vi.IsY()) {
-      env->ThrowError("Histogram: Color mode not available in greyscale.");
+      env->ThrowError("Histogram: VectorScope modes (color, color2) are not available in greyscale.");
     }
     // put diagram on the right side
     if (keepsource) {
@@ -145,38 +162,19 @@ Histogram::Histogram(PClip _child, Mode _mode, AVSValue _option, int _show_bits,
       vi.width = (1 << show_bits); // 256 for 8 bit
       vi.height = 1 << show_bits;
     }
-  }
 
-  if (mode == ModeColor2) {
-    if (vi.IsRGB()) {
-      env->ThrowError("Histogram: Color2 mode is not available in RGB.");
-    }
-    if (!vi.IsPlanar()) {
-      env->ThrowError("Histogram: Color2 mode only available in PLANAR.");
-    }
-    if (vi.IsY()) {
-      env->ThrowError("Histogram: Color2 mode not available in greyscale.");
-    }
-
-    // put circle on the right side
-    if (keepsource) {
-      vi.width += (1 << show_bits); // 256 for 8 bit
-      vi.height = max((1 << show_bits), vi.height); // yes, height can change
-    }
-    else {
-      vi.width = (1 << show_bits); // 256 for 8 bit
-      vi.height = (1 << show_bits); // yes, height can change
-    }
-
+    // for params.circle == true
     // precalculate 15 degree marker dots
-    const int half = (1 << (show_bits - 1)) - 1; // 127
-    // dots are placed somewhat inside to the colorful circle, which is thicker for higher show_bits
-    color2_innerF = 124.9;  // .9 is for better visuals in subsampled mode
-    int R = (int)(1 + color2_innerF * (1 << (show_bits - 8)) + 0.5); // 126 for 8 bits
+    if (color2_params.circle) {
+      const int half = (1 << (show_bits - 1)) - 1; // 127
+      // dots are placed somewhat inside to the colorful circle, which is thicker for higher show_bits
+      color2_innerF = 124.9;  // .9 is for better visuals in subsampled mode
+      int R = (int)(1 + color2_innerF * (1 << (show_bits - 8)) + 0.5); // 126 for 8 bits
 
-    for (int y=0; y<24; y++) { // just inside the big circle
-      deg15c[y] = (int) ( R*cos(y*PI/12.) + 0.5) + half;
-      deg15s[y] = (int) (-R*sin(y*PI/12.) + 0.5) + half;
+      for (int y = 0; y < 24; y++) { // just inside the big circle
+        deg15c[y] = (int)(R * cos(y * PI / 12.) + 0.5) + half;
+        deg15s[y] = (int)(-R * sin(y * PI / 12.) + 0.5) + half;
+      }
     }
   }
 
@@ -625,84 +623,331 @@ PVideoFrame Histogram::DrawModeLuma(int n, IScriptEnvironment* env) {
 }
 
 template<typename pixel_t>
-void DrawModeColor2_erase_area(int bits_per_pixel,
-  uint8_t* dstp, uint8_t* dstp_u, uint8_t* dstp_v,
-  int pitch, int pitchUV,
-  int height, int heightUV)
+static void DrawModeColor2_DrawRect(
+  pixel_t* dstp, int pitch,
+  pixel_t* dstpU, pixel_t* dstpV, int pitchUV,
+  int cx, int cy,          // center in luma coords
+  int half_w, int half_h,  // half-size in luma coords
+  int swidth, int sheight,
+  pixel_t luma_val,
+  pixel_t u_val, pixel_t v_val,
+  int limit_showwidth // bounds check
+)
 {
-  pixel_t black;
-  pixel_t middle_chroma;
+  // Draw horizontal top/bottom edges (luma)
+  for (int x = cx - half_w; x <= cx + half_w; x++) {
+    if (x < 0 || x >= limit_showwidth) continue;
+    int y_top = cy - half_h;
+    int y_bot = cy + half_h;
+    if (y_top >= 0 && y_top < limit_showwidth)
+      dstp[x + y_top * pitch] = luma_val;
+    if (y_bot >= 0 && y_bot < limit_showwidth)
+      dstp[x + y_bot * pitch] = luma_val;
+  }
 
-  constexpr int pixelsize = sizeof(pixel_t);
+  // Draw vertical left/right edges (luma)
+  for (int y = cy - half_h; y <= cy + half_h; y++) {
+    if (y < 0 || y >= limit_showwidth) continue;
+    int x_l = cx - half_w;
+    int x_r = cx + half_w;
+    if (x_l >= 0 && x_l < limit_showwidth)
+      dstp[x_l + y * pitch] = luma_val;
+    if (x_r >= 0 && x_r < limit_showwidth)
+      dstp[x_r + y * pitch] = luma_val;
+  }
 
-  if constexpr(std::is_integral<pixel_t>::value) {
-    black = 16 << (bits_per_pixel - 8);
+  // Chroma planes (subsampled)
+  const int limit_showwidth_uv = limit_showwidth >> swidth;
+  const int limit_showheight_uv = limit_showwidth >> sheight;
+
+  // Convert luma coordinates to chroma coordinates
+  const int cx_uv = cx >> swidth;
+  const int cy_uv = cy >> sheight;
+  const int half_w_uv = half_w >> swidth;
+  const int half_h_uv = half_h >> sheight;
+
+  // Draw horizontal top/bottom edges (chroma)
+  for (int x = cx_uv - half_w_uv; x <= cx_uv + half_w_uv; x++) {
+    if (x < 0 || x >= limit_showwidth_uv) continue;
+    int y_top = cy_uv - half_h_uv;
+    int y_bot = cy_uv + half_h_uv;
+    if (y_top >= 0 && y_top < limit_showheight_uv) {
+      dstpU[x + y_top * pitchUV] = u_val;
+      dstpV[x + y_top * pitchUV] = v_val;
+    }
+    if (y_bot >= 0 && y_bot < limit_showheight_uv) {
+      dstpU[x + y_bot * pitchUV] = u_val;
+      dstpV[x + y_bot * pitchUV] = v_val;
+    }
+  }
+
+  // Draw vertical left/right edges (chroma)
+  for (int y = cy_uv - half_h_uv; y <= cy_uv + half_h_uv; y++) {
+    if (y < 0 || y >= limit_showheight_uv) continue;
+    int x_l = cx_uv - half_w_uv;
+    int x_r = cx_uv + half_w_uv;
+    if (x_l >= 0 && x_l < limit_showwidth_uv) {
+      dstpU[x_l + y * pitchUV] = u_val;
+      dstpV[x_l + y * pitchUV] = v_val;
+    }
+    if (x_r >= 0 && x_r < limit_showwidth_uv) {
+      dstpU[x_r + y * pitchUV] = u_val;
+      dstpV[x_r + y * pitchUV] = v_val;
+    }
+  }
+}
+
+
+// This draws only on luma
+template<typename pixel_t>
+static void DrawRadialLine(pixel_t* dstp, int pitch, int limit, int show_bit_shift,
+  double angle_deg, pixel_t val)
+{
+  double angle_rad = angle_deg * M_PI / 180.0;
+  double R = 124.9 * (1 << show_bit_shift); // same as innerF * scale
+  // Step along the radius
+  int steps = (int)(R * 1.5);
+  for (int s = 0; s < steps; s++) {
+    double t = (double)s / steps;
+    int x = (int)(limit + t * R * cos(angle_rad) + 0.5);
+    int y = (int)(limit - t * R * sin(angle_rad) + 0.5); // V is flipped
+    if (x >= 0 && x <= 2 * limit && y >= 0 && y <= 2 * limit)
+      dstp[x + y * pitch] = val;
+  }
+}
+
+// Set to black, alpha to 0.
+template<typename pixel_t>
+static void ClearArea(
+  uint8_t* dstp, uint8_t* dstp_u, uint8_t* dstp_v, uint8_t* dstp_a,
+  int width, int widthUV,
+  int pitch, int pitchUV, int pitchA,
+  int height, int heightUV, int heightA,
+  int bits_per_pixel, bool full_range)
+{
+  pixel_t black, middle_chroma, alpha;
+  if constexpr (std::is_integral<pixel_t>::value) {
+    black = full_range ? 0 : (pixel_t)(16 << (bits_per_pixel - 8));
     middle_chroma = (pixel_t)(128 << (bits_per_pixel - 8));
+    alpha = 0;
   }
   else {
-    black = 16.0f / 255;
+    black = full_range ? 0.0f : 16.0f / 255.0f;
     middle_chroma = 0.0f;
+    alpha = 0.0f;
   }
 
-  const int imgSize = height * pitch / pixelsize;
-  const int imgSizeUV = heightUV * pitchUV / pixelsize;
+  // Y
+  for (int y = 0; y < height; y++) {
+    std::fill_n((pixel_t*)(dstp + y * pitch), width, black);
+  }
+  // UV
+  for (int y = 0; y < heightUV; y++) {
+    std::fill_n((pixel_t*)(dstp_u + y * pitchUV), widthUV, middle_chroma);
+    std::fill_n((pixel_t*)(dstp_v + y * pitchUV), widthUV, middle_chroma);
+  }
+  // Alpha, dimensions same as luma
+  // heightA is zero if no alpha plane
+  for (int y = 0; y < heightA; y++) {
+    std::fill_n((pixel_t*)(dstp_a + y * pitchA), width, alpha);
+  }
+}
 
-  std::fill_n((pixel_t *)dstp, imgSize, black);
-  std::fill_n((pixel_t*)dstp_u, imgSizeUV, middle_chroma);
-  std::fill_n((pixel_t*)dstp_v, imgSizeUV, middle_chroma);
+// Common prelude for Color and Color2 modes.
+// Allocates dst, optionally clears the below-source area, copies source planes.
+// Returns the allocated dst frame; populates panel pointer offsets.ű
+// Fills full_range flag.
+PVideoFrame Histogram::VectorscopePrelude(
+  int n, IScriptEnvironment* env,
+  PVideoFrame& src,
+  // outputs:
+  bool& full_range,
+  int& dst_pitch, int& dst_height,
+  int& dst_pitchUV, int& dst_heightUV,
+  int& dst_pitchA, int& dst_heightA,
+  BYTE*& panel, BYTE*& panelU, BYTE*& panelV, BYTE*& panelA)
+{
+  src = child->GetFrame(n, env);
+  PVideoFrame dst = env->NewVideoFrameP(vi, &src);
 
+  BYTE *pdst = dst->GetWritePtr();
+  BYTE *pdstU = dst->GetWritePtr(PLANAR_U);
+  BYTE *pdstV = dst->GetWritePtr(PLANAR_V);
+  BYTE *pdstA = dst->GetWritePtr(PLANAR_A);
+
+  dst_pitch = dst->GetPitch();
+  dst_pitchUV = dst->GetPitch(PLANAR_U);
+  dst_pitchA = dst->GetPitch(PLANAR_A);
+  dst_height = dst->GetHeight();
+  dst_heightUV = dst->GetHeight(PLANAR_U);
+  dst_heightA = dst->GetHeight(PLANAR_A);
+
+  const bool has_alpha = dst_heightA > 0;
+
+  const int src_width = src->GetRowSize() / pixelsize;
+  const int src_widthUV = src->GetRowSize(PLANAR_U) / pixelsize;
+  const int src_height = src->GetHeight();
+  const int src_heightUV = src->GetHeight(PLANAR_U);
+
+  const int show_size = 1 << show_bits;
+  const int show_size_w_uv = show_size >> vi.GetPlaneWidthSubsampling(PLANAR_U);
+  const int show_size_h_uv = show_size >> vi.GetPlaneHeightSubsampling(PLANAR_U);
+
+  if (keepsource) {
+
+    if (src_height < dst_height) {
+      // in case of Histogram area is higher than source, clear the area below source copy to black + A=0
+      auto pdst_start = pdst + src_height * dst_pitch;
+      auto pdstU_start = pdstU + src_heightUV * dst_pitchUV;
+      auto pdstV_start = pdstV + src_heightUV * dst_pitchUV;
+      auto pdstA_start = pdstA + src_height * dst_pitchA;
+      const int new_height = dst_height - src_height;
+      const int new_height_uv = dst_heightUV - src_heightUV;
+      const int new_height_a = has_alpha ? new_height : 0;
+
+      if (bits_per_pixel == 8)
+        ClearArea<uint8_t>(pdst_start, pdstU_start, pdstV_start, pdstA_start,
+          src_width, src_widthUV,
+          dst_pitch, dst_pitchUV, dst_pitchA,
+          new_height, new_height_uv, new_height_a,
+          bits_per_pixel, full_range);
+      else if (bits_per_pixel <= 16)
+        ClearArea<uint16_t>(pdst_start, pdstU_start, pdstV_start, pdstA_start,
+          src_width, src_widthUV,
+          dst_pitch, dst_pitchUV, dst_pitchA,
+          new_height, new_height_uv, new_height_a,
+          bits_per_pixel, full_range);
+      else
+        ClearArea<float>(pdst_start, pdstU_start, pdstV_start, pdstA_start,
+          src_width, src_widthUV,
+          dst_pitch, dst_pitchUV, dst_pitchA,
+          new_height, new_height_uv, new_height_a,
+          bits_per_pixel, full_range);
+    }
+    // copy source
+    env->BitBlt(pdst, dst_pitch, src->GetReadPtr(), src->GetPitch(), src->GetRowSize(), src->GetHeight());
+    env->BitBlt(pdstU, dst_pitchUV, src->GetReadPtr(PLANAR_U), src->GetPitch(PLANAR_U), src->GetRowSize(PLANAR_U), src->GetHeight(PLANAR_U));
+    env->BitBlt(pdstV, dst_pitchUV, src->GetReadPtr(PLANAR_V), src->GetPitch(PLANAR_V), src->GetRowSize(PLANAR_V), src->GetHeight(PLANAR_V));
+    if (has_alpha)
+      env->BitBlt(pdstA, dst_pitchA, src->GetReadPtr(PLANAR_A), src->GetPitch(PLANAR_A), src->GetRowSize(PLANAR_A), src->GetHeight(PLANAR_A));
+  }
+
+  // panel is with the offset into the histogram panel area (past the source copy)
+  panel = pdst + (keepsource ? src->GetRowSize() : 0);
+  panelU = pdstU + (keepsource ? src->GetRowSize(PLANAR_U) : 0);
+  panelV = pdstV + (keepsource ? src->GetRowSize(PLANAR_V) : 0);
+  panelA = (pdstA && src->GetReadPtr(PLANAR_A)) ? (pdstA + (keepsource ? src->GetRowSize(PLANAR_A) : 0)) : nullptr;
+
+  // Clear below the histogram area (bottom right), if source is higher than histogram area.
+  if (src_height > show_size) {
+    auto pdst_start = panel + show_size * dst_pitch;
+    auto pdstU_start = panelU + show_size_h_uv * dst_pitchUV;
+    auto pdstV_start = panelV + show_size_h_uv * dst_pitchUV;
+    auto pdstA_start = has_alpha ? panelA + show_size * dst_pitchA : nullptr;
+    const int new_height = dst_height - show_size;
+    const int new_height_uv = dst_heightUV - show_size_h_uv;
+    const int new_height_a = has_alpha ? new_height : 0;
+
+    if (bits_per_pixel == 8)
+      ClearArea<uint8_t>(pdst_start, pdstU_start, pdstV_start, pdstA_start,
+        show_size, show_size_w_uv,
+        dst_pitch, dst_pitchUV, dst_pitchA,
+        new_height, new_height_uv, new_height_a,
+        bits_per_pixel, full_range);
+    else if (bits_per_pixel <= 16)
+      ClearArea<uint16_t>(pdst_start, pdstU_start, pdstV_start, pdstA_start,
+        show_size, show_size_w_uv,
+        dst_pitch, dst_pitchUV, dst_pitchA,
+        new_height, new_height_uv, new_height_a,
+        bits_per_pixel, full_range);
+    else
+      ClearArea<float>(pdst_start, pdstU_start, pdstV_start, pdstA_start,
+        show_size, show_size_w_uv,
+        dst_pitch, dst_pitchUV, dst_pitchA,
+        new_height, new_height_uv, new_height_a,
+        bits_per_pixel, full_range);
+  }
+
+  // Full range or limited?
+  // When the histogram's virtual bit-size is different from the real video bit-depth
+  // then video-bit depth must be converted to the histogram's bit-depth either by
+  // limited (shift) or full range (stretch) method.
+  full_range = vi.IsRGB(); // default for RGB, VectorScope is YUV only though, we just copy paste the usual lines
+  auto props = env->getFramePropsRO(dst);
+  int error;
+  auto val = env->propGetInt(props, "_ColorRange", 0, &error);
+  if (!error) full_range = val == ColorRange_e::AVS_RANGE_FULL;
+  return dst;
+}
+
+static void GetYUVFromMatrix(
+  int matrix,                          // AVS_MATRIX_* enum value
+  double R, double G, double B,
+  double& dY, double& dU, double& dV)
+{
+  double Kr, Kb;
+  if (!GetKrKb(matrix, Kr, Kb)) {
+    // fallback to BT.601
+    Kr = 0.299; Kb = 0.114;
+  }
+  double Kg = 1.0 - Kr - Kb;
+  dY = Kr * R + Kg * G + Kb * B;
+  dU = (B - dY) / (2.0 * (1.0 - Kb));
+  dV = (R - dY) / (2.0 * (1.0 - Kr));
 }
 
 template<typename pixel_t>
-void DrawModeColor2_draw_misc(int bits_per_pixel,
-  uint8_t* dstp8, uint8_t* dstp8_u, uint8_t* dstp8_v,
-  int pitch, int pitchUV,
-  int height, int heightUV,
+static void DrawModeColor2_ClearVectorscopeArea(int bits_per_pixel,
+  uint8_t* dstp8, uint8_t* dstp8_u, uint8_t* dstp8_v, uint8_t* dstp8_a,
+  int pitch, int pitchUV, int pitchA,
+  int height, int heightUV, int heightA,
   int show_bits, int swidth, int sheight,
-  double innerF
+  bool full_range
 )
 {
-  pixel_t black;
-  pixel_t middle_chroma;
-  pixel_t luma128;
+  const int show_size = (1 << show_bits);
+  const int show_size_w_uv = show_size >> swidth;
+  const int show_size_h_uv = show_size >> sheight;
+  const bool has_alpha = heightA > 0;
+  const int show_size_a = has_alpha ? show_size : 0;
+
+  // Clear vectorscope area
+
+  if (bits_per_pixel == 8)
+    ClearArea<uint8_t>(dstp8, dstp8_u, dstp8_v, dstp8_a,
+      show_size, show_size_w_uv, // width
+      pitch, pitchUV, pitchA,
+      show_size, show_size_h_uv, show_size_a, // height
+      bits_per_pixel, full_range);
+  else if (bits_per_pixel <= 16)
+    ClearArea<uint16_t>(dstp8, dstp8_u, dstp8_v, dstp8_a,
+      show_size, show_size_w_uv, // width
+      pitch, pitchUV, pitchA,
+      show_size, show_size_h_uv, show_size_a, // height
+      bits_per_pixel, full_range);
+  else
+    ClearArea<float>(dstp8, dstp8_u, dstp8_v, dstp8_a,
+      show_size, show_size_w_uv, // width
+      pitch, pitchUV, pitchA,
+      show_size, show_size_h_uv, show_size_a, // height
+      bits_per_pixel, full_range);
+}
+
+template<typename pixel_t>
+static void DrawModeColor2_draw_graticule(int bits_per_pixel, uint8_t* dstp8, int pitch, int height, int show_bits) {
 
   pitch /= sizeof(pixel_t);
-  pitchUV /= sizeof(pixel_t);
   pixel_t* dstp = reinterpret_cast<pixel_t*>(dstp8);
-  pixel_t* dstp_u = reinterpret_cast<pixel_t*>(dstp8_u);
-  pixel_t* dstp_v = reinterpret_cast<pixel_t*>(dstp8_v);
 
-
+  pixel_t luma128;
 
   if constexpr (std::is_integral<pixel_t>::value) {
-    black = 16 << (bits_per_pixel - 8);
-    middle_chroma = (pixel_t)(128 << (bits_per_pixel - 8));
     luma128 = (pixel_t)(128 << (bits_per_pixel - 8));
   }
   else {
-    black = 16.0f / 255; // 'limited' 32 bit float
-    middle_chroma = 0.0f;
     luma128 = c8tof(128);
   }
 
-  const int showsize = (1 << show_bits);
-  const int showsizeUV = showsize >> swidth;
-
-  // Erase all - luma
-  for (int y = 0; y < height; y++) {
-    pixel_t* ptr = dstp + y * pitch;
-    std::fill_n(ptr, showsize, black);
-  }
-
-  // Erase all - chroma
-  for (int y = 0; y < heightUV; y++) {
-    pixel_t* ptrU = dstp_u + y * pitchUV;
-    pixel_t* ptrV = dstp_v + y * pitchUV;
-    std::fill_n(ptrU, showsizeUV, middle_chroma);
-    std::fill_n(ptrV, showsizeUV, middle_chroma);
-  }
-
-  // possible to display >8 bit data stuffed into 8 bit size
   const int show_bit_shift = show_bits - 8;
 
   //    16       240
@@ -713,7 +958,7 @@ void DrawModeColor2_draw_misc(int bits_per_pixel,
   // 240 +---------+
 
   // plot valid grey ccir601 square
-  const int size = 1 + ((240 - 16) << show_bit_shift); // original 8 bit: 225 
+  const int size = 1 + ((240 - 16) << show_bit_shift); // original 8 bit: 225 0+/-112
   std::fill_n(&dstp[(16 << show_bit_shift) * pitch + (16 << show_bit_shift)], size, luma128);
   std::fill_n(&dstp[(240 << show_bit_shift) * pitch + (16 << show_bit_shift)], size, luma128);
 
@@ -722,8 +967,27 @@ void DrawModeColor2_draw_misc(int bits_per_pixel,
     dstp[(16 << show_bit_shift) + y * pitch] = luma128;
     dstp[(240 << show_bit_shift) + y * pitch] = luma128;
   }
+}
+
+template<typename pixel_t>
+static void DrawModeColor2_draw_circle(int bits_per_pixel, uint8_t* dstp8, uint8_t* dstp8_u, uint8_t* dstp8_v,
+  int pitch, int pitchUV, int height, int heightUV, double innerF,
+  int show_bits, int swidth, int sheight, int* deg15c, int* deg15s // precalculated array
+)
+{
+
+  pitch /= sizeof(pixel_t);
+  pitchUV /= sizeof(pixel_t);
+  pixel_t* dstp = reinterpret_cast<pixel_t*>(dstp8);
+  pixel_t* dstp_u = reinterpret_cast<pixel_t*>(dstp8_u);
+  pixel_t* dstp_v = reinterpret_cast<pixel_t*>(dstp8_v);
+
+  // possible to display >8 bit data stuffed into 8 bit size
+  const int show_bit_shift = show_bits - 8;
 
   // plot circles
+
+  // here we do not bother with matrix-correct color representation.
 
   // six hues in the color-wheel:
   // LC[3j,3j+1,3j+2], RC[3j,3j+1,3j+2] in YRange[j]+1 and YRange[j+1]
@@ -788,9 +1052,9 @@ void DrawModeColor2_draw_misc(int bits_per_pixel,
   int xRounder = (1 << swidth) / 2;
   int yRounder = (1 << sheight) / 2;
 
-  const int limit = (1 << (show_bits-1)) - 1;
+  const int limit = (1 << (show_bits - 1)) - 1;
   const int limit_showwidth = (1 << show_bits) - 1;
-  for (int y = -limit; y < limit+1; y++) {
+  for (int y = -limit; y < limit + 1; y++) {
     if (y + limit > YRange[activeY + 1] << show_bit_shift)
       activeY++;
     for (int x = -limit; x <= 0; x++) {
@@ -800,7 +1064,7 @@ void DrawModeColor2_draw_misc(int bits_per_pixel,
         if constexpr (std::is_integral<pixel_t>::value) {
           const int factorshift = (bits_per_pixel - 8);
           const int MAXINTERP = 256;
-          double dist = fabs(sqrt((double)distSq * (1.0 / (1 << (2*show_bit_shift)))) - centerF);
+          double dist = fabs(sqrt((double)distSq * (1.0 / (1 << (2 * show_bit_shift)))) - centerF);
           int interp = (int)(256.0f - (255.9f * (oneOverThicknessF * dist)));
           // 255.9 is to account for float inprecision, which could cause underflow.
 
@@ -818,7 +1082,7 @@ void DrawModeColor2_draw_misc(int bits_per_pixel,
 
           interp = min(MAXINTERP, interp);
           int invInt = (MAXINTERP - interp);
-          
+
           int p_uv;
           p_uv = xP + yP * pitchUV;
           dstp_u[p_uv] = (pixel_t)((dstp_u[p_uv] * invInt + interp * (LC[3 * activeY + 1] << factorshift)) >> 8); // left half
@@ -867,151 +1131,466 @@ void DrawModeColor2_draw_misc(int bits_per_pixel,
     }
   }
 
+  // and the 15 degree markers (same as innerF)
+  // plot white 15 degree marks
+  for (int i = 0; i < 24; i++) {
+    if constexpr (sizeof(pixel_t) == 1)
+      dstp[deg15c[i] + deg15s[i] * pitch] = 235; // 235: Y-maxluma
+    else if constexpr (sizeof(pixel_t) == 2)
+      dstp[deg15c[i] + deg15s[i] * pitch] = 235 << (bits_per_pixel - 8); // 235: Y-maxluma
+    else // if constexpr (sizeof(pixel_t) == 4)
+      dstp[deg15c[i] + deg15s[i] * pitch] = c8tof(235); // 235: Y-maxluma
+  }
+
 }
 
+
 template<typename pixel_t>
-void do_vectorscope_color2(
+static void do_vectorscope_color2(
   pixel_t* pdstb, pixel_t* pdstbU, pixel_t* pdstbV,
   const pixel_t* pY, const pixel_t* pU, const pixel_t* pV,
   int dst_pitch, int dst_pitchUV,
   int src_pitch, int src_pitchUV,
   int src_widthUV, int src_heightUV,
   int swidth, int sheight,
-  int shift,
-  int bits_per_pixel
+  int show_bits,
+  int bits_per_pixel,
+  bits_conv_constants& d_chroma,
+  bool full_range
 )
 {
-  if constexpr (sizeof(pixel_t) == 1 || sizeof(pixel_t) == 2) {
-    const int max_value = (1 << bits_per_pixel) - 1;
+  // 32 bit float Vectorscope is simulated after a 16 bit conversion
+  const int shift = bits_per_pixel == 32 ? (16 - show_bits) /*n/a*/ : (bits_per_pixel - show_bits);
+  const int max_pos = (1 << show_bits) - 1;
+  auto src_pitchY_chromacorr = (src_pitch << sheight);
+
+  if constexpr (sizeof(pixel_t) == 4) {
+    // ===== FLOAT PATH =====
+    const float mul_factor = d_chroma.mul_factor;
+    const float dst_offset = d_chroma.dst_offset;
+
     for (int y = 0; y < src_heightUV; y++) {
       for (int x = 0; x < src_widthUV; x++) {
-        const int uval = max(0, min(max_value, (int)pU[x]));
-        const int vval = max(0, min(max_value, (int)pV[x]));
-        const int uval_posindex = shift<0 ? uval << -shift : uval >> shift;
-        const int vval_posindex = shift<0 ? vval << -shift : vval >> shift;
-        pdstb[uval_posindex + vval_posindex * dst_pitch] = pY[x << swidth];
-        pdstbU[(uval_posindex >> swidth) + (vval_posindex >> sheight) * dst_pitchUV] = uval;
-        pdstbV[(uval_posindex >> swidth) + (vval_posindex >> sheight) * dst_pitchUV] = vval;
-      }
-      pY += (src_pitch << sheight);
-      pU += src_pitchUV;
-      pV += src_pitchUV;
-    }
-  }
-  else { // pixelsize == 4
-    for (int y = 0; y < src_heightUV; y++) {
-      for (int x = 0; x < src_widthUV; x++) {
-        const float uval_f = max(-0.5f, min(0.5f, pU[x])); // clamp to avoid out of frame display
+        const float uval_f = max(-0.5f, min(0.5f, pU[x]));
         const float vval_f = max(-0.5f, min(0.5f, pV[x]));
-        const int uval = (int)((uval_f * 65536 + 32768) + 0.5f); // simulate on 16 bits
-        const int vval = (int)((vval_f * 65536 + 32768) + 0.5f);
-        const int uval_posindex = uval >> shift;
-        const int vval_posindex = vval >> shift;
+
+        int uval_posindex = (int)(uval_f * mul_factor + dst_offset + 0.5f);
+        int vval_posindex = (int)(vval_f * mul_factor + dst_offset + 0.5f);
+        uval_posindex = max(0, min(max_pos, uval_posindex));
+        vval_posindex = max(0, min(max_pos, vval_posindex));
+
         pdstb[uval_posindex + vval_posindex * dst_pitch] = pY[x << swidth];
         pdstbU[(uval_posindex >> swidth) + (vval_posindex >> sheight) * dst_pitchUV] = uval_f;
         pdstbV[(uval_posindex >> swidth) + (vval_posindex >> sheight) * dst_pitchUV] = vval_f;
       }
-      pY += (src_pitch << sheight);
+      pY += src_pitchY_chromacorr;
       pU += src_pitchUV;
       pV += src_pitchUV;
+    }
+  }
+  else {
+    // ===== INTEGER PATH =====
+    const int max_value = (1 << bits_per_pixel) - 1;
+
+    // Split into 3 optimized paths based on shift and range
+    // When shift != 0, that is the dispay bit depth is different from source bit depth, we do conversion
+    // - full range: use conversion constants
+    // - limited range: either by downshifting or upshifting.
+    // E.g. displaying 10 bit data on a 8 bit grid, or displaying 8 bit data on a 10 bit grid.
+    // We need to convert the chroma values to the display bit depth, taking into account the limited/full range and the shift.
+
+    if (shift == 0) {
+      // ===== FAST PATH: No scaling needed =====
+      for (int y = 0; y < src_heightUV; y++) {
+        for (int x = 0; x < src_widthUV; x++) {
+          const int uval = max(0, min(max_value, (int)pU[x]));
+          const int vval = max(0, min(max_value, (int)pV[x]));
+
+          pdstb[uval + vval * dst_pitch] = pY[x << swidth];
+          pdstbU[(uval >> swidth) + (vval >> sheight) * dst_pitchUV] = (pixel_t)uval;
+          pdstbV[(uval >> swidth) + (vval >> sheight) * dst_pitchUV] = (pixel_t)vval;
+        }
+        pY += src_pitchY_chromacorr;
+        pU += src_pitchUV;
+        pV += src_pitchUV;
+      }
+    }
+    else if (full_range) {
+      // ===== FULL RANGE PATH: Use conversion constants =====
+      const float mul_factor = d_chroma.mul_factor;
+      const int src_offset_i = d_chroma.src_offset_i;
+      const float dst_offset = d_chroma.dst_offset;
+
+      for (int y = 0; y < src_heightUV; y++) {
+        for (int x = 0; x < src_widthUV; x++) {
+          const int uval = max(0, min(max_value, (int)pU[x]));
+          const int vval = max(0, min(max_value, (int)pV[x]));
+
+          int uval_posindex = (int)((uval - src_offset_i) * mul_factor + dst_offset + 0.5f);
+          int vval_posindex = (int)((vval - src_offset_i) * mul_factor + dst_offset + 0.5f);
+          uval_posindex = max(0, min(max_pos, uval_posindex));
+          vval_posindex = max(0, min(max_pos, vval_posindex));
+
+          pdstb[uval_posindex + vval_posindex * dst_pitch] = pY[x << swidth];
+          pdstbU[(uval_posindex >> swidth) + (vval_posindex >> sheight) * dst_pitchUV] = (pixel_t)uval;
+          pdstbV[(uval_posindex >> swidth) + (vval_posindex >> sheight) * dst_pitchUV] = (pixel_t)vval;
+        }
+        pY += src_pitchY_chromacorr;
+        pU += src_pitchUV;
+        pV += src_pitchUV;
+      }
+    }
+    else {
+      // ===== LIMITED RANGE PATH: Simple bit shift =====
+      if (shift > 0) {
+        // Downshift (e.g., 10-bit -> 8-bit display)
+        const int rounder = 1 << (shift - 1);
+        for (int y = 0; y < src_heightUV; y++) {
+          for (int x = 0; x < src_widthUV; x++) {
+            const int uval = max(0, min(max_value, (int)pU[x]));
+            const int vval = max(0, min(max_value, (int)pV[x]));
+
+            const int uval_posindex = (uval + rounder) >> shift;
+            const int vval_posindex = (vval + rounder) >> shift;
+
+            pdstb[uval_posindex + vval_posindex * dst_pitch] = pY[x << swidth];
+            pdstbU[(uval_posindex >> swidth) + (vval_posindex >> sheight) * dst_pitchUV] = (pixel_t)uval;
+            pdstbV[(uval_posindex >> swidth) + (vval_posindex >> sheight) * dst_pitchUV] = (pixel_t)vval;
+          }
+          pY += src_pitchY_chromacorr;
+          pU += src_pitchUV;
+          pV += src_pitchUV;
+        }
+      }
+      else {
+        // Upshift (e.g., 8-bit -> 10-bit display)
+        const int neg_shift = -shift;
+        for (int y = 0; y < src_heightUV; y++) {
+          for (int x = 0; x < src_widthUV; x++) {
+            const int uval = max(0, min(max_value, (int)pU[x]));
+            const int vval = max(0, min(max_value, (int)pV[x]));
+
+            const int uval_posindex = uval << neg_shift;
+            const int vval_posindex = vval << neg_shift;
+
+            pdstb[uval_posindex + vval_posindex * dst_pitch] = pY[x << swidth];
+            pdstbU[(uval_posindex >> swidth) + (vval_posindex >> sheight) * dst_pitchUV] = (pixel_t)uval;
+            pdstbV[(uval_posindex >> swidth) + (vval_posindex >> sheight) * dst_pitchUV] = (pixel_t)vval;
+          }
+          pY += src_pitchY_chromacorr;
+          pU += src_pitchUV;
+          pV += src_pitchUV;
+        }
+      }
+    }
+  }
+}
+
+template<typename pixel_t>
+static void Draw_VectorScope_circle_targets_axes(int bits_per_pixel,
+  uint8_t* dstp8, uint8_t* dstp8_u, uint8_t* dstp8_v, int pitch, int pitchUV, int height, int heightUV,
+  double innerF,
+  int show_bits, int swidth, int sheight,
+  histogram_color2_params& params,
+  ConversionMatrix& conv_matrix,
+  int matrix, // AVS_MATRIX_* enum value
+  bits_conv_constants& conv_consts,
+  bool full_range, int* deg15c, int* deg15s)
+{
+
+  if (params.circle) {
+    // also the 15 deg marks points
+    DrawModeColor2_draw_circle<pixel_t>(bits_per_pixel,
+      dstp8, dstp8_u, dstp8_v,
+      pitch, pitchUV,
+      height, heightUV,
+      innerF,
+      show_bits, swidth, sheight,
+      deg15c, deg15s
+    );
+  }
+
+  // Used for the colorUV square positions, calculated from linear RGB
+  bits_conv_constants conv_consts_fullrange_float_origin;
+  get_bits_conv_constants(conv_consts_fullrange_float_origin, /*use_chroma=*/true,
+    /*fulls=*/true, full_range,
+    /*srcBitDepth=*/32, /*dstBitDepth=*/show_bits);
+
+  const int show_size = (1 << show_bits);
+  const int limit_showwidth = (1 << show_bits) - 1;
+
+  pitch /= sizeof(pixel_t);
+  pitchUV /= sizeof(pixel_t);
+  pixel_t* dstp = reinterpret_cast<pixel_t*>(dstp8);
+  pixel_t* dstp_u = reinterpret_cast<pixel_t*>(dstp8_u);
+  pixel_t* dstp_v = reinterpret_cast<pixel_t*>(dstp8_v);
+
+  // possible to display >8 bit data stuffed into 8 bit size
+  const int show_bit_shift = show_bits - 8;
+
+  if (params.targets) {
+    // ColorBars ground truth linear RGB (0.75 amplitude, Rec. BT.801-1)
+    // Top 2/3 bars: LtGrey, Yellow, Cyan, Green, Magenta, Red, Blue
+    // (White/LtGrey sits at UV center, not a useful vectorscope target)
+    struct RGBEntry { const char* name; double r, g, b; };
+    static const RGBEntry bar_rgb[] = {
+        { "Yellow",  0.75, 0.75, 0.0  },
+        { "Cyan",    0.0,  0.75, 0.75 },
+        { "Green",   0.0,  0.75, 0.0  },
+        { "Magenta", 0.75, 0.0,  0.75 },
+        { "Red",     0.75, 0.0,  0.0  },
+        { "Blue",    0.0,  0.0,  0.75 },
+    };
+
+    // ===== -I AND +Q SIGNAL RGB VALUES FOR VECTORSCOPE GRATICULE =====
+    // These feed through the same matrix-aware make_yuv path as the color bar patches,
+    // giving correct UV pixel coordinates for any matrix and any bit depth.
+    // 
+    // Note: -I and +Q are analog NTSC test signals that don't map cleanly to digital RGB/YUV.
+    // We maintain two separate specifications for backward compatibility:
+    //
+    // RGB-NATIVE: Lifted to studio black (code 16), broadcast-safe
+    //   Used when vectorscope processes RGB sources or when drawing RGB graticules
+    //   -I: RGB(16, 90, 130) at 8-bit → produces Y≈77 after matrix conversion
+    //   +Q: RGB(92, 16, 143) at 8-bit → produces Y≈63 after matrix conversion
+    //
+    // YUV-TARGETED: Zero-luma pure chroma definition  
+    //   Used when vectorscope processes YUV sources
+    //   -I: Converts to Y=16, Cb=158, Cr=95 (legacy ColorBars YUV output)
+    //   +Q: Converts to Y=16, Cb=174, Cr=149 (legacy ColorBars YUV output)
+    //   Contains out-of-range RGB components (super-blacks)
+    //
+    // Note 2: These will not lay exactly on UV's 33° and 123° degree lines, since those 
+    // angles are defined in the original NTSC YIQ color space, which differs from the YUV 
+    // space produced by BT.601/BT.709 matrix conversions.
+
+    // this one is not used, this is YUV vectorscope, we cannot determine that the YUV was converted from
+    // an RGB ColorBars.
+    /*
+    static const RGBEntry iq_rgb_native[] = {
+        { "-I", MINUS_I_R,     MINUS_I_G,     MINUS_I_B     }, // RGB-native (studio black lift)
+        { "+Q", PLUS_Q_R,      PLUS_Q_G,      PLUS_Q_B      }, // RGB-native (studio black lift)
+        { "+I", PLUS_I_R,      PLUS_I_G,      PLUS_I_B      }, // n/a ColorBarsHD only, which is YUV-only
+    };
+    */
+
+    static const RGBEntry iq_rgb_yuv_targeted[] = {
+        { "-I", MINUS_I_R_YUV, MINUS_I_G_YUV, MINUS_I_B_YUV }, // YUV-targeted (zero-luma)
+        { "+Q", PLUS_Q_R_YUV,  PLUS_Q_G_YUV,  PLUS_Q_B_YUV  }, // YUV-targeted (zero-luma)
+        { "+I", PLUS_I_R_YUV,  PLUS_I_G_YUV,  PLUS_I_B_YUV }, // ColorBarsHD only (same for both)
+    };
+
+    // Box color (brownish, visible on the wheel background) ----
+    pixel_t box_luma, box_u, box_v;
+    if constexpr (std::is_integral<pixel_t>::value) {
+      // Tan/beige: Y=80, slightly orange/brown tint
+      box_luma = (pixel_t)(80 << (bits_per_pixel - 8));
+      box_u = (pixel_t)(140 << (bits_per_pixel - 8));
+      box_v = (pixel_t)(120 << (bits_per_pixel - 8));
+    }
+    else {
+      box_luma = c8tof(80);
+      box_u = uv8tof(140);
+      box_v = uv8tof(120);
+    }
+
+    const int half_box = 4 * (1 << (show_bits - 8));
+
+    // ---- Pixel position helper ----
+    // Converts normalised chroma [-0.5..0.5] to vectorscope pixel coordinate.
+    // Always from full range float, since the YUV squares are obtained from the linear RGB values.
+    // Target is limited/full range aware.
+    auto uv_to_px_float = [&](double uv_norm) -> int {
+      return clamp(
+        (int)((float)uv_norm * conv_consts_fullrange_float_origin.mul_factor + conv_consts_fullrange_float_origin.dst_offset + 0.5f),
+        0, (1 << show_bits) - 1);
+      };
+
+    // ---- Draw colour-bar target boxes ----
+    for (auto& e : bar_rgb) {
+      double dY, dU, dV;
+      GetYUVFromMatrix(matrix, e.r, e.g, e.b, dY, dU, dV);
+      int cx;
+      int cy;
+      if constexpr (std::is_integral<pixel_t>::value) {
+        cx = uv_to_px_float(dU);
+        cy = uv_to_px_float(dV);
+      }
+      else {
+        cx = uv_to_px_float(dU);
+        cy = uv_to_px_float(dV);
+      }
+
+      DrawModeColor2_DrawRect<pixel_t>(
+        dstp, pitch, dstp_u, dstp_v, pitchUV,
+        cx, cy, half_box, half_box,
+        swidth, sheight,
+        box_luma, box_u, box_v,
+        limit_showwidth);
+
+    }
+
+    if (params.iq) {
+      // ---- Draw +Q and -I target boxes ----
+      // These are matrix-independent (they are phase references, not primaries),
+      // but still need the same pixel-coordinate conversion.
+      for (auto& e : iq_rgb_yuv_targeted) {
+        double dY, dU, dV;
+        GetYUVFromMatrix(matrix, e.r, e.g, e.b, dY, dU, dV);
+        int cx = uv_to_px_float(dU);
+        int cy = uv_to_px_float(dV);
+        // yuv.u and yuv.v are already the correct pixel_t values at the virtual target
+        // (show) bit depth.
+
+        DrawModeColor2_DrawRect<pixel_t>(
+          dstp, pitch, dstp_u, dstp_v, pitchUV,
+          cx, cy, half_box, half_box,
+          swidth, sheight,
+          box_luma, box_u, box_v,
+          limit_showwidth);
+
+      }
+    }
+
+    // ---- Radial lines ----
+    pixel_t line_luma;
+    if constexpr (std::is_integral<pixel_t>::value)
+      line_luma = (pixel_t)(120 << (bits_per_pixel - 8));
+    else
+      line_luma = c8tof(120);
+
+    // Angles to draw(matching PPro vectorscope) :
+    // 0°, 90°, 180°, 270° — the axis cross
+    // 33°, 123°, 213°, 303° — the ±I/±Q diagonals
+    // knowing that in UV space these are not exactly at 33° and 123°
+
+    if (params.axes) {
+      const double angles90[] = {
+          0.0, 90.0, 180.0, 270.0
+      };
+      const int limit = (1 << (show_bits - 1)) - 1;
+      const int show_bit_shift = show_bits - 8;
+      for (double ang : angles90)
+        DrawRadialLine<pixel_t>(dstp, pitch,
+          limit, show_bit_shift, ang, line_luma);
+    }
+
+    if (params.iq_lines) {
+      const double anglesIQ[] = {
+          33.0, 123.0, 213.0, 303.0
+      };
+      const int limit = (1 << (show_bits - 1)) - 1;
+      const int show_bit_shift = show_bits - 8;
+      for (double ang : anglesIQ)
+        DrawRadialLine<pixel_t>(dstp, pitch,
+          limit, show_bit_shift, ang, line_luma);
     }
   }
 }
 
 
 PVideoFrame Histogram::DrawModeColor2(int n, IScriptEnvironment* env) {
-  PVideoFrame src = child->GetFrame(n, env);
-  PVideoFrame dst = env->NewVideoFrameP(vi, &src);
-  BYTE* pdst = dst->GetWritePtr();
-  BYTE* pdstU = dst->GetWritePtr(PLANAR_U);
-  BYTE* pdstV = dst->GetWritePtr(PLANAR_V);
-  int dst_pitch = dst->GetPitch();
-  int dst_pitchUV = dst->GetPitch(PLANAR_U);
-  int dst_height = dst->GetHeight();
-  int dst_heightUV = dst->GetHeight(PLANAR_U);
 
-  // clear everything
-  if (keepsource) {
-    if (src->GetHeight() < dst->GetHeight()) {
-      if (bits_per_pixel == 8)
-        DrawModeColor2_erase_area<uint8_t>(bits_per_pixel,
-          pdst, pdstU, pdstV,
-          dst_pitch, dst_pitchUV,
-          dst_height, dst_heightUV
-          );
-      else if (bits_per_pixel <= 16)
-        DrawModeColor2_erase_area<uint16_t>(bits_per_pixel,
-          pdst, pdstU, pdstV,
-          dst_pitch, dst_pitchUV,
-          dst_height, dst_heightUV
-          );
-      else
-        DrawModeColor2_erase_area<float>(bits_per_pixel,
-          pdst, pdstU, pdstV,
-          dst_pitch, dst_pitchUV,
-          dst_height, dst_heightUV
-          );
-    }
-  }
+  // all these will get filled by VectorscopePrelude, common for color and color2 modes
+  PVideoFrame src;
+  BYTE* panel, * panelU, * panelV, * panelA;
+  int dst_pitch, dst_pitchUV, dst_pitchA, dst_height, dst_heightUV, dst_heightA;
+  bool full_range;
 
-  if (keepsource) {
-    env->BitBlt(pdst, dst_pitch, src->GetReadPtr(), src->GetPitch(), src->GetRowSize(), src->GetHeight());
-  }
+  PVideoFrame dst = VectorscopePrelude(n, env,
+    // outputs
+    src,
+    full_range, 
+    dst_pitch, dst_height,
+    dst_pitchUV, dst_heightUV,
+    dst_pitchA, dst_heightA,
+    panel, panelU, panelV, panelA);
 
-  if (!vi.IsPlanar()) return dst;
-
-  if (keepsource) {
-    env->BitBlt(pdstU, dst_pitchUV, src->GetReadPtr(PLANAR_U), src->GetPitch(PLANAR_U), src->GetRowSize(PLANAR_U), src->GetHeight(PLANAR_U));
-    env->BitBlt(pdstV, dst_pitchUV, src->GetReadPtr(PLANAR_V), src->GetPitch(PLANAR_V), src->GetRowSize(PLANAR_V), src->GetHeight(PLANAR_V));
-  }
-
-  unsigned char* pdstb = pdst;
-  unsigned char* pdstbU = pdstU;
-  unsigned char* pdstbV = pdstV;
-  if (keepsource) { 
-    // right to the original picture
-    pdstb += src->GetRowSize(PLANAR_Y);
-    pdstbU += src->GetRowSize(PLANAR_U);
-    pdstbV += src->GetRowSize(PLANAR_V);
-  }
+  bits_conv_constants d_chroma;
+  get_bits_conv_constants(d_chroma, /*use_chroma=*/true,
+    full_range, full_range,
+    bits_per_pixel, /*dstBitDepth=*/show_bits);
+  // d_chroma.mul_factor and d_chroma.dst_offset are now correct for
+  // limited-limited or full-full depending on _ColorRange frame property.
 
   int swidth = vi.GetPlaneWidthSubsampling(PLANAR_U);
   int sheight = vi.GetPlaneHeightSubsampling(PLANAR_U);
 
+  // Clear Vectorscope area (black background, init Alpha to 0 if present)
   if (bits_per_pixel == 8)
-    DrawModeColor2_draw_misc<uint8_t>(bits_per_pixel,
-      pdstb, pdstbU, pdstbV,
+    DrawModeColor2_ClearVectorscopeArea<uint8_t>(bits_per_pixel,
+      panel, panelU, panelV, panelA,
+      dst_pitch, dst_pitchUV, dst_pitchA,
+      dst_height, dst_heightUV, dst_heightA,
+      show_bits, swidth, sheight,
+      full_range
+    );
+  else if (bits_per_pixel <= 16)
+    DrawModeColor2_ClearVectorscopeArea<uint16_t>(bits_per_pixel,
+      panel, panelU, panelV, panelA,
+      dst_pitch, dst_pitchUV, dst_pitchA,
+      dst_height, dst_heightUV, dst_heightA,
+      show_bits, swidth, sheight,
+      full_range
+    );
+  else
+    DrawModeColor2_ClearVectorscopeArea<float>(bits_per_pixel,
+      panel, panelU, panelV, panelA,
+      dst_pitch, dst_pitchUV, dst_pitchA,
+      dst_height, dst_heightUV, dst_heightA,
+      show_bits, swidth, sheight,
+      full_range
+    );
+
+  // graticule
+  // Valid chroma boundary square
+  // always/never/only-when-limited
+  // "color" mode's graticule is used for highlight danger zone.
+  // "color2" mode's graticule is used for drawing chroma boundary rectangle.
+  // "on" or "auto"+limited range
+  const bool need_graticule = color2_params.graticule_type == histogram_color2_params::GRATICULE_ON ||
+    (color2_params.graticule_type == histogram_color2_params::GRATICULE_AUTO && !full_range);
+
+  if (need_graticule) {
+    if (bits_per_pixel == 8)
+      DrawModeColor2_draw_graticule<uint8_t>(bits_per_pixel, panel, dst_pitch, dst_height, show_bits);
+    else if (bits_per_pixel <= 16)
+      DrawModeColor2_draw_graticule<uint16_t>(bits_per_pixel, panel, dst_pitch, dst_height, show_bits);
+    else
+      DrawModeColor2_draw_graticule<float>(bits_per_pixel, panel, dst_pitch, dst_height, show_bits);
+  }
+
+  // others: 75% RGB and IQ targets, 15 degree marks, etc.
+  if (bits_per_pixel == 8)
+    Draw_VectorScope_circle_targets_axes<uint8_t>(bits_per_pixel,
+      panel, panelU, panelV,
       dst_pitch, dst_pitchUV,
       dst_height, dst_heightUV,
+      color2_innerF,
       show_bits, swidth, sheight,
-      color2_innerF
+      color2_params, matrix, theMatrix, d_chroma, full_range,
+      deg15c, deg15s
       );
   else if (bits_per_pixel <= 16)
-    DrawModeColor2_draw_misc<uint16_t>(bits_per_pixel,
-      pdstb, pdstbU, pdstbV,
+    Draw_VectorScope_circle_targets_axes<uint16_t>(bits_per_pixel,
+      panel, panelU, panelV,
       dst_pitch, dst_pitchUV,
       dst_height, dst_heightUV,
+      color2_innerF,
       show_bits, swidth, sheight,
-      color2_innerF
+      color2_params, matrix, theMatrix, d_chroma, full_range,
+      deg15c, deg15s
       );
   else
-    DrawModeColor2_draw_misc<float>(bits_per_pixel,
-      pdstb, pdstbU, pdstbV,
+    Draw_VectorScope_circle_targets_axes<float>(bits_per_pixel,
+      panel, panelU, panelV,
       dst_pitch, dst_pitchUV,
       dst_height, dst_heightUV,
+      color2_innerF,
       show_bits, swidth, sheight,
-      color2_innerF
+      color2_params, matrix, theMatrix, d_chroma, full_range,
+      deg15c, deg15s
       );
-
-  // plot white 15 degree marks
-  for (int i = 0; i < 24; i++) {
-    if(pixelsize == 1)
-      pdstb[deg15c[i] + deg15s[i] * dst_pitch] = 235; // 235: Y-maxluma
-    else if(pixelsize == 2)
-      ((uint16_t *)pdstb)[deg15c[i] + deg15s[i] * dst_pitch / sizeof(uint16_t)] = 235 << (bits_per_pixel - 8); // 235: Y-maxluma
-    else // if (pixelsize == 4)
-      ((float*)pdstb)[deg15c[i] + deg15s[i] * dst_pitch / sizeof(float)] = c8tof(235); // 235: Y-maxluma
-  }
 
   // plot vectorscope
   const int src_pitch = src->GetPitch(PLANAR_Y) / pixelsize;
@@ -1026,359 +1605,338 @@ PVideoFrame Histogram::DrawModeColor2(int n, IScriptEnvironment* env) {
   dst_pitch /= pixelsize;
   dst_pitchUV /= pixelsize;
 
-  // 32 bit float Vectorscope is simulated after a 16 bit conversion
-  int shift = bits_per_pixel == 32 ? (16 - show_bits) : (bits_per_pixel - show_bits);
-
   if(bits_per_pixel == 8)
     do_vectorscope_color2<uint8_t>(
-      pdstb, pdstbU, pdstbV, 
+      panel, panelU, panelV,
       pY, pU, pV,
       dst_pitch, dst_pitchUV,
       src_pitch, src_pitchUV,
       src_widthUV, src_heightUV,
       swidth, sheight,
-      shift, bits_per_pixel);
+      show_bits, bits_per_pixel, d_chroma, full_range);
   else if (bits_per_pixel <= 16)
     do_vectorscope_color2<uint16_t>(
-      (uint16_t *)pdstb, (uint16_t*)pdstbU, (uint16_t*)pdstbV,
+      (uint16_t *)panel, (uint16_t*)panelU, (uint16_t*)panelV,
       (uint16_t*)pY, (uint16_t*)pU, (uint16_t*)pV,
       dst_pitch, dst_pitchUV,
       src_pitch, src_pitchUV,
       src_widthUV, src_heightUV,
       swidth, sheight,
-      shift, bits_per_pixel);
+      show_bits, bits_per_pixel, d_chroma, full_range);
   else
     do_vectorscope_color2<float>(
-      (float*)pdstb, (float*)pdstbU, (float*)pdstbV,
+      (float*)panel, (float*)panelU, (float*)panelV,
       (float*)pY, (float*)pU, (float*)pV,
       dst_pitch, dst_pitchUV,
       src_pitch, src_pitchUV,
       src_widthUV, src_heightUV,
       swidth, sheight,
-      shift, bits_per_pixel);
+      show_bits, bits_per_pixel, d_chroma, full_range);
 
   return dst;
 }
 
+template<typename pixel_t, bool chroma_danger>
+static void DrawModeColor_PlotHistogram_inner(
+  uint8_t* panel_y, int dstpitch,
+  const int* histUV,
+  int show_size, int show_bits,
+  int bits_per_pixel,
+  int maxval)
+{
+  const int limit16 = 16 << (show_bits - 8);
+  const int limit240 = 240 << (show_bits - 8);
+  int limit16_pixel, luma235;
+  if constexpr (std::is_same_v<pixel_t, float>) {
+    limit16_pixel = 16;
+    luma235 = 235;
+  }
+  else {
+    limit16_pixel = 16 << (bits_per_pixel - 8);
+    luma235 = 235 << (bits_per_pixel - 8);
+  }
+  const int scale = std::is_same_v<pixel_t, float> ? 1 : (1 << (bits_per_pixel - 8));
+
+  for (int y = 0; y < show_size; y++) {
+    // ylimited: compile-time eliminated when chroma_danger==false
+    const bool ylimited = chroma_danger && (y < limit16 || y > limit240);
+    auto row = reinterpret_cast<pixel_t*>(panel_y);
+    const int* histRow = histUV + y * show_size;
+    for (int x = 0; x < show_size; x++) {
+      int disp_val = (histRow[x] * scale) / maxval;
+      // x danger check: compile-time eliminated when chroma_danger==false
+      if constexpr (chroma_danger) {
+        if (ylimited || x < limit16 || x > limit240)
+          disp_val -= limit16_pixel;
+      }
+      int out = min(luma235, limit16_pixel + disp_val);
+      if constexpr (std::is_same_v<pixel_t, float>)
+        row[x] = (float)out / 255.0f;
+      else
+        row[x] = (pixel_t)out;
+    }
+    panel_y += dstpitch;
+  }
+}
+
+template<typename pixel_t>
+static void DrawModeColor_PlotHistogram_dispatch(
+  bool show_chroma_danger_zone,
+  uint8_t* panel_y, int dstpitch,
+  const int* histUV,
+  int show_size, int show_bits,
+  int bits_per_pixel,
+  int maxval)
+{
+  if (show_chroma_danger_zone)
+    DrawModeColor_PlotHistogram_inner<pixel_t, true>(panel_y, dstpitch, histUV, show_size, show_bits, bits_per_pixel, maxval);
+  else
+    DrawModeColor_PlotHistogram_inner<pixel_t, false>(panel_y, dstpitch, histUV, show_size, show_bits, bits_per_pixel, maxval);
+}
+
+
 
 PVideoFrame Histogram::DrawModeColor(int n, IScriptEnvironment* env) {
-  // This mode will display the chroma values(U / V color placement) in a two dimensional graph(called a vectorscope)
-  PVideoFrame src = child->GetFrame(n, env);
-  PVideoFrame dst = env->NewVideoFrameP(vi, &src);
-  BYTE* p = dst->GetWritePtr();
 
-  int imgSize = dst->GetHeight()*dst->GetPitch();
+  // all these will get filled by VectorscopePrelude, common for color and color2 modes
+  PVideoFrame src;
+  BYTE* panel, * panelU, * panelV, * panelA;
+  int dst_pitch, dst_pitchUV, dst_pitchA, dst_height, dst_heightUV, dst_heightA;
+  bool full_range;
 
-  const float middle_f = 0.0f;
+  PVideoFrame dst = VectorscopePrelude(n, env,
+    // outputs
+    src,
+    full_range,
+    dst_pitch, dst_height,
+    dst_pitchUV, dst_heightUV,
+    dst_pitchA, dst_heightA,
+    panel, panelU, panelV, panelA);
 
-  // clear everything
-  if (keepsource) {
-    if (src->GetHeight() < dst->GetHeight()) {
-      int imgSizeU = dst->GetHeight(PLANAR_U) * dst->GetPitch(PLANAR_U);
-      switch (pixelsize) {
-      case 1:
-        memset(p, 16, imgSize);
-        memset(dst->GetWritePtr(PLANAR_U), 128, imgSizeU);
-        memset(dst->GetWritePtr(PLANAR_V), 128, imgSizeU);
-        break;
-      case 2:
-        std::fill_n((uint16_t *)p, imgSize / sizeof(uint16_t), 16 << (bits_per_pixel - 8));
-        std::fill_n((uint16_t *)dst->GetWritePtr(PLANAR_U), imgSizeU / sizeof(uint16_t), 128 << (bits_per_pixel - 8));
-        std::fill_n((uint16_t *)dst->GetWritePtr(PLANAR_V), imgSizeU / sizeof(uint16_t), 128 << (bits_per_pixel - 8));
-        break;
-      case 4: // 32 bit float
-        std::fill_n((float *)p, imgSize / sizeof(float), 16 / 255.0f);
-        std::fill_n((float *)dst->GetWritePtr(PLANAR_U), imgSizeU / sizeof(float), middle_f);
-        std::fill_n((float *)dst->GetWritePtr(PLANAR_V), imgSizeU / sizeof(float), middle_f);
-        break;
-      }
-    }
-  }
+  // always planar
 
-  if (keepsource) {
-    env->BitBlt(p, dst->GetPitch(), src->GetReadPtr(), src->GetPitch(), src->GetRowSize(), src->GetHeight());
-  }
-  if (vi.IsPlanar()) {
-    if (keepsource) {
-      env->BitBlt(dst->GetWritePtr(PLANAR_U), dst->GetPitch(PLANAR_U), src->GetReadPtr(PLANAR_U), src->GetPitch(PLANAR_U), src->GetRowSize(PLANAR_U), src->GetHeight(PLANAR_U));
-      env->BitBlt(dst->GetWritePtr(PLANAR_V), dst->GetPitch(PLANAR_V), src->GetReadPtr(PLANAR_V), src->GetPitch(PLANAR_V), src->GetRowSize(PLANAR_V), src->GetHeight(PLANAR_V));
-    }
+  int show_size = 1 << show_bits; // 256 for 8 bits, max 1024x1024 (10 bit resolution) found
 
-    int show_size = 1 << show_bits; // 256 for 8 bits, max 1024x1024 (10 bit resolution) found
+  bits_conv_constants d_chroma;
+  get_bits_conv_constants(d_chroma, /*use_chroma=*/true,
+    full_range, full_range,
+    bits_per_pixel, /*dstBitDepth=*/show_bits);
+  // d_chroma.mul_factor and d_chroma.dst_offset are now correct for
+  // limited-limited or full-full depending on _ColorRange frame property.
 
-    int *histUV = new(std::nothrow) int[show_size *show_size];
-    if (!histUV)
-      env->ThrowError("Histogram: malloc failure!");
+  // Allocate histogram array, can be huge for 12 bits (4096x4096 = 16 million ints), so use nothrow and check for failure.
+  int* histUV = new(std::nothrow) int[show_size * show_size];
+  if (!histUV)
+    env->ThrowError("Histogram: malloc failure!");
 
-    memset(histUV, 0, sizeof(int)*show_size *show_size);
+  memset(histUV, 0, sizeof(int) * show_size * show_size);
 
-    const BYTE* pU = src->GetReadPtr(PLANAR_U);
-    const BYTE* pV = src->GetReadPtr(PLANAR_V);
+  // Create histogram from the original src frame's U and V planes.
+  // We need to take into account the bit depth and the show_bits, as well as the limited/full range
+  // for scaling to show_bits correctly.
+  const BYTE* pU = src->GetReadPtr(PLANAR_U);
+  const BYTE* pV = src->GetReadPtr(PLANAR_V);
 
-    int w = origwidth >> vi.GetPlaneWidthSubsampling(PLANAR_U);
-    int h = src->GetHeight(PLANAR_U);
-    int p = src->GetPitch(PLANAR_U) / pixelsize;
+  int w = origwidth >> vi.GetPlaneWidthSubsampling(PLANAR_U);
+  int h = src->GetHeight(PLANAR_U);
+  int p = src->GetPitch(PLANAR_U) / pixelsize;
 
-    if (pixelsize == 1) {
-      if (show_bits == bits_per_pixel) {
-        for (int y = 0; y < h; y++) {
-          for (int x = 0; x < w; x++) {
-            int u = pU[y*p + x];
-            int v = pV[y*p + x];
-            histUV[(v << 8) + u]++;
-          }
-        }
-      }
-      else {
-        // 8 bit data on 10 bit sized screen
-        int shift_bits = show_bits - 8;
-        for (int y = 0; y < h; y++) {
-          for (int x = 0; x < w; x++) {
-            int u = pU[y*p + x] << shift_bits;
-            int v = pV[y*p + x] << shift_bits;
-            histUV[(v << show_bits) + u]++;
-          }
-        }
-      }
-    }
-    else if (pixelsize == 2) {
-      if (show_bits == bits_per_pixel) {
-        for (int y = 0; y < h; y++) {
-          for (int x = 0; x < w; x++) {
-            int u = reinterpret_cast<const uint16_t *>(pU)[y*p + x];
-            int v = reinterpret_cast<const uint16_t *>(pV)[y*p + x];
-            histUV[(v << show_bits) + u]++;
-          }
-        }
-      }
-      else if (show_bits < bits_per_pixel) {
-        // 10 bit data on 8 bit sized screen
-        int shift_bits = bits_per_pixel - show_bits;
-        for (int y = 0; y < h; y++) {
-          for (int x = 0; x < w; x++) {
-            int u = reinterpret_cast<const uint16_t *>(pU)[y*p + x] >> shift_bits;
-            int v = reinterpret_cast<const uint16_t *>(pV)[y*p + x] >> shift_bits;
-            histUV[(v << show_bits) + u]++;
-          }
-        }
-      }
-      else {
-        // show_bits > bits_per_pixel
-        // 10 bit data on 12bit sized screen
-        int shift_bits = show_bits - bits_per_pixel;
-        for (int y = 0; y < h; y++) {
-          for (int x = 0; x < w; x++) {
-            int u = reinterpret_cast<const uint16_t *>(pU)[y*p + x] << shift_bits;
-            int v = reinterpret_cast<const uint16_t *>(pV)[y*p + x] << shift_bits;
-            histUV[(v << show_bits) + u]++;
-          }
-        }
-      }
-    }
-    else { // float
-      const float shift = 0.5;
-      // 32 bit data on show_bits bit sized screen
+  const int max_pos = (1 << show_bits) - 1;
+  const float mul_factor = d_chroma.mul_factor;
+  const float dst_offset = d_chroma.dst_offset;
+  const int src_offset_i = d_chroma.src_offset_i;
+
+  if (pixelsize == 1) {
+    if (show_bits == bits_per_pixel) {
+      // quick case: no bit depth conversion needed
       for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
-          const float u_f = reinterpret_cast<const float *>(pU)[y*p + x] + shift; // back to 0..1
-          const float v_f = reinterpret_cast<const float *>(pV)[y*p + x] + shift;
-          int u = (int)(u_f * show_size + 0.5f);
-          int v = (int)(v_f * show_size + 0.5f);
-          u = clamp(u, 0, show_size - 1);
-          v = clamp(v, 0, show_size - 1);
+          int u = pU[y * p + x];
+          int v = pV[y * p + x];
+          histUV[(v << 8) + u]++;
+        }
+      }
+    }
+    else {
+      // 8 bit data on 10 bit sized screen
+      // works for both limited and full range, since the conversion is the same for 8 bit source
+      // (10 bit limited case: mul_factor = 4, dst_offset = 0 for full, dst_offset = 16 for limited)
+      for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+          const int uval = reinterpret_cast<const uint8_t*>(pU)[y * p + x];
+          const int vval = reinterpret_cast<const uint8_t*>(pV)[y * p + x];
+          int uval_posindex = (int)((uval - src_offset_i) * mul_factor + dst_offset + 0.5f);
+          int vval_posindex = (int)((vval - src_offset_i) * mul_factor + dst_offset + 0.5f);
+          uval_posindex = max(0, min(max_pos, uval_posindex));
+          vval_posindex = max(0, min(max_pos, vval_posindex));
+          histUV[(vval_posindex << show_bits) + uval_posindex]++;
+        }
+      }
+    }
+  }
+  else if (pixelsize == 2) {
+    if (show_bits == bits_per_pixel) {
+      // quick case: no bit depth conversion needed
+      for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+          int u = reinterpret_cast<const uint16_t*>(pU)[y * p + x];
+          int v = reinterpret_cast<const uint16_t*>(pV)[y * p + x];
           histUV[(v << show_bits) + u]++;
         }
       }
     }
-
-
-    // Plot Histogram on Y.
-    int maxval = 1;
-
-    // Should we adjust the divisor (maxval)??
-
-    unsigned char* pdstb = dst->GetWritePtr(PLANAR_Y);
-    if (keepsource) {
-      pdstb += src->GetRowSize(PLANAR_Y); // right of the clip
-
-    // Erase all
-      for (int y = show_size; y < dst->GetHeight(); y++) {
-        int p = dst->GetPitch(PLANAR_Y) / pixelsize;
-        if (pixelsize == 1) {
-          for (int x = 0; x < show_size; x++) {
-            pdstb[x + y * p] = 16;
-          }
-        }
-        else if (pixelsize == 2) {
-          for (int x = 0; x < show_size; x++) {
-            reinterpret_cast<uint16_t *>(pdstb)[x + y * p] = 16 << (bits_per_pixel - 8);
-          }
-        }
-        else { // float
-          for (int x = 0; x < show_size; x++) {
-            reinterpret_cast<float *>(pdstb)[x + y * p] = 16 / 255.0f;
-          }
+    else {
+      // works for both limited and full range, since the conversion is the same for 16 bit source (mul_factor = 4, dst_offset = 0 for full, dst_offset = 16 for limited)
+      for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+          const int uval = reinterpret_cast<const uint16_t*>(pU)[y * p + x];
+          const int vval = reinterpret_cast<const uint16_t*>(pV)[y * p + x];
+          int uval_posindex = (int)((uval - src_offset_i) * mul_factor + dst_offset + 0.5f);
+          int vval_posindex = (int)((vval - src_offset_i) * mul_factor + dst_offset + 0.5f);
+          uval_posindex = max(0, min(max_pos, uval_posindex));
+          vval_posindex = max(0, min(max_pos, vval_posindex));
+          histUV[(vval_posindex << show_bits) + uval_posindex]++;
         }
       }
     }
-
-    if (pixelsize == 1) {
-      int limit16 = 16 << (show_bits - 8);
-      int limit16_pixel = 16 << (bits_per_pixel - 8);
-      int limit240 = 240 << (show_bits - 8); // chroma danger
-      int luma235 = 235 << (bits_per_pixel - 8);
-      int dstpitch = dst->GetPitch(PLANAR_Y);
-      for (int y = 0; y < show_size; y++) {
-        const bool ylimited = y < limit16 || y>limit240;
-        for (int x = 0; x < show_size; x++) {
-          int disp_val = histUV[x + y * show_size] / maxval;
-          if (ylimited || x < limit16 || x>limit240)
-            disp_val -= limit16_pixel;
-
-          pdstb[x] = (uint8_t)min(luma235, limit16_pixel + disp_val);
-        }
-        pdstb += dstpitch;
-      }
-    }
-    else if (pixelsize == 2) {
-      int limit16 = 16 << (show_bits - 8);
-      int limit16_pixel = 16 << (bits_per_pixel - 8);
-      int limit240 = 240 << (show_bits - 8); // chroma danger
-      int luma235 = 235 << (bits_per_pixel - 8);
-      int dstpitch = dst->GetPitch(PLANAR_Y);
-      for (int y = 0; y < show_size; y++) {
-        const bool ylimited = y < limit16 || y>limit240;
-        for (int x = 0; x < show_size; x++) {
-          int disp_val = (histUV[x + y * show_size] << (bits_per_pixel - 8)) / maxval;
-          if (ylimited || x < limit16 || x>limit240)
-            disp_val -= limit16_pixel;
-
-          reinterpret_cast<uint16_t *>(pdstb)[x] = (uint16_t)min(luma235, limit16_pixel + disp_val);
-
-        }
-        pdstb += dstpitch;
-      }
-    }
-    else { // 32 bit float
-      int limit16 = 16 << (show_bits - 8);
-      int limit16_pixel = 16; // keep 8 bit like
-      int limit240 = 240 << (show_bits - 8); // chroma danger
-      int luma235 = 235;// keep 8 bit like
-      int dstpitch = dst->GetPitch(PLANAR_Y);
-      for (int y = 0; y < show_size; y++) {
-        const bool ylimited = y < limit16 || y>limit240;
-        for (int x = 0; x < show_size; x++) {
-          int disp_val = (histUV[x + y * show_size]) / maxval; // float was 16 bit
-          if (ylimited || x < limit16 || x>limit240)
-            disp_val -= limit16_pixel;
-
-          reinterpret_cast<float *>(pdstb)[x] = (float)(min(luma235, (limit16_pixel + disp_val))) / 255.0f;
-
-        }
-        pdstb += dstpitch;
-      }
-    }
-
-    // Draw colors.
-    for (int i = 0; i < 2; i++) {
-      int plane = i == 0 ? PLANAR_U : PLANAR_V;
-      pdstb = dst->GetWritePtr(plane);
-      int swidth = vi.GetPlaneWidthSubsampling(plane);
-      int sheight = vi.GetPlaneHeightSubsampling(plane);
-      int dstpitch = dst->GetPitch(plane);
-
-      if (keepsource) {
-        pdstb += src->GetRowSize(plane);
-
-        // Erase all
-        if (pixelsize == 1) {
-          for (int y = (show_size >> sheight); y < dst->GetHeight(plane); y++) {
-            memset(&pdstb[y*dstpitch], 128, (show_size >> swidth) - 1);
-          }
-        }
-        else if (pixelsize == 2) {
-          for (int y = (show_size >> sheight); y < dst->GetHeight(plane); y++) {
-            std::fill_n((uint16_t *)&pdstb[y*dstpitch], (show_size >> swidth) - 1, 128 << (bits_per_pixel - 8));
-          }
-        }
-        else { // float
-          for (int y = (show_size >> sheight); y < dst->GetHeight(plane); y++) {
-            std::fill_n((float *)&pdstb[y*dstpitch], (show_size >> swidth) - 1, middle_f);
-          }
-        }
-      }
-
-      // PLANAR_U: x << swidth
-      // PLANAR_V: y << sheight
-      if (plane == PLANAR_U) {
-        if (pixelsize == 1) {
-          const int shiftCount = show_bits - bits_per_pixel;
-          for (int y = 0; y < (show_size >> sheight); y++) {
-            for (int x = 0; x < (show_size >> swidth); x++) {
-              pdstb[x] = (unsigned char)((x << swidth) >> shiftCount) ;
-            }
-            pdstb += dstpitch;
-          }
-        }
-        else if (pixelsize == 2) {
-          const int shiftCount = show_bits - bits_per_pixel;
-          for (int y = 0; y < (show_size >> sheight); y++) {
-            for (int x = 0; x < (show_size >> swidth); x++) {
-              if(shiftCount >= 0)
-                reinterpret_cast<uint16_t *>(pdstb)[x] = (uint16_t)((x << swidth) >> shiftCount);
-              else
-                reinterpret_cast<uint16_t *>(pdstb)[x] = (uint16_t)((x << swidth) << -shiftCount);
-            }
-            pdstb += dstpitch;
-          }
-        }
-        else {
-          const int shiftCount = show_bits - 8;
-          for (int y = 0; y < (show_size >> sheight); y++) {
-            for (int x = 0; x < (show_size >> swidth); x++) {
-              reinterpret_cast<float *>(pdstb)[x] = uv8tof((x << swidth) >> shiftCount);
-            }
-            pdstb += dstpitch;
-          }
-        }
-      } // PLANAR_U end
-      else {
-        // PLANAR_V
-        if (pixelsize == 1) {
-          const int shiftCount = show_bits - bits_per_pixel;
-          for (int y = 0; y < (show_size >> sheight); y++) {
-            for (int x = 0; x < (show_size >> swidth); x++) {
-              pdstb[x] = (unsigned char)((y << sheight) >> shiftCount);
-            }
-            pdstb += dstpitch;
-          }
-        }
-        else if (pixelsize == 2) {
-          const int shiftCount = show_bits - bits_per_pixel;
-          for (int y = 0; y < (show_size >> sheight); y++) {
-            for (int x = 0; x < (show_size >> swidth); x++) {
-              if(shiftCount >= 0)
-                reinterpret_cast<uint16_t *>(pdstb)[x] = (uint16_t)((y << sheight) >> shiftCount);
-              else
-                reinterpret_cast<uint16_t *>(pdstb)[x] = (uint16_t)((y << sheight) << -shiftCount);
-            }
-            pdstb += dstpitch;
-          }
-        }
-        else {
-          const int shiftCount = show_bits - 8;
-          for (int y = 0; y < (show_size >> sheight); y++) {
-            for (int x = 0; x < (show_size >> swidth); x++) {
-              reinterpret_cast<float *>(pdstb)[x] = uv8tof((y << sheight) >> shiftCount);
-            }
-            pdstb += dstpitch;
-          }
-        }
-      } // PLANAR_V end
-    }
-
-    delete[] histUV;
   }
+  else { // float
+    // 32 bit data on show_bits bit sized screen
+    for (int y = 0; y < h; y++) {
+      for (int x = 0; x < w; x++) {
+        const float uval_f = max(-0.5f, min(0.5f, reinterpret_cast<const float*>(pU)[y * p + x]));
+        const float vval_f = max(-0.5f, min(0.5f, reinterpret_cast<const float*>(pV)[y * p + x]));
+        int uval_posindex = (int)(uval_f * mul_factor + dst_offset + 0.5f);
+        int vval_posindex = (int)(vval_f * mul_factor + dst_offset + 0.5f);
+        uval_posindex = max(0, min(max_pos, uval_posindex));
+        vval_posindex = max(0, min(max_pos, vval_posindex));
+        histUV[(vval_posindex << show_bits) + uval_posindex]++;
+      }
+    }
+  }
+  // End of histogram creation.
+
+  const bool show_chroma_danger_zone = color2_params.graticule_type == histogram_color2_params::GRATICULE_ON ||
+    (color2_params.graticule_type == histogram_color2_params::GRATICULE_AUTO && !full_range);
+
+  // Plot Histogram on Y.
+  int maxval = 1;
+  // Should we adjust the divisor (maxval)??
+  if (pixelsize == 1)
+    DrawModeColor_PlotHistogram_dispatch<uint8_t>(show_chroma_danger_zone, panel, dst_pitch, histUV, show_size, show_bits, bits_per_pixel, maxval);
+  else if (pixelsize == 2)
+    DrawModeColor_PlotHistogram_dispatch<uint16_t>(show_chroma_danger_zone, panel, dst_pitch, histUV, show_size, show_bits, bits_per_pixel, maxval);
+  else
+    DrawModeColor_PlotHistogram_dispatch<float>(show_chroma_danger_zone, panel, dst_pitch, histUV, show_size, show_bits, bits_per_pixel, maxval);
+
+  // Draw colors - U gradient (x-driven) and V gradient (y-driven)
+  const int swidth = vi.GetPlaneWidthSubsampling(PLANAR_U);
+  const int sheight = vi.GetPlaneHeightSubsampling(PLANAR_U);
+  const int uvWidth = show_size >> swidth;
+  const int uvHeight = show_size >> sheight;
+  const int shiftCount = show_bits - bits_per_pixel; // for int types
+  const int rounder = shiftCount > 0 ? (1 << (shiftCount - 1)) : 0; // for int types when downshifting
+  const int shiftCount_f = show_bits - 8; // ? Why
+
+  // U: value depends only on x -> precompute one row, memcpy for all y
+  // V: value depends only on y -> compute once per row, fill entire row
+
+  if (pixelsize == 1) {
+    // --- U ---
+    // Precompute one row
+    std::vector<uint8_t> uRow(uvWidth);
+    for (int x = 0; x < uvWidth; x++)
+      uRow[x] = (uint8_t)((x << swidth) >> shiftCount);
+    auto p = panelU;
+    for (int y = 0; y < uvHeight; y++, p += dst_pitchUV)
+      memcpy(p, uRow.data(), uvWidth);
+    // --- V ---
+    p = panelV;
+    for (int y = 0; y < uvHeight; y++, p += dst_pitchUV) {
+      uint8_t vval = (uint8_t)(((y << sheight) + rounder) >> shiftCount);
+      memset(p, vval, uvWidth);
+    }
+  }
+  else if (pixelsize == 2) {
+    // --- U ---
+    std::vector<uint16_t> uRow(uvWidth);
+    if (shiftCount >= 0) {
+      for (int x = 0; x < uvWidth; x++)
+        uRow[x] = (uint16_t)(((x << swidth) + rounder) >> shiftCount);
+    }
+    else {
+      for (int x = 0; x < uvWidth; x++)
+        uRow[x] = (uint16_t)((x << swidth) << -shiftCount);
+    }
+    auto p = panelU;
+    for (int y = 0; y < uvHeight; y++, p += dst_pitchUV)
+      memcpy(p, uRow.data(), uvWidth * sizeof(uint16_t));
+
+    // --- V ---
+    p = panelV;
+    if (shiftCount >= 0) {
+      for (int y = 0; y < uvHeight; y++, p += dst_pitchUV) {
+        uint16_t vval = (uint16_t)(((y << sheight) + rounder) >> shiftCount);
+        std::fill_n(reinterpret_cast<uint16_t*>(p), uvWidth, vval);
+      }
+    }
+    else {
+      for (int y = 0; y < uvHeight; y++, p += dst_pitchUV) {
+        uint16_t vval = (uint16_t)((y << sheight) << -shiftCount);
+        std::fill_n(reinterpret_cast<uint16_t*>(p), uvWidth, vval);
+      }
+    }
+  }
+  else { // float
+    // --- U ---
+    std::vector<float> uRow(uvWidth);
+    for (int x = 0; x < uvWidth; x++)
+      uRow[x] = uv8tof((x << swidth) >> shiftCount_f);
+    auto p = panelU;
+    for (int y = 0; y < uvHeight; y++, p += dst_pitchUV)
+      memcpy(p, uRow.data(), uvWidth * sizeof(float));
+    // --- V ---
+    p = panelV;
+    for (int y = 0; y < uvHeight; y++, p += dst_pitchUV) {
+      float vval = uv8tof((y << sheight) >> shiftCount_f);
+      std::fill_n(reinterpret_cast<float*>(p), uvWidth, vval);
+    }
+  }
+
+  delete[] histUV;
+
+  // others: RGB and IQ targets, 15 degree marks, etc
+  if (bits_per_pixel == 8)
+    Draw_VectorScope_circle_targets_axes<uint8_t>(bits_per_pixel,
+      panel, panelU, panelV,
+      dst_pitch, dst_pitchUV,
+      dst_height, dst_heightUV,
+      color2_innerF,
+      show_bits, swidth, sheight,
+      color2_params, matrix, theMatrix, d_chroma, full_range,
+      deg15c, deg15s
+    );
+  else if (bits_per_pixel <= 16)
+    Draw_VectorScope_circle_targets_axes<uint16_t>(bits_per_pixel,
+      panel, panelU, panelV,
+      dst_pitch, dst_pitchUV,
+      dst_height, dst_heightUV,
+      color2_innerF,
+      show_bits, swidth, sheight,
+      color2_params, matrix, theMatrix, d_chroma, full_range,
+      deg15c, deg15s
+    );
+  else
+    Draw_VectorScope_circle_targets_axes<float>(bits_per_pixel,
+      panel, panelU, panelV,
+      dst_pitch, dst_pitchUV,
+      dst_height, dst_heightUV,
+      color2_innerF,
+      show_bits, swidth, sheight,
+      color2_params, matrix, theMatrix, d_chroma, full_range,
+      deg15c, deg15s
+    );
+
   return dst;
 }
 
@@ -1407,7 +1965,7 @@ PVideoFrame Histogram::DrawModeLevels(int n, IScriptEnvironment* env) {
   const bool RGB = vi.IsRGB();
   const bool isFloat = (bits_per_pixel == 32);
   const int color_shift =  isFloat ? 0 : (bits_per_pixel - 8);
-  const int max_pixel_value = (1 << bits_per_pixel) - 1;
+  const int max_pixel_value = bits_per_pixel <= 16 ? (1 << bits_per_pixel) - 1 : 0; // float: n/a
   const float color_shift_factor = isFloat ? 1.0f / 255.0f : max_pixel_value / 255.0f;
 
   int plane_default_black[3] = {
@@ -2289,6 +2847,29 @@ AVSValue __cdecl Histogram::Create(AVSValue args, void*, IScriptEnvironment* env
 
   const VideoInfo& vi_orig = args[0].AsClip()->GetVideoInfo();
 
+  histogram_color2_params color2_params;
+  const char *graticule_str = args[7].AsString("on"); // ON: old vectorscopes always drew limits/danger zones
+
+  // Use the lstrcmpi macro from your compatibility header
+  if (lstrcmpi(graticule_str, "auto") == 0) {
+    color2_params.graticule_type = histogram_color2_params::GRATICULE_AUTO;
+  }
+  else if (lstrcmpi(graticule_str, "on") == 0) {
+    color2_params.graticule_type = histogram_color2_params::GRATICULE_ON;
+  }
+  else if (lstrcmpi(graticule_str, "off") == 0) {
+    color2_params.graticule_type = histogram_color2_params::GRATICULE_OFF;
+  }
+  else {
+    env->ThrowError("Histogram: 'graticule' must be \"on\", \"off\", or \"auto\".");
+  }
+
+  color2_params.targets = args[8].AsBool(false); // The 6 75% RGB squares
+  color2_params.axes = args[9].AsBool(false); // horizontal and vertical axes
+  color2_params.iq = args[10].AsBool(false); // +/-I and +Q targets
+  color2_params.iq_lines = args[11].AsBool(false); // 33 and 123 degree lines in the color2 mode
+  color2_params.circle = args[12].AsBool(mode == ModeColor2 ? true : false); // circle in the color2 mode default
+
   if (mode == ModeLevels && vi_orig.IsRGB() && !vi_orig.IsPlanar()) {
     // as Levels can work for PlanarRGB, convert packed RGB to planar, then back
     // better that nothing
@@ -2300,7 +2881,12 @@ AVSValue __cdecl Histogram::Create(AVSValue args, void*, IScriptEnvironment* env
     else if (vi_orig.IsRGB32() || vi_orig.IsRGB64()) {
       clip = env->Invoke("ConvertToPlanarRGBA", AVSValue(new_args, 1)).AsClip();
     }
-    Histogram* Result = new Histogram(clip, mode, args[2], args[3].AsInt(8), args[4].AsBool(true), args[5].AsBool(true), env);
+
+    Histogram* Result = new Histogram(clip, mode, args[2], args[3].AsInt(8), args[4].AsBool(true),
+      args[5].AsBool(true),
+      args[6].AsString(""), // matrix_name
+      color2_params,
+      env);
 
     AVSValue new_args2[1] = { Result };
     if (vi_orig.IsRGB24()) {
@@ -2317,6 +2903,10 @@ AVSValue __cdecl Histogram::Create(AVSValue args, void*, IScriptEnvironment* env
     }
   }
   else {
-    return new Histogram(args[0].AsClip(), mode, args[2], args[3].AsInt(8), args[4].AsBool(true), args[5].AsBool(true), env);
+    return new Histogram(args[0].AsClip(), mode, args[2], args[3].AsInt(8), args[4].AsBool(true),
+      args[5].AsBool(true), // markers
+      args[6].AsString(""), // matrix_name
+      color2_params,
+      env);
   }
 }
