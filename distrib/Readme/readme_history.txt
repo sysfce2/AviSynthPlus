@@ -9,6 +9,21 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
+20260220 3.7.5.r45XX (pre 3.7.6)
+--------------------------------
+- Fix Colorbars inaccurate 10+ bit, by using ground truth linear RGB, similarly to ColorBarsHD.
+  Full refactoring.
+- Histogram "color" and "color2" (Vectorscope modes) 
+  - full refactoring.
+  - Drawing is now matrix and color range aware. target positions (75%) +-I and +Q.
+  - add individual overlay options:
+    added ``matrix``, ``graticule``, ``targets``, ``axes``, ``iq``, ``iq_lines``, ``circle``
+    parameters
+  - Fix: copy alpha from clip, initialize alpha to zero in the histogram area. 
+  - Accurate pixel positioning and scaling to the active histogram area, 
+    limited/full range aware.
+
+
 20260216 3.7.5.r4523 (pre 3.7.6)
 --------------------------------
 - Fix r4504 regression YUV->RGBP bit-depth changing full-scale SSE2/AVX2 bug (exchanged G,B storage)
@@ -21,7 +36,7 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 - rstdoc: document "opacity" in AddAlphaPlane and ResetMask
 - rstdoc: detail Layer "use_chroma" and opacity
 - Overlay "Blend": more speed, but keep accuracy, use float only where really needed
-- Layer: use YV16 internally for YUY2 (lessen source bloat)
+- Layer: use YV16 internally for YUY2 (lessen source code bloat)
 
 20260213 3.7.5.r4507 (pre 3.7.6)
 --------------------------------
@@ -31,7 +46,7 @@ Fix Layer "add" 8 bit, regression in r4504
 --------------------------------
 * Fix: inaccurate ColorBarsHD 10+ bit values. Now they are derived from the 32-bit float 
   RGB definitions instead of upscaling a 8 bit precalculated YUV value.
-  Add Ramp section the lead-in-lead-out.
+  Fix ColorbarsHD Ramp right side to 100 %White
 * Fix: GreyScale + SSE2 + RGB32 + matrix="RGB" overflow. 
   Rare usage; "RGB" matrix (Identity) uses a 1.0 coefficient which exceeds the signed 16-bit 
   SIMD limit of 32767 at 15-bit precision. Added bounds checking to fallback to C-code for any 

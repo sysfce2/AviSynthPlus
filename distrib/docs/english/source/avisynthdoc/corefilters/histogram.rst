@@ -1,16 +1,14 @@
-
 Histogram
 =========
-
 A multipurpose audio/video analysis tool.
-
 
 Syntax and Parameters
 ----------------------
-
 ::
 
-    Histogram (clip, string "mode", float "factor", int "bits", bool "keepsource", bool "markers")
+    Histogram (clip, string "mode", float "factor", int "bits", bool "keepsource", bool "markers",
+    string "matrix", 
+    string "graticule", bool "targets", bool "axes", bool "iq", bool "iq_lines", bool "circle")
 
 .. describe:: clip
 
@@ -29,10 +27,10 @@ Syntax and Parameters
 
     Select the ``mode`` to display:
 
-    * :ref:`"Classsic" <histogram-classic>` : waveform mode;
+    * :ref:`"Classic" <histogram-classic>` : waveform mode;
     * :ref:`"Levels" <histogram-levels>` : RGB/YUV/Y histogram mode;
     * :ref:`"Color" <histogram-color>` : vectorscope mode;
-    * :ref:`"Color2" <histogram-color2>` : vectorscope mode;
+    * :ref:`"Color2" <histogram-color2>` : vectorscope mode with overlays;
     * :ref:`"Luma" <histogram-luma>` : special viewing mode;
     * :ref:`"Audiolevels" <histogram-audiolevels>` : audio level meter; and
     * :ref:`"Stereo", "StereoOverlay", "StereoY8" <histogram-stereo>` : audio graphs.
@@ -42,7 +40,6 @@ Syntax and Parameters
 .. describe:: factor
 
     Applies only to Levels mode.
-
     The ``factor`` option specifies the way how the graphs are displayed,
     exaggerating the vertical scale. It is specified as percentage of the total
     population (that is number of luma or chroma pixels in a frame). For example,
@@ -55,10 +52,10 @@ Syntax and Parameters
 .. describe:: bits
 
     Accepts 8, 9, 10, 11 or 12 as input. Applies only to Classic, Levels and
-    Color modes.
+    Color/Color2 (vectorscope) modes.
 
     * Classic, Levels: increases the width of the histogram by 2\ :sup:`(bits-8)`
-    * Color: increases width and height of the histogram by 2\ :sup:`(bits-8)`
+    * Color/Color2: increases width and height of the histogram by 2\ :sup:`(bits-8)`
 
     For example, ``Histogram(bits=10)`` returns a 1024-pixel wide histogram
     (width is 256 by default).
@@ -76,10 +73,95 @@ Syntax and Parameters
 
     If true, show calibration marks (see screenshots); else hide them.
     For Levels mode it will also remove the colored background. Applies only to
-    Classsic and Levels modes.
+    Classic and Levels modes.
 
     Default: true
 
+.. describe:: matrix
+
+    Applies to Color/Color2 mode. Specifies the YUV matrix used to interpret the
+    chroma values of the input clip, and determines the correct U/V positions of
+    the color bar target boxes and I/Q markers drawn on the vectorscope.
+
+    Accepted values follow the same convention as the ``ConvertToYUV`` family of
+    functions, for example: ``"2020"``, ``"709"``, etc..
+
+    If not specified, the matrix is read from the clip's ``_Matrix`` and
+    ``_ColorRange`` frame properties. If those are absent, BT.601 is assumed.
+
+    Default: (empty, means auto from frame properties or else BT.601)
+
+.. describe:: graticule
+
+    Applies only to Color and Color2 modes. Controls the visibility of the
+    graticule overlay — the valid chroma range boundary square (16–240 in 8-bit,
+    scaled for higher bit depths) in Color2 mode, and the danger zone shading in
+    Color mode.
+
+    * ``"on"`` (default): Always draw the graticule, regardless of the clip's
+      color range. This preserves the behavior of versions prior to 3.7.6.
+    * ``"off"``: Never draw the graticule.
+    * ``"auto"``: Draw the graticule only for limited-range clips. For full-range
+      clips, where the valid chroma area extends to the display edges, the
+      graticule is suppressed to avoid clutter.
+
+    Default: ``"on"``
+
+
+.. describe:: targets
+
+    Applies only to Color and Color2 modes. If true, draw small target boxes on the
+    vectorscope at the expected U/V positions of the six 75%-amplitude
+    :doc:`ColorBars <colorbars>` colors (Yellow, Cyan, Green, Magenta, Red,
+    Blue). The positions are computed from ground-truth linear RGB values
+    converted through the active ``matrix``, and limited or full range property
+    of the clip; giving accurate targets for any supported matrix and bit depth.
+
+    Default: false
+
+.. describe:: axes
+
+    Applies only to Color and Color2 modes. If true, draw horizontal and vertical crosshair
+    lines through the center of the vectorscope, marking the U (Cb) and V (Cr)
+    axes.
+
+    Default: false
+
+.. describe:: iq
+
+    Applies only to Color and Color2 modes. If true, draw target boxes for the NTSC −I, and
+    +Q (ColorBars) and +I (ColorBarsHD) chroma-phase reference signals. These are 
+    defined by the luma-corrected broadcast convention (Option 2 below) and are 
+    computed through the active ``matrix``. 
+
+    The −I and +Q signals are traditionally zero-luma, 20 IRE saturation chroma
+    axis references from the NTSC subcarrier standard. Three interpretations exist
+    in digital studio-swing environments:
+
+    For displaying them on RGB or YUV, "hack" is needed to reach valid RGB/YUV values, 
+    for more information see ColorBars documentation.
+
+    Default: false
+
+.. describe:: iq_lines
+
+    Applies only to Color and Color2 modes. If true, draw radial lines on the vectorscope
+    passing through the −I/+I and +Q/−Q axis positions. Together with ``axes``,
+    this produces the full eight-line graticule (four cardinal lines at 0°/90°/
+    180°/270° and four diagonal lines through the I/Q phase references) commonly
+    seen on broadcast vectorscopes.
+
+    The diagonal line angles are not derived from the actual computed I/Q U/V
+    positions, and use always textbook values of 33°/123°.
+
+    Default: false
+
+.. describe:: circle
+
+    Applies only to Color and Color2 modes. If true (default for color2), draws 
+    hue circle with 15° tick marks around the circumference.
+
+    Default: true ("color2"), false ("Color")
 
 .. _histogram-classic:
 
@@ -132,39 +214,33 @@ Color mode
 .. figure:: pictures/histogram-color.png
    :align: left
 
-This mode will display the chroma values (U/V color placement) in a two
-dimensional graph (called a `vectorscope`_) on the right side of the video
-frame. It can be used to read of the `hue`_ and `saturation`_ of a clip. At the
-same time, it is a histogram. The whiter a pixel in the vectorscope, the more
-pixels of the input clip correspond to that pixel (that is the more pixels have
-this chroma value). The lighter background denotes the valid :doc:`CCIR-601 <limiter>` range.
+This mode displays the chroma values (U/V color placement) in a two-dimensional
+graph called a `vectorscope`_, appended to the right side of the video frame.
+It functions as a histogram at the same time: the whiter a pixel in the
+vectorscope, the more pixels of the input clip share that chroma value. The
+shaded background denotes the valid :doc:`CCIR-601 <limiter>` range (danger zone
+shading can be controlled with the ``graticule`` parameter).
 
 .. figure:: pictures/histogram-color-labeled.png
    :align: left
 
-Labels have been added to the second vectorscope image for explication purposes,
-showing the U and V axes and degrees of hue. Spots have also been added,
-showing 75% saturated :doc:`ColorBars <colorbars>` (clockwise from 0°: blue,
-magenta, red, yellow, green and cyan).
+Labels have been added to the second image for reference, showing the U and V
+axes and degrees of hue. Spots show 75% saturated :doc:`ColorBars <colorbars>`
+(clockwise from 0°: blue, magenta, red, yellow, green and cyan).
 
-The U component is displayed on the horizontal (X) axis, with the leftmost
-side being U = 0 and the rightmost side being U = 255. The V component is
-displayed on the vertical (Y) axis, with the top representing V = 0 and the
-bottom representing V = 255.
+The U component is displayed on the horizontal (X) axis (left = 0, right = 255)
+and the V component on the vertical (Y) axis (top = 0, bottom = 255).
 
-The position of a spot on the scope corresponds to a chroma value from the
-input clip. The graph can be used to read *hue* and *saturation*. As the hue of
-a color changes, the spot moves around the center. As the saturation changes, it
-moves in or out from the center. The center is where U and V equal 128, the
-saturation is zero and the corresponding pixel has no color. As you increase
-the saturation, the spot moves towards the edge.
+A spot's position on the scope corresponds to a chroma value from the input
+clip. As hue changes, the spot moves around the center; as saturation changes,
+it moves in or out. The center (U=V=128) represents zero saturation — no color.
+At U=255, V=128 the hue is zero (blue) at maximum saturation:
+saturation = sqrt( (U-128)\ :sup:`2` + (V-128)\ :sup:`2` ) = 127.
+Turning hue clockwise 90° gives U=128, V=255 (red, approximately). Decreasing
+saturation at constant hue moves the spot toward the center, fading the color
+to :doc:`greyscale <greyscale>`.
 
-At U=255, V=128 the hue is zero (blue) and the saturation is at maximum, that is,
-saturation = sqrt( (U-128)\ :sup:`2` + (V-128)\ :sup:`2` ) or 127. When turning
-hue clockwise 90 degrees, the chroma is given by U=128, V=255 (red, approximately).
-Keeping the hue constant and decreasing the saturation, means that we move from
-the circle to the center of the vectorscope. Thus the color flavor remains the
-same, only it fades slowly to :doc:`greyscale <greyscale>`.
+|clearfloat|
 
 .. _histogram-color2:
 
@@ -174,30 +250,84 @@ Color2 mode
 .. figure:: pictures/histogram-color2.png
    :align: left
 
-This mode will display the pixels in a two-dimensional graph (which is called
-a `vectorscope`_) on the right side of the video frame. It can be used to read
-of the `hue`_ and `saturation`_ of a clip.
+This mode displays pixels in a two-dimensional `vectorscope`_ appended to the
+right side of the video frame. It can be used to read the `hue`_ and
+`saturation`_ of a clip.
 
-The U component is displayed on the horizontal (X) axis, with the leftmost
-side being U = 0 and the rightmost side being U = 255. The V component is
-displayed on the vertical (Y) axis, with the top representing V = 0 and the
-bottom representing V = 255. The grey square denotes the valid :doc:`CCIR-601 <limiter>` 
-range.
+The U and V axes are laid out identically to **Color** mode (see above).
+The grey square (graticule) denotes the valid limited-range Cb/Cr boundary
+(16–240 in 8-bit; see also :doc:`CCIR-601 <limiter>`).
 
 .. figure:: pictures/histogram-color2-labeled.png
    :align: left
 
-As :ref:`above <histogram-color>`, labels and :doc:`ColorBars <colorbars>` dots
-have been added to the second vectorscope image for explication purposes.
+As in **Color** mode, labels and :doc:`ColorBars <colorbars>` dots have been
+added to the second image for reference.
 
-The position of a spot on the scope corresponds to a chroma value from the
-input clip, exactly as with ``Histogram("color")``, but the spot is brighter
-and in color.
+Unlike **Color** mode, the background is black rather than shaded, the signal
+dots are brighter and rendered in color, and a color wheel is drawn around the
+circumference of the scope divided into six hues (clockwise from 0°: blue,
+magenta, red, yellow, green and cyan) with white tick marks at 15° intervals.
 
-**Color2** mode is also different from **Color** mode in that the background
-is black instead of shaded, and a color wheel around the circumference of the
-scope has been added, divided into six hues (clockwise from 0°: blue, magenta,
-red, yellow, green and cyan), with white tick marks at 15 degree intervals.
+|clearfloat|
+
+.. _histogram-vectorscope-overlays:
+
+Vectorscope overlays: Color and Color2
+---------------------------------------
+
+Both **Color** and **Color2** modes share a common set of optional overlays.
+The fundamental difference between the two modes is that **Color** operates as
+a density histogram plotted over a pre-drawn UV shade background, while
+**Color2** plots individual pixels on a black background with a color wheel.
+
+Both modes are matrix-aware: the ``matrix`` parameter (or the clip's ``_Matrix``
+and ``_ColorRange`` frame properties) controls how chroma values are interpreted
+and where overlay markers are positioned, giving accurate results for BT.601,
+BT.709, BT.2020 and other supported matrices at all bit depths.
+
+**Optional overlays:**
+
++-------------+-------------------+-------------------+------------------------------------------+
+| Parameter   | Color default     | Color2 default    | Description                              |
++=============+===================+===================+==========================================+
+| graticule   | ``"on"``          | ``"on"``          | Danger zone shading (Color) or valid     |
+|             |                   |                   | chroma boundary square (Color2).         |
+|             |                   |                   | ``"on"`` always draws it, ``"off"``      |
+|             |                   |                   | never draws it, ``"auto"`` draws it      |
+|             |                   |                   | only for limited-range clips.            |
++-------------+-------------------+-------------------+------------------------------------------+
+| targets     | false             | false             | Small boxes at the six 75% ColorBars     |
+|             |                   |                   | Cb/Cr positions.                         |
++-------------+-------------------+-------------------+------------------------------------------+
+| axes        | false             | false             | Horizontal and vertical crosshair        |
+|             |                   |                   | through the scope center.                |
++-------------+-------------------+-------------------+------------------------------------------+
+| iq          | false             | false             | Target boxes for the NTSC −I, +I         |
+|             |                   |                   | and +Q phase references.                 |
++-------------+-------------------+-------------------+------------------------------------------+
+| iq_lines    | false             | false             | Radial lines at the fixed 33°/123°       |
+|             |                   |                   | NTSC I/Q phase angles.                   |
++-------------+-------------------+-------------------+------------------------------------------+
+| circle      | false             | true              | Hue circle with 15° tick marks around    |
+|             |                   |                   | the circumference.                       |
++-------------+-------------------+-------------------+------------------------------------------+
+
+**Example usage**::
+
+    # Show ColorBars with full vectorscope overlay (BT.601 auto-detected)
+    ColorBars()
+    Histogram("color2", targets=true, axes=true, iq=true, iq_lines=true)
+
+    # Override matrix interpretation to BT.709 for an SD clip tagged as 601
+    Histogram("color2", matrix="709", targets=true, iq=true)
+
+    # Suppress the graticule only for full-range clips
+    Histogram("color2", graticule="auto")
+
+    # Switch on all overlays in Color mode
+    Histogram("color", graticule="on", targets=true, axes=true, iq=true, iq_lines=true, circle=true)
+
 
 |clearfloat|
 
@@ -217,7 +347,6 @@ flaws.
 
 |clearfloat|
 
-
 .. _histogram-stereo:
 
 Stereo, StereoY8 and StereoOverlay mode
@@ -236,11 +365,11 @@ the graph on top of the source clip. **Stereo** and **StereoY8** just return a
 
 |clearfloat|
 
-
 .. _histogram-audiolevels:
 
 AudioLevels mode
 ----------------
+
 .. figure:: pictures/histogram-audiolevels.png
    :align: left
 
@@ -262,18 +391,15 @@ video frame (let's say *n* samples) using the following formula:
 
 .. math::  RMS = 20 * \log_{10}(1 / 32768 * \sqrt{1/n * \sum_{j=1}^n sample(j)^2})
 
-
 The blue bars show the *max* (peak) level of the audio in each video frame
 using the following formula:
 
 .. math:: max = 20 * \log_{10}(max_{\text{j}}(sample(j))/32768)
 
-
 The maximum possible level without `clipping`_ is 0 dB by definition. The
 minimum level for 16 bit audio is therefore:
 
 .. math:: 20 * \log_{10}(1/32768) = -90.31 dB \qquad (\text{since} \quad 2^{16} / 2 = 32768)
-
 
 Changelog
 ---------
@@ -281,18 +407,31 @@ Changelog
 +-----------------+-------------------------------------------------------------+
 | Version         | Changes                                                     |
 +=================+=============================================================+
+| AviSynth+ 3.7.6 || Vectorscope modes: added ``matrix``, ``graticule``,        |
+|                 |  ``targets``, ``axes``, ``iq``, ``iq_lines``, ``circle``    |
+|                 |  parameters.                                                |
+|                 || Vectorscope modes: matrix-aware; target box                |
+|                 |  and I/Q overlay positions are computed from ground-truth   |
+|                 |  linear 75% RGB values through the active YUV matrix, giving|
+|                 |  accurate results for BT.601, BT.709, BT.2020 and other     |
+|                 |  supported matrices at all bit depths including float.      |
+|                 || Vectorscope modes: copy alpha from clip, initialize alpha  |
+|                 |  to zero in the histogram area.                             |
+|                 || Vectorscope modes: accurate pixel positioning and scaling  |
+|                 |  to the active histogram area, limited/full range aware.    |
++-----------------+-------------------------------------------------------------+
 | AviSynth+ 3.7.2 || Added support for all YUV(A) formats (10-16 bit and float) |
 |                 |  in "Luma" mode.                                            |
 |                 || Fix: prevent crash when factor=0 in "Levels" mode.         |
 |                 || Fix: "Levels" mode: fix incorrect "factor" applied for U/V |
 |                 |  part drawing when format was subsampled (non-444).         |
 |                 || Make "factor" a named parameter (previously an unnamed     |
-|                 |  optional paramerer).                                       |
+|                 |  optional parameter).                                       |
 |                 || Fix: check for Planar RGB in "Audiolevels", "Color",       |
 |                 |   "Color2" and "StereoOverlay" modes.                       |
 |                 || Levels mode: stop using shades of grey on top of bars.     |
 |                 || Levels mode: use bar color 255 for RGB instead of Y's 235. |
-|                 |  (and scaled eqivivalents).                                 |
+|                 |  (and scaled equivalents).                                  |
 |                 || Fix: "Color" mode may crash on certain dimensions for      |
 |                 |  subsampled formats.                                        |
 |                 || Fix: "Color2" missing CCIR rectangle top and bottom line.  |
@@ -321,13 +460,13 @@ Changelog
 +-----------------+-------------------------------------------------------------+
 | AviSynth 2.5.4  | Added "Luma", "Stereo", and "StereoOverlay" modes.          |
 +-----------------+-------------------------------------------------------------+
-| AviSynth 2.5.3  | Added ``mode`` paramater and "Levels" and "Color" modes.    |
+| AviSynth 2.5.3  | Added ``mode`` parameter and "Levels" and "Color" modes.    |
 +-----------------+-------------------------------------------------------------+
 | AviSynth 2.5.0  | Added markers to show invalid colors in YUV. Invalid values |
 |                 | (below 16 and above 235) will be colored brown/yellow-ish.  |
 +-----------------+-------------------------------------------------------------+
 
-$Date: 2022/03/12 20:09:50 $
+$Date: 2026/02/19 $
 
 .. _histograms:
     https://en.wikipedia.org/wiki/Color_histogram

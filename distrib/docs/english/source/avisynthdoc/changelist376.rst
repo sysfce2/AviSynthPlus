@@ -28,8 +28,45 @@ Additions, changes
 - "ResetMask": add parameter float "opacity"
 - "AddAlphaPlane": add parameter float "opacity"
 - "Layer": YUY2 is handled as YV16 (lessen source code bloat)
-- "Invert": corrected chroma inversion to pivot around signed 0 instead of xoring with max_pixel_value
-- "Invert": planar formats work without pre-copying all planes from source before conversion, only those which are unchanged.
+- "Histogram" Color and Color2 mode additions and fixes:
+
+  * Added ``matrix`` parameter (Color and Color2): specifies the YUV matrix for
+    chroma interpretation (BT.601, BT.709, BT.2020, etc.), following the same
+    convention as the ``ConvertToYUV`` family. If not set, the matrix is
+    read from the clip's ``_Matrix`` and ``_ColorRange`` frame properties.
+  * Added ``graticule`` string parameter (Color and Color2): controls the
+    danger zone shading (Color) or valid chroma boundary square (Color2).
+    ``"on"`` (default) always draws it, preserving pre-3.7.6 behavior;
+    ``"off"`` never draws it; ``"auto"`` draws it only for limited-range
+    clips and suppresses it for full-range clips.
+  * Added ``circle`` parameter (Color and Color2, default false for Color,
+    default true for Color2): draws the hue circle with 15° tick marks.
+    In Color2 mode this was previously always drawn; it can now be disabled.
+  * Added ``targets`` parameter (Color and Color2, default false): draws
+    target boxes at the six 75%-amplitude ColorBars Cb/Cr positions
+    (Yellow, Cyan, Green, Magenta, Red, Blue). Positions are computed from
+    ground-truth linear RGB values through the active matrix, giving
+    accurate coordinates at all bit depths.
+  * Added ``axes`` parameter (Color and Color2, default false): draws
+    horizontal and vertical crosshair lines through the vectorscope center.
+  * Added ``iq`` parameter (Color and Color2, default false): draws target
+    boxes for the NTSC −I, +I and +Q chroma-phase references, using the
+    luma-corrected broadcast convention (Y raised until the most negative
+    RGB component reaches Code 0, avoiding illegal RGB values).
+  * Added ``iq_lines`` parameter (Color and Color2, default false): draws
+    radial lines at the fixed NTSC subcarrier phase angles of 33°, 123°,
+    213° and 303°, marking the I and Q chroma axes.
+  * Fix: "Color" and "Color2" modes: copy alpha channel from source for
+    alpha-carrying formats (YUVA, RGBPA, RGB32, RGB64); initialize alpha
+    to zero in the histogram panel area.
+  * Fix: accurate pixel positioning and scaling throughout the histogram
+    panel, limited/full range aware. Marker positions use the same
+    conversion path as the vectorscope signal dots, ensuring exact
+    alignment at any bit depth and color range.
+  * Vectorscope is now fully matrix-aware: all overlay marker positions are
+    computed from ground-truth linear RGB values converted through the active
+    YUV matrix, giving accurate Cb/Cr coordinates at all bit depths including
+    32-bit float.
 
 
 Build environment, Interface
@@ -89,12 +126,21 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
-- (not fixed: Speed degradation when in-constructor GetFrame(0) (e.g. frame-property getter) is used
-   maybe not even a bug, just a lucky processor cache coincidence is not gained in a synthetic test?)
+- Fix: "Histogram" Color2 mode to copy alpha channel from source for alpha-carrying formats
+  (YUVA, RGBPA, RGB32, RGB64); initialize alpha to zero in the histogram panel area.
+  (Was: garbage)
+- Fix: C-only vertical resampling code added more rounding than needed
+  (regression since pre-3.7.5 20250427).
+- Fix: "Invert": corrected chroma inversion to pivot around signed 0 instead
+  of XORing with max_pixel_value.
 - Fix: YUV->RGB limited range matrix accuracy for 10-16 bits, plus use a symmetric rounding in matrix 
   coefficient's integer approximation.
+- Fix: inaccurate ColorBars 10+ bit values. Now they are derived from the 32-bit float 
+  RGB definitions instead of upscaling a 8 bit precalculated YUV value. -I and +Q are still kept at
+  legacy Avisynth values.
 - Fix: inaccurate ColorBarsHD 10+ bit values. Now they are derived from the 32-bit float 
-  RGB definitions instead of upscaling a 8 bit precalculated YUV value. Add Ramp section the lead-in-lead-out.
+  RGB definitions instead of upscaling a 8 bit precalculated YUV value. Add 100% White after 
+  Ramp section.
 - Fix: GreyScale + SSE2 + RGB32 + matrix="RGB" overflow. 
   Rare usage; "RGB" matrix (Identity) uses a 1.0 coefficient which exceeds the signed 16-bit 
   SIMD limit of 32767 at 15-bit precision. Added bounds checking to fallback to C-code for any 
@@ -131,10 +177,14 @@ Bugfixes
 
 Optimizations
 ~~~~~~~~~~~~~
-- Layer YUVA "add", "subtract", "mul", "darken", "lighten": main algorithm SIMD vectorization
-  is now possible for non-444 chroma placements by precalculation mask for the actual row.
-- Invert: planar formats not pre-copy all planes from source before conversion, only those 
-  which are unchanged.
+- "Layer" YUVA/YUV/RGBP "add", "subtract", "mul", "darken", "lighten": refactor
+  chroma placement calculation and function dispatchers; main algorithm SIMD
+  vectorization is now possible for non-444 chroma placements by precalculating
+  a mask for the actual row. Add AVX2 path (LLVM/clangcl recommended).
+- "Overlay" Blend: improved speed while keeping accuracy; use float arithmetic
+  only where strictly needed.
+- "Invert": planar formats no longer pre-copy all planes from source before
+  conversion; only planes that are unchanged are copied, avoiding unnecessary work.
 - TurnLeft, TurnRight: AVX2 support (1,5-3x speed on i7-11700 compared to SSE2 version)
 - Turn180 AVX2 support (very slight speed gain)
 - Resamplers: 
@@ -176,6 +226,12 @@ Documentation
 - Update :doc:`ConvertToPlanarRGB <./corefilters/convert>` with `"bits"` and "matrix" syntax `":same"`
 - Update :doc:`ResetMask <./corefilters/mask>` with `"opacity"` and additional insights
 - Update :doc:`AddAlphaPlane <./corefilters/mask>` with `"opacity"` and additional insights
+- Update :doc:`Overlay <./corefilters/overlay>` with "add" and "subtract"
+  direct RGB mode and 32-bit float support.
+- Update :doc:`Layer <./corefilters/layer>` with "use_chroma" and opacity
+  details, and YUY2/YV16 internal handling.
+- Update :doc:`Histogram <./corefilters/histogram>` with new vectorscope parameters
+- Update :doc:`ColorBars <./corefilters/colorbars>`
 - Add another Ubuntu->Windows DLL cross-compilation guide:
   See :ref:`Ubuntu->Windows mingw crosscompilation<compiling_avsplus_crosscompiling2>`
 
