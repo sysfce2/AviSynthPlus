@@ -771,7 +771,7 @@ ConvertYUV444ToRGB::ConvertYUV444ToRGB(PClip src, const char *matrix_name, int _
   }
 
   theOutMatrix = Matrix_e::AVS_MATRIX_RGB;
-  //theOutColorRange = ColorRange_e::AVS_RANGE_FULL; // PC709 must keep the input one!
+  //theOutColorRange = ColorRange_Compat_e::AVS_COLORRANGE_FULL; // PC709 must keep the input one!
 
   switch (pixel_step)
   {

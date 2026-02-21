@@ -897,7 +897,7 @@ ColorYUV::ColorYUV(PClip child,
     // size limited to either 8 or 10 bits, independenly of 12/14/16 or 32bit float bit-depth
     vi.width = chroma_range << vi.GetPlaneWidthSubsampling(PLANAR_U);
     vi.height = vi.width;
-    theColorRange = colorbar_fullrange ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED;
+    theColorRange = colorbar_fullrange ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
     theMatrix = Matrix_e::AVS_MATRIX_BT470_BG; // all the same
     theChromaLocation = ChromaLocation_e::AVS_CHROMA_CENTER; // default "mpeg1" for 4:2:0
     return;
@@ -911,23 +911,23 @@ ColorYUV::ColorYUV(PClip child,
     theOutColorRange, // n/a
     Matrix_e::AVS_MATRIX_UNSPECIFIED, // default matrix n/a
     configY.force_tv_range ? 
-    ColorRange_e::AVS_RANGE_LIMITED :  
-    ColorRangeCanBeGuessed ? ColorRange_e::AVS_RANGE_FULL : -1 /* n/a invalid */, env);
+    ColorRange_Compat_e::AVS_COLORRANGE_LIMITED :  
+    ColorRangeCanBeGuessed ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : -1 /* n/a invalid */, env);
   // although we read _ColorRange full/limited, nothing stops us to feed with full-range clip a "TV->PC" conversion
   // Anyway: a frame property can set theColorRange from the default "FULL" to the actual one.
   switch (configY.range) {
   case COLORYUV_RANGE_PC_TV:
   case COLORYUV_RANGE_PC_TVY:
-    theColorRange = ColorRange_e::AVS_RANGE_LIMITED;
+    theColorRange = ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
     break;
   case COLORYUV_RANGE_TV_PC:
-    theColorRange = ColorRange_e::AVS_RANGE_FULL;
+    theColorRange = ColorRange_Compat_e::AVS_COLORRANGE_FULL;
     break;
   default:
     if (configY.force_tv_range) // "TV" overrides default "PC". Info is needed for gamma correction
-      theColorRange = ColorRange_e::AVS_RANGE_LIMITED;
+      theColorRange = ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
     else if (configY.clip_tv) // coring is also sets this frame property
-      theColorRange = ColorRange_e::AVS_RANGE_LIMITED;
+      theColorRange = ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
     else
       theColorRange = theOutColorRange;
     break;
@@ -1206,7 +1206,7 @@ PVideoFrame __stdcall ColorYUV::GetFrame(int n, IScriptEnvironment* env)
     }
 
     // when there was no such property from constructor and it could not be guessed then we do not put one
-    if (theColorRange == ColorRange_e::AVS_RANGE_FULL || theColorRange == ColorRange_e::AVS_RANGE_LIMITED) {
+    if (theColorRange == ColorRange_Compat_e::AVS_COLORRANGE_FULL || theColorRange == ColorRange_Compat_e::AVS_COLORRANGE_LIMITED) {
       auto props = env->getFramePropsRW(dst);
       update_ColorRange(props, theColorRange, env);
     }

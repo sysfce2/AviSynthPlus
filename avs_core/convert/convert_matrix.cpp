@@ -299,13 +299,13 @@ bool GetKrKb(int matrix, double& Kr, double& Kb)
 
 bool do_BuildMatrix_Rgb2Yuv(int _Matrix, int _ColorRange, int _ColorRange_Out, int int_arith_shift, int bits_per_pixel, ConversionMatrix& matrix)
 {
-  if (_ColorRange != ColorRange_e::AVS_RANGE_FULL && _ColorRange != ColorRange_e::AVS_RANGE_LIMITED)
+  if (_ColorRange != ColorRange_Compat_e::AVS_COLORRANGE_FULL && _ColorRange != ColorRange_Compat_e::AVS_COLORRANGE_LIMITED)
     return false;
-  if (_ColorRange_Out != ColorRange_e::AVS_RANGE_FULL && _ColorRange_Out != ColorRange_e::AVS_RANGE_LIMITED)
+  if (_ColorRange_Out != ColorRange_Compat_e::AVS_COLORRANGE_FULL && _ColorRange_Out != ColorRange_Compat_e::AVS_COLORRANGE_LIMITED)
     return false;
 
-  const bool is_full_s = _ColorRange == ColorRange_e::AVS_RANGE_FULL;
-  const bool is_full_d = _ColorRange_Out == ColorRange_e::AVS_RANGE_FULL;
+  const bool is_full_s = _ColorRange == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
+  const bool is_full_d = _ColorRange_Out == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
 
   // Special cases not handled by GetKrKb
   if (_Matrix == Matrix_e::AVS_MATRIX_RGB) {
@@ -326,13 +326,13 @@ bool do_BuildMatrix_Rgb2Yuv(int _Matrix, int _ColorRange, int _ColorRange_Out, i
 
 bool do_BuildMatrix_Yuv2Rgb(int _Matrix, int _ColorRange, int _ColorRange_Out, int int_arith_shift, int bits_per_pixel, ConversionMatrix& matrix)
 {
-  if (_ColorRange != ColorRange_e::AVS_RANGE_FULL && _ColorRange != ColorRange_e::AVS_RANGE_LIMITED)
+  if (_ColorRange != ColorRange_Compat_e::AVS_COLORRANGE_FULL && _ColorRange != ColorRange_Compat_e::AVS_COLORRANGE_LIMITED)
     return false;
-  if (_ColorRange_Out != ColorRange_e::AVS_RANGE_FULL && _ColorRange_Out != ColorRange_e::AVS_RANGE_LIMITED)
+  if (_ColorRange_Out != ColorRange_Compat_e::AVS_COLORRANGE_FULL && _ColorRange_Out != ColorRange_Compat_e::AVS_COLORRANGE_LIMITED)
     return false;
 
-  const bool is_full_s = _ColorRange == ColorRange_e::AVS_RANGE_FULL;
-  const bool is_full_d = _ColorRange_Out == ColorRange_e::AVS_RANGE_FULL;
+  const bool is_full_s = _ColorRange == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
+  const bool is_full_d = _ColorRange_Out == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
 
   // Special cases not handled by GetKrKb
   if (_Matrix == Matrix_e::AVS_MATRIX_RGB) {

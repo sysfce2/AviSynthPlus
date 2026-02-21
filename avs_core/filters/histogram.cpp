@@ -876,7 +876,7 @@ PVideoFrame Histogram::VectorscopePrelude(
   auto props = env->getFramePropsRO(dst);
   int error;
   auto val = env->propGetInt(props, "_ColorRange", 0, &error);
-  if (!error) full_range = val == ColorRange_e::AVS_RANGE_FULL;
+  if (!error) full_range = val == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
   return dst;
 }
 
@@ -1954,7 +1954,7 @@ PVideoFrame Histogram::DrawModeLevels(int n, IScriptEnvironment* env) {
   auto props = env->getFramePropsRO(dst);
   int error;
   auto val = env->propGetInt(props, "_ColorRange", 0, &error);
-  if (!error) full_range = val == ColorRange_e::AVS_RANGE_FULL;
+  if (!error) full_range = val == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
 
   // Note: drawing colors are of limited range independently from clip range
 

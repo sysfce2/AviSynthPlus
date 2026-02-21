@@ -80,7 +80,7 @@ Greyscale::Greyscale(PClip _child, const char* matrix_name, IScriptEnvironment* 
     const AVSMap* props = env->getFramePropsRO(frame0);
     // input _ColorRange frame property can appear for RGB source (studio range limited rgb)
     matrix_parse_merge_with_props(true /*in rgb*/, true /*out rgb, same range*/, matrix_name, props, theMatrix, theColorRange, theOutColorRange, env);
-    /*if (theColorRange == ColorRange_e::AVS_RANGE_FULL && theMatrix != Matrix_e::AVS_MATRIX_AVERAGE)
+    /*if (theColorRange == ColorRange_Compat_e::AVS_COLORRANGE_FULL && theMatrix != Matrix_e::AVS_MATRIX_AVERAGE)
       env->ThrowError("GreyScale: only limited range matrix definition or \"Average\" is allowed.");
     */
 

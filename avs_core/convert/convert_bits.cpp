@@ -1173,12 +1173,12 @@ ConvertBits::ConvertBits(PClip _child, const int _dither_mode, const int _target
 
   // full or limited decision
   // dest: if undefined, use src
-  if (_ColorRange_dest != ColorRange_e::AVS_RANGE_LIMITED && _ColorRange_dest != ColorRange_e::AVS_RANGE_FULL) {
+  if (_ColorRange_dest != ColorRange_Compat_e::AVS_COLORRANGE_LIMITED && _ColorRange_dest != ColorRange_Compat_e::AVS_COLORRANGE_FULL) {
     _ColorRange_dest = _ColorRange_src;
   }
   //
-  fulls = _ColorRange_src == ColorRange_e::AVS_RANGE_FULL;
-  fulld = _ColorRange_dest == ColorRange_e::AVS_RANGE_FULL;
+  fulls = _ColorRange_src == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
+  fulld = _ColorRange_dest == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
 
   if (!truerange) {
     if ((target_bitdepth == 8 || target_bitdepth == 32) && pixelsize == 2)
@@ -1307,14 +1307,14 @@ AVSValue __cdecl ConvertBits::Create(AVSValue args, void* user_data, IScriptEnvi
   int ColorRange_src;
   int ColorRange_dest;
   if (args[5].Defined())
-    ColorRange_src = args[5].AsBool() ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED;
+    ColorRange_src = args[5].AsBool() ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
   else
     ColorRange_src = -1; // undefined. A frame property may override
   if (args[6].Defined())
-    ColorRange_dest = args[6].AsBool() ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED;
+    ColorRange_dest = args[6].AsBool() ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
   else
     ColorRange_dest = -1; // undefined. A frame property or ColorRange_src may override
-  if (ColorRange_src != ColorRange_e::AVS_RANGE_LIMITED && ColorRange_src != ColorRange_e::AVS_RANGE_FULL) {
+  if (ColorRange_src != ColorRange_Compat_e::AVS_COLORRANGE_LIMITED && ColorRange_src != ColorRange_Compat_e::AVS_COLORRANGE_FULL) {
     // try getting frame props if parameter is not specified
     auto frame0 = clip->GetFrame(0, env);
     const AVSMap* props = env->getFramePropsRO(frame0);
@@ -1323,15 +1323,15 @@ AVSValue __cdecl ConvertBits::Create(AVSValue args, void* user_data, IScriptEnvi
     }
     else {
       // no param, no frame property -> rgb is full others are limited
-      ColorRange_src = vi.IsRGB() ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED;
+      ColorRange_src = vi.IsRGB() ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
     }
   }
   // cr_dest = cr_source if not specified
-  if (ColorRange_dest != ColorRange_e::AVS_RANGE_LIMITED && ColorRange_dest != ColorRange_e::AVS_RANGE_FULL) {
+  if (ColorRange_dest != ColorRange_Compat_e::AVS_COLORRANGE_LIMITED && ColorRange_dest != ColorRange_Compat_e::AVS_COLORRANGE_FULL) {
     ColorRange_dest = ColorRange_src;
   }
-  bool fulls = ColorRange_src == ColorRange_e::AVS_RANGE_FULL;
-  bool fulld = ColorRange_dest == ColorRange_e::AVS_RANGE_FULL;
+  bool fulls = ColorRange_src == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
+  bool fulld = ColorRange_dest == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
 
 
   int dither_type = args[3].AsInt(-1);
@@ -1499,7 +1499,7 @@ PVideoFrame __stdcall ConvertBits::GetFrame(int n, IScriptEnvironment* env) {
   PVideoFrame dst = env->NewVideoFrameP(vi, &src);
 
   auto props = env->getFramePropsRW(dst);
-  update_ColorRange(props, fulld ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED, env);
+  update_ColorRange(props, fulld ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED, env);
 
   if(vi.IsPlanar())
   {

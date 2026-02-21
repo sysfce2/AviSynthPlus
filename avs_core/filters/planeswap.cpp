@@ -305,7 +305,7 @@ PVideoFrame __stdcall SwapUVToY::GetFrame(int n, IScriptEnvironment* env)
     env->propDeleteKey(props, "_ChromaLocation");
     // keep _Matrix (?) fixme: really?
     if (mode == AToY8) // alpha is always full range, otherwise keep source
-      env->propSetInt(props, "_ColorRange", ColorRange_e::AVS_RANGE_FULL, AVSPropAppendMode::PROPAPPENDMODE_REPLACE);
+      env->propSetInt(props, "_ColorRange", ColorRange_Compat_e::AVS_COLORRANGE_FULL, AVSPropAppendMode::PROPAPPENDMODE_REPLACE);
     // else we keep _ColorRange value (if any)
     return sub;
   }

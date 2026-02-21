@@ -133,7 +133,7 @@ static PVideoFrame CreateBlankFrame(const VideoInfo& vi, int color, int mode, co
   // but we set Rec601 (ST170) if YUV
   auto props = env->getFramePropsRW(frame);
   int theMatrix = vi.IsRGB() ? Matrix_e::AVS_MATRIX_RGB : Matrix_e::AVS_MATRIX_ST170_M;
-  int theColorRange = vi.IsRGB() ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED;
+  int theColorRange = vi.IsRGB() ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
   update_Matrix_and_ColorRange(props, theMatrix, theColorRange, env);
 
   // RGB 8->16 bit: not << 8 like YUV but 0..255 -> 0..65535 or 0..1023 for 10 bit
@@ -1546,14 +1546,14 @@ public:
     if (IsColorbarsHD) {
       // ColorBarsHD 444 only
       theMatrix = Matrix_e::AVS_MATRIX_BT709;
-      theColorRange = ColorRange_e::AVS_RANGE_LIMITED;
+      theColorRange = ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
     }
     else {
       // IsColorBars
       // ColorBars can be rgb or yuv
       theMatrix = vi.IsRGB() ? Matrix_e::AVS_MATRIX_RGB : Matrix_e::AVS_MATRIX_ST170_M;
       // Studio RGB: limited!
-      theColorRange = vi.IsRGB() ? ColorRange_e::AVS_RANGE_LIMITED : ColorRange_e::AVS_RANGE_LIMITED;
+      theColorRange = vi.IsRGB() ? ColorRange_Compat_e::AVS_COLORRANGE_LIMITED : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
     }
     update_Matrix_and_ColorRange(props, theMatrix, theColorRange, env);
 

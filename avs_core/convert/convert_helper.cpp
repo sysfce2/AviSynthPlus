@@ -48,11 +48,11 @@
 #include <vector>
 #include <sstream>
 
-const std::vector<std::pair<const char*, ColorRange_e>> g_range_table{
-    { "limited", AVS_RANGE_LIMITED },
-    { "full",    AVS_RANGE_FULL },
-    { "l",       AVS_RANGE_LIMITED },
-    { "f",       AVS_RANGE_FULL },
+const std::vector<std::pair<const char*, ColorRange_Compat_e>> g_range_table{
+    { "limited", AVS_COLORRANGE_LIMITED },
+    { "full",    AVS_COLORRANGE_FULL },
+    { "l",       AVS_COLORRANGE_LIMITED },
+    { "f",       AVS_COLORRANGE_FULL },
 };
 
 const std::vector<std::pair<const char*, ChromaLocation_e>> g_chromaloc_table{
@@ -196,7 +196,7 @@ static bool getChromaLocation(const char* chromaloc_name, IScriptEnvironment* en
 }
 
 bool getColorRange(const char* color_range_name, IScriptEnvironment* env, int& _ColorRange) {
-  auto color_range_enum = lookup_table<ColorRange_e>(g_range_table, color_range_name);
+  auto color_range_enum = lookup_table<ColorRange_Compat_e>(g_range_table, color_range_name);
   if (color_range_enum >= 0) {
     _ColorRange = color_range_enum;
     return true;
@@ -222,27 +222,27 @@ static bool getOldMatrix(const char* matrix_name, int &_Matrix, int &_ColorRange
   switch (old_matrix_enum) {
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_Rec601:
     _Matrix = Matrix_e::AVS_MATRIX_ST170_M;
-    _ColorRange = ColorRange_e::AVS_RANGE_LIMITED;
+    _ColorRange = ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
     break;
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_PC_601:
     _Matrix = Matrix_e::AVS_MATRIX_ST170_M;
-    _ColorRange = -1; // better no change the range ColorRange_e::AVS_RANGE_FULL;
+    _ColorRange = -1; // better no change the range ColorRange_Compat_e::AVS_COLORRANGE_FULL;
     break;
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_Rec709:
     _Matrix = Matrix_e::AVS_MATRIX_BT709;
-    _ColorRange = ColorRange_e::AVS_RANGE_LIMITED;
+    _ColorRange = ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
     break;
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_PC_709:
     _Matrix = Matrix_e::AVS_MATRIX_BT709;
-    _ColorRange = -1; // better no change the range ColorRange_e::AVS_RANGE_FULL;
+    _ColorRange = -1; // better no change the range ColorRange_Compat_e::AVS_COLORRANGE_FULL;
     break;
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_Rec2020:
     _Matrix = Matrix_e::AVS_MATRIX_BT2020_NCL;
-    _ColorRange = ColorRange_e::AVS_RANGE_LIMITED;
+    _ColorRange = ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
     break;
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_PC_2020:
     _Matrix = Matrix_e::AVS_MATRIX_BT2020_NCL;
-    _ColorRange = -1; // better no change the range ColorRange_e::AVS_RANGE_FULL;
+    _ColorRange = -1; // better no change the range ColorRange_Compat_e::AVS_COLORRANGE_FULL;
     break;
   case Old_Avs_Matrix_e::AVS_OLD_MATRIX_AVERAGE:
     _Matrix = Matrix_e::AVS_MATRIX_AVERAGE; // non-standard!
@@ -274,8 +274,8 @@ static bool is_paramstring_empty_or_auto(const char* param) {
 // called from yuv <-> rgb and to_greyscale converters
 void matrix_parse_merge_with_props_def(bool rgb_in, bool rgb_out, const char* matrix_name, const AVSMap* props, int& _Matrix, int& _ColorRange, int& _ColorRange_Out, int _Matrix_Default, int _ColorRange_Default, IScriptEnvironment* env) {
   // if once we'd like to use input colorrange when input is rgb (e.g. studio rgb of ColorBars is limited)
-  int _ColorRange_In = rgb_in ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED;
-  int _Default_ColorRange_Out = rgb_out ? ColorRange_e::AVS_RANGE_FULL : ColorRange_e::AVS_RANGE_LIMITED; // RGB -> YUV or YUV -> RGB
+  int _ColorRange_In = rgb_in ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
+  int _Default_ColorRange_Out = rgb_out ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED; // RGB -> YUV or YUV -> RGB
 
   if (props) {
     // _ColorRange exists for RGB as well
@@ -374,7 +374,7 @@ void matrix_parse_merge_with_props_def(bool rgb_in, bool rgb_out, const char* ma
 
 void matrix_parse_merge_with_props(bool rgb_in, bool rgb_out, const char* matrix_name, const AVSMap* props, int& _Matrix, int& _ColorRange, int& ColorRange_Out, IScriptEnvironment * env) {
   int _Matrix_Default = Matrix_e::AVS_MATRIX_ST170_M; // Rec601 AVS_MATRIX_ST170_M (6-NTSC) and not AVS_MATRIX_BT470_BG (5-PAL)
-  int _ColorRange_Default = ColorRange_e::AVS_RANGE_LIMITED;
+  int _ColorRange_Default = ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
   matrix_parse_merge_with_props_def(rgb_in, rgb_out, matrix_name, props, _Matrix, _ColorRange, ColorRange_Out, _Matrix_Default, _ColorRange_Default, env);
 }
 
@@ -432,7 +432,7 @@ void update_Matrix_and_ColorRange(AVSMap* props, int theMatrix, int theColorRang
       env->propDeleteKey(props, key);
   };
 
-  if (theColorRange == ColorRange_e::AVS_RANGE_FULL || theColorRange == ColorRange_e::AVS_RANGE_LIMITED)
+  if (theColorRange == ColorRange_Compat_e::AVS_COLORRANGE_FULL || theColorRange == ColorRange_Compat_e::AVS_COLORRANGE_LIMITED)
     env->propSetInt(props, "_ColorRange", theColorRange, AVSPropAppendMode::PROPAPPENDMODE_REPLACE);
   else
     env->propDeleteKey(props, "_ColorRange");
@@ -457,7 +457,7 @@ void update_ChromaLocation(AVSMap* props, int theChromaLocation, IScriptEnvironm
 
 void update_ColorRange(AVSMap* props, int theColorRange, IScriptEnvironment* env)
 {
-  if (theColorRange == ColorRange_e::AVS_RANGE_FULL || theColorRange == ColorRange_e::AVS_RANGE_LIMITED)
+  if (theColorRange == ColorRange_Compat_e::AVS_COLORRANGE_FULL || theColorRange == ColorRange_Compat_e::AVS_COLORRANGE_LIMITED)
     env->propSetInt(props, "_ColorRange", theColorRange, AVSPropAppendMode::PROPAPPENDMODE_REPLACE);
   else
     env->propDeleteKey(props, "_ColorRange");

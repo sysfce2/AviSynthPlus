@@ -39,10 +39,18 @@
 #include <string>
 #include <cstring>
 
+// ITU-T H.265 (Table E.1)
 typedef enum ColorRange_e {
-  AVS_RANGE_FULL = 0,
-  AVS_RANGE_LIMITED = 1
+  AVS_RANGE_LIMITED = 0,  // video_full_range_flag = 0, studio swing, e.g. 16-235 for 8-bit luma
+  AVS_RANGE_FULL = 1,  // video_full_range_flag = 1, full swing, e.g. 0-255 for 8-bit luma
 } ColorRange_e;
+
+// Old constants borrowed from VapourSynth, which transitioned to the ITU-T H.265 standard (Table E.1)
+// Just the opposite as the standard.
+typedef enum ColorRange_Compat_e {
+  AVS_COLORRANGE_FULL = 0,
+  AVS_COLORRANGE_LIMITED = 1
+} ColorRange_Compat_e;
 
 typedef enum ChromaLocation_e {
   AVS_CHROMA_UNUSED = -1,

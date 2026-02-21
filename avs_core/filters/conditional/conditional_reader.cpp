@@ -1607,8 +1607,8 @@ PVideoFrame __stdcall ShowProperties::GetFrame(int n, IScriptEnvironment* env)
         if (propName_s == "_ColorRange") {
           ss << " = ";
           switch (arr[0]) {
-          case ColorRange_e::AVS_RANGE_LIMITED: ss << "limited"; break;
-          case ColorRange_e::AVS_RANGE_FULL: ss << "full"; break;
+          case ColorRange_Compat_e::AVS_COLORRANGE_LIMITED: ss << "limited"; break;
+          case ColorRange_Compat_e::AVS_COLORRANGE_FULL: ss << "full"; break;
           }
         }
         else if (propName_s == "_Matrix") {
