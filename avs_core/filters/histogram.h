@@ -108,9 +108,10 @@ private:
   int origwidth;
   int origheight;
 
-  // for color2
+  // read from defaults/props/matrix overrides
   int theMatrix;
   int theColorRange;
+  bool full_range;
   // separate out set for rgb target
   int theOutColorRange;
   ConversionMatrix matrix;
@@ -122,7 +123,6 @@ private:
     int n, IScriptEnvironment* env,
     PVideoFrame& src,
     // out:
-    bool& full_range,
     int& dst_pitch, int& dst_height,
     int& dst_pitchUV, int& dst_heightUV,
     int& dst_pitchA, int& dst_heightA,

@@ -95,20 +95,31 @@ Histogram::Histogram(PClip _child, Mode _mode, AVSValue _option, int _show_bits,
     env->ThrowError("Histogram: this histogram type is available only for 8 bit formats and parameters");
   }
 
-  if (mode == ModeColor || mode == ModeColor2) {
-    // need to obtain actual YUV matrix to properly draw the pure color boxes around UV coordinates
-    // We input linear RGB
-    auto frame0 = child->GetFrame(0, env);
-    const AVSMap* props = env->getFramePropsRO(frame0);
-    // default matrix AVS_MATRIX_ST170_M (BT 601)
-    matrix_parse_merge_with_props(false, false, _matrix_name, props, theMatrix, theColorRange, theOutColorRange, env);
-    const int shift = 13; // not used here, we only get the floating point matrix
-    if (!do_BuildMatrix_Rgb2Yuv(theMatrix, theColorRange, theOutColorRange, shift, 32, /*ref*/matrix))
-      env->ThrowError("ConvertToY: Unknown matrix.");
+  // Obtain matrix (for YUV) and video range
+  auto frame0 = child->GetFrame(0, env);
+  const AVSMap* props = env->getFramePropsRO(frame0);
+  // default YUV matrix AVS_MATRIX_ST170_M (BT 601)
+  const bool rgb_in = vi.IsRGB();
+  matrix_parse_merge_with_props(rgb_in, rgb_in /* rgb_out n/a */ , _matrix_name, props, theMatrix, theColorRange, theOutColorRange, env);
 
-    // n/a
-    theColorRange = theOutColorRange; // final frame property, not used here
-  }
+  // theColorRange is either inherited
+  // - from defaults (RGB full YUV limited) or
+  // - _ColorRange frame property or
+  // - manual override from "matrix" param ":f" or ":l" designator
+  // theOutColorRange is only used in yuv-rgb converters
+  full_range = theColorRange == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
+  // Full range or limited?
+  // VectorScope modes (color, color2) require full range to
+  // - properly place the color boxes
+  // - When the histogram's virtual bit-size is different from the real video bit-depth
+  //   then video-bit depth must be converted to the histogram's bit-depth either by
+  //   limited (shift) or full range (stretch) method.
+
+  const int shift = 13; // not used here, we only get the floating point matrix
+  // use matrix coeffs in color/color2 for positioning RGB color boxes for the actual YUV matrix.
+  // Detected input color range is theColorRange, detected matrix is theMatrix.
+  if (!do_BuildMatrix_Rgb2Yuv(theMatrix, theColorRange, theOutColorRange, shift, 32, /*ref*/matrix))
+    env->ThrowError("Histogram: Unsupported matrix.");
 
   origwidth = vi.width;
   origheight = vi.height;
@@ -756,12 +767,11 @@ static void ClearArea(
 // Common prelude for Color and Color2 modes.
 // Allocates dst, optionally clears the below-source area, copies source planes.
 // Returns the allocated dst frame; populates panel pointer offsets.ű
-// Fills full_range flag.
+// Full_range flag is filled in constructor, not per frame
 PVideoFrame Histogram::VectorscopePrelude(
   int n, IScriptEnvironment* env,
   PVideoFrame& src,
   // outputs:
-  bool& full_range,
   int& dst_pitch, int& dst_height,
   int& dst_pitchUV, int& dst_heightUV,
   int& dst_pitchA, int& dst_heightA,
@@ -868,15 +878,6 @@ PVideoFrame Histogram::VectorscopePrelude(
         bits_per_pixel, full_range);
   }
 
-  // Full range or limited?
-  // When the histogram's virtual bit-size is different from the real video bit-depth
-  // then video-bit depth must be converted to the histogram's bit-depth either by
-  // limited (shift) or full range (stretch) method.
-  full_range = vi.IsRGB(); // default for RGB, VectorScope is YUV only though, we just copy paste the usual lines
-  auto props = env->getFramePropsRO(dst);
-  int error;
-  auto val = env->propGetInt(props, "_ColorRange", 0, &error);
-  if (!error) full_range = val == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
   return dst;
 }
 
@@ -1495,12 +1496,10 @@ PVideoFrame Histogram::DrawModeColor2(int n, IScriptEnvironment* env) {
   PVideoFrame src;
   BYTE* panel, * panelU, * panelV, * panelA;
   int dst_pitch, dst_pitchUV, dst_pitchA, dst_height, dst_heightUV, dst_heightA;
-  bool full_range;
 
   PVideoFrame dst = VectorscopePrelude(n, env,
     // outputs
     src,
-    full_range, 
     dst_pitch, dst_height,
     dst_pitchUV, dst_heightUV,
     dst_pitchA, dst_heightA,
@@ -1702,12 +1701,10 @@ PVideoFrame Histogram::DrawModeColor(int n, IScriptEnvironment* env) {
   PVideoFrame src;
   BYTE* panel, * panelU, * panelV, * panelA;
   int dst_pitch, dst_pitchUV, dst_pitchA, dst_height, dst_heightUV, dst_heightA;
-  bool full_range;
 
   PVideoFrame dst = VectorscopePrelude(n, env,
     // outputs
     src,
-    full_range,
     dst_pitch, dst_height,
     dst_pitchUV, dst_heightUV,
     dst_pitchA, dst_heightA,
@@ -1946,17 +1943,8 @@ PVideoFrame Histogram::DrawModeLevels(int n, IScriptEnvironment* env) {
   PVideoFrame dst = env->NewVideoFrameP(vi, &src);
   BYTE* dstp = dst->GetWritePtr();
 
-  // Full range or limited?
-  // When the histogram's virtual bit size is different from the real video bit depth
-  // then video bit depth must be converted to the histogram's bit depth either by
-  // limited (shift) or full range (stretch) method.
-  bool full_range = vi.IsRGB(); // default for RGB
-  auto props = env->getFramePropsRO(dst);
-  int error;
-  auto val = env->propGetInt(props, "_ColorRange", 0, &error);
-  if (!error) full_range = val == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
-
   // Note: drawing colors are of limited range independently from clip range
+  // bool full_range is filled in ctor.
 
   int show_size = 1 << show_bits;
 
