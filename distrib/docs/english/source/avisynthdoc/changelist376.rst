@@ -23,8 +23,11 @@ Additions, changes
     On Windows, only up-to DOTPROD can be detected due to OS limitations.
   * New CPU flags in ``cpuid.h`` and ``avisynth_c.h``: CPUF_ARM_NEON, CPUF_ARM_DOTPROD, CPUF_ARM_SVE2
   * "SetMaxCPU": add "neon", "dotprod", "sve2" options to enable/disable ARM64 (aarch64) features.
-- "ConvertToPlanarRGB": ``bits`` parameter: on-the-fly bit-depth conversions to YUV->RGB conversion.
+- "ConvertToPlanarRGB(A)": ``bits`` parameter: on-the-fly bit-depth conversions to YUV->RGB conversion.
   See :doc:`ConvertToPlanarRGB <./corefilters/convert>`.
+- ``ConvertToPlanarRGB(A)``: added ``quality`` parameter: forces 32-bit float
+  internal processing instead of S18.13 fixed-point arithmetic when converting
+  from YUV, regardless of source or target bit-depth. See :doc:`ConvertToPlanarRGB <./corefilters/convert>`.
 - "ResetMask": add parameter float "opacity"
 - "AddAlphaPlane": add parameter float "opacity"
 - "Layer": YUY2 is handled as YV16 (lessen source code bloat)
@@ -126,6 +129,7 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix: memory leak in Subframe/MakePropertyWritable after static-frame sources (ColorBars, BlankClip)
 - Fix: "Histogram" Color2 mode to copy alpha channel from source for alpha-carrying formats
   (YUVA, RGBPA, RGB32, RGB64); initialize alpha to zero in the histogram panel area.
   (Was: garbage)
@@ -232,6 +236,8 @@ Documentation
   details, and YUY2/YV16 internal handling.
 - Update :doc:`Histogram <./corefilters/histogram>` with new vectorscope parameters
 - Update :doc:`ColorBars <./corefilters/colorbars>`
+- Update :ref:`matrix syntax <matrix_parameter_syntax>`
+
 - Add another Ubuntu->Windows DLL cross-compilation guide:
   See :ref:`Ubuntu->Windows mingw crosscompilation<compiling_avsplus_crosscompiling2>`
 
@@ -239,7 +245,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/02/14 23:42:00 $
+$Date: 2026/02/24 20:24:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
