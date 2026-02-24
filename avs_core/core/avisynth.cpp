@@ -1095,6 +1095,7 @@ private:
   AvsCache* FrontCache;
   VideoFrame* GetNewFrame(size_t vfb_size, size_t margin, Device* device);
   VideoFrame* GetFrameFromRegistry(size_t vfb_size, Device* device);
+  void RegisterSubFrameInRegistry(size_t vfb_size, VideoFrameBuffer* vfb, VideoFrame* new_frame);
   void ShrinkCache(Device* device);
   VideoFrame* AllocateFrame(size_t vfb_size, size_t margin, Device* device);
   std::recursive_mutex memory_mutex;
@@ -4362,6 +4363,68 @@ void ScriptEnvironment::AtExit(IScriptEnvironment::ShutdownFunc function, void* 
   at_exit.Add(function, user_data);
 }
 
+// Registers a new VideoFrame (which shares an existing VFB via Subframe) into
+// FrameRegistry2, with eager pruning of dead entries.
+//
+// Why subframe registration is needed:
+// Even though the new subframe shares the source VFB, it must be registered so
+// that GetFrameFromRegistry cannot wrongly reassign the VFB while any subframe
+// still references it. The VFB refcount guards against reuse, but the registry
+// is the mechanism by which VideoFrame objects are tracked and eventually recycled.
+//
+// Why pruning is needed:
+// The naive approach (bare push_back) causes a memory leak when the source VFB
+// belongs to a static-frame clip such as ColorBars() or BlankClip(). Those clips
+// serve the same VFB for every GetFrame() call; its refcount never reaches 0.
+// GetFrameFromRegistry only cleans up dead VideoFrame objects when it finds
+// vfb->refcount == 0, so it never visits the static VFB's bucket. Each call to
+// Subframe/SubframePlanar/MakePropertyWritable pushes a new entry; the subframe
+// is used briefly, released (refcount drops to 0), but the dead VideoFrame object
+// is never deleted. Over a long sequence (e.g. 107000 frames) this accumulates
+// ~10 MB of dead VideoFrame objects.
+//
+// The fix:
+// Before pushing, scan the bucket and delete all entries with refcount == 0,
+// mirroring what GetFrameFromRegistry does during normal VFB recycling, but
+// eagerly, for buckets it will never visit.
+// For static-clip VFBs the vector stabilizes at exactly 2 entries:
+//   [0] the original live frame  (refcount >= 2, untouched)
+//   [1] the single current subframe (refcount == 0 by next call, pruned then)
+// For normal (non-static) clips the VFB is recycled normally by
+// GetFrameFromRegistry; the prune loop finds nothing and is a no-op.
+//
+// NOTE 1: AllocateFrame is intentionally excluded. It always creates a brand-new
+// VFB with a fresh, empty bucket, so there are never stale entries to prune there.
+//
+// NOTE 2: Caller must hold memory_mutex before calling this function.
+// All four call sites (AllocateFrame excluded) acquire memory_mutex
+// via std::unique_lock<std::recursive_mutex> env_lock(memory_mutex)
+// before reaching this point.
+void ScriptEnvironment::RegisterSubFrameInRegistry(size_t vfb_size, VideoFrameBuffer* vfb, VideoFrame* new_frame)
+{
+  // caller must already hold memory_mutex
+  auto& vec = FrameRegistry2[vfb_size][vfb];
+  for (auto it = vec.begin(); it != vec.end(); ) {
+    VideoFrame* f = it->frame;
+    if (f->refcount == 0) {
+      if (f->properties != nullptr) {
+        delete f->properties;
+        f->properties = nullptr;
+      }
+      delete f;
+      it = vec.erase(it);
+    }
+    else {
+      ++it;
+    }
+  }
+  vec.push_back(DebugTimestampedFrame(new_frame));
+#ifdef _DEBUG
+  // ListFrameRegistry(vfb_size, vfb_size, true);
+#endif
+
+}
+
 PVideoFrame ScriptEnvironment::Subframe(PVideoFrame src, int rel_offset, int new_pitch, int new_row_size, int new_height) {
 
   if (src->GetFrameBuffer()->device->device_type == DEV_TYPE_CPU)
@@ -4380,13 +4443,11 @@ PVideoFrame ScriptEnvironment::Subframe(PVideoFrame src, int rel_offset, int new
   std::unique_lock<std::recursive_mutex> env_lock(memory_mutex);
   assert(NULL != subframe);
 
-  // automatically inserts if not exists
-  FrameRegistry2[vfb_size][src->GetFrameBuffer()].push_back(DebugTimestampedFrame(subframe));
+  RegisterSubFrameInRegistry(vfb_size, src->GetFrameBuffer(), subframe);
 
   return subframe;
 }
 
-//tsp June 2005 new function compliments the above function
 PVideoFrame ScriptEnvironment::SubframePlanar(PVideoFrame src, int rel_offset, int new_pitch, int new_row_size,
   int new_height, int rel_offsetU, int rel_offsetV, int new_pitchUV) {
   if(src->GetFrameBuffer()->device->device_type == DEV_TYPE_CPU)
@@ -4405,8 +4466,7 @@ PVideoFrame ScriptEnvironment::SubframePlanar(PVideoFrame src, int rel_offset, i
   std::unique_lock<std::recursive_mutex> env_lock(memory_mutex); // vector needs locking!
   assert(subframe != NULL);
 
-  // automatically inserts if not exists
-  FrameRegistry2[vfb_size][src->GetFrameBuffer()].push_back(DebugTimestampedFrame(subframe));
+  RegisterSubFrameInRegistry(vfb_size, src->GetFrameBuffer(), subframe);
 
   return subframe;
 }
@@ -4430,8 +4490,7 @@ PVideoFrame ScriptEnvironment::SubframePlanar(PVideoFrame src, int rel_offset, i
   std::unique_lock<std::recursive_mutex> env_lock(memory_mutex);
   assert(subframe != NULL);
 
-  // automatically inserts if not exists
-  FrameRegistry2[vfb_size][src->GetFrameBuffer()].push_back(DebugTimestampedFrame(subframe));
+  RegisterSubFrameInRegistry(vfb_size, src->GetFrameBuffer(), subframe);
 
   return subframe;
 }
@@ -5484,8 +5543,7 @@ bool ScriptEnvironment::MakePropertyWritable(PVideoFrame* pvf)
   std::unique_lock<std::recursive_mutex> env_lock(memory_mutex);
   assert(dst != NULL);
 
-  // automatically inserts if not exists
-  FrameRegistry2[vfb_size][vf->GetFrameBuffer()].push_back(DebugTimestampedFrame(dst));
+  RegisterSubFrameInRegistry(vfb_size, vf->GetFrameBuffer(), dst);
 
   *pvf = dst;
   return true;
