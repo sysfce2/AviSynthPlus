@@ -45,7 +45,8 @@
 
 enum YuvRgbConversionType {
   NATIVE_INT,           // Same depth, int math
-  FLOAT_OUTPUT,         // Float output
+  FORCE_FLOAT,          // any to any
+  FLOAT_OUTPUT,         // int math, float output
   BITCONV_INT_LIMITED,  // Bit depth change, limited range
   BITCONV_INT_FULL      // Bit depth change, full range (needs float coeffs!)
 };
@@ -123,7 +124,7 @@ public:
 class ConvertYUV444ToRGB : public GenericVideoFilter
 {
 public:
-  ConvertYUV444ToRGB(PClip src, const char* matrix_name, int _pixel_step, int _target_bit_depth, bool& bitdepthConverted, IScriptEnvironment* env);
+  ConvertYUV444ToRGB(PClip src, const char* matrix_name, int _pixel_step, int _target_bit_depth, bool quality, bool& bitdepthConverted, IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
   int __stdcall SetCacheHints(int cachehints, int frame_range) override {
@@ -141,6 +142,7 @@ private:
   int pixel_step;
   int source_bit_depth;
   int target_bit_depth;
+  bool quality; // true: forced float matrix multiplication
   // primarily for alpha plane conversion
   BitDepthConvFuncPtr conv_function;
   BitDepthConvFuncPtr conv_function_chroma; // 32bit float YUV chroma

@@ -32,8 +32,6 @@
 // which is not derived from or based on Avisynth, such as 3rd-party filters,
 // import and export plugins, or graphical user interfaces.
 
-// ConvertPlanar (c) 2005 by Klaus Post
-
 
 #include <avs/alignment.h>
 #ifdef _MSC_VER
@@ -44,6 +42,7 @@
 #include <immintrin.h>
 
 #include "convert_planar_avx2.h"
+#include "../convert_helper.h"
 
 #ifndef _mm256_set_m128i
 #define _mm256_set_m128i(v0, v1) _mm256_insertf128_si256(_mm256_castsi128_si256(v1), (v0), 1)
@@ -353,8 +352,8 @@ template void convert_planarrgb_to_yuv_uint16_avx2<16>(BYTE* (&dstp)[3], int(&ds
 #define XP_LAMBDA_CAPTURE_FIX(x) (void)(x)
 
 template<typename pixel_t, bool lessthan16bit, bool lessthan16bit_target, typename pixel_t_dst, YuvRgbConversionType conv_type>
-static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m,
-  const int bits_per_pixel, int bits_per_pixel_target)
+static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m,
+  int bits_per_pixel, int bits_per_pixel_target)
 {
   // 8 bit        uint8_t
   // 10,12,14 bit uint16_t (signed range)
@@ -375,91 +374,106 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
        Add ((32768 + offset_y) * Cy​) to the existing 32-bit rounding/offset constant.
     4. Output rgb offset is also added to the precalculated patch.
   */
-  //const bool full_s = m.offset_y == 0;
-  //const bool full_d = m.offset_rgb == 0;
-  constexpr bool need_float_conversion = conv_type == YuvRgbConversionType::FLOAT_OUTPUT;
+
+  // When input is float (pixel_t), float workflow (FORCE_FLOAT) is compulsory.
+  // But not the opposite: FORCE_FLOAT and not float input is fine
+  // make a static assert
+  static_assert(!(std::is_floating_point<pixel_t>::value && conv_type != YuvRgbConversionType::FORCE_FLOAT), "FORCE_FLOAT conversion type is required for float input pixel type");
+
+  constexpr bool force_float = conv_type == YuvRgbConversionType::FORCE_FLOAT; // effectively full-float-inside for int full range conversion, but with the same output rules as other float conversions
+  constexpr bool final_is_float = std::is_floating_point<pixel_t_dst>::value;
   constexpr bool need_int_conversion_narrow_range = conv_type == YuvRgbConversionType::BITCONV_INT_LIMITED;       // full_d is false
   constexpr bool need_int_conversion_full_range = conv_type == YuvRgbConversionType::BITCONV_INT_FULL; // full_d is true
-  constexpr bool need_int_conversion = conv_type == YuvRgbConversionType::BITCONV_INT_FULL || conv_type == YuvRgbConversionType::BITCONV_INT_LIMITED;
-  if constexpr (!need_int_conversion)
+  constexpr bool need_int_conversion = conv_type == YuvRgbConversionType::BITCONV_INT_FULL || conv_type == YuvRgbConversionType::BITCONV_INT_LIMITED ||
+    (conv_type == YuvRgbConversionType::FORCE_FLOAT && !final_is_float);
+
+  const bool float_matrix_workflow = force_float || need_int_conversion_full_range; // effectively full-float-inside for int full range conversion 
+
+  if constexpr (std::is_same<pixel_t, uint8_t>::value) {
+    bits_per_pixel = 8; // helps optimizer, quasi constexpr
+  }
+  if constexpr (std::is_same<pixel_t_dst, uint8_t>::value) {
+    bits_per_pixel_target = 8; // helps optimizer, quasi constexpr
+  }
+
+  if constexpr (conv_type == YuvRgbConversionType::NATIVE_INT)
     bits_per_pixel_target = bits_per_pixel; // make it quasi constexpr for optimizer
   const int bit_diff = need_int_conversion ? bits_per_pixel_target - bits_per_pixel : 0;
   const int target_shift = need_int_conversion_narrow_range ? 13 - bit_diff : 13; // int->int narrow range: integrate the bit depth conversion into the scaling back
 
-  const int ROUNDER = (need_float_conversion || need_int_conversion_full_range) ? 0 : (1 << (target_shift - 1)); // 0 when float internal calculation is involved
+  const int ROUNDER = (final_is_float || float_matrix_workflow) ? 0 : (1 << (target_shift - 1)); // 0 when float internal calculation is involved
 
-  const int round_mask_plus_rgb_offset_i = need_float_conversion ? 0 : ROUNDER + (m.offset_rgb << 13); // latter of same magnitude as coeffs, also in simd madd
+  // For integer workflow + final is float:
   const float rgb_offset_f = m.offset_rgb_f_32; // for post-32-bit float conversion
 
-  int half_pixel_offset;
-  int max_pixel_value_source, max_pixel_value_target;
-  if constexpr (sizeof(pixel_t) == 1) {
-    // 8 bit quasi constexpr
-    half_pixel_offset = 128;
-    max_pixel_value_source = 255;
-  }
-  else {
-    half_pixel_offset = 1 << (bits_per_pixel - 1);
-    max_pixel_value_source = (1 << bits_per_pixel) - 1;
-  }
+  const int half_pixel_offset = 1 << (bits_per_pixel - 1);
+  const int max_pixel_value_target = (1 << bits_per_pixel_target) - 1;
 
-  if constexpr (sizeof(pixel_t_dst) == 1) {
-    max_pixel_value_target = 255;
-  }
-  else {
-    max_pixel_value_target = (1 << bits_per_pixel_target) - 1;
-  }
+  bits_conv_constants conversion_ranges;
+  const bool full_scale_d = m.offset_rgb == 0;
+  // matrix is handling only the same-bit-depth factor. Output result must be scaled as if
+  // we further correct it with a post-matrix scaling for bit depth conversion which depends only
+  // on the destination limite/full
+  get_bits_conv_constants(conversion_ranges, false, full_scale_d, full_scale_d, bits_per_pixel, bits_per_pixel_target); // our final scale would be as if work to float
 
   constexpr int int_arithmetic_shift = 1 << 13;
-  const float scale_f =
-    need_float_conversion ? 1.0f / static_cast<float>(int_arithmetic_shift * m.target_span_f / m.target_span_f_32) : // X->X bits appear as float, before going to real 32-bit range
-    need_int_conversion_full_range ? (float)max_pixel_value_target / max_pixel_value_source :
-    1.0f; // n/a
+  float scale_f = conversion_ranges.mul_factor;
+
+  // Integer matrix workflow + 32 bit final float output extra rules
+  // - no rounding and scaling back 13 bits
+  // - no clamping to bit depth limits
+  // - the 13-bit scaling factor is integrated into the bits_per_pixel shift
+  if (final_is_float && !float_matrix_workflow)
+    scale_f = scale_f / int_arithmetic_shift; // int workflow, float at the end
 
   __m256i half = _mm256_set1_epi16((short)half_pixel_offset);  // 128
   __m256i limit = _mm256_set1_epi16((short)max_pixel_value_target); // 255
-  __m256i offset;
-  if constexpr (need_int_conversion_full_range)
-    offset = _mm256_set1_epi32(m.offset_y);
-  else
-    offset = _mm256_set1_epi16((short)m.offset_y);
 
   // to be able to use it as signed 16 bit in madd; 4096+(16<<13) would not fit into i16
-   // multiplier is 4096 instead of 1:
-   // original   : 1      * 4096
-   // needed     : 1      * (4096 + offset_rgb<<13)  (4096 + 131072 overflows i16)
-   // changed to : 4096   * (1 + offset_rgb>>(13-1)
-   // Except for exact 16 bit, where we do the output offset adjustment along with the 16 bit signed-unsigned pivot fix
+  // multiplier is 4096 instead of 1:
+  // original   : 1      * 4096
+  // needed     : 1      * (4096 + offset_rgb<<13)  (4096 + 131072 overflows i16)
+  // changed to : 4096   * (1 + offset_rgb>>(13-1)
+  // Except for exact 16 bit, where we do the output offset adjustment along with the 16 bit signed-unsigned pivot fix
   constexpr int ROUND_SCALE = 4096; // 1 << 12, for 13 bit integer arithmetic: "0.5"
   const __m256i m256i_round_scale = _mm256_set1_epi16(ROUND_SCALE);
 
-  // Float conversion extra rules
-  // - no rounding
-  // - no integer scaling back 13 bits
-  // - no clamping to bit depth limits
-  // - the 13-bit scaling factor is integrated into the bits_per_pixel shift
-
   int round_mask_plus_rgb_offset_scaled_i;
+
+  // integer workflow + exact 16 bit path: needs a special handling for the pivot and input offset and output rgb offset
   __m256i v_patch_G, v_patch_B, v_patch_R;
   __m256i sign_flip_mask = _mm256_set1_epi16((short)0x8000); // for 16 bit pivot
 
-  // Full-range is full-float inside, so no need to do any of the above adjustments in integer arithmetic, just do the full float conversion and clamp at the end if needed
-  if constexpr (!need_int_conversion_full_range) {
+  // Full-range is float-workflow inside, so no need to do any of the above adjustments in
+  // integer arithmetic, just do the full float conversion and clamp at the end if needed
+
+  // Input offset handling
+  __m256i offset;
+  if constexpr (float_matrix_workflow)
+    offset = _mm256_set1_epi32(m.offset_y); // no spec-exact-16 bit case, the (negative) y offset is added after the input is already 32 bit int just before the ->float conversion.
+  else if constexpr (lessthan16bit) // integer workflow, lessthan16 bit path
+    offset = _mm256_set1_epi16((short)m.offset_y); // input offset correction can happen in 16 bit arithmetic
+  else // n/a, for exact 16 bit integer workflow, the offset is handled in the 32-bit patch together with the pivot adjustment
+    offset = _mm256_setzero_si256();
+
+  if constexpr (!float_matrix_workflow) {
+    // integer preparations for the madd-based main loop
     if constexpr (lessthan16bit) {
       // 8-14 bit
-      round_mask_plus_rgb_offset_scaled_i = round_mask_plus_rgb_offset_i / ROUND_SCALE;
-      v_patch_G = v_patch_B = v_patch_R = _mm256_setzero_si256(); // No patch needed
+      // offset of same magnitude as coeffs, also in simd madd
+      round_mask_plus_rgb_offset_scaled_i = final_is_float ? 0 : (ROUNDER + (m.offset_rgb << 13)) / ROUND_SCALE;
+      v_patch_G = v_patch_B = v_patch_R = _mm256_setzero_si256(); // No patch needed, since the signed 16-bit workaround is not needed.
     }
     else {
       // exact 16 bit
       // keep madd simple: only handle the rounding (ROUND_SCALE * 1)
       // rgb offset is handled later in the patch, after the madd, added to the same place as the pivot adjustment
-      round_mask_plus_rgb_offset_scaled_i = ROUNDER / ROUND_SCALE; // effectively 1 or 0 (need_float_conversion)
+      round_mask_plus_rgb_offset_scaled_i = ROUNDER / ROUND_SCALE; // effectively 1 or 0 (final_is_float)
 
       // move BOTH the pivot and the output RGB offset to the 32-bit patch
       // Since we have to do the patching anyway, we can combine both adjustments here
       const int luma_pivot = 32768 + m.offset_y;
-      const int rgb_out_offset = need_float_conversion ? 0 : (m.offset_rgb << 13); // 32-bit post-conversion adds offset in float domain.
+      const int rgb_out_offset = final_is_float ? 0 : (m.offset_rgb << 13); // 32-bit post-conversion adds offset in float domain.
 
       // total patch = (pivot * coeff) + output RGB offset
       v_patch_G = _mm256_set1_epi32(luma_pivot * m.y_g + rgb_out_offset);
@@ -468,27 +482,18 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
     }
   }
 
+  // For integer workflow + final is float
   const __m256 rgb_offset_f_avx2 = _mm256_set1_ps(rgb_offset_f);
 
   __m256i zero = _mm256_setzero_si256();
   const __m256 scale_f_avx2 = _mm256_set1_ps(scale_f);
 
-  // not used in full-range conversion
-  // all other int cases use madd: No bitdepth conversion, int-to-float, or int-to-int with narrow range scaling
-  __m256i m_uy_G, m_vr_G, m_uy_B, m_vr_B, m_uy_R, m_vr_R; // integer arithmetic, including 32-bit float target
-  __m256 m_y_g_f, m_y_b_f, m_y_r_f, m_u_g_f, m_u_b_f, m_u_r_f, m_v_g_f, m_v_b_f, m_v_r_f, m_offset_rgb_f; // full-range float-inside conversion
+  // For integer workflow
+  __m256i m_uy_G, m_vr_G, m_uy_B, m_vr_B, m_uy_R, m_vr_R; // integer arithmetic, including 32-bit float target when non-float_matrix_workflow
+  // For float_matrix_workflow
+  __m256 m_y_g_f, m_y_b_f, m_y_r_f, m_u_g_f, m_u_b_f, m_u_r_f, m_v_g_f, m_v_b_f, m_v_r_f, m_offset_rgb_f; // float_matrix_workflow (full-range or forced)
 
-  if (!need_int_conversion_full_range) {
-    // for 16 bit, the u/v coeffs are the same for G and R, and G and B respectively, so we can pack them together to save registers
-    m_uy_G = _mm256_set1_epi32((static_cast<uint16_t>(m.y_g) << 16) | static_cast<uint16_t>(m.u_g));
-    m_vr_G = _mm256_set1_epi32((static_cast<uint16_t>(round_mask_plus_rgb_offset_scaled_i) << 16) | static_cast<uint16_t>(m.v_g));
-    m_uy_B = _mm256_set1_epi32((static_cast<uint16_t>(m.y_b) << 16) | static_cast<uint16_t>(m.u_b));
-    m_vr_B = _mm256_set1_epi32((static_cast<uint16_t>(round_mask_plus_rgb_offset_scaled_i) << 16) | static_cast<uint16_t>(m.v_b));
-    m_uy_R = _mm256_set1_epi32((static_cast<uint16_t>(m.y_r) << 16) | static_cast<uint16_t>(m.u_r));
-    m_vr_R = _mm256_set1_epi32((static_cast<uint16_t>(round_mask_plus_rgb_offset_scaled_i) << 16) | static_cast<uint16_t>(m.v_r));
-  }
-  else {
-    // and in full-range float-inside:
+  if constexpr (float_matrix_workflow) {
     m_y_g_f = _mm256_mul_ps(_mm256_set1_ps(m.y_g_f), scale_f_avx2);
     m_y_b_f = _mm256_mul_ps(_mm256_set1_ps(m.y_b_f), scale_f_avx2);
     m_y_r_f = _mm256_mul_ps(_mm256_set1_ps(m.y_r_f), scale_f_avx2);
@@ -500,24 +505,63 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
     m_v_r_f = _mm256_mul_ps(_mm256_set1_ps(m.v_r_f), scale_f_avx2);
     m_offset_rgb_f = _mm256_mul_ps(_mm256_set1_ps(m.offset_rgb_f), scale_f_avx2);
   }
+  else {
+    // for 16 bit, the u/v coeffs are the same for G and R, and G and B respectively, so we can pack them together to save registers
+    m_uy_G = _mm256_set1_epi32((static_cast<uint16_t>(m.y_g) << 16) | static_cast<uint16_t>(m.u_g));
+    m_vr_G = _mm256_set1_epi32((static_cast<uint16_t>(round_mask_plus_rgb_offset_scaled_i) << 16) | static_cast<uint16_t>(m.v_g));
+    m_uy_B = _mm256_set1_epi32((static_cast<uint16_t>(m.y_b) << 16) | static_cast<uint16_t>(m.u_b));
+    m_vr_B = _mm256_set1_epi32((static_cast<uint16_t>(round_mask_plus_rgb_offset_scaled_i) << 16) | static_cast<uint16_t>(m.v_b));
+    m_uy_R = _mm256_set1_epi32((static_cast<uint16_t>(m.y_r) << 16) | static_cast<uint16_t>(m.u_r));
+    m_vr_R = _mm256_set1_epi32((static_cast<uint16_t>(round_mask_plus_rgb_offset_scaled_i) << 16) | static_cast<uint16_t>(m.v_r));
+  }
 
   const int rowsize = width * sizeof(pixel_t);
   for (int yy = 0; yy < height; yy++) {
     // 32 pixels per loop: 32 * 8 bit = 32 bytes; 32 * 16 bit = 64 bytes
-
-    // FIXME: when need_float_conversion, then processing 32 pixels at once breaks Avisynth+
-    // FRAME_ALIGN == 64, so we have to separate the processing into 32 pixel then 16 pixel chunks.
+    // Note: extra care needed for 32-bit float input or output, since 32xfloat is over
+    // Avisynth+ guaranteed scanline alignment (64 bytes)
+    // Ideally, we have to separate the processing into 32 pixel then 16 pixel chunks.
     // See ConvertBits to float AVX2 version for reference.
+    // Actually, we only check a pre-calculated limit inside the loop, before the storage. (FIXME)
+    // But I guess, when processing so many pixels at once, it's not that big penalty.
+    // However duplicating the loop body seen below for the two float-problematic cases, that _is_ penalty :)
 
     for (int x = 0; x < rowsize; x += 32 * sizeof(pixel_t)) {
+      // integer input pixels
       __m256i y1, u1, v1, y2, u2, v2;
+      // float workflow
+      __m256 y1_f_lo, y1_f_hi, y2_f_lo, y2_f_hi;
+      __m256 u1_f_lo, u1_f_hi, u2_f_lo, u2_f_hi;
+      __m256 v1_f_lo, v1_f_hi, v2_f_lo, v2_f_hi;
 
-      // Load and pivot for 16 bit if needed
+      // Avisynth FRAME_ALIGN == 64, so when final_is_float, we cannot process 32 pixels at once at the end of the line
+      // Can I write all 32 pixels (blockA+B+C+D)?
+      // yes: write all 4 blocks (blockA, B, C, D)
+      // no : Write only first 2 blocks (blockA, B), 16 floats are guaranteed safe due to 64-byte alignment
+      bool safe_last_16float_64bytes;
+      if constexpr (final_is_float || sizeof(pixel_t) == 4)
+        safe_last_16float_64bytes = (x + 32 * (int)sizeof(pixel_t)) <= rowsize;
+      else
+        safe_last_16float_64bytes = false;
+
+      // Note on widening strategy (Y, U, V) for the float internal path, where series of widenings are required:
+      //
+      // We use unpacklo/hi_epi16 for widening Y, U and V from (uint8 to) (u)int16 to int32,
+      // rather than _mm256_extracti128_si256 + (cvtepu8_epi16) + cvtepi16_epi32/cvtepu16_epi32.
+      // For U and V, an additional srai_epi16 generates the sign fill word needed
+      // for correct sign extension of the centered (negative-capable) chroma values.
+      //
+      // Although the extract+cvt approach would produce a sequential lane layout
+      // that avoids the permute2f128 shuffles before the final float store, it is
+      // measurably slower (Possibly port contention).
+
+      // Load pixels, for the integer path, we pivot for exact 16 bit Y later
       if constexpr (sizeof(pixel_t) == 1) {
         // Load 32 bytes (32 pixels), unpack to two 16-bit registers
         __m256i y_raw = _mm256_load_si256(reinterpret_cast<const __m256i*>(srcp[0] + x)); // 0..7 8..15 16..23 24..31
         __m256i u_raw = _mm256_load_si256(reinterpret_cast<const __m256i*>(srcp[1] + x));
         __m256i v_raw = _mm256_load_si256(reinterpret_cast<const __m256i*>(srcp[2] + x));
+
         if constexpr (sizeof(pixel_t_dst) == 2) {
           // 8->16 bit: pre-shuffle to avoid permutes at the end
           y_raw = _mm256_permute4x64_epi64(y_raw, 0xD8); // (0 << 0) | (2 << 2) | (1 << 4) | (3 << 6)
@@ -530,7 +574,7 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
         u1 = _mm256_unpacklo_epi8(u_raw, zero); u2 = _mm256_unpackhi_epi8(u_raw, zero);
         v1 = _mm256_unpacklo_epi8(v_raw, zero); v2 = _mm256_unpackhi_epi8(v_raw, zero);
       }
-      else {
+      else if constexpr (sizeof(pixel_t) == 2) {
         // Load 64 bytes (32 pixels)
         y1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(srcp[0] + x));
         u1 = _mm256_load_si256(reinterpret_cast<const __m256i*>(srcp[1] + x));
@@ -539,59 +583,71 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
         u2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(srcp[1] + x + 32));
         v2 = _mm256_load_si256(reinterpret_cast<const __m256i*>(srcp[2] + x + 32));
       }
+      else { // if constexpr (sizeof(pixel_t) == 4) {
+        // Load 128 bytes (32 pixels) // safety! we are well beyond Avisynth's 64 byte alignment
+        y1_f_lo = _mm256_load_ps(reinterpret_cast<const float*>(srcp[0] + x));
+        y1_f_hi = _mm256_load_ps(reinterpret_cast<const float*>(srcp[0] + x + 32));
+        u1_f_lo = _mm256_load_ps(reinterpret_cast<const float*>(srcp[1] + x));
+        u1_f_hi = _mm256_load_ps(reinterpret_cast<const float*>(srcp[1] + x + 32));
+        v1_f_lo = _mm256_load_ps(reinterpret_cast<const float*>(srcp[2] + x));
+        v1_f_hi = _mm256_load_ps(reinterpret_cast<const float*>(srcp[2] + x + 32));
+        if (safe_last_16float_64bytes) {
+          y2_f_lo = _mm256_load_ps(reinterpret_cast<const float*>(srcp[0] + x + 64));
+          y2_f_hi = _mm256_load_ps(reinterpret_cast<const float*>(srcp[0] + x + 96));
+          u2_f_lo = _mm256_load_ps(reinterpret_cast<const float*>(srcp[1] + x + 64));
+          u2_f_hi = _mm256_load_ps(reinterpret_cast<const float*>(srcp[1] + x + 96));
+          v2_f_lo = _mm256_load_ps(reinterpret_cast<const float*>(srcp[2] + x + 64));
+          v2_f_hi = _mm256_load_ps(reinterpret_cast<const float*>(srcp[2] + x + 96));
+        }
+        else {
+          // fill them with something to silence the warning, they won't be stored, either.
+          y2_f_lo = y2_f_hi = u2_f_lo = u2_f_hi = v2_f_lo = v2_f_hi = _mm256_setzero_ps();
+        }
+      }
 
-      // Avisynth FRAME_ALIGN == 64, so when need_float_conversion, we cannot process 32 pixels at once at the end of the line
-      // Can I write all 32 pixels (blockA+B+C+D)?
-      // yes: write all 4 blocks (blockA, B, C, D)
-      // no : Write only first 2 blocks (blockA, B), 16 floats are guaranteed safe due to 64-byte alignment
-      bool safe_last_16float_64bytes;
-      if constexpr (need_float_conversion)
-        safe_last_16float_64bytes = (x + 32 * sizeof(pixel_t)) <= rowsize;
-      else
-        safe_last_16float_64bytes = false;
+      if constexpr (float_matrix_workflow) {
+        // complete float workflow, even for integer targets, do matrixes in float math.
+        // Also for maximum accuracy.
 
-      if constexpr (need_int_conversion_full_range) {
-        // float workflow
-        __m256i y1_32_lo = _mm256_add_epi32(_mm256_unpacklo_epi16(y1, zero), offset);
-        __m256i y1_32_hi = _mm256_add_epi32(_mm256_unpackhi_epi16(y1, zero), offset);
-        __m256i y2_32_lo = _mm256_add_epi32(_mm256_unpacklo_epi16(y2, zero), offset);
-        __m256i y2_32_hi = _mm256_add_epi32(_mm256_unpackhi_epi16(y2, zero), offset);
-        // this is SSE2, from SSE4.1 we could use _mm_cvtepi16_epi32 directly but it makes packus lane crossing correction difficult
-        // and from avx512 _mm512_cvtepi16_ps (only signed 16 exists)
-        // Create a register where each lane is 0xFFFF if negative, 0x0000 if positive
-        u1 = _mm256_sub_epi16(u1, half); // no saturation!
-        u2 = _mm256_sub_epi16(u2, half);
-        __m256i u1_sign = _mm256_srai_epi16(u1, 15);
-        __m256i u2_sign = _mm256_srai_epi16(u2, 15);
-        v1 = _mm256_sub_epi16(v1, half);
-        v2 = _mm256_sub_epi16(v2, half);
-        __m256i v1_sign = _mm256_srai_epi16(v1, 15);
-        __m256i v2_sign = _mm256_srai_epi16(v2, 15);
-        // or cvtepi16_epi32 w/o sign ? does it keep lanes
-        __m256i u1_32_lo = _mm256_unpacklo_epi16(u1, u1_sign);
-        __m256i u1_32_hi = _mm256_unpackhi_epi16(u1, u1_sign);
-        __m256i v1_32_lo = _mm256_unpacklo_epi16(v1, v1_sign);
-        __m256i v1_32_hi = _mm256_unpackhi_epi16(v1, v1_sign);
-        __m256i u2_32_lo = _mm256_unpacklo_epi16(u2, u2_sign);
-        __m256i u2_32_hi = _mm256_unpackhi_epi16(u2, u2_sign);
-        __m256i v2_32_lo = _mm256_unpacklo_epi16(v2, v2_sign);
-        __m256i v2_32_hi = _mm256_unpackhi_epi16(v2, v2_sign);
+        // convert integer pixels to float, only for non-float input
+        if constexpr (sizeof(pixel_t) != 4) {
 
-        __m256 y1_f_lo = _mm256_cvtepi32_ps(y1_32_lo);
-        __m256 y1_f_hi = _mm256_cvtepi32_ps(y1_32_hi);
-        __m256 u1_f_lo = _mm256_cvtepi32_ps(u1_32_lo);
-        __m256 u1_f_hi = _mm256_cvtepi32_ps(u1_32_hi);
-        __m256 v1_f_lo = _mm256_cvtepi32_ps(v1_32_lo);
-        __m256 v1_f_hi = _mm256_cvtepi32_ps(v1_32_hi);
+          // Order: move to int32, and only then adjust offset.
+          // Superblacks would yield negative values that can only be sign-extend to int32
+          // with excessive operations, see the U and V workaround.
 
-        __m256 y2_f_lo = _mm256_cvtepi32_ps(y2_32_lo);
-        __m256 y2_f_hi = _mm256_cvtepi32_ps(y2_32_hi);
-        __m256 u2_f_lo = _mm256_cvtepi32_ps(u2_32_lo);
-        __m256 u2_f_hi = _mm256_cvtepi32_ps(u2_32_hi);
-        __m256 v2_f_lo = _mm256_cvtepi32_ps(v2_32_lo);
-        __m256 v2_f_hi = _mm256_cvtepi32_ps(v2_32_hi);
+          // We've already put the input offset into each int32. We use add, offset is stored as negative.
+          __m256i y1_32_lo = _mm256_add_epi32(_mm256_unpacklo_epi16(y1, zero), offset);
+          __m256i y1_32_hi = _mm256_add_epi32(_mm256_unpackhi_epi16(y1, zero), offset);
+          __m256i y2_32_lo = _mm256_add_epi32(_mm256_unpacklo_epi16(y2, zero), offset);
+          __m256i y2_32_hi = _mm256_add_epi32(_mm256_unpackhi_epi16(y2, zero), offset);
 
+          // int32->float
+          y1_f_lo = _mm256_cvtepi32_ps(y1_32_lo);
+          y1_f_hi = _mm256_cvtepi32_ps(y1_32_hi);
+          y2_f_lo = _mm256_cvtepi32_ps(y2_32_lo);
+          y2_f_hi = _mm256_cvtepi32_ps(y2_32_hi);
 
+          // Though from SSE4.1 we could use _mm_cvtepi16_epi32 directly but it makes packus lane
+          // crossing correction difficult (and slow). Mayne from avx512 _mm512_cvtepi16_ps (only signed 16 exists)?
+
+          // No lane keeping cvtepi16_epi32 here either.
+          // U,V, make signed, then int16->int32
+
+          // sign-extend int16 chroma to int32, then convert to float
+          // using unpacklo/hi to preserve lane layout compatible with downstream packus
+          auto chroma_to_float = [&](__m256i c, __m256& f_lo, __m256& f_hi) {
+            c = _mm256_sub_epi16(c, half);
+            __m256i sign = _mm256_srai_epi16(c, 15); // 0xFFFF if negative, 0x0000 if positive
+            f_lo = _mm256_cvtepi32_ps(_mm256_unpacklo_epi16(c, sign));
+            f_hi = _mm256_cvtepi32_ps(_mm256_unpackhi_epi16(c, sign));
+            };
+
+          chroma_to_float(u1, u1_f_lo, u1_f_hi);
+          chroma_to_float(v1, v1_f_lo, v1_f_hi);
+          chroma_to_float(u2, u2_f_lo, u2_f_hi);
+          chroma_to_float(v2, v2_f_lo, v2_f_hi);
+        }
         /*
         b_f = matrix.y_b_f * Y + matrix.u_b_f * U + matrix.v_b_f * V + matrix.offset_rgb_f;
         g_f = matrix.y_g_f * Y + matrix.u_g_f * U + matrix.v_g_f * V + matrix.offset_rgb_f;
@@ -633,67 +689,144 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
         auto process_from_float_plane_avx2 = [&](BYTE* plane_ptr, __m256 lo_1, __m256 hi_1, __m256 lo_2, __m256 hi_2) {
           XP_LAMBDA_CAPTURE_FIX(zero);
           XP_LAMBDA_CAPTURE_FIX(limit);
-          /*
-          g = static_cast<int>(g_f + 0.5f);
-          b = static_cast<int>(b_f + 0.5f);
-          r = static_cast<int>(r_f + 0.5f);
-          */
-          __m256 float_rounder = _mm256_set1_ps(0.5f);
-          __m256i res1_lo = _mm256_cvttps_epi32(_mm256_add_ps(lo_1, float_rounder));
-          __m256i res1_hi = _mm256_cvttps_epi32(_mm256_add_ps(hi_1, float_rounder));
-          __m256i res2_lo = _mm256_cvttps_epi32(_mm256_add_ps(lo_2, float_rounder));
-          __m256i res2_hi = _mm256_cvttps_epi32(_mm256_add_ps(hi_2, float_rounder));
-          const int pix_idx = x * sizeof(pixel_t_dst) / sizeof(pixel_t);
 
-          // unlike SSE2, AVX2 has packus_epi32
-          __m256i p1 = _mm256_packus_epi32(res1_lo, res1_hi);
-          __m256i p2 = _mm256_packus_epi32(res2_lo, res2_hi);
+#ifdef XP_TLS
+          if (final_is_float) {
+#else
+          if constexpr (final_is_float) {
+#endif
+            // float inside path, + 32 bit float output
+            const int pix_idx = x / sizeof(pixel_t);
+            float* f_dst = reinterpret_cast<float*>(plane_ptr) + pix_idx;
 
-          if constexpr (sizeof(pixel_t_dst) == 1) {
-            // X->8 bits
-            __m256i final8 = _mm256_packus_epi16(p1, p2);
-            if constexpr (sizeof(pixel_t) == 2) {
-              // 16->8 extra shuffle
-              final8 = _mm256_permute4x64_epi64(final8, (0 << 0) | (2 << 2) | (1 << 4) | (3 << 6));
-            }
-            _mm256_store_si256(reinterpret_cast<__m256i*>(plane_ptr + pix_idx), final8);
-          }
-          else if constexpr (sizeof(pixel_t_dst) == 2) { 
-            // x->16 bits
-            if constexpr (lessthan16bit_target) {
-              p1 = _mm256_min_epi16(p1, limit);
-              p2 = _mm256_min_epi16(p2, limit);
-            }
+            // Define the blocks (8 pixels each) correctly by healing the lanes
+            // Remember: this is still quicker that using lane-preserving cvt's earlier.
+            __m256 blockA, blockB, blockC, blockD;
+
             if constexpr (sizeof(pixel_t) == 1) {
-              // 8->16 bits:
-              /* If we'd not pre-shuffled the input for 8->16 bit, we would need to do this shuffle at the end to heal the lanes:
-              // p1: 0-7  16-23; p2: 8-15 24-31
-              // two shuffles per R G B plane would be needed, so 6 total, Pre-shuffling Y U V is only 3
-              __m256i temp_p1 = _mm256_permute2x128_si256(p1, p2, 0x20); // 0-7, 8-15
-              __m256i temp_p2 = _mm256_permute2x128_si256(p1, p2, 0x31); // 16-23, 24-31
-              p1 = temp_p1;
-              p2 = temp_p2;
-              */
+              // 8-bit: The lanes were swapped across res1 and res2
+              blockA = _mm256_permute2f128_ps(lo_1, hi_1, 0x20); // Pixels 0-7
+              blockB = _mm256_permute2f128_ps(lo_2, hi_2, 0x20); // Pixels 8-15
+              blockC = _mm256_permute2f128_ps(lo_1, hi_1, 0x31); // Pixels 16-23
+              blockD = _mm256_permute2f128_ps(lo_2, hi_2, 0x31); // Pixels 24-31
+            }
+            else if constexpr (sizeof(pixel_t) == 2) {
+              // 16-bit: res1 is 0-15, res2 is 16-31
+              blockA = _mm256_permute2f128_ps(lo_1, hi_1, 0x20); // Pixels 0-7
+              blockB = _mm256_permute2f128_ps(lo_1, hi_1, 0x31); // Pixels 8-15
+              blockC = _mm256_permute2f128_ps(lo_2, hi_2, 0x20); // Pixels 16-23
+              blockD = _mm256_permute2f128_ps(lo_2, hi_2, 0x31); // Pixels 24-31
+            }
+            else {
+              // 32-bit: no lane swap needed, but we still need to define the blocks for the tail processing
+              blockA = lo_1; // Pixels 0-7
+              blockB = hi_1; // Pixels 8-15
+              blockC = lo_2; // Pixels 16-23
+              blockD = hi_2; // Pixels 24-31
             }
 
-            _mm256_store_si256(reinterpret_cast<__m256i*>(plane_ptr + pix_idx), p1);
-            _mm256_store_si256(reinterpret_cast<__m256i*>(plane_ptr + pix_idx + 32), p2);
+            _mm256_store_ps(f_dst, blockA);
+            _mm256_store_ps(f_dst + 8, blockB);
+
+            // Safety check: only store the first half of the 32-pixel block if row width allows
+            if (safe_last_16float_64bytes) {
+              _mm256_store_ps(f_dst + 16, blockC);
+              _mm256_store_ps(f_dst + 24, blockD);
+            }
+          }
+          else {
+            // Float workflow + integer output with rounding and clamping
+            // r,g,b = static_cast<int>(r,g,b_f + 0.5f);
+            // back to int32 domain
+            __m256 float_rounder = _mm256_set1_ps(0.5f);
+            __m256i res1_lo = _mm256_cvttps_epi32(_mm256_add_ps(lo_1, float_rounder));
+            __m256i res1_hi = _mm256_cvttps_epi32(_mm256_add_ps(hi_1, float_rounder));
+            __m256i res2_lo = _mm256_cvttps_epi32(_mm256_add_ps(lo_2, float_rounder));
+            __m256i res2_hi = _mm256_cvttps_epi32(_mm256_add_ps(hi_2, float_rounder));
+
+            const int pix_idx = x * sizeof(pixel_t_dst) / sizeof(pixel_t);
+
+            __m256i p1 = _mm256_packus_epi32(res1_lo, res1_hi);
+            __m256i p2 = _mm256_packus_epi32(res2_lo, res2_hi);
+
+            if constexpr (sizeof(pixel_t_dst) == 1) {
+              // X->8 bits
+              __m256i final8 = _mm256_packus_epi16(p1, p2);
+              if constexpr (sizeof(pixel_t) == 4) {
+                // 32->8 bits
+                /*
+                  res1_lo: int32 [ 0  1  2  3 |  4  5  6  7]
+                  res1_hi: int32 [ 8  9 10 11 | 12 13 14 15]
+                  res2_lo: int32 [16 17 18 19 | 20 21 22 23]
+                  res2_hi: int32 [24 25 26 27 | 28 29 30 31]
+                  - after packus_epi32:
+                  p1 = [0..3, 8..11 | 4..7, 12..15]
+                  p2 = [16..19, 24..27 | 20..23, 28..31]
+                  - after packus_epi16 p1, p2: (more lane crossing)
+                  p8 = [0..3, 8..11, 16..19, 24..27 | 4..7, 12..15, 20..23, 28..31]
+
+                  I need final8: 32 bytes [0,1,2..31]
+                */
+                __m256i p1 = _mm256_packus_epi32(res1_lo, res1_hi);
+                __m256i p2 = _mm256_packus_epi32(res2_lo, res2_hi);
+                __m256i p8 = _mm256_packus_epi16(p1, p2);
+                // p8 = [0..3, 8..11, 16..19, 24..27 | 4..7, 12..15, 20..23, 28..31]
+                // as 8x int32: [A, B, C, D, E, F, G, H] where we need [A,E,B,F,C,G,D,H]
+                const __m256i idx = _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0);
+                final8 = _mm256_permutevar8x32_epi32(p8, idx);
+              }
+              else if constexpr (sizeof(pixel_t) == 2) {
+                // 16->8 bits
+                final8 = _mm256_permute4x64_epi64(final8, (0 << 0) | (2 << 2) | (1 << 4) | (3 << 6));
+              }
+              else {
+                // 8->8 bits, no change needed
+              }
+              _mm256_store_si256(reinterpret_cast<__m256i*>(plane_ptr + pix_idx), final8);
+            }
+            else if constexpr (sizeof(pixel_t_dst) == 2) {
+              // x->16 bits
+              if constexpr (lessthan16bit_target) {
+                p1 = _mm256_min_epi16(p1, limit);
+                p2 = _mm256_min_epi16(p2, limit);
+              }
+              if constexpr (sizeof(pixel_t) == 1) {
+                // 8->16 bits:
+                /* If we'd not pre-shuffled the input for 8->16 bit, we would need to do this shuffle at the end to heal the lanes:
+                // p1: 0-7  16-23; p2: 8-15 24-31
+                // two shuffles per R G B plane would be needed, so 6 total, Pre-shuffling Y U V is only 3
+                __m256i temp_p1 = _mm256_permute2x128_si256(p1, p2, 0x20); // 0-7, 8-15
+                __m256i temp_p2 = _mm256_permute2x128_si256(p1, p2, 0x31); // 16-23, 24-31
+                p1 = temp_p1;
+                p2 = temp_p2;
+                */
+              }
+              else if constexpr (sizeof(pixel_t) == 4) {
+                // 32->16 bits
+                p1 = _mm256_permute4x64_epi64(p1, (0 << 0) | (2 << 2) | (1 << 4) | (3 << 6)); // 0xD8
+                p2 = _mm256_permute4x64_epi64(p2, (0 << 0) | (2 << 2) | (1 << 4) | (3 << 6)); // 0xD8
+              }
+
+              _mm256_store_si256(reinterpret_cast<__m256i*>(plane_ptr + pix_idx), p1);
+              _mm256_store_si256(reinterpret_cast<__m256i*>(plane_ptr + pix_idx + 32), p2);
+            }
           }
           };
 
         process_from_float_plane_avx2(dstp[0], g1_f_lo, g1_f_hi, g2_f_lo, g2_f_hi);
         process_from_float_plane_avx2(dstp[1], b1_f_lo, b1_f_hi, b2_f_lo, b2_f_hi);
         process_from_float_plane_avx2(dstp[2], r1_f_lo, r1_f_hi, r2_f_lo, r2_f_hi);
-
+        // end of float_matrix_workflow
       }
       else {
+        // start of integer matrix arithmetic path, both for integer and float target
         if constexpr (lessthan16bit) {
           y1 = _mm256_adds_epi16(y1, offset); // add, because offset is negative
           y2 = _mm256_adds_epi16(y2, offset); // add, because offset is negative
         }
         else {
           // make unsigned to signed by flipping MSB
-          // pivot the luma, adjust the offset separately
+          // pivot the luma, adjust the offset separately, later
           y1 = _mm256_xor_si256(y1, sign_flip_mask);
           y2 = _mm256_xor_si256(y2, sign_flip_mask);
         }
@@ -731,6 +864,7 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
         // For v141_xp compatibility: forces the compiler to capture a const variable
         // that would otherwise be optimized out of nested lambda scopes.
 
+        // integer matrix arithmetic path, followed by integer-integer shift-scaling or 32-bit float conversion.
         auto process_plane = [&](BYTE* plane_ptr, __m256i m_uy, __m256i m_vr, __m256i v_patch) {
           XP_LAMBDA_CAPTURE_FIX(limit);
           XP_LAMBDA_CAPTURE_FIX(safe_last_16float_64bytes);
@@ -741,9 +875,9 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
             // 16-bit adjustment (signed patch, offset, output rgb offset)
             if constexpr (!lessthan16bit) sum = _mm256_add_epi32(sum, v_patch);
 #ifdef XP_TLS
-            if (!need_float_conversion)
+            if (!final_is_float)
 #else
-            if constexpr (!need_float_conversion)
+            if constexpr (!final_is_float)
 #endif
               sum = _mm256_srai_epi32(sum, target_shift); // 13 bit fixed point shift
             return sum;
@@ -755,9 +889,9 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
           __m256i res2_hi = madd_scale(uy2_hi, vr2_hi); // Pixels 20-23, 28-31
 
 #ifdef XP_TLS
-          if (need_float_conversion) {
+          if (final_is_float) {
 #else
-          if constexpr (need_float_conversion) {
+          if constexpr (final_is_float) {
 #endif
             // when float output is needed, convert after scaling, mimic a post-ConvertBits
             const int pix_idx = x / sizeof(pixel_t);
@@ -809,8 +943,8 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
               }
               _mm256_store_si256(reinterpret_cast<__m256i*>(plane_ptr + pix_idx), final8);
             }
-            else { 
-              // x->16 bits
+            else {
+              // X->16 bits
               if constexpr (lessthan16bit_target) {
                 p1 = _mm256_min_epi16(p1, limit);
                 p2 = _mm256_min_epi16(p2, limit);
@@ -836,126 +970,95 @@ static void convert_yuv_to_planarrgb_uintN_avx2_internal(BYTE* (&dstp)[3], int(&
         process_plane(dstp[0], m_uy_G, m_vr_G, v_patch_G);
         process_plane(dstp[1], m_uy_B, m_vr_B, v_patch_B);
         process_plane(dstp[2], m_uy_R, m_vr_R, v_patch_R);
-      }
-    }
+      } // if float_matrix_workflow else integer_matrix_arithmetic
+    } // x
     srcp[0] += srcPitch[0];
     srcp[1] += srcPitch[1];
     srcp[2] += srcPitch[2];
     dstp[0] += dstPitch[0];
     dstp[1] += dstPitch[1];
     dstp[2] += dstPitch[2];
-  }
+  } // y
 }
 
 #undef XP_LAMBDA_CAPTURE_FIX
 
 // Further separating cases inside, dispatcher remains relatively simple
 template<typename pixel_t_src, bool lessthan16bit>
-void convert_yuv_to_planarrgb_uintN_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m,
-  int bits_per_pixel, int bits_per_pixel_target)
+void convert_yuv_to_planarrgb_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m,
+  int bits_per_pixel, int bits_per_pixel_target, bool force_float)
 {
-  const bool need_conversion = bits_per_pixel_target != bits_per_pixel;
-  if (!need_conversion) {
-    // no conversion, just YUV to RGB
-    convert_yuv_to_planarrgb_uintN_avx2_internal<pixel_t_src, lessthan16bit, lessthan16bit, pixel_t_src, YuvRgbConversionType::NATIVE_INT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
-    return;
-  }
-
-  const bool full_d = m.offset_rgb == 0;
-
-  if (bits_per_pixel_target >= 8 && bits_per_pixel <= 16 && bits_per_pixel_target <= 16) {
-    // int->int conversion with range conversion (limited<->full), or upscale with no range conversion (full->full or limited->limited)
+  // Accuracy forever
+  if (force_float || std::is_floating_point<pixel_t_src>::value) {
+    // int->float conversion
+    // limited/full is handled automatically through scaling and offsets
+    // lessthan16bit_target is still important due to clamping
     if (bits_per_pixel_target == 8) {
-      if (full_d)
-        convert_yuv_to_planarrgb_uintN_avx2_internal<pixel_t_src, lessthan16bit, true, uint8_t, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
-      else
-        convert_yuv_to_planarrgb_uintN_avx2_internal<pixel_t_src, lessthan16bit, true, uint8_t, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      convert_yuv_to_planarrgb_avx2_internal<pixel_t_src, false /*lessthan16bit for input is n/a in forced float mode*/, true, uint8_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
     }
     else if (bits_per_pixel_target < 16) {
       // lessthan16bit_target is false. Need signed pack and clamping
-      if (full_d)
-        convert_yuv_to_planarrgb_uintN_avx2_internal<pixel_t_src, lessthan16bit, true, uint16_t, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
-      else
-        convert_yuv_to_planarrgb_uintN_avx2_internal<pixel_t_src, lessthan16bit, true, uint16_t, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      convert_yuv_to_planarrgb_avx2_internal<pixel_t_src, false /*lessthan16bit for input is n/a in forced float mode*/, true, uint16_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
     }
-    else { // == 16
-      if (full_d)
-        convert_yuv_to_planarrgb_uintN_avx2_internal<pixel_t_src, lessthan16bit, false, uint16_t, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
-      else
-        convert_yuv_to_planarrgb_uintN_avx2_internal<pixel_t_src, lessthan16bit, false, uint16_t, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+    else if (bits_per_pixel_target == 16) { // == 16
+      convert_yuv_to_planarrgb_avx2_internal<pixel_t_src, false /*lessthan16bit for input is n/a in forced float mode*/, false, uint16_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
     }
+    else { // 32 bit float target
+      // limited/full is handled automatically through scaling and offsets
+      // lessthan16bit_target doesn't matter since float output has no clamping
+      convert_yuv_to_planarrgb_avx2_internal<pixel_t_src, false /*lessthan16bit for input is n/a in forced float mode*/, false, float, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+    }
+    return;
   }
-  else {
-    // int->float conversion
-    // limited/full is handled automatically through scaling and offsets
-    // lessthan16bit_target doesn't matter since float output has no clamping
-    convert_yuv_to_planarrgb_uintN_avx2_internal<pixel_t_src, lessthan16bit, true, float, YuvRgbConversionType::FLOAT_OUTPUT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+
+  // this is needed to avoid instantiating the full integer conversion logic when not needed,
+  // it can result static_asssert failure.
+  if constexpr (!std::is_floating_point<pixel_t_src>::value) {
+    const bool need_conversion = bits_per_pixel_target != bits_per_pixel;
+    if (!need_conversion) {
+      // no conversion, just YUV to RGB
+      convert_yuv_to_planarrgb_avx2_internal<pixel_t_src, lessthan16bit, lessthan16bit, pixel_t_src, YuvRgbConversionType::NATIVE_INT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      return;
+    }
+
+    const bool full_d = m.offset_rgb == 0;
+
+    if (bits_per_pixel_target >= 8 && bits_per_pixel <= 16) {
+      // int->int conversion with range conversion (limited<->full), or upscale with no range conversion (full->full or limited->limited)
+      if (bits_per_pixel_target == 8) {
+        if (full_d)
+          convert_yuv_to_planarrgb_avx2_internal<pixel_t_src, lessthan16bit, true, uint8_t, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+        else
+          convert_yuv_to_planarrgb_avx2_internal<pixel_t_src, lessthan16bit, true, uint8_t, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      }
+      else if (bits_per_pixel_target < 16) {
+        // lessthan16bit_target is false. Need signed pack and clamping
+        if (full_d)
+          convert_yuv_to_planarrgb_avx2_internal<pixel_t_src, lessthan16bit, true, uint16_t, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+        else
+          convert_yuv_to_planarrgb_avx2_internal<pixel_t_src, lessthan16bit, true, uint16_t, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      }
+      else if (bits_per_pixel_target == 16) { // == 16
+        if (full_d)
+          convert_yuv_to_planarrgb_avx2_internal<pixel_t_src, lessthan16bit, false, uint16_t, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+        else
+          convert_yuv_to_planarrgb_avx2_internal<pixel_t_src, lessthan16bit, false, uint16_t, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      }
+      else { // 32 bit float target
+        // int->float conversion
+        // limited/full is handled automatically through scaling and offsets
+        // lessthan16bit_target doesn't matter since float output has no clamping
+        convert_yuv_to_planarrgb_avx2_internal<pixel_t_src, lessthan16bit, false, float, YuvRgbConversionType::FLOAT_OUTPUT /*n/a*/>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      }
+    }
   }
 }
 
 //instantiate
 //template<typename pixel_t, bool lessthan16bit>
-template void convert_yuv_to_planarrgb_uintN_avx2<uint8_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target);
-template void convert_yuv_to_planarrgb_uintN_avx2<uint16_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target);
-template void convert_yuv_to_planarrgb_uintN_avx2<uint16_t, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target);
-
-void convert_yuv_to_planarrgb_float_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m)
-{
-  // 32 bit float
-  // yes, we support "limited" float
-  __m256  offset_f = _mm256_set1_ps(m.offset_y_f);
-  __m256  offset_rgb = _mm256_set1_ps(m.offset_rgb_f);
-
-  const __m256 mat_yG = _mm256_set1_ps(m.y_g_f);
-  const __m256 mat_uG = _mm256_set1_ps(m.u_g_f);
-  const __m256 mat_vG = _mm256_set1_ps(m.v_g_f);
-
-  const __m256 mat_yB = _mm256_set1_ps(m.y_b_f);
-  const __m256 mat_uB = _mm256_set1_ps(m.u_b_f);
-  const __m256 mat_vB = _mm256_set1_ps(m.v_b_f);
-
-  const __m256 mat_yR = _mm256_set1_ps(m.y_r_f);
-  const __m256 mat_uR = _mm256_set1_ps(m.u_r_f);
-  const __m256 mat_vR = _mm256_set1_ps(m.v_r_f);
-
-  const int rowsize = width * sizeof(float);
-  for (int yy = 0; yy < height; yy++) {
-    for (int x = 0; x < rowsize; x += 8 * sizeof(float)) {
-      __m256 resG, resB, resR;
-      __m256 y, u, v;
-
-      // float: load 32 bytes: 8 pixels
-      y = _mm256_load_ps(reinterpret_cast<const float*>(srcp[0] + x));
-      u = _mm256_load_ps(reinterpret_cast<const float*>(srcp[1] + x));
-      v = _mm256_load_ps(reinterpret_cast<const float*>(srcp[2] + x));
-      y = _mm256_add_ps(y, offset_f); // offset is negative*/
-
-      // *G*
-      resG = _mm256_fmadd_ps(y, mat_yG, offset_rgb); // mul_y
-      resG = _mm256_fmadd_ps(u, mat_uG, resG); // mul_u
-      resG = _mm256_fmadd_ps(v, mat_vG, resG); // mul_v
-      // no clamp
-      _mm256_store_ps(reinterpret_cast<float*>(dstp[0] + x), resG);
-      // *B*
-      resB = _mm256_fmadd_ps(y, mat_yB, offset_rgb); // mul_y
-      resB = _mm256_fmadd_ps(u, mat_uB, resB); // mul_u
-      resB = _mm256_fmadd_ps(v, mat_vB, resB); // mul_v
-      // no clamp
-      _mm256_store_ps(reinterpret_cast<float*>(dstp[1] + x), resB);
-      // *R*
-      resR = _mm256_fmadd_ps(y, mat_yR, offset_rgb); // mul_y
-      resR = _mm256_fmadd_ps(u, mat_uR, resR); // mul_u
-      resR = _mm256_fmadd_ps(v, mat_vR, resR); // mul_v
-      // no clamp
-      _mm256_store_ps(reinterpret_cast<float*>(dstp[2] + x), resR);
-    }
-    srcp[0] += srcPitch[0];
-    srcp[1] += srcPitch[1];
-    srcp[2] += srcPitch[2];
-    dstp[0] += dstPitch[0];
-    dstp[1] += dstPitch[1];
-    dstp[2] += dstPitch[2];
-  }
-}
+template void convert_yuv_to_planarrgb_avx2<uint8_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_avx2<uint16_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_avx2<uint16_t, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_avx2<float, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
 
 DISABLE_WARNING_POP

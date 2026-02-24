@@ -69,8 +69,8 @@ extern const AVSFunction Convert_filters[] = {       // matrix can be "rec601", 
   { "ConvertToRGB32", BUILTIN_FUNC_PREFIX, "c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f", ConvertToRGB::Create, (void *)32 },
   { "ConvertToRGB48", BUILTIN_FUNC_PREFIX, "c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f", ConvertToRGB::Create, (void *)48 },
   { "ConvertToRGB64", BUILTIN_FUNC_PREFIX, "c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f", ConvertToRGB::Create, (void *)64 },
-  { "ConvertToPlanarRGB",  BUILTIN_FUNC_PREFIX, "c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f[bits]i", ConvertToRGB::Create, (void *)-1 },
-  { "ConvertToPlanarRGBA", BUILTIN_FUNC_PREFIX, "c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f[bits]i", ConvertToRGB::Create, (void *)-2 },
+  { "ConvertToPlanarRGB",  BUILTIN_FUNC_PREFIX, "c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f[bits]i[quality]b", ConvertToRGB::Create, (void *)-1 },
+  { "ConvertToPlanarRGBA", BUILTIN_FUNC_PREFIX, "c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f[bits]i[quality]b", ConvertToRGB::Create, (void *)-2 },
   { "ConvertToY8",    BUILTIN_FUNC_PREFIX, "c[matrix]s", ConvertToY::Create, (void*)0 }, // user_data == 0 -> only 8 bit sources
   { "ConvertToYV12",  BUILTIN_FUNC_PREFIX, "c[interlaced]b[matrix]s[ChromaInPlacement]s[chromaresample]s[ChromaOutPlacement]s[param1]f[param2]f[param3]f", ConvertToYV12::Create, (void*)0 },
   { "ConvertToYV24",  BUILTIN_FUNC_PREFIX, "c[interlaced]b[matrix]s[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f", ConvertToPlanarGeneric::CreateYUV444, (void*)0},
@@ -232,9 +232,10 @@ PVideoFrame __stdcall ConvertToRGB::GetFrame(int n, IScriptEnvironment* env)
 // however class is constructed only for YUY2 input
 // Called from ConvertToRGBxx (packed ones) and ConvertToPlanarRGB(A)
 // and from other places where on-the-fly conversion needed.
-// Only ConvertToPlanarRGB has bits parameter
-// 0 1        2            3                   4                5        6        7        8
-// c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f[bits]i
+// Only ConvertToPlanarRGB has bits and quality parameter!
+// 0 1        2            3                   4                5        6        7        8        9
+// c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f[bits]i[quality]b
+// When you add new parameters, find all places env->Invoke("ConvertToRGB",...) and check parameter count!
 AVSValue __cdecl ConvertToRGB::Create(AVSValue args, void* user_data, IScriptEnvironment* env)
 {
   const bool haveOpts = args[3].Defined() || args[4].Defined();
@@ -251,8 +252,10 @@ AVSValue __cdecl ConvertToRGB::Create(AVSValue args, void* user_data, IScriptEnv
   if (target_rgbtype == 0 && vi.BitsPerComponent() != 8 && vi.BitsPerComponent() != 16)
     env->ThrowError("ConvertToRGB: conversion is allowed only from 8 or 16 bit colorspaces");
 
-  // args[8]:
+  // "bits" args[8]: only exist is ConvertToPlanarRGB calls
   const int target_bits_per_pixel = target_rgbtype < 0 ? args[8].AsInt(vi.BitsPerComponent()) : vi.BitsPerComponent(); // only for planar rgb(a) target
+  // "quality" args[9]: only exist is ConvertToPlanarRGB calls
+  const bool quality = target_rgbtype < 0 ? args[9].AsBool(false) : false; // yuv-planarrgb float workflow
 
   // planar YUV-like source
   if (vi.IsPlanar() && (vi.IsYUV() || vi.IsYUVA())) {
@@ -301,8 +304,8 @@ AVSValue __cdecl ConvertToRGB::Create(AVSValue args, void* user_data, IScriptEnv
     case 48: {
             // instead of C code of YUV444P16->RGB48
             // we convert to PlanarRGB then to RGB48 (both is fast)
-          AVSValue new_args2[9] = { clip, args[1], args[2], args[3], args[4], args[5], args[6], args[7], /*bits*/ AVSValue() };
-          clip = ConvertToRGB::Create(AVSValue(new_args2, 9), (void *)-1, env).AsClip();
+          AVSValue new_args2[10] = { clip, args[1], args[2], args[3], args[4], args[5], args[6], args[7], /*bits*/ AVSValue(), /*quality*/ AVSValue()};
+          clip = ConvertToRGB::Create(AVSValue(new_args2, 10), (void *)-1, env).AsClip();
           vi = clip->GetVideoInfo();
           reallyConvert = false;
           rgbtype_param = 6; // old option RGB48 target, slow C
@@ -311,8 +314,8 @@ AVSValue __cdecl ConvertToRGB::Create(AVSValue args, void* user_data, IScriptEnv
     case 64: {
         // instead of C code of YUV(A)444P16->RGB64
         // we convert to PlanarRGB(A) then to RGB64 (both is fast)
-        AVSValue new_args2[9] = { clip, args[1], args[2], args[3], args[4], args[5], args[6], args[7], /*bits*/ AVSValue() };
-        clip = ConvertToRGB::Create(AVSValue(new_args2, 9), vi.IsYUVA() ? (void *)-2 : (void *)-1, env).AsClip();
+        AVSValue new_args2[10] = { clip, args[1], args[2], args[3], args[4], args[5], args[6], args[7], /*bits*/ AVSValue(), /*quality*/ AVSValue()};
+        clip = ConvertToRGB::Create(AVSValue(new_args2, 10), vi.IsYUVA() ? (void *)-2 : (void *)-1, env).AsClip();
         vi = clip->GetVideoInfo();
         reallyConvert = false;
         rgbtype_param = 8; // old option RGB64 target, slow C
@@ -324,15 +327,15 @@ AVSValue __cdecl ConvertToRGB::Create(AVSValue args, void* user_data, IScriptEnv
       if (needConvertFinalBitdepth) {
         // Optional bit-depth conversion in PackedRGBtoPlanarRGB.
         // int->float full/narrow range, int-int full/narrow supported
-        clip = new ConvertYUV444ToRGB(clip, matrix_name, rgbtype_param, finalBitdepth, /*ref*/bitdepthConverted, env);
+        clip = new ConvertYUV444ToRGB(clip, matrix_name, rgbtype_param, finalBitdepth, quality, /*ref*/bitdepthConverted, env);
         vi = clip->GetVideoInfo();
         if (bitdepthConverted) {
           needConvertFinalBitdepth = false; // done in-process
         }
       } else {
-        // pass -1 as finalBitdepth, signing that no conversion required
+        // pass -1 as finalBitdepth, signing that no bit-depth conversion required
         // output bitdepthConverted is n/a
-        clip = new ConvertYUV444ToRGB(clip, matrix_name, rgbtype_param, -1 /*no bit-depth conversion*/, /*ref*/bitdepthConverted, env);
+        clip = new ConvertYUV444ToRGB(clip, matrix_name, rgbtype_param, -1 /*no bit-depth conversion*/, quality, /*ref*/bitdepthConverted, env);
         vi = clip->GetVideoInfo();
       }
 
