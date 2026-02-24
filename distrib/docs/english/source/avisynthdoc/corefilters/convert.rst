@@ -38,12 +38,12 @@ ConvertToXXXX function
          string ChromaInPlacement,
          string chromaresample,
          float param1, float param2, float param3,
-         int bits] )
+         int bits, bool quality] )
     ConvertToPlanarRGBA(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
          string chromaresample,
          float param1, float param2, float param3,
-         int bits] )
+         int bits, bool quality] )
 
 
 *YUV444, YUVA444*
@@ -232,74 +232,197 @@ See also: :doc:`ConvertBits <convertbits>` to convert between bit depths and/or 
 Syntax and parameters
 ---------------------
 
+.. _matrix_parameter_syntax:
+
+
 .. describe:: matrix
 
-    string  matrix = "Rec601"
+    ``string  matrix = "Rec601"``
 
-    Default "Rec601". Controls the colour coefficients and scaling factors used in RGB - YUV conversions.
+    Controls the colour coefficients and scaling factors used in colour space conversions.
 
-    Old-style constants:
+    **Old-style constants (still valid):**
 
-    - "Rec601"  : Uses Rec.601 coefficients; scale full range [0d..255d] RGB ↔ TV range [16d..235d] YUV.
-    - "Rec709"  : Uses Rec.709 (HD) coefficients; scale full range RGB ↔ TV range YUV.
-    - "Rec2020" : Uses Rec.2020 (UHD) coefficients; scale full range RGB ↔ TV range YUV.
-    - "PC.2020" : Uses Rec.2020 (UHD) coefficients; keep range unchanged.
-    - "PC.601"  : Uses Rec.601 coefficients; keep range unchanged.
-    - "PC.709"  : Uses Rec.709 (HD) coefficients; keep range unchanged.
-    - "Average"  : Uses averaged coefficients (the luma becomes the average of the RGB channels); keep range unchanged. 
+    These names remain fully supported for backward compatibility.
 
-    Additional matrix constants:
+    - ``"Rec601"``               : Rec.601 coefficients; limited-range YUV ↔ full-range RGB.
+    - ``"Rec709"``               : Rec.709 (HD) coefficients; limited-range YUV ↔ full-range RGB.
+    - ``"Rec2020"``              : Rec.2020 (UHD) coefficients; limited-range YUV ↔ full-range RGB.
+    - ``"PC.601"``, ``"PC601"``  : Rec.601 coefficients; range unchanged (passes through as-is).
+    - ``"PC.709"``, ``"PC709"``  : Rec.709 (HD) coefficients; range unchanged.
+    - ``"PC.2020"``, ``"PC2020"``: Rec.2020 (UHD) coefficients; range unchanged.
+    - ``"Average"``              : Averaged luma (``Y = (R+G+B)/3``); range unchanged.
 
-    New syntax: more matrix string constants with separate full/limited range markers.
-    ``"matrixname:full_or_limited_or_auto_or_same"`` where 
-    ``"matrixname"`` can be set as (for developers, internal _Matrix integer constant are given in parenthesys)
+    Using old-style matrix names implies the full/limited range behaviour described above.
+    ``PC.601``, ``PC.709`` and ``PC.2020`` do not force a range conversion: the input range
+    is passed through to the output unchanged, equivalent to the new-style ``":same"``
+    modifier (see below).
 
-    - "rgb" (0 - AVS_MATRIX_RGB)
-    - "709" (1 - AVS_MATRIX_BT709)
-    - "unspec" (2 - AVS_MATRIX_UNSPECIFIED)
-    - "170m" (6 - AVS_MATRIX_ST170_M)
-    - "240m" (7 - AVS_MATRIX_ST240_M)
-    - "470bg" (5 - AVS_MATRIX_BT470_BG)
-    - "601" (5 - AVS_MATRIX_BT470_BG)
-    - "fcc" (4 - AVS_MATRIX_BT470_M)
-    - "bt470m" (4 - AVS_MATRIX_BT470_M)
-    - "ycgco" (8 - AVS_MATRIX_YCGCO not supported)
-    - "2020ncl" (9 - AVS_MATRIX_BT2020_NCL)
-    - "2020" (9 - AVS_MATRIX_BT2020_NCL)
-    - "2020cl" (10 - AVS_MATRIX_BT2020_CL same as 2020ncl)
-    - "chromacl" (13 - AVS_MATRIX_CHROMATICITY_DERIVED_CL not supported)
-    - "chromancl" (12 - AVS_MATRIX_CHROMATICITY_DERIVED_NCL not supported)
-    - "ictcp" (14 - AVS_MATRIX_ICTCP not supported) 
+    **New-style syntax:**
 
-    The above "matrix" parameters can be followed by a 
-    
-    - ``"full"`` or ``"f"`` 
-    - ``"limited"`` or ``"l"``
-    - ``"auto"``
-    - ``"same"``
-    
-    marker after a ``":"``.
+    Two forms are available::
 
-    e.g. ``"709:l"`` means the same as the old "Rec709", since it defaults to limited to full conversion.
+        "matrixname[:rangehint]"
+        "matrixname:rangehint=>matrixname:rangehint"
 
-    When there is no limited-ness marker, or is set to "auto" then value of _ColorRange frame property is used.
-    Using "same" will assume the input range for the output's range.
+    The first (single) form covers all common RGB ↔ YUV conversions.
+    The second (two-part) form is required when independent control of both sides is needed,
+    in particular for YUV → YUV conversions or when the RGB side needs an explicit range
+    different from its default.
 
-    Note: Avisynth+ defines a new matrix syntax, but old-style "matrix" parameter names are still valid.
-    Using old-style matrix names imply the full/limited range, except ``"PC.601"`` and ``"PC.709"`` which 
-    do not alter the input's range.
+    *matrixname* can be one of:
 
-    For memo and the similar new string
+    +----------------+-------+--------------------------------------------------------------+
+    | Name           | Int   | Description                                                  |
+    +================+=======+==============================================================+
+    | ``rgb``        | 0     | Identity / RGB (valid on either side of ``=>``)              |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``709``        | 1     | BT.709 (HD)                                                  |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``unspec``     | 2     | Unspecified                                                  |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``470bg``      | 5     | BT.470 BG (same coefficients as Rec.601)                     |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``601``        | 5     | Alias for ``470bg``                                          |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``fcc``        | 4     | BT.470 M / FCC                                               |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``bt470m``     | 4     | Alias for ``fcc``                                            |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``170m``       | 6     | SMPTE 170M                                                   |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``240m``       | 7     | SMPTE 240M                                                   |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``2020ncl``    | 9     | BT.2020 Non-Constant Luminance                               |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``2020``       | 9     | Alias for ``2020ncl``                                        |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``2020cl``     | 10    | BT.2020 Constant Luminance (treated as NCL internally)       |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``ycgco``      | 8     | YCgCo *(not supported)*                                      |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``chromancl``  | 12    | Chromaticity Derived NCL *(not supported)*                   |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``chromacl``   | 13    | Chromaticity Derived CL *(not supported)*                    |
+    +----------------+-------+--------------------------------------------------------------+
+    | ``ictcp``      | 14    | ICtCp *(not supported)*                                      |
+    +----------------+-------+--------------------------------------------------------------+
 
-    - "rec601" same as "470bg:l" (limited to full)
-    - "rec709" "709:l" (limited to full)
-    - "pc.601" and "pc601" same as "470bg:f" - but only if source has _ColorRange = 0 (full) 
-    - "pc.709" and "pc709" same as "709:f" - but only if source has _ColorRange = 0 (full)
-    - "pc.601" and "pc601" same as "470bg:same" (keep input range)
-    - "pc.709" and "pc709" same as "709:same" (keep input range)
-    - "average" - kept for compatibility, really it has no standard _Matrix equivalent
-    - "rec2020" "2020cl:l"
-    - "pc.2020" and "pc2020" "2020cl:f" - but only if source has _ColorRange = 0 (full)
+    *rangehint* specifies the colour range for that side of the conversion:
+
+    - ``full`` or ``f``    — force full range
+    - ``limited`` or ``l`` — force limited range
+    - ``auto``             — use ``_ColorRange`` frame property if present, otherwise use
+                             the format default (full for RGB, limited for YUV/Y)
+    - ``same``             — **output side only** in the two-part form; copies the resolved
+                             input range to the output. Invalid on the input (left) side.
+
+    When no rangehint is given at all, ``auto`` behaviour applies.
+
+    **Single form — the range hint refers to the YUV side:**
+
+    In the single ``"matrixname:rangehint"`` form the range hint always describes the
+    **YUV side** of the conversion, whichever side that is:
+
+    - **YUV → RGB**: the hint describes the *input* (YUV) range.
+      The RGB output defaults to full range independently of the hint.
+    - **RGB → YUV**: the hint describes the *output* (YUV) range.
+      The RGB input defaults to full range independently of the hint,
+      unless overridden by a ``_ColorRange`` frame property on the source.
+
+    This means ``"709:l"`` is unambiguous regardless of direction: the YUV side is
+    limited, using BT.709 coefficients. The RGB side resolves its range independently.
+
+    The special value ``same`` in the single form propagates from the *input* to the
+    output, regardless of direction. For YUV → RGB, the YUV input range (from frame
+    property or default) is copied to the RGB output. For RGB → YUV, the RGB input range
+    is copied to the YUV output. In both cases the net effect is range pass-through,
+    equivalent to the legacy ``PC.709`` / ``PC.601`` behaviour.
+
+    .. note::
+
+       For **RGB → YUV** with an explicit range hint, the hint sets the YUV *output*
+       range only. The RGB input range is always resolved independently from the
+       ``_ColorRange`` frame property (defaulting to full if absent) and cannot be
+       overridden by the hint. Use the two-part form if you need to declare both sides
+       explicitly.
+
+    **Two-part form** ``"matrixname:rangehint=>matrixname:rangehint"``:
+
+    Both sides must specify a matrixname and a rangehint. No implicit defaults apply
+    across the ``=>``. The ``same`` modifier is only valid on the *right (output)* side;
+    using it on the left side is an error.
+
+    This form is used when:
+
+    - A **YUV → YUV** conversion is needed. Internally the two matrices are combined and
+      applied as a single pass in the 32-bit float unclipped domain, so any out-of-range
+      RGB intermediate values that would arise from a naïve chained conversion are handled
+      safely without clipping artefacts.
+
+      YUV→RGB→YUV conversion using the specified matrix and range for each leg::
+
+          ConvertToYUV444(clip, matrix="601:l=>709:l")
+          # SD limited input, HD limited output
+
+          ConvertToYUV444(clip, matrix="709:auto=>2020:same")
+          # detect input range from frame prop; output matches resolved input range
+
+          ConvertToYUV444(clip, matrix="709:f=>709:l")
+          # full-range YUV input, limited-range YUV output, same matrix
+
+    - An **RGB side range** needs to be declared explicitly, overriding the default.
+      The matrixname ``"rgb"`` is valid on either side::
+
+          ConvertToPlanarRGB(clip, matrix="709:auto=>rgb:limited")
+          # detect YUV input range from frame prop; RGB output is forced limited
+
+          ConvertToYUV444(clip, matrix="rgb:limited=>709:l")
+          # explicitly declare limited RGB input; limited YUV output
+
+    .. note::
+
+       In the two-part form, ``same`` on the right side resolves relative to the *left
+       side's resolved range*, not relative to the source clip's format default.
+       For example, ``"709:f=>2020:same"`` produces full-range output because the left
+       side resolved to full, regardless of what the default for the output format would
+       otherwise be.
+
+    **Equivalence table** — old-style names and their new-style equivalents:
+
+    +--------------------+-------------------------------+------------------------------------------+
+    | Old name           | New equivalent                | Notes                                    |
+    +====================+===============================+==========================================+
+    | ``Rec601``         | ``470bg:l``                   | limited YUV ↔ full RGB                   |
+    +--------------------+-------------------------------+------------------------------------------+
+    | ``Rec709``         | ``709:l``                     | limited YUV ↔ full RGB                   |
+    +--------------------+-------------------------------+------------------------------------------+
+    | ``Rec2020``        | ``2020ncl:l``                 | limited YUV ↔ full RGB                   |
+    +--------------------+-------------------------------+------------------------------------------+
+    | ``PC.601``         | ``470bg:same``                | range preserved                          |
+    +--------------------+-------------------------------+------------------------------------------+
+    | ``PC.709``         | ``709:same``                  | range preserved                          |
+    +--------------------+-------------------------------+------------------------------------------+
+    | ``PC.2020``        | ``2020ncl:same``              | range preserved                          |
+    +--------------------+-------------------------------+------------------------------------------+
+    | ``Average``        | ``average``                   | no standard ``_Matrix`` equivalent       |
+    +--------------------+-------------------------------+------------------------------------------+
+
+    **Range detection defaults summary:**
+
+    +--------------------+----------------------------+----------------------------------------------------------+
+    | Side               | Default range              | Notes                                                    |
+    +====================+============================+==========================================================+
+    | YUV / Y input      | limited                    | overridden by ``_ColorRange`` frame prop                 |
+    +--------------------+----------------------------+----------------------------------------------------------+
+    | YUV / Y output     | limited                    | overridden by rangehint or ``same`` or two-part form     |
+    +--------------------+----------------------------+----------------------------------------------------------+
+    | RGB input          | full                       | overridden by ``_ColorRange`` frame prop                 |
+    +--------------------+----------------------------+----------------------------------------------------------+
+    | RGB output         | full                       | overridden by ``same`` or two-part form                  |
+    +--------------------+----------------------------+----------------------------------------------------------+
+
+
 
 .. describe:: interlaced
 
@@ -371,20 +494,42 @@ Syntax and parameters
 
     Used by ConvertToPlanarRGB(A) to perform on-the-fly output bit-depth conversion.
 
-    **Internal calculation methods:** (when conversion is needed)
-        
-        ========================  ===================  ================================
-        Target Range              Internal Math        Output Handling
-        ========================  ===================  ================================
-        Full-range                32-bit float         Direct output
-        Limited-range → integer   S18.13 fixed-point   Truncated to target bit depth
-        Limited-range → float     S18.13 fixed-point   Converted to float (no truncation)
-        ========================  ===================  ================================
-        
-        Note: Limited-range to float conversion preserves the full precision of the 
-        S18.13 fixed-point calculation by converting directly to 32-bit float without 
-        the truncation that occurs with integer targets.
-    
+    **Internal calculation methods of 8-16 bit sources** (when conversion is needed)
+
+    ========================  ===================  ===============  ================================
+    Target Range              Internal Math        Internal Math    Output Handling
+                                                   (quality=true)
+    ========================  ===================  ===============  ================================
+    Full-range                32-bit float         32-bit float     Direct output
+    Limited-range → integer   S18.13 fixed-point   32-bit float     Truncated to target bit depth
+    Limited-range → float     S18.13 fixed-point   32-bit float     Converted to float (no truncation)
+    ========================  ===================  ===============  ================================
+
+    When ``quality=true`` (see below), the S18.13 fixed-point path is replaced by
+    32-bit float processing regardless of target range or bit depth.
+
+    Note: Limited-range to float conversion preserves the full precision of the
+    S18.13 fixed-point calculation by converting directly to 32-bit float without
+    the truncation that occurs with integer targets.
+
+.. describe:: quality
+
+    ``bool  quality = false``
+
+    Available in ConvertToPlanarRGB(A) only.
+
+    When ``false`` (default), the internal calculation method is chosen automatically
+    based on the target range and bit depth, as described in the ``bits`` table above:
+    full-range targets use 32-bit float, limited-range targets use the faster S18.13
+    scaled integer path.
+
+    When ``true``, all internal processing is forced to 32-bit float regardless of
+    target range or bit depth. This avoids the rounding that occurs when the S18.13
+    fixed-point path truncates to an integer target, at the cost of slightly more
+    computation. Recommended when the output will undergo further processing and
+    maximum precision is desired.
+
+
 Frame properties
 ----------------
 
@@ -464,7 +609,8 @@ Color conversions
 +----------+------------------------------------------------------------+
 | Changes: |                                                            |
 +==========+============================================================+
-| v3.7.6   || Add "bits" parameter to ConvertToPlanarRGB()              |
+| v3.7.6   || Add "quality" parameter to ConvertToPlanarRGB(A)          |
+|          || Add "bits" parameter to ConvertToPlanarRGB(A)             |
 |          || Document ":same" in matrix specifier                      |
 +----------+------------------------------------------------------------+
 | v3.7.3   || Added "sinpow",  "sinclin2" and "userdefined2" to         |
@@ -487,4 +633,4 @@ Color conversions
 | v2.50    | ConvertToYV12                                              |
 +----------+------------------------------------------------------------+
 
-$Date: 2026/02/12 10:44:00 $
+$Date: 2026/02/24 20:25:00 $
