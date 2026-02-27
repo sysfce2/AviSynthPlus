@@ -235,5 +235,11 @@ typedef struct bits_conv_constants {
   d.src_offset_i = (int)d.src_offset; // no rounding, when used, it is integer
 }
 
+enum class ConversionDirection {
+  YUV_TO_RGB,
+  RGB_TO_YUV,
+  YUV_TO_YUV,
+  RGB_TO_RGB
+};
 
 #endif  // __Convert_helper_H__

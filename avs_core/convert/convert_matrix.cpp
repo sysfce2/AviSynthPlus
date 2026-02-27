@@ -43,14 +43,36 @@
 #endif 
 #include <cmath>
 
-// Note on scaling factors and int16 range:
-// - int_arith_shift = 15: safe for most YUV transforms where coeffs < 1.0.
-// - matrix="RGB" (IDENTITY) exception: If Kr=Kb=0 (Identity), coeffs reach 1.0. (1.0 << 15) = 32768, 
-//   which overflows int16 (-32768 to 32767). Caller will check it and may diable int16 based SIMD optimization paths.
-// - int_arith_shift = 14: recommended for 3-element matrix addition using "madd" to avoid 32-bit accum overflow.
+/**
+ * SIMD scaling logic for PMADDWD (16-bit signed multipliers, 32-bit accumulators).
+ * RGB->YUV uses 15-bit scale as all coeffs are < 1.0 (max ~0.678, BT.2020 G weight),
+ *   fully utilizing 16-bit coefficient precision without overflow.
+ * YUV->RGB requires 13-bit scale to accommodate chroma expansion coeffs up to ~1.881
+ *   (BT.2020 Cb->B), keeping scaled coefficients within int16 range.
+ * Fused YUV->YUV (e.g., 601->2020) needs 14-bit scale; diagonal gain slightly > 1.0
+ *   (~1.03 max) rules out 15-bit, but coeffs are well within 13-bit headroom.
+ * At 16-bit depth, errors partially average out during 32-bit accumulation before rounding.
+ * Avoid unifying all paths to 13-bit: RGB->YUV would degrade from ~±1 to ~±12 LSB worst-case.
+ *
+ * | Conversion  | Scale  | Max Coeff | LSB Error (16-bit) | Worst-Case Matrix   |
+ * |-------------|--------|-----------|--------------------|---------------------|
+ * | RGB -> YUV  | 15-bit | ~0.678    | ~±1  (near-exact)  | BT.2020 (G weight)  |
+ * | YUV -> RGB  | 13-bit | ~1.881    | ~±8  (practical)   | BT.2020 (Cb -> B)   |
+ * | YUV -> YUV  | 14-bit | ~1.030    | ~±2  (low noise)   | 601 <-> 2020 fused  |
+ *
+ * matrix="RGB" (IDENTITY) exception: If Kr=Kb=0 (Identity), coeffs reach 1.0. (1.0 << 15) = 32768,
+ * which overflows int16 (-32768 to 32767). Caller will check it and may diable int16 based SIMD optimization paths.
+ */
+
 static void BuildMatrix_Rgb2Yuv_core(double Kr, double Kb, int int_arith_shift, bool full_scale_s, bool full_scale_d, int bits_per_pixel, ConversionMatrix& matrix)
 {
   bits_conv_constants luma, chroma;
+  bits_conv_constants luma_to_32bit;
+
+  // helpers for post-matrix conversion to 32-bit float (for high bit depth sources or targets, e.g. 16-bit to 32-bit float)
+  get_bits_conv_constants(luma_to_32bit, false, full_scale_s, full_scale_d, bits_per_pixel, 32);
+  matrix.target_span_f_32 = luma_to_32bit.dst_span;
+  matrix.offset_out_f_32 = luma_to_32bit.dst_offset;
 
   // RGB is source, YUV is destination
   // For RGB source / Y destination (both luma-like):
@@ -173,6 +195,12 @@ static void BuildMatrix_Rgb2Yuv_core(double Kr, double Kb, int int_arith_shift, 
     matrix.ku_luma = -round_coeff(dku * Srgb_f / Sy_f);
     matrix.kv_luma = -round_coeff(dkv * Srgb_f / Sy_f);
   }
+
+  // in: rgb. out: yuv
+  matrix.offset_in = matrix.offset_rgb;
+  matrix.offset_in_f = matrix.offset_rgb_f;
+  matrix.offset_out = matrix.offset_y;
+  matrix.offset_out_f = matrix.offset_y_f;
 }
 
 /*
@@ -194,14 +222,15 @@ static void BuildMatrix_Yuv2Rgb_core(double Kr, double Kb, int int_arith_shift, 
 
   // helpers for post-matrix conversion to 32-bit float (for high bit depth sources or targets, e.g. 16-bit to 32-bit float)
   get_bits_conv_constants(luma_to_32bit, false, full_scale_s, full_scale_d, bits_per_pixel, 32);
+  matrix.target_span_f_32 = luma_to_32bit.dst_span;
+  matrix.offset_out_f_32 = luma_to_32bit.dst_offset;
+
   // We use dstBitDepth = srcBitDepth because the matrix handles the magnitude 
   // via the mulfac and Srgb calculations. We just need the standardized spans.
   get_bits_conv_constants(luma, false, full_scale_s, full_scale_d, bits_per_pixel, bits_per_pixel);
   get_bits_conv_constants(chroma, true, full_scale_s, full_scale_d, bits_per_pixel, bits_per_pixel);
 
   matrix.target_span_f = luma.dst_span;
-  matrix.target_span_f_32 = luma_to_32bit.dst_span;
-  matrix.offset_rgb_f_32 =  luma_to_32bit.dst_offset;
 
   Sy_f = luma.src_span;
   Suv_f = chroma.src_span;
@@ -279,6 +308,12 @@ static void BuildMatrix_Yuv2Rgb_core(double Kr, double Kb, int int_arith_shift, 
   matrix.v_r = round_coeff(mulfac * v_r_f);
   matrix.offset_y = round_coeff(offset_y_f);
   matrix.offset_rgb = round_coeff(offset_rgb_f);
+
+  // in: yuv. out: rgb
+  matrix.offset_in = matrix.offset_y;
+  matrix.offset_in_f = matrix.offset_y_f;
+  matrix.offset_out = matrix.offset_rgb;
+  matrix.offset_out_f = matrix.offset_rgb_f;
 
 }
 

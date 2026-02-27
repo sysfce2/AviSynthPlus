@@ -41,15 +41,21 @@
 #include <stdint.h>
 #include "convert.h"
 #include "../filters/resample.h"
+#include "convert_helper.h"
 #include "convert_bits.h"
 
 enum YuvRgbConversionType {
-  NATIVE_INT,           // Same depth, int math
-  FORCE_FLOAT,          // any to any
-  FLOAT_OUTPUT,         // int math, float output
-  BITCONV_INT_LIMITED,  // Bit depth change, limited range
-  BITCONV_INT_FULL      // Bit depth change, full range (needs float coeffs!)
+  NATIVE_INT,           // Same bit depth, integer matrix arithmetic, no conversion
+  FORCE_FLOAT,          // Float matrix workflow (required for float input, optional for accuracy)
+  FLOAT_OUTPUT,         // Integer matrix -> float output (for int->float conversions)
+  BITCONV_INT_LIMITED,  // Bit-depth change with limited range (shift-based scaling)
+  BITCONV_INT_FULL      // Bit-depth change with full range (requires float coefficients)
 };
+
+// Dispatcher matching AVX2/SSE2 structure
+template<ConversionDirection direction, typename pixel_t_src, bool lessthan16bit>
+void convert_yuv_to_planarrgb_c(BYTE* dstp[3], int dstPitch[3], const BYTE* srcp[3], const int srcPitch[3], int width, int height, const ConversionMatrix& m,
+  int bits_per_pixel, int bits_per_pixel_target, bool force_float);
 
 // useful functions
 template <typename pixel_t>
@@ -89,7 +95,7 @@ private:
 class ConvertRGBToYUV444 : public GenericVideoFilter
 {
 public:
-  ConvertRGBToYUV444(PClip src, const char *matrix_name, bool keep_packedrgb_alpha, IScriptEnvironment* env);
+  ConvertRGBToYUV444(PClip src, const char *matrix_name, bool keep_packedrgb_alpha, int _target_bit_depth, bool _quality, bool& bitdepthConverted, IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
   int __stdcall SetCacheHints(int cachehints, int frame_range) override {
@@ -103,8 +109,15 @@ private:
   int theOutColorRange;
   ConversionMatrix matrix;
   int pixel_step;
-  bool hasAlpha;
+  bool targetHasAlpha;
   bool isPlanarRGBfamily;
+  int source_bit_depth;
+  int target_bit_depth;
+  bool quality;
+  // primarily for alpha plane conversion
+  BitDepthConvFuncPtr conv_function;
+  BitDepthConvFuncPtr conv_function_chroma; // 32bit float YUV chroma
+  BitDepthConvFuncPtr conv_function_a;
 };
 
 class ConvertYUY2ToYV16 : public GenericVideoFilter
@@ -170,7 +183,8 @@ public:
   ConvertToPlanarGeneric(PClip src, int dst_space, bool interlaced,
                          int _ChromaLocation_In, 
                          const AVSValue& ChromaResampler, const AVSValue& param1, const AVSValue& param2, const AVSValue& param3,
-                         int _ChromaLocation_Out, IScriptEnvironment* env);
+                         int _ChromaLocation_Out,
+                         IScriptEnvironment* env);
   ~ConvertToPlanarGeneric() {}
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
