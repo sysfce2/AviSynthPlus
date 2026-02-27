@@ -52,10 +52,7 @@
 
 // minimum width: 48*2 bytes
 template<typename pixel_t, bool targetHasAlpha>
-#if defined(GCC) || defined(CLANG)
-__attribute__((__target__("avx2")))
-#endif
-void convert_rgb_to_rgbp_avx2(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height, int bits_per_pixel)
+void convert_rgb_to_rgbp_avx2(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height)
 {
   // RGB24: 2x3x16 bytes cycle, 2x16*(RGB) 8bit pixels
   // RGB48: 2x3x16 bytes cycle, 2x8*(RGB) 16bit pixels
@@ -78,7 +75,7 @@ void convert_rgb_to_rgbp_avx2(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch
   if constexpr(sizeof(pixel_t) == 1)
     max_pixel_value = _mm256_set1_epi8((char)0xFF);
   else
-    max_pixel_value = _mm256_set1_epi16((1 << bits_per_pixel) - 1); // bits_per_pixel is 16
+    max_pixel_value = _mm256_set1_epi16((short)0xFFFF); // bits_per_pixel is 16
 
 // read-optimized
 #define SRC_ADDRESS_ADVANCES
@@ -182,7 +179,66 @@ void convert_rgb_to_rgbp_avx2(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch
 }
 
 // Instantiate them
-template void convert_rgb_to_rgbp_avx2<uint8_t, false>(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height, int bits_per_pixel);
-template void convert_rgb_to_rgbp_avx2<uint8_t, true>(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height, int bits_per_pixel);
-template void convert_rgb_to_rgbp_avx2<uint16_t, false>(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height, int bits_per_pixel);
-template void convert_rgb_to_rgbp_avx2<uint16_t, true>(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height, int bits_per_pixel);
+template void convert_rgb_to_rgbp_avx2<uint8_t, false>(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
+template void convert_rgb_to_rgbp_avx2<uint8_t, true>(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
+template void convert_rgb_to_rgbp_avx2<uint16_t, false>(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
+template void convert_rgb_to_rgbp_avx2<uint16_t, true>(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
+
+template<typename pixel_t, bool targetHasAlpha>
+void convert_rgba_to_rgbp_avx2(const BYTE* srcp, BYTE* (&dstp)[4],
+  int src_pitch, int(&dst_pitch)[4], int width, int height)
+{
+  const int pixels_per_iter = (sizeof(pixel_t) == 1) ? 16 : 8;
+  // 8-bit: process 16 pixels per loop (64 bytes in -> four 16-byte stores out)
+  // 16-bit: process 8 pixels per loop (64 bytes in -> four 16-byte stores out)
+  __m128i mask128;
+  if constexpr (sizeof(pixel_t) == 1)
+    mask128 = _mm_set_epi8(15, 11, 7, 3, 14, 10, 6, 2, 13, 9, 5, 1, 12, 8, 4, 0);
+  else
+    mask128 = _mm_set_epi8(15, 14, 7, 6, 13, 12, 5, 4, 11, 10, 3, 2, 9, 8, 1, 0);
+  __m256i vmask = _mm256_broadcastsi128_si256(mask128);
+  // Avisynth's scanline alignment is 64 bytes, so no remainder hanfling is needed for 16 RGB32 or 8 RGB64 pixels
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; x += pixels_per_iter) {
+      __m256i srcA = _mm256_load_si256(reinterpret_cast<const __m256i*>(srcp + x * 4 * sizeof(pixel_t)));
+      __m256i srcB = _mm256_load_si256(reinterpret_cast<const __m256i*>(srcp + (x + pixels_per_iter / 2) * 4 * sizeof(pixel_t)));
+
+      __m256i shufA = _mm256_shuffle_epi8(srcA, vmask);
+      __m256i shufB = _mm256_shuffle_epi8(srcB, vmask);
+
+      __m128i a_lo = _mm256_castsi256_si128(shufA);
+      __m128i a_hi = _mm256_extracti128_si256(shufA, 1);
+      __m128i b_lo = _mm256_castsi256_si128(shufB);
+      __m128i b_hi = _mm256_extracti128_si256(shufB, 1);
+
+      __m128i bg_0 = _mm_unpacklo_epi32(a_lo, a_hi);
+      __m128i ra_0 = _mm_unpackhi_epi32(a_lo, a_hi);
+      __m128i bg_1 = _mm_unpacklo_epi32(b_lo, b_hi);
+      __m128i ra_1 = _mm_unpackhi_epi32(b_lo, b_hi);
+
+      __m128i chB = _mm_unpacklo_epi64(bg_0, bg_1);
+      __m128i chG = _mm_unpackhi_epi64(bg_0, bg_1);
+      __m128i chR = _mm_unpacklo_epi64(ra_0, ra_1);
+      __m128i chA = _mm_unpackhi_epi64(ra_0, ra_1);
+
+      _mm_store_si128(reinterpret_cast<__m128i*>(dstp[1] + x * sizeof(pixel_t)), chB);
+      _mm_store_si128(reinterpret_cast<__m128i*>(dstp[0] + x * sizeof(pixel_t)), chG);
+      _mm_store_si128(reinterpret_cast<__m128i*>(dstp[2] + x * sizeof(pixel_t)), chR);
+      if constexpr (targetHasAlpha)
+        _mm_store_si128(reinterpret_cast<__m128i*>(dstp[3] + x * sizeof(pixel_t)), chA);
+    }
+
+    srcp -= src_pitch; // source packed RGB is upside down
+    dstp[0] += dst_pitch[0];
+    dstp[1] += dst_pitch[1];
+    dstp[2] += dst_pitch[2];
+    if constexpr (targetHasAlpha)
+      dstp[3] += dst_pitch[3];
+  }
+}
+
+// Instantiate them
+template void convert_rgba_to_rgbp_avx2<uint8_t, false>(const BYTE* srcp, BYTE* (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
+template void convert_rgba_to_rgbp_avx2<uint8_t, true>(const BYTE* srcp, BYTE* (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
+template void convert_rgba_to_rgbp_avx2<uint16_t, false>(const BYTE* srcp, BYTE* (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
+template void convert_rgba_to_rgbp_avx2<uint16_t, true>(const BYTE* srcp, BYTE* (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);

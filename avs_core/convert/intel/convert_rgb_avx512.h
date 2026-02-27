@@ -32,15 +32,13 @@
 // which is not derived from or based on Avisynth, such as 3rd-party filters,
 // import and export plugins, or graphical user interfaces.
 
-#ifndef __Convert_RGB_AVX2_H__
-#define __Convert_RGB_AVX2_H__
+#ifndef __Convert_RGB_AVX512_H__
+#define __Convert_RGB_AVX512_H__
 
-#include <avs/types.h>
-
-template<typename pixel_t, bool targetHasAlpha>
-void convert_rgb_to_rgbp_avx2(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
+#include <avisynth.h>
 
 template<typename pixel_t, bool targetHasAlpha>
-void convert_rgba_to_rgbp_avx2(const BYTE* srcp, BYTE* (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
+void convert_rgba_to_rgbp_avx512vbmi(const BYTE* srcp, BYTE* (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
 
-#endif  // __Convert_RGB_AVX2_H__
+
+#endif // __Convert_RGB_AVX512_H__

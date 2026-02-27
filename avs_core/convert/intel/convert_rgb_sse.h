@@ -47,10 +47,6 @@ __attribute__((__target__("ssse3")))
 #endif
 void convert_rgb24_to_rgb32_ssse3(const BYTE *srcp, BYTE *dstp, size_t src_pitch, size_t dst_pitch, size_t width, size_t height);
 
-#ifdef X86_32
-void convert_rgb24_to_rgb32_mmx(const BYTE *srcp, BYTE *dstp, size_t src_pitch, size_t dst_pitch, size_t width, size_t height);
-#endif
-
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("ssse3")))
 #endif
@@ -61,18 +57,25 @@ __attribute__((__target__("ssse3")))
 #endif
 void convert_rgb32_to_rgb24_ssse3(const BYTE *srcp, BYTE *dstp, size_t src_pitch, size_t dst_pitch, size_t width, size_t height);
 
-#ifdef X86_32
-void convert_rgb32_to_rgb24_mmx(const BYTE *srcp, BYTE *dstp, size_t src_pitch, size_t dst_pitch, size_t width, size_t height);
-#endif
+void convert_rgb32_to_rgb24_sse2(const BYTE *srcp, BYTE *dstp, size_t src_pitch, size_t dst_pitch, size_t width, size_t height);
 
 template<typename pixel_t, bool targetHasAlpha>
-void convert_rgb_to_rgbp_ssse3(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height, int bits_per_pixel);
+#if defined(GCC) || defined(CLANG)
+__attribute__((__target__("ssse3")))
+#endif
+void convert_rgb_to_rgbp_ssse3(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
+
+template<typename pixel_t, bool targetHasAlpha>
+void convert_rgb_to_rgbp_sse2(const BYTE* srcp, BYTE* (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
 
 template<typename pixel_t, bool targetHasAlpha>
 #if defined(GCC) || defined(CLANG)
 __attribute__((__target__("ssse3")))
 #endif
 void convert_rgba_to_rgbp_ssse3(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int (&dst_pitch)[4], int width, int height);
+
+template<typename pixel_t, bool targetHasAlpha>
+void convert_rgba_to_rgbp_sse2(const BYTE* srcp, BYTE* (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height);
 
 template<typename pixel_t, bool hasSrcAlpha>
 void convert_rgbp_to_rgba_sse2(const BYTE *(&srcp)[4], BYTE * dstp, int (&src_pitch)[4], int dst_pitch, int width, int height);

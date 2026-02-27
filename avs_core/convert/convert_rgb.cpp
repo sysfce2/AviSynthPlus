@@ -37,6 +37,9 @@
 #ifdef INTEL_INTRINSICS
 #include "intel/convert_rgb_sse.h"
 #include "intel/convert_rgb_avx2.h"
+#ifdef INTEL_INTRINSICS_AVX512
+#include "intel/convert_rgb_avx512.h"
+#endif
 #endif
 #include <avs/alignment.h>
 
@@ -82,28 +85,17 @@ PVideoFrame __stdcall RGBtoRGBA::GetFrame(int n, IScriptEnvironment* env)
 
   int pixelsize = vi.ComponentSize();
 
+  using conv_fn_t = void(*)(const BYTE*, BYTE*, size_t, size_t, size_t, size_t);
+  conv_fn_t fn;
+
 #ifdef INTEL_INTRINSICS
-  if (env->GetCPUFlags() & CPUF_SSSE3) {
-    if(pixelsize==1)
-      convert_rgb24_to_rgb32_ssse3(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-    else
-      convert_rgb48_to_rgb64_ssse3(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-  }
+  if (env->GetCPUFlags() & CPUF_SSSE3)
+    fn = (pixelsize == 1) ? convert_rgb24_to_rgb32_ssse3 : convert_rgb48_to_rgb64_ssse3;
   else
-#ifdef X86_32
-    if (pixelsize==1 && (env->GetCPUFlags() & CPUF_MMX))
-    {
-      convert_rgb24_to_rgb32_mmx(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-    }
-    else
 #endif
-#endif
-    {
-      if (pixelsize == 1)
-        convert_rgb24_to_rgb32_c(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-      else
-        convert_rgb48_to_rgb64_c(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-    }
+    fn = (pixelsize == 1) ? convert_rgb24_to_rgb32_c : convert_rgb48_to_rgb64_c;
+
+  fn(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
   return dst;
 }
 
@@ -159,28 +151,20 @@ PVideoFrame __stdcall RGBAtoRGB::GetFrame(int n, IScriptEnvironment* env)
 
   int pixelsize = vi.ComponentSize();
 
+  using conv_fn_t = void(*)(const BYTE*, BYTE*, size_t, size_t, size_t, size_t);
+  conv_fn_t fn = nullptr;
+
 #ifdef INTEL_INTRINSICS
-  if (env->GetCPUFlags() & CPUF_SSSE3) {
-    if(pixelsize==1)
-      convert_rgb32_to_rgb24_ssse3(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-    else
-      convert_rgb64_to_rgb48_ssse3(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-  }
-  else
-#ifdef X86_32
-  if ((pixelsize==1) && (env->GetCPUFlags() & CPUF_MMX))
-  {
-    convert_rgb32_to_rgb24_mmx(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-  }
+  if (env->GetCPUFlags() & CPUF_SSSE3)
+    fn = (pixelsize == 1) ? convert_rgb32_to_rgb24_ssse3 : convert_rgb64_to_rgb48_ssse3;
+  else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
+    fn = convert_rgb32_to_rgb24_sse2;
   else
 #endif
-#endif
-  {
-    if(pixelsize==1)
-      convert_rgb32_to_rgb24_c(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-    else
-      convert_rgb64_to_rgb48_c(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-  }
+    fn = (pixelsize == 1) ? convert_rgb32_to_rgb24_c : convert_rgb64_to_rgb48_c;
+
+  fn(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
+
   return dst;
 }
 
@@ -192,32 +176,31 @@ PackedRGBtoPlanarRGB::PackedRGBtoPlanarRGB(PClip src, bool _sourceHasAlpha, bool
     (targetHasAlpha ? VideoInfo::CS_RGBAP16 : VideoInfo::CS_RGBP16);
 }
 
-template<typename pixel_t, int src_numcomponents>
-static void convert_rgb_to_rgbp_c(const BYTE *srcp, BYTE * (&dstp)[4], int src_pitch, int (&dst_pitch)[4], size_t width, size_t height, int bits_per_pixel) {
-  bool targetHasAlpha = (dst_pitch[3] != 0);
-  const int max_pixel_value = (1 << bits_per_pixel) - 1;
-  for (size_t y = height; y > 0; --y) {
-    size_t x;
-    // not proud of it but it works
+template<typename pixel_t, int src_numcomponents, bool targetHasAlpha>
+static void convert_rgb_to_rgbp_c(const BYTE* srcp, BYTE* (&dstp)[4], int src_pitch, int(&dst_pitch)[4], int width, int height) {
+  constexpr int bits_per_pixel = sizeof(pixel_t) == 1 ? 8 : 16;
+  constexpr int max_pixel_value = (1 << bits_per_pixel) - 1;
+  for (int y = height; y > 0; --y) {
+    int x;
     for (x = 0; x < width; ++x) {
-      pixel_t B = reinterpret_cast<const pixel_t *>(srcp)[x*src_numcomponents + 0];
-      pixel_t G = reinterpret_cast<const pixel_t *>(srcp)[x*src_numcomponents + 1];
-      pixel_t R = reinterpret_cast<const pixel_t *>(srcp)[x*src_numcomponents + 2];
+      pixel_t B = reinterpret_cast<const pixel_t*>(srcp)[x * src_numcomponents + 0];
+      pixel_t G = reinterpret_cast<const pixel_t*>(srcp)[x * src_numcomponents + 1];
+      pixel_t R = reinterpret_cast<const pixel_t*>(srcp)[x * src_numcomponents + 2];
       pixel_t A = 0;
-      if(targetHasAlpha)
-        A = (src_numcomponents==4) ? reinterpret_cast<const pixel_t *>(srcp)[x*src_numcomponents + 3] : max_pixel_value;
-      reinterpret_cast<pixel_t *>(dstp[0])[x] = G;
-      reinterpret_cast<pixel_t *>(dstp[1])[x] = B;
-      reinterpret_cast<pixel_t *>(dstp[2])[x] = R;
-      if(targetHasAlpha)
-        reinterpret_cast<pixel_t *>(dstp[3])[x] = A;
+      if constexpr (targetHasAlpha)
+        A = (src_numcomponents == 4) ? reinterpret_cast<const pixel_t*>(srcp)[x * src_numcomponents + 3] : max_pixel_value;
+      reinterpret_cast<pixel_t*>(dstp[0])[x] = G;
+      reinterpret_cast<pixel_t*>(dstp[1])[x] = B;
+      reinterpret_cast<pixel_t*>(dstp[2])[x] = R;
+      if constexpr (targetHasAlpha)
+        reinterpret_cast<pixel_t*>(dstp[3])[x] = A;
     }
 
     srcp -= src_pitch; // source packed RGB is upside down
     dstp[0] += dst_pitch[0];
     dstp[1] += dst_pitch[1];
     dstp[2] += dst_pitch[2];
-    if (targetHasAlpha)
+    if constexpr (targetHasAlpha)
       dstp[3] += dst_pitch[3];
   }
 }
@@ -227,88 +210,94 @@ PVideoFrame __stdcall PackedRGBtoPlanarRGB::GetFrame(int n, IScriptEnvironment* 
   PVideoFrame src = child->GetFrame(n, env);
   PVideoFrame dst = env->NewVideoFrameP(vi, &src);
   int src_pitch = src->GetPitch();
-  const BYTE *srcp = src->GetReadPtr();
-  BYTE *dstp[4] = {dst->GetWritePtr(PLANAR_G),dst->GetWritePtr(PLANAR_B),dst->GetWritePtr(PLANAR_R),dst->GetWritePtr(PLANAR_A)};
-  int dst_pitch[4] = {dst->GetPitch(PLANAR_G),dst->GetPitch(PLANAR_B),dst->GetPitch(PLANAR_R),dst->GetPitch(PLANAR_A)};
-
+  const BYTE* srcp = src->GetReadPtr();
+  BYTE* dstp[4] = {
+    dst->GetWritePtr(PLANAR_G), dst->GetWritePtr(PLANAR_B),
+    dst->GetWritePtr(PLANAR_R), dst->GetWritePtr(PLANAR_A)
+  };
+  int dst_pitch[4] = {
+    dst->GetPitch(PLANAR_G), dst->GetPitch(PLANAR_B),
+    dst->GetPitch(PLANAR_R), dst->GetPitch(PLANAR_A)
+  };
   int pixelsize = vi.ComponentSize();
-
   srcp += src_pitch * (vi.height - 1); // start from bottom: packed RGB is upside down
 
-#ifdef INTEL_INTRINSICS
+  using conv_fn_t = void(*)(const BYTE*, BYTE* (&)[4], int, int(&)[4], int, int);
+  conv_fn_t fn = nullptr;
+
   const bool targetHasAlpha = vi.IsPlanarRGBA();
+
+#ifdef INTEL_INTRINSICS
+  auto CPU = env->GetCPUFlagsEx();
+  const bool hasSSE2 = (CPU & CPUF_SSE2) != 0;
+  const bool hasSSSE3 = (CPU & CPUF_SSSE3) != 0;
+  const bool hasAVX2 = (CPU & CPUF_AVX2) != 0;
+#ifdef INTEL_INTRINSICS_AVX512
+  //const bool has_AVX512_base = (CPU & CPUF_AVX512_BASE) == CPUF_AVX512_BASE; // group flag!
+  const bool has_AVX512_fast = (CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST; // group flag!
+#endif
 #endif
 
-  if(pixelsize==1)
-  {
-    // targetHasAlpha decision in convert function
+  // for RGBA there is no width limit, we do full scanlines, Avisynth's 64 byte alignment allows
+  // processing 16 RGB32 pixels or 8 RGB64 pixels at a time
+  // RGB is tricky, remainder handling is needed.
+
+  if (pixelsize == 1) {
     if (sourceHasAlpha) {
-      // RGB32->RGBP8
+      // RGB32->
 #ifdef INTEL_INTRINSICS
-      if ((env->GetCPUFlags() & CPUF_SSSE3) && vi.width >= 8) {
-        if (targetHasAlpha)
-          convert_rgba_to_rgbp_ssse3<uint8_t, true>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-        else
-          convert_rgba_to_rgbp_ssse3<uint8_t, false>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-      }
+#ifdef INTEL_INTRINSICS_AVX512
+      if (has_AVX512_fast)  fn = targetHasAlpha ? convert_rgba_to_rgbp_avx512vbmi<uint8_t, true> : convert_rgba_to_rgbp_avx512vbmi<uint8_t, false>;
       else
 #endif
-        convert_rgb_to_rgbp_c<uint8_t, 4>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height, 8);
+      if (hasAVX2)  fn = targetHasAlpha ? convert_rgba_to_rgbp_avx2<uint8_t, true> : convert_rgba_to_rgbp_avx2<uint8_t, false>;
+      else if (hasSSSE3)  fn = targetHasAlpha ? convert_rgba_to_rgbp_ssse3<uint8_t, true> : convert_rgba_to_rgbp_ssse3<uint8_t, false>;
+      else if (hasSSE2)  fn = targetHasAlpha ? convert_rgba_to_rgbp_sse2 <uint8_t, true> : convert_rgba_to_rgbp_sse2 <uint8_t, false>;
+      else
+#endif
+        fn = targetHasAlpha ? convert_rgb_to_rgbp_c<uint8_t, 4, true> : convert_rgb_to_rgbp_c<uint8_t, 4, false>;
     }
     else {
+      // RGB24->
 #ifdef INTEL_INTRINSICS
-      // RGB24->RGB(A)P8, works with 48byte blocks (16xRGB), min width is 16 (SSSE3, 32 (AVX2)
-      if ((env->GetCPUFlags() & CPUF_AVX2) && vi.width >= 32) {
-        if (targetHasAlpha)
-          convert_rgb_to_rgbp_avx2<uint8_t, true>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height, 8);
-        else
-          convert_rgb_to_rgbp_avx2<uint8_t, false>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height, 8);
-      }
-      else if ((env->GetCPUFlags() & CPUF_SSSE3) && vi.width >= 16) {
-        if (targetHasAlpha)
-          convert_rgb_to_rgbp_ssse3<uint8_t, true>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height, 8);
-        else
-          convert_rgb_to_rgbp_ssse3<uint8_t, false>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height, 8);
-      }
+      // RGB24->RGB(A)P8, works with 48byte blocks (16xRGB), min width is 16 (SSSE3, 32 (AVX2), width constraint is due to remainder handling, not alignment)
+      if (hasAVX2 && vi.width >= 32) fn = targetHasAlpha ? convert_rgb_to_rgbp_avx2 <uint8_t, true> : convert_rgb_to_rgbp_avx2 <uint8_t, false>;
+      else if (hasSSSE3 && vi.width >= 16) fn = targetHasAlpha ? convert_rgb_to_rgbp_ssse3<uint8_t, true> : convert_rgb_to_rgbp_ssse3<uint8_t, false>;
+      else if (hasSSE2 && vi.width >= 16) fn = targetHasAlpha ? convert_rgb_to_rgbp_sse2 <uint8_t, true> : convert_rgb_to_rgbp_sse2 <uint8_t, false>;
       else
 #endif
-        convert_rgb_to_rgbp_c<uint8_t, 3>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height, 8);
+        fn = targetHasAlpha ? convert_rgb_to_rgbp_c<uint8_t, 3, true> : convert_rgb_to_rgbp_c<uint8_t, 3, false>;
     }
   }
-  else {
+  else { // pixelsize == 2
     if (sourceHasAlpha) {
-      // RGB32->RGBP16, RGBAP16
+      // RGB64->
 #ifdef INTEL_INTRINSICS
-      if ((env->GetCPUFlags() & CPUF_SSSE3) && vi.width >= 4) {
-        if (targetHasAlpha)
-          convert_rgba_to_rgbp_ssse3<uint16_t, true>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-        else
-          convert_rgba_to_rgbp_ssse3<uint16_t, false>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-      }
+#ifdef INTEL_INTRINSICS_AVX512
+      if (has_AVX512_fast)  fn = targetHasAlpha ? convert_rgba_to_rgbp_avx512vbmi<uint16_t, true> : convert_rgba_to_rgbp_avx512vbmi<uint16_t, false>;
       else
 #endif
-        convert_rgb_to_rgbp_c<uint16_t, 4>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height, 16);
+      if (hasAVX2)  fn = targetHasAlpha ? convert_rgba_to_rgbp_avx2<uint16_t, true> : convert_rgba_to_rgbp_avx2<uint16_t, false>;
+      else if (hasSSSE3)  fn = targetHasAlpha ? convert_rgba_to_rgbp_ssse3<uint16_t, true> : convert_rgba_to_rgbp_ssse3<uint16_t, false>;
+      else if (hasSSE2)  fn = targetHasAlpha ? convert_rgba_to_rgbp_sse2 <uint16_t, true> : convert_rgba_to_rgbp_sse2 <uint16_t, false>;
+      else
+#endif
+        fn = targetHasAlpha ? convert_rgb_to_rgbp_c<uint16_t, 4, true> : convert_rgb_to_rgbp_c<uint16_t, 4, false>;
     }
     else {
-      // RGB48->RGB(A)P16, works with 48byte blocks (8xRGB), min width is 8 (SSSE3), 16 (AVX2)
+      // RGB48->
+      // width constraint is due to remainder handling, not alignment, AVX2 needs 16 pixels (48 bytes) to process, SSE2/SSSE3 need 8 pixels (48 bytes) to process
 #ifdef INTEL_INTRINSICS
-      if ((env->GetCPUFlags() & CPUF_AVX2) && vi.width >= 16) {
-        if (targetHasAlpha)
-          convert_rgb_to_rgbp_avx2<uint16_t, true>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height, 16);
-        else
-          convert_rgb_to_rgbp_avx2<uint16_t, false>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height, 16);
-      }
-      else if ((env->GetCPUFlags() & CPUF_SSSE3) && vi.width >= 8) {
-        if (targetHasAlpha)
-          convert_rgb_to_rgbp_ssse3<uint16_t, true>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height, 16);
-        else
-          convert_rgb_to_rgbp_ssse3<uint16_t, false>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height, 16);
-      }
+      if (hasAVX2 && vi.width >= 16) fn = targetHasAlpha ? convert_rgb_to_rgbp_avx2 <uint16_t, true> : convert_rgb_to_rgbp_avx2 <uint16_t, false>;
+      else if (hasSSSE3 && vi.width >= 8)  fn = targetHasAlpha ? convert_rgb_to_rgbp_ssse3<uint16_t, true> : convert_rgb_to_rgbp_ssse3<uint16_t, false>;
+      else if (hasSSE2 && vi.width >= 8)  fn = targetHasAlpha ? convert_rgb_to_rgbp_sse2 <uint16_t, true> : convert_rgb_to_rgbp_sse2 <uint16_t, false>;
       else
 #endif
-        convert_rgb_to_rgbp_c<uint16_t, 3>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height, 16);
+        fn = targetHasAlpha ? convert_rgb_to_rgbp_c<uint16_t, 3, true> : convert_rgb_to_rgbp_c<uint16_t, 3, false>;
     }
   }
+
+  fn(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
   return dst;
 }
 
@@ -320,12 +309,14 @@ PlanarRGBtoPackedRGB::PlanarRGBtoPackedRGB(PClip src, bool _targetHasAlpha)
     (targetHasAlpha ? VideoInfo::CS_BGR64 : VideoInfo::CS_BGR48);  // PlanarRGB(A)->RGB48/64
 }
 
-template<typename pixel_t, int target_numcomponents>
-static void convert_rgbp_to_rgb_c(const BYTE *(&srcp)[4], BYTE * dstp, int (&src_pitch)[4], int dst_pitch, size_t width, size_t height) {
-  bool hasSrcAlpha = (src_pitch[3] != 0);
-  for (size_t y = 0; y < height; y++) {
-    size_t x;
-    // not proud of it but it works
+template<typename pixel_t, int target_numcomponents, bool hasSrcAlpha>
+static void convert_rgbp_to_rgb_c(const BYTE *(&srcp)[4], BYTE * dstp, int (&src_pitch)[4], int dst_pitch, int width, int height) {
+
+  constexpr int bits_per_pixel = sizeof(pixel_t) == 1 ? 8 : 16;
+  constexpr int max_pixel_value = (1 << bits_per_pixel) - 1;
+
+  for (int y = 0; y < height; y++) {
+    int x;
     for (x = 0; x < width; ++x) {
       const pixel_t G = reinterpret_cast<const pixel_t *>(srcp[0])[x];
       const pixel_t B = reinterpret_cast<const pixel_t *>(srcp[1])[x];
@@ -334,7 +325,11 @@ static void convert_rgbp_to_rgb_c(const BYTE *(&srcp)[4], BYTE * dstp, int (&src
       reinterpret_cast<pixel_t *>(dstp)[x*target_numcomponents+1] = G;
       reinterpret_cast<pixel_t *>(dstp)[x*target_numcomponents+2] = R;
       if constexpr (target_numcomponents == 4) { // either from A channel or default transparent constant
-        const pixel_t A = hasSrcAlpha ? reinterpret_cast<const pixel_t *>(srcp[3])[x] : (1 << (8 * sizeof(pixel_t))) - 1; // 255/65535
+        pixel_t A;
+        if constexpr (hasSrcAlpha)
+          A = reinterpret_cast<const pixel_t*>(srcp[3])[x];
+        else
+          A = max_pixel_value; // 255/65535
         reinterpret_cast<pixel_t *>(dstp)[x*target_numcomponents + 3] = A;
       }
     }
@@ -343,7 +338,7 @@ static void convert_rgbp_to_rgb_c(const BYTE *(&srcp)[4], BYTE * dstp, int (&src
     srcp[0] += src_pitch[0];
     srcp[1] += src_pitch[1];
     srcp[2] += src_pitch[2];
-    if (hasSrcAlpha)
+    if constexpr (hasSrcAlpha)
       srcp[3] += src_pitch[3];
   }
 }
@@ -353,50 +348,51 @@ PVideoFrame __stdcall PlanarRGBtoPackedRGB::GetFrame(int n, IScriptEnvironment* 
   PVideoFrame src = child->GetFrame(n, env);
   PVideoFrame dst = env->NewVideoFrameP(vi, &src);
   int dst_pitch = dst->GetPitch();
-  BYTE *dstp = dst->GetWritePtr();
-  const BYTE *srcp[4] = {src->GetReadPtr(PLANAR_G),src->GetReadPtr(PLANAR_B),src->GetReadPtr(PLANAR_R),src->GetReadPtr(PLANAR_A)};
-  int src_pitch[4] = {src->GetPitch(PLANAR_G),src->GetPitch(PLANAR_B),src->GetPitch(PLANAR_R),src->GetPitch(PLANAR_A)};
-
+  BYTE* dstp = dst->GetWritePtr();
+  const BYTE* srcp[4] = { src->GetReadPtr(PLANAR_G), src->GetReadPtr(PLANAR_B),
+                         src->GetReadPtr(PLANAR_R), src->GetReadPtr(PLANAR_A) };
+  int src_pitch[4] = { src->GetPitch(PLANAR_G), src->GetPitch(PLANAR_B),
+                      src->GetPitch(PLANAR_R), src->GetPitch(PLANAR_A) };
   int pixelsize = vi.ComponentSize();
-
   dstp += dst_pitch * (vi.height - 1); // start from bottom: packed RGB is upside down
 
-#ifdef INTEL_INTRINSICS
-  bool hasSrcAlpha = (src_pitch[3] != 0); // Planar RGBA
-#endif
-  bool hasTargetAlpha = (vi.NumComponents() == 4);
+  const bool hasSrcAlpha = (src_pitch[3] != 0); // planar RGB_A_ source
+  const bool hasTargetAlpha = (vi.NumComponents() == 4); // RGB32 or RGB64 target
 
-  if(pixelsize==1)
-  {
-    if(!hasTargetAlpha) // RGB24
-      convert_rgbp_to_rgb_c<uint8_t, 3>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-    else {// RGBA32
+  using conv_fn_t = void(*)(const BYTE* (&)[4], BYTE*, int(&)[4], int, int, int);
+  conv_fn_t fn = nullptr;
+
 #ifdef INTEL_INTRINSICS
-      if ((env->GetCPUFlags() & CPUF_SSE2) && vi.width >= 4) {
-        if(hasSrcAlpha)
-          convert_rgbp_to_rgba_sse2<uint8_t, true>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-        else
-          convert_rgbp_to_rgba_sse2<uint8_t, false>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-      }
+  const bool hasSSE2 = (env->GetCPUFlags() & CPUF_SSE2) != 0;
+#endif
+
+  if (pixelsize == 1) {
+    if (!hasTargetAlpha) {  // RGB24 — no SIMD path exists
+      fn = hasSrcAlpha ? convert_rgbp_to_rgb_c<uint8_t, 3, true> : convert_rgbp_to_rgb_c<uint8_t, 3, false>;
+    }
+    else {  // RGBA32
+#ifdef INTEL_INTRINSICS
+      if (hasSSE2)
+        fn = hasSrcAlpha ? convert_rgbp_to_rgba_sse2<uint8_t, true> : convert_rgbp_to_rgba_sse2<uint8_t, false>;
       else
 #endif
-        convert_rgbp_to_rgb_c<uint8_t, 4>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-    }
-  } else {
-    if(!hasTargetAlpha)
-      convert_rgbp_to_rgb_c<uint16_t, 3>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-    else { // RGBA64
-#ifdef INTEL_INTRINSICS
-      if ((env->GetCPUFlags() & CPUF_SSE2) && vi.width >= 4) {
-        if(hasSrcAlpha)
-          convert_rgbp_to_rgba_sse2<uint16_t, true>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-        else
-          convert_rgbp_to_rgba_sse2<uint16_t, false>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
-      }
-      else 
-#endif
-        convert_rgbp_to_rgb_c<uint16_t, 4>(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
+        fn = hasSrcAlpha ? convert_rgbp_to_rgb_c<uint8_t, 4, true> : convert_rgbp_to_rgb_c<uint8_t, 4, false>;
     }
   }
+  else {  // pixelsize == 2
+    if (!hasTargetAlpha) {  // RGB48 — no SIMD path exists
+      fn = hasSrcAlpha ? convert_rgbp_to_rgb_c<uint16_t, 3, true> : convert_rgbp_to_rgb_c<uint16_t, 3, false>;
+    }
+    else {  // RGBA64
+#ifdef INTEL_INTRINSICS
+      if (hasSSE2)
+        fn = hasSrcAlpha ? convert_rgbp_to_rgba_sse2<uint16_t, true> : convert_rgbp_to_rgba_sse2<uint16_t, false>;
+      else
+#endif
+        fn = hasSrcAlpha ? convert_rgbp_to_rgb_c<uint16_t, 4, true> : convert_rgbp_to_rgb_c<uint16_t, 4, false>;
+    }
+  }
+
+  fn(srcp, dstp, src_pitch, dst_pitch, vi.width, vi.height);
   return dst;
 }
