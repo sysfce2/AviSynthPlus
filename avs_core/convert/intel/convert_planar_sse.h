@@ -74,8 +74,8 @@ void convert_planarrgb_to_yuv_uint16_sse41(BYTE *(&dstp)[3], int (&dstPitch)[3],
 template<int bits_per_pixel>
 void convert_planarrgb_to_yuv_uint16_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m);
 
-template<typename pixel_t_src, bool lessthan16bit>
-void convert_yuv_to_planarrgb_uintN_sse2(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m,
+template<ConversionDirection direction, typename pixel_t_src, bool lessthan16bit>
+void convert_yuv_to_planarrgb_sse2(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m,
   int bits_per_pixel, int bits_per_pixel_target, bool force_float);
 
 template<int rgb_pixel_step, bool hasAlpha>

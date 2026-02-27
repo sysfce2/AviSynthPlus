@@ -36,8 +36,8 @@
 #define __Convert_PLANAR_AVX2_H__
 
 #include <avs/types.h>
-#include "../convert.h"
-#include "../convert_planar.h"
+#include "../convert_matrix.h"
+#include "../convert_helper.h"
 
 template<int bits_per_pixel>
 void convert_planarrgb_to_yuv_uint16_avx2(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m);
@@ -45,7 +45,7 @@ void convert_planarrgb_to_yuv_uint16_avx2(BYTE *(&dstp)[3], int (&dstPitch)[3], 
 template<int rgb_pixel_step, bool hasAlpha>
 void convert_yv24_to_rgb_avx2(BYTE* dstp, const BYTE* srcY, const BYTE* srcU, const BYTE* srcV, const BYTE* srcA, size_t dst_pitch, size_t src_pitch_y, size_t src_pitch_uv, size_t src_pitch_a, size_t width, size_t height, const ConversionMatrix& matrix);
 
-template<typename pixel_t_src, bool lessthan16bit>
+template<ConversionDirection direction, typename pixel_t_src, bool lessthan16bit>
 void convert_yuv_to_planarrgb_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m,
   int bits_per_pixel, int bits_per_pixel_target, bool force_float);
 

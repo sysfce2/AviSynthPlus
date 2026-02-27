@@ -1035,13 +1035,20 @@ template void convert_planarrgb_to_yuv_uint16_sse2<16>(BYTE* (&dstp)[3], int(&ds
 
 #define XP_LAMBDA_CAPTURE_FIX(x) (void)(x)
 
-// SSE2 implementation matching AVX2 logic. See comments there.
-template<typename pixel_t, bool lessthan16bit, bool lessthan16bit_target, typename pixel_t_dst, YuvRgbConversionType conv_type>
+// SSE2 implementation matching AVX2 logic - processes 8 pixels per iteration
+// Supports all conversion directions, bit depths, and conversion types
+template<ConversionDirection direction, typename pixel_t, bool lessthan16bit, bool lessthan16bit_target, typename pixel_t_dst, YuvRgbConversionType conv_type>
 static void convert_yuv_to_planarrgb_sse2_internal(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m,
   int bits_per_pixel, int bits_per_pixel_target)
 {
-  // SSE2 version: processes 8 pixels at a time
+  // SSE2 version: processes 8 pixels at a time (vs 32 for AVX2)
+  constexpr int INT_ARITH_SHIFT =
+    (direction == ConversionDirection::YUV_TO_RGB) ? 13 :
+    (direction == ConversionDirection::RGB_TO_YUV) ? 15 :
+    (direction == ConversionDirection::YUV_TO_YUV) ? 14 : 13;
+
   static_assert(!(std::is_floating_point<pixel_t>::value && conv_type != YuvRgbConversionType::FORCE_FLOAT), "FORCE_FLOAT conversion type is required for float input pixel type");
+
   constexpr bool force_float = conv_type == YuvRgbConversionType::FORCE_FLOAT;
   constexpr bool final_is_float = std::is_floating_point<pixel_t_dst>::value;
   constexpr bool need_int_conversion_narrow_range = conv_type == YuvRgbConversionType::BITCONV_INT_LIMITED;
@@ -1050,28 +1057,26 @@ static void convert_yuv_to_planarrgb_sse2_internal(BYTE* (&dstp)[3], int(&dstPit
     (conv_type == YuvRgbConversionType::FORCE_FLOAT && !final_is_float);
   const bool float_matrix_workflow = force_float || need_int_conversion_full_range;
 
-  if constexpr (std::is_same<pixel_t, uint8_t>::value) {
-    bits_per_pixel = 8;
-  }
-  if constexpr (std::is_same<pixel_t_dst, uint8_t>::value) {
-    bits_per_pixel_target = 8;
-  }
-  if constexpr (conv_type == YuvRgbConversionType::NATIVE_INT)
-    bits_per_pixel_target = bits_per_pixel;
+  // quasi-constexpr, may help optimizer
+  if constexpr (std::is_same<pixel_t, uint8_t>::value) bits_per_pixel = 8;
+  if constexpr (std::is_same<pixel_t_dst, uint8_t>::value) bits_per_pixel_target = 8;
+  if constexpr (std::is_same<pixel_t, uint16_t>::value && !lessthan16bit) bits_per_pixel = 16;
+  if constexpr (std::is_same<pixel_t_dst, uint16_t>::value && !lessthan16bit_target) bits_per_pixel_target = 16;
+  if constexpr (conv_type == YuvRgbConversionType::NATIVE_INT) bits_per_pixel_target = bits_per_pixel;
 
   const int bit_diff = need_int_conversion ? bits_per_pixel_target - bits_per_pixel : 0;
-  const int target_shift = need_int_conversion_narrow_range ? 13 - bit_diff : 13;
+  const int target_shift = need_int_conversion_narrow_range ? INT_ARITH_SHIFT - bit_diff : INT_ARITH_SHIFT;
   const int ROUNDER = (final_is_float || float_matrix_workflow) ? 0 : (1 << (target_shift - 1));
-
-  const float rgb_offset_f = m.offset_rgb_f_32;
+  const float out_offset_f = m.offset_out_f_32;
   const int half_pixel_offset = 1 << (bits_per_pixel - 1);
+  const int half_pixel_offset_target = 1 << (bits_per_pixel_target - 1);
   const int max_pixel_value_target = (1 << bits_per_pixel_target) - 1;
 
   bits_conv_constants conversion_ranges;
-  const bool full_scale_d = m.offset_rgb == 0;
+  const bool full_scale_d = m.offset_out == 0;
   get_bits_conv_constants(conversion_ranges, false, full_scale_d, full_scale_d, bits_per_pixel, bits_per_pixel_target);
 
-  constexpr int int_arithmetic_shift = 1 << 13;
+  constexpr int int_arithmetic_shift = 1 << INT_ARITH_SHIFT;
   float scale_f = conversion_ranges.mul_factor;
   if (final_is_float && !float_matrix_workflow)
     scale_f = scale_f / int_arithmetic_shift;
@@ -1079,44 +1084,77 @@ static void convert_yuv_to_planarrgb_sse2_internal(BYTE* (&dstp)[3], int(&dstPit
   __m128i half = _mm_set1_epi16((short)half_pixel_offset);
   __m128i limit = _mm_set1_epi16((short)max_pixel_value_target);
 
-  constexpr int ROUND_SCALE = 4096;
+  constexpr int ROUND_SCALE = 1 << (INT_ARITH_SHIFT - 1);
   const __m128i m128i_round_scale = _mm_set1_epi16(ROUND_SCALE);
 
-  int round_mask_plus_rgb_offset_scaled_i;
+  int round_mask_plus_offset_out_scaled_i;
+  int round_mask_plus_offset_out_chroma_scaled_i;
   __m128i v_patch_G, v_patch_B, v_patch_R;
   __m128i sign_flip_mask = _mm_set1_epi16((short)0x8000);
 
-  __m128i offset;
-  if constexpr (float_matrix_workflow)
-    offset = _mm_set1_epi32(m.offset_y);
+  const int offset_in_scalar = m.offset_in;
+  const int offset_out_scalar = m.offset_out;
+  __m128i offset_in;
+  __m128 offset_in_f;
+
+  if constexpr (float_matrix_workflow) {
+    offset_in = _mm_set1_epi32(offset_in_scalar);
+    offset_in_f = _mm_set1_ps(m.offset_in_f);
+  }
   else if constexpr (lessthan16bit)
-    offset = _mm_set1_epi16((short)m.offset_y);
+    offset_in = _mm_set1_epi16((short)offset_in_scalar);
   else
-    offset = _mm_setzero_si128();
+    offset_in = _mm_setzero_si128();
 
   if constexpr (!float_matrix_workflow) {
     if constexpr (lessthan16bit) {
-      round_mask_plus_rgb_offset_scaled_i = final_is_float ? 0 : (ROUNDER + (m.offset_rgb << 13)) / ROUND_SCALE;
+      round_mask_plus_offset_out_scaled_i = final_is_float ? 0 : (ROUNDER + (offset_out_scalar << INT_ARITH_SHIFT)) / ROUND_SCALE;
+      round_mask_plus_offset_out_chroma_scaled_i = final_is_float ? 0 : (ROUNDER + (half_pixel_offset << INT_ARITH_SHIFT)) / ROUND_SCALE;
       v_patch_G = v_patch_B = v_patch_R = _mm_setzero_si128();
     }
     else {
-      round_mask_plus_rgb_offset_scaled_i = ROUNDER / ROUND_SCALE;
-      const int luma_pivot = 32768 + m.offset_y;
-      const int rgb_out_offset = final_is_float ? 0 : (m.offset_rgb << 13);
-      v_patch_G = _mm_set1_epi32(luma_pivot * m.y_g + rgb_out_offset);
-      v_patch_B = _mm_set1_epi32(luma_pivot * m.y_b + rgb_out_offset);
-      v_patch_R = _mm_set1_epi32(luma_pivot * m.y_r + rgb_out_offset);
+      round_mask_plus_offset_out_scaled_i = ROUNDER / ROUND_SCALE;
+      round_mask_plus_offset_out_chroma_scaled_i = ROUNDER / ROUND_SCALE;
+      const int luma_or_rgbin_pivot = 32768 + offset_in_scalar;
+      const int chroma_pivot = 32768;
+      const int offset_out_for_patch = final_is_float ? 0 : (offset_out_scalar << INT_ARITH_SHIFT);
+      const int chroma_offset_out_for_patch = final_is_float ? 0 : (half_pixel_offset << INT_ARITH_SHIFT);
+
+      if constexpr (direction == ConversionDirection::YUV_TO_RGB) {
+        v_patch_G = _mm_set1_epi32(luma_or_rgbin_pivot * m.y_g + offset_out_for_patch);
+        v_patch_B = _mm_set1_epi32(luma_or_rgbin_pivot * m.y_b + offset_out_for_patch);
+        v_patch_R = _mm_set1_epi32(luma_or_rgbin_pivot * m.y_r + offset_out_for_patch);
+      }
+      else if constexpr (direction == ConversionDirection::RGB_TO_RGB) {
+        v_patch_G = _mm_set1_epi32(luma_or_rgbin_pivot * (m.y_g + m.u_g + m.v_g) + offset_out_for_patch);
+        v_patch_B = _mm_set1_epi32(luma_or_rgbin_pivot * (m.y_b + m.u_b + m.v_b) + offset_out_for_patch);
+        v_patch_R = _mm_set1_epi32(luma_or_rgbin_pivot * (m.y_r + m.u_r + m.v_r) + offset_out_for_patch);
+      }
+      else if constexpr (direction == ConversionDirection::RGB_TO_YUV) {
+        v_patch_G = _mm_set1_epi32(luma_or_rgbin_pivot * (m.y_r + m.y_g + m.y_b) + offset_out_for_patch);
+        v_patch_B = _mm_set1_epi32(luma_or_rgbin_pivot * (m.u_r + m.u_g + m.u_b) + chroma_offset_out_for_patch);
+        v_patch_R = _mm_set1_epi32(luma_or_rgbin_pivot * (m.v_r + m.v_g + m.v_b) + chroma_offset_out_for_patch);
+      }
+      else { // YUV_TO_YUV
+        v_patch_G = _mm_set1_epi32(luma_or_rgbin_pivot * m.y_g + offset_out_for_patch);
+        v_patch_B = _mm_set1_epi32(chroma_pivot * m.y_b + offset_out_for_patch);
+        v_patch_R = _mm_set1_epi32(chroma_pivot * m.y_r + offset_out_for_patch);
+      }
     }
   }
 
-  const __m128 rgb_offset_f_sse2 = _mm_set1_ps(rgb_offset_f);
+  const __m128 out_offset_f_sse2 = _mm_set1_ps(out_offset_f);
   __m128i zero = _mm_setzero_si128();
   const __m128 scale_f_sse2 = _mm_set1_ps(scale_f);
 
   __m128i m_uy_G, m_vr_G, m_uy_B, m_vr_B, m_uy_R, m_vr_R;
-  __m128 m_y_g_f, m_y_b_f, m_y_r_f, m_u_g_f, m_u_b_f, m_u_r_f, m_v_g_f, m_v_b_f, m_v_r_f, m_offset_rgb_f;
+  __m128 coeff_out0_in0, coeff_out0_in1, coeff_out0_in2;
+  __m128 coeff_out1_in0, coeff_out1_in1, coeff_out1_in2;
+  __m128 coeff_out2_in0, coeff_out2_in1, coeff_out2_in2;
+  __m128 m_offset_out_y_or_g_f, m_offset_out_u_or_b_f, m_offset_out_v_or_r_f;
 
   if constexpr (float_matrix_workflow) {
+    __m128 m_y_g_f, m_y_b_f, m_y_r_f, m_u_g_f, m_u_b_f, m_u_r_f, m_v_g_f, m_v_b_f, m_v_r_f;
     m_y_g_f = _mm_mul_ps(_mm_set1_ps(m.y_g_f), scale_f_sse2);
     m_y_b_f = _mm_mul_ps(_mm_set1_ps(m.y_b_f), scale_f_sse2);
     m_y_r_f = _mm_mul_ps(_mm_set1_ps(m.y_r_f), scale_f_sse2);
@@ -1126,99 +1164,174 @@ static void convert_yuv_to_planarrgb_sse2_internal(BYTE* (&dstp)[3], int(&dstPit
     m_v_g_f = _mm_mul_ps(_mm_set1_ps(m.v_g_f), scale_f_sse2);
     m_v_b_f = _mm_mul_ps(_mm_set1_ps(m.v_b_f), scale_f_sse2);
     m_v_r_f = _mm_mul_ps(_mm_set1_ps(m.v_r_f), scale_f_sse2);
-    m_offset_rgb_f = _mm_mul_ps(_mm_set1_ps(m.offset_rgb_f), scale_f_sse2);
+
+    if constexpr (direction == ConversionDirection::YUV_TO_RGB || direction == ConversionDirection::RGB_TO_RGB) {
+      float rgb_out_offset_scaled = m.offset_out_f * scale_f;
+      m_offset_out_y_or_g_f = _mm_set1_ps(rgb_out_offset_scaled);
+      m_offset_out_u_or_b_f = _mm_set1_ps(rgb_out_offset_scaled);
+      m_offset_out_v_or_r_f = _mm_set1_ps(rgb_out_offset_scaled);
+    }
+    else {
+      float y_out_offset_scaled = m.offset_out_f * scale_f;
+      float uv_center_offset = final_is_float ? 0.0f : (float)half_pixel_offset_target;
+      m_offset_out_y_or_g_f = _mm_set1_ps(y_out_offset_scaled);
+      m_offset_out_u_or_b_f = _mm_set1_ps(uv_center_offset);
+      m_offset_out_v_or_r_f = _mm_set1_ps(uv_center_offset);
+    }
+
+    if constexpr (direction == ConversionDirection::YUV_TO_RGB) {
+      coeff_out0_in0 = m_y_g_f; coeff_out0_in1 = m_u_g_f; coeff_out0_in2 = m_v_g_f;
+      coeff_out1_in0 = m_y_b_f; coeff_out1_in1 = m_u_b_f; coeff_out1_in2 = m_v_b_f;
+      coeff_out2_in0 = m_y_r_f; coeff_out2_in1 = m_u_r_f; coeff_out2_in2 = m_v_r_f;
+    }
+    else if constexpr (direction == ConversionDirection::RGB_TO_YUV) {
+      coeff_out0_in0 = m_y_g_f; coeff_out0_in1 = m_y_b_f; coeff_out0_in2 = m_y_r_f;
+      coeff_out1_in0 = m_u_g_f; coeff_out1_in1 = m_u_b_f; coeff_out1_in2 = m_u_r_f;
+      coeff_out2_in0 = m_v_g_f; coeff_out2_in1 = m_v_b_f; coeff_out2_in2 = m_v_r_f;
+    }
+    else if constexpr (direction == ConversionDirection::YUV_TO_YUV) {
+      coeff_out0_in0 = m_y_g_f; coeff_out0_in1 = m_u_g_f; coeff_out0_in2 = m_v_g_f;
+      coeff_out1_in0 = m_y_b_f; coeff_out1_in1 = m_u_b_f; coeff_out1_in2 = m_v_b_f;
+      coeff_out2_in0 = m_y_r_f; coeff_out2_in1 = m_u_r_f; coeff_out2_in2 = m_v_r_f;
+    }
+    else { // RGB_TO_RGB
+      coeff_out0_in0 = m_y_g_f; coeff_out0_in1 = m_u_g_f; coeff_out0_in2 = m_v_g_f;
+      coeff_out1_in0 = m_y_b_f; coeff_out1_in1 = m_u_b_f; coeff_out1_in2 = m_v_b_f;
+      coeff_out2_in0 = m_y_r_f; coeff_out2_in1 = m_u_r_f; coeff_out2_in2 = m_v_r_f;
+    }
   }
   else {
-    m_uy_G = _mm_set1_epi32((static_cast<uint16_t>(m.y_g) << 16) | static_cast<uint16_t>(m.u_g));
-    m_vr_G = _mm_set1_epi32((static_cast<uint16_t>(round_mask_plus_rgb_offset_scaled_i) << 16) | static_cast<uint16_t>(m.v_g));
-    m_uy_B = _mm_set1_epi32((static_cast<uint16_t>(m.y_b) << 16) | static_cast<uint16_t>(m.u_b));
-    m_vr_B = _mm_set1_epi32((static_cast<uint16_t>(round_mask_plus_rgb_offset_scaled_i) << 16) | static_cast<uint16_t>(m.v_b));
-    m_uy_R = _mm_set1_epi32((static_cast<uint16_t>(m.y_r) << 16) | static_cast<uint16_t>(m.u_r));
-    m_vr_R = _mm_set1_epi32((static_cast<uint16_t>(round_mask_plus_rgb_offset_scaled_i) << 16) | static_cast<uint16_t>(m.v_r));
+    // Integer workflow coefficient setup
+    int round_and_out_offset_y_or_g;
+    int round_and_out_offset_u_or_b;
+    int round_and_out_offset_v_or_r;
+
+    if constexpr (direction == ConversionDirection::YUV_TO_RGB || direction == ConversionDirection::RGB_TO_RGB) {
+      round_and_out_offset_y_or_g = round_mask_plus_offset_out_scaled_i;
+      round_and_out_offset_u_or_b = round_mask_plus_offset_out_scaled_i;
+      round_and_out_offset_v_or_r = round_mask_plus_offset_out_scaled_i;
+    }
+    else {
+      round_and_out_offset_y_or_g = round_mask_plus_offset_out_scaled_i;
+      round_and_out_offset_u_or_b = round_mask_plus_offset_out_chroma_scaled_i;
+      round_and_out_offset_v_or_r = round_mask_plus_offset_out_chroma_scaled_i;
+    }
+
+    if constexpr (direction == ConversionDirection::YUV_TO_RGB || direction == ConversionDirection::YUV_TO_YUV) {
+      m_uy_G = _mm_set1_epi32((static_cast<uint16_t>(m.y_g) << 16) | static_cast<uint16_t>(m.u_g));
+      m_vr_G = _mm_set1_epi32((static_cast<uint16_t>(round_and_out_offset_y_or_g) << 16) | static_cast<uint16_t>(m.v_g));
+      m_uy_B = _mm_set1_epi32((static_cast<uint16_t>(m.y_b) << 16) | static_cast<uint16_t>(m.u_b));
+      m_vr_B = _mm_set1_epi32((static_cast<uint16_t>(round_and_out_offset_u_or_b) << 16) | static_cast<uint16_t>(m.v_b));
+      m_uy_R = _mm_set1_epi32((static_cast<uint16_t>(m.y_r) << 16) | static_cast<uint16_t>(m.u_r));
+      m_vr_R = _mm_set1_epi32((static_cast<uint16_t>(round_and_out_offset_v_or_r) << 16) | static_cast<uint16_t>(m.v_r));
+    }
+    else { // RGB_TO_YUV or RGB_TO_RGB
+      m_uy_G = _mm_set1_epi32((static_cast<uint16_t>(m.y_g) << 16) | static_cast<uint16_t>(m.y_b));
+      m_vr_G = _mm_set1_epi32((static_cast<uint16_t>(round_and_out_offset_y_or_g) << 16) | static_cast<uint16_t>(m.y_r));
+      m_uy_B = _mm_set1_epi32((static_cast<uint16_t>(m.u_g) << 16) | static_cast<uint16_t>(m.u_b));
+      m_vr_B = _mm_set1_epi32((static_cast<uint16_t>(round_and_out_offset_u_or_b) << 16) | static_cast<uint16_t>(m.u_r));
+      m_uy_R = _mm_set1_epi32((static_cast<uint16_t>(m.v_g) << 16) | static_cast<uint16_t>(m.v_b));
+      m_vr_R = _mm_set1_epi32((static_cast<uint16_t>(round_and_out_offset_v_or_r) << 16) | static_cast<uint16_t>(m.v_r));
+    }
   }
 
   const int rowsize = width * sizeof(pixel_t);
-
   for (int yy = 0; yy < height; yy++) {
-    // SSE2: 8 pixels per loop
+    // SSE2: 8 pixels per loop (8×1 byte = 8 bytes, 8×2 bytes = 16 bytes, 8×4 bytes = 32 bytes)
     for (int x = 0; x < rowsize; x += 8 * sizeof(pixel_t)) {
-      __m128i y, u, v;
-      __m128 y_f_lo, y_f_hi;
-      __m128 u_f_lo, u_f_hi;
-      __m128 v_f_lo, v_f_hi;
+      __m128i in0, in1, in2;
+      __m128 in0_f_lo, in0_f_hi, in1_f_lo, in1_f_hi, in2_f_lo, in2_f_hi;
 
       // Load 8 pixels
       if constexpr (sizeof(pixel_t) == 1) {
-        // Load 8 bytes
-        __m128i y_raw = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp[0] + x));
-        __m128i u_raw = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp[1] + x));
-        __m128i v_raw = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp[2] + x));
-
-        y = _mm_unpacklo_epi8(y_raw, zero);
-        u = _mm_unpacklo_epi8(u_raw, zero);
-        v = _mm_unpacklo_epi8(v_raw, zero);
+        __m128i in0_raw = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp[0] + x));
+        __m128i in1_raw = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp[1] + x));
+        __m128i in2_raw = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(srcp[2] + x));
+        in0 = _mm_unpacklo_epi8(in0_raw, zero);
+        in1 = _mm_unpacklo_epi8(in1_raw, zero);
+        in2 = _mm_unpacklo_epi8(in2_raw, zero);
       }
       else if constexpr (sizeof(pixel_t) == 2) {
-        // Load 16 bytes (8 uint16_t)
-        y = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp[0] + x));
-        u = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp[1] + x));
-        v = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp[2] + x));
+        in0 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp[0] + x));
+        in1 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp[1] + x));
+        in2 = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp[2] + x));
       }
       else { // sizeof(pixel_t) == 4
-        // Load 32 bytes (8 floats)
-        y_f_lo = _mm_load_ps(reinterpret_cast<const float*>(srcp[0] + x));
-        y_f_hi = _mm_load_ps(reinterpret_cast<const float*>(srcp[0] + x + 16));
-        u_f_lo = _mm_load_ps(reinterpret_cast<const float*>(srcp[1] + x));
-        u_f_hi = _mm_load_ps(reinterpret_cast<const float*>(srcp[1] + x + 16));
-        v_f_lo = _mm_load_ps(reinterpret_cast<const float*>(srcp[2] + x));
-        v_f_hi = _mm_load_ps(reinterpret_cast<const float*>(srcp[2] + x + 16));
+        in0_f_lo = _mm_load_ps(reinterpret_cast<const float*>(srcp[0] + x));
+        in0_f_hi = _mm_load_ps(reinterpret_cast<const float*>(srcp[0] + x + 16));
+        in1_f_lo = _mm_load_ps(reinterpret_cast<const float*>(srcp[1] + x));
+        in1_f_hi = _mm_load_ps(reinterpret_cast<const float*>(srcp[1] + x + 16));
+        in2_f_lo = _mm_load_ps(reinterpret_cast<const float*>(srcp[2] + x));
+        in2_f_hi = _mm_load_ps(reinterpret_cast<const float*>(srcp[2] + x + 16));
       }
 
       if constexpr (float_matrix_workflow) {
-        // Convert integer pixels to float
-        if constexpr (sizeof(pixel_t) != 4) {
-          __m128i y_32_lo = _mm_add_epi32(_mm_unpacklo_epi16(y, zero), offset);
-          __m128i y_32_hi = _mm_add_epi32(_mm_unpackhi_epi16(y, zero), offset);
-
-          y_f_lo = _mm_cvtepi32_ps(y_32_lo);
-          y_f_hi = _mm_cvtepi32_ps(y_32_hi);
-
-          // U,V: sign-extend and convert
-          auto chroma_to_float = [&](__m128i c, __m128& f_lo, __m128& f_hi) {
-            c = _mm_sub_epi16(c, half);
-            __m128i sign = _mm_srai_epi16(c, 15);
-            f_lo = _mm_cvtepi32_ps(_mm_unpacklo_epi16(c, sign));
-            f_hi = _mm_cvtepi32_ps(_mm_unpackhi_epi16(c, sign));
-            };
-          chroma_to_float(u, u_f_lo, u_f_hi);
-          chroma_to_float(v, v_f_lo, v_f_hi);
+        // Float workflow
+        if constexpr (sizeof(pixel_t) == 4) {
+          // Float input - apply offset_in
+          if constexpr (direction == ConversionDirection::YUV_TO_RGB || direction == ConversionDirection::YUV_TO_YUV) {
+            in0_f_lo = _mm_add_ps(in0_f_lo, offset_in_f);
+            in0_f_hi = _mm_add_ps(in0_f_hi, offset_in_f);
+          }
+          else { // RGB source
+            in0_f_lo = _mm_add_ps(in0_f_lo, offset_in_f);
+            in0_f_hi = _mm_add_ps(in0_f_hi, offset_in_f);
+            in1_f_lo = _mm_add_ps(in1_f_lo, offset_in_f);
+            in1_f_hi = _mm_add_ps(in1_f_hi, offset_in_f);
+            in2_f_lo = _mm_add_ps(in2_f_lo, offset_in_f);
+            in2_f_hi = _mm_add_ps(in2_f_hi, offset_in_f);
+          }
+        }
+        else {
+          // Integer input - convert to float
+          if constexpr (direction == ConversionDirection::YUV_TO_RGB || direction == ConversionDirection::YUV_TO_YUV) {
+            // Y channel
+            __m128i in0_32_lo = _mm_add_epi32(_mm_unpacklo_epi16(in0, zero), offset_in);
+            __m128i in0_32_hi = _mm_add_epi32(_mm_unpackhi_epi16(in0, zero), offset_in);
+            in0_f_lo = _mm_cvtepi32_ps(in0_32_lo);
+            in0_f_hi = _mm_cvtepi32_ps(in0_32_hi);
+            // U,V: sign-extend and convert
+            auto chroma_to_float = [&](__m128i c, __m128& f_lo, __m128& f_hi) {
+              c = _mm_sub_epi16(c, half);
+              __m128i sign = _mm_srai_epi16(c, 15);
+              f_lo = _mm_cvtepi32_ps(_mm_unpacklo_epi16(c, sign));
+              f_hi = _mm_cvtepi32_ps(_mm_unpackhi_epi16(c, sign));
+              };
+            chroma_to_float(in1, in1_f_lo, in1_f_hi);
+            chroma_to_float(in2, in2_f_lo, in2_f_hi);
+          }
+          else { // RGB source
+            in0_f_lo = _mm_cvtepi32_ps(_mm_add_epi32(_mm_unpacklo_epi16(in0, zero), offset_in));
+            in0_f_hi = _mm_cvtepi32_ps(_mm_add_epi32(_mm_unpackhi_epi16(in0, zero), offset_in));
+            in1_f_lo = _mm_cvtepi32_ps(_mm_add_epi32(_mm_unpacklo_epi16(in1, zero), offset_in));
+            in1_f_hi = _mm_cvtepi32_ps(_mm_add_epi32(_mm_unpackhi_epi16(in1, zero), offset_in));
+            in2_f_lo = _mm_cvtepi32_ps(_mm_add_epi32(_mm_unpacklo_epi16(in2, zero), offset_in));
+            in2_f_hi = _mm_cvtepi32_ps(_mm_add_epi32(_mm_unpackhi_epi16(in2, zero), offset_in));
+          }
         }
 
-        // Matrix multiply (FMA for SSE: mul + add)
-        __m128 b_f_lo = _mm_add_ps(_mm_mul_ps(m_v_b_f, v_f_lo),
-          _mm_add_ps(_mm_mul_ps(m_u_b_f, u_f_lo),
-            _mm_add_ps(_mm_mul_ps(m_y_b_f, y_f_lo), m_offset_rgb_f)));
-        __m128 b_f_hi = _mm_add_ps(_mm_mul_ps(m_v_b_f, v_f_hi),
-          _mm_add_ps(_mm_mul_ps(m_u_b_f, u_f_hi),
-            _mm_add_ps(_mm_mul_ps(m_y_b_f, y_f_hi), m_offset_rgb_f)));
+        // Matrix multiply (SSE2 doesn't have FMA, use mul+add)
+        auto matrix_multiply = [&](__m128 i0_lo, __m128 i0_hi, __m128 i1_lo, __m128 i1_hi, __m128 i2_lo, __m128 i2_hi,
+          __m128& o0_lo, __m128& o0_hi, __m128& o1_lo, __m128& o1_hi, __m128& o2_lo, __m128& o2_hi) {
+            XP_LAMBDA_CAPTURE_FIX(coeff_out0_in0); XP_LAMBDA_CAPTURE_FIX(coeff_out0_in1); XP_LAMBDA_CAPTURE_FIX(coeff_out0_in2);
+            XP_LAMBDA_CAPTURE_FIX(coeff_out1_in0); XP_LAMBDA_CAPTURE_FIX(coeff_out1_in1); XP_LAMBDA_CAPTURE_FIX(coeff_out1_in2);
+            XP_LAMBDA_CAPTURE_FIX(coeff_out2_in0); XP_LAMBDA_CAPTURE_FIX(coeff_out2_in1); XP_LAMBDA_CAPTURE_FIX(coeff_out2_in2);
+            XP_LAMBDA_CAPTURE_FIX(m_offset_out_y_or_g_f); XP_LAMBDA_CAPTURE_FIX(m_offset_out_u_or_b_f); XP_LAMBDA_CAPTURE_FIX(m_offset_out_v_or_r_f);
 
-        __m128 g_f_lo = _mm_add_ps(_mm_mul_ps(m_v_g_f, v_f_lo),
-          _mm_add_ps(_mm_mul_ps(m_u_g_f, u_f_lo),
-            _mm_add_ps(_mm_mul_ps(m_y_g_f, y_f_lo), m_offset_rgb_f)));
-        __m128 g_f_hi = _mm_add_ps(_mm_mul_ps(m_v_g_f, v_f_hi),
-          _mm_add_ps(_mm_mul_ps(m_u_g_f, u_f_hi),
-            _mm_add_ps(_mm_mul_ps(m_y_g_f, y_f_hi), m_offset_rgb_f)));
+            o0_lo = _mm_add_ps(_mm_mul_ps(coeff_out0_in2, i2_lo), _mm_add_ps(_mm_mul_ps(coeff_out0_in1, i1_lo), _mm_add_ps(_mm_mul_ps(coeff_out0_in0, i0_lo), m_offset_out_y_or_g_f)));
+            o0_hi = _mm_add_ps(_mm_mul_ps(coeff_out0_in2, i2_hi), _mm_add_ps(_mm_mul_ps(coeff_out0_in1, i1_hi), _mm_add_ps(_mm_mul_ps(coeff_out0_in0, i0_hi), m_offset_out_y_or_g_f)));
+            o1_lo = _mm_add_ps(_mm_mul_ps(coeff_out1_in2, i2_lo), _mm_add_ps(_mm_mul_ps(coeff_out1_in1, i1_lo), _mm_add_ps(_mm_mul_ps(coeff_out1_in0, i0_lo), m_offset_out_u_or_b_f)));
+            o1_hi = _mm_add_ps(_mm_mul_ps(coeff_out1_in2, i2_hi), _mm_add_ps(_mm_mul_ps(coeff_out1_in1, i1_hi), _mm_add_ps(_mm_mul_ps(coeff_out1_in0, i0_hi), m_offset_out_u_or_b_f)));
+            o2_lo = _mm_add_ps(_mm_mul_ps(coeff_out2_in2, i2_lo), _mm_add_ps(_mm_mul_ps(coeff_out2_in1, i1_lo), _mm_add_ps(_mm_mul_ps(coeff_out2_in0, i0_lo), m_offset_out_v_or_r_f)));
+            o2_hi = _mm_add_ps(_mm_mul_ps(coeff_out2_in2, i2_hi), _mm_add_ps(_mm_mul_ps(coeff_out2_in1, i1_hi), _mm_add_ps(_mm_mul_ps(coeff_out2_in0, i0_hi), m_offset_out_v_or_r_f)));
+          };
 
-        __m128 r_f_lo = _mm_add_ps(_mm_mul_ps(m_v_r_f, v_f_lo),
-          _mm_add_ps(_mm_mul_ps(m_u_r_f, u_f_lo),
-            _mm_add_ps(_mm_mul_ps(m_y_r_f, y_f_lo), m_offset_rgb_f)));
-        __m128 r_f_hi = _mm_add_ps(_mm_mul_ps(m_v_r_f, v_f_hi),
-          _mm_add_ps(_mm_mul_ps(m_u_r_f, u_f_hi),
-            _mm_add_ps(_mm_mul_ps(m_y_r_f, y_f_hi), m_offset_rgb_f)));
+        __m128 out0_f_lo, out0_f_hi, out1_f_lo, out1_f_hi, out2_f_lo, out2_f_hi;
+        matrix_multiply(in0_f_lo, in0_f_hi, in1_f_lo, in1_f_hi, in2_f_lo, in2_f_hi,
+          out0_f_lo, out0_f_hi, out1_f_lo, out1_f_hi, out2_f_lo, out2_f_hi);
 
         auto process_from_float_plane_sse2 = [&](BYTE* plane_ptr, __m128 lo, __m128 hi) {
-          XP_LAMBDA_CAPTURE_FIX(zero);
-          XP_LAMBDA_CAPTURE_FIX(limit);
+          XP_LAMBDA_CAPTURE_FIX(zero); XP_LAMBDA_CAPTURE_FIX(limit);
 #ifdef XP_TLS
           if (final_is_float) {
 #else
@@ -1230,27 +1343,23 @@ static void convert_yuv_to_planarrgb_sse2_internal(BYTE* (&dstp)[3], int(&dstPit
             _mm_store_ps(f_dst + 4, hi);
           }
           else {
-            // Convert to integer with rounding
             __m128 float_rounder = _mm_set1_ps(0.5f);
             __m128i res_lo = _mm_cvttps_epi32(_mm_add_ps(lo, float_rounder));
             __m128i res_hi = _mm_cvttps_epi32(_mm_add_ps(hi, float_rounder));
-
             const int pix_idx = x * sizeof(pixel_t_dst) / sizeof(pixel_t);
 
-            __m128i p;
-
             if constexpr (sizeof(pixel_t_dst) == 1) {
-              p = _mm_packs_epi32(res_lo, res_hi);
+              __m128i p = _mm_packs_epi32(res_lo, res_hi);
               __m128i final8 = _mm_packus_epi16(p, zero);
               _mm_storel_epi64(reinterpret_cast<__m128i*>(plane_ptr + pix_idx), final8);
             }
             else if constexpr (sizeof(pixel_t_dst) == 2) {
+              __m128i p;
               if constexpr (lessthan16bit_target) {
                 p = _mm_packs_epi32(res_lo, res_hi);
-                p = _mm_max_epi16(_mm_min_epi16(p, limit), zero); // need min, only packs was performed
+                p = _mm_max_epi16(_mm_min_epi16(p, limit), zero);
               }
               else {
-                // 16 bit needs packus simulation
                 p = _MM_PACKUS_EPI32(res_lo, res_hi);
               }
               _mm_store_si128(reinterpret_cast<__m128i*>(plane_ptr + pix_idx), p);
@@ -1258,42 +1367,50 @@ static void convert_yuv_to_planarrgb_sse2_internal(BYTE* (&dstp)[3], int(&dstPit
           }
           };
 
-        process_from_float_plane_sse2(dstp[0], g_f_lo, g_f_hi);
-        process_from_float_plane_sse2(dstp[1], b_f_lo, b_f_hi);
-        process_from_float_plane_sse2(dstp[2], r_f_lo, r_f_hi);
+        process_from_float_plane_sse2(dstp[0], out0_f_lo, out0_f_hi);
+        process_from_float_plane_sse2(dstp[1], out1_f_lo, out1_f_hi);
+        process_from_float_plane_sse2(dstp[2], out2_f_lo, out2_f_hi);
       }
       else {
         // Integer matrix arithmetic
         if constexpr (lessthan16bit) {
-          y = _mm_adds_epi16(y, offset); // add, because offset is negative
+          if constexpr (direction == ConversionDirection::RGB_TO_YUV || direction == ConversionDirection::RGB_TO_RGB) {
+            in0 = _mm_adds_epi16(in0, offset_in);
+            in1 = _mm_adds_epi16(in1, offset_in);
+            in2 = _mm_adds_epi16(in2, offset_in);
+          }
+          else {
+            in0 = _mm_adds_epi16(in0, offset_in);
+          }
         }
         else {
-          // make unsigned to signed by flipping MSB
-          // pivot the luma, adjust the offset separately
-          y = _mm_xor_si128(y, sign_flip_mask);
+          if constexpr (direction == ConversionDirection::RGB_TO_YUV || direction == ConversionDirection::RGB_TO_RGB) {
+            in0 = _mm_xor_si128(in0, sign_flip_mask);
+            in1 = _mm_xor_si128(in1, sign_flip_mask);
+            in2 = _mm_xor_si128(in2, sign_flip_mask);
+          }
+          else {
+            in0 = _mm_xor_si128(in0, sign_flip_mask);
+          }
         }
 
-        u = _mm_sub_epi16(u, half);
-        v = _mm_sub_epi16(v, half);
+        if constexpr (direction == ConversionDirection::YUV_TO_RGB || direction == ConversionDirection::YUV_TO_YUV) {
+          in1 = _mm_sub_epi16(in1, half);
+          in2 = _mm_sub_epi16(in2, half);
+        }
 
-        // Pre-unpack MADD pairs
-        __m128i uy_lo = _mm_unpacklo_epi16(u, y);
-        __m128i uy_hi = _mm_unpackhi_epi16(u, y);
-        __m128i vr_lo = _mm_unpacklo_epi16(v, m128i_round_scale);
-        __m128i vr_hi = _mm_unpackhi_epi16(v, m128i_round_scale);
+        __m128i uy_lo = _mm_unpacklo_epi16(in1, in0);
+        __m128i uy_hi = _mm_unpackhi_epi16(in1, in0);
+        __m128i vr_lo = _mm_unpacklo_epi16(in2, m128i_round_scale);
+        __m128i vr_hi = _mm_unpackhi_epi16(in2, m128i_round_scale);
 
-        auto process_plane = [&](BYTE* plane_ptr, __m128i m_uy, __m128i m_vr, __m128i v_patch) {
+        auto process_plane = [&](BYTE* plane_ptr, __m128i m_uy, __m128i m_vr, __m128i v_patch, auto apply_float_offset_out) {
           XP_LAMBDA_CAPTURE_FIX(limit);
-
           auto madd_scale = [&](__m128i uy, __m128i vr) {
-            XP_LAMBDA_CAPTURE_FIX(v_patch);
-            XP_LAMBDA_CAPTURE_FIX(target_shift);
-            XP_LAMBDA_CAPTURE_FIX(zero);
+            XP_LAMBDA_CAPTURE_FIX(v_patch); XP_LAMBDA_CAPTURE_FIX(target_shift);
             __m128i sum = _mm_add_epi32(_mm_madd_epi16(m_uy, uy), _mm_madd_epi16(m_vr, vr));
-            // 16-bit adjustment (signed patch, offset, output rgb offset)
             if constexpr (!lessthan16bit) sum = _mm_add_epi32(sum, v_patch);
 #ifdef XP_TLS
-            // Yet another XP workaround v141_xp toolset is unable to see the outer constexpr variable
             if (!final_is_float)
 #else
             if constexpr (!final_is_float)
@@ -1312,32 +1429,29 @@ static void convert_yuv_to_planarrgb_sse2_internal(BYTE* (&dstp)[3], int(&dstPit
 #endif
             const int pix_idx = x / sizeof(pixel_t);
             float* f_dst = reinterpret_cast<float*>(plane_ptr) + pix_idx;
-
-            auto store_block = [&](float* ptr, __m128i b) {
-              __m128 result = _mm_add_ps(_mm_mul_ps(_mm_cvtepi32_ps(b), scale_f_sse2), rgb_offset_f_sse2);
+            auto store_block = [&](float* ptr, __m128i b, auto apply_float_offset_out) {
+              __m128 result = _mm_mul_ps(_mm_cvtepi32_ps(b), scale_f_sse2);
+              if (apply_float_offset_out)
+                result = _mm_add_ps(result, out_offset_f_sse2);
               _mm_store_ps(ptr, result);
               };
-
-            store_block(f_dst, res_lo);
-            store_block(f_dst + 4, res_hi);
+            store_block(f_dst, res_lo, apply_float_offset_out);
+            store_block(f_dst + 4, res_hi, apply_float_offset_out);
           }
           else {
             const int pix_idx = x * sizeof(pixel_t_dst) / sizeof(pixel_t);
-
-            __m128i p;
-
             if constexpr (sizeof(pixel_t_dst) == 1) {
-              p = _mm_packs_epi32(res_lo, res_hi);
+              __m128i p = _mm_packs_epi32(res_lo, res_hi);
               __m128i final8 = _mm_packus_epi16(p, zero);
               _mm_storel_epi64(reinterpret_cast<__m128i*>(plane_ptr + pix_idx), final8);
             }
             else {
+              __m128i p;
               if constexpr (lessthan16bit_target) {
                 p = _mm_packs_epi32(res_lo, res_hi);
                 p = _mm_max_epi16(_mm_min_epi16(p, limit), zero);
               }
               else {
-                // 16 bit needs packus simulation
                 p = _MM_PACKUS_EPI32(res_lo, res_hi);
               }
               _mm_store_si128(reinterpret_cast<__m128i*>(plane_ptr + pix_idx), p);
@@ -1345,12 +1459,19 @@ static void convert_yuv_to_planarrgb_sse2_internal(BYTE* (&dstp)[3], int(&dstPit
           }
           };
 
-
         // Process planes, using pre-packed coefficient, and the 16 bit patch if needed
-        process_plane(dstp[0], m_uy_G, m_vr_G, v_patch_G);
-        process_plane(dstp[1], m_uy_B, m_vr_B, v_patch_B);
-        process_plane(dstp[2], m_uy_R, m_vr_R, v_patch_R);
-      }
+        process_plane(dstp[0], m_uy_G, m_vr_G, v_patch_G, true /* apply_float_offset_out */);
+        // only Y,R,G,B needs it uniformly, so for YUV, we call it with false
+        // last param: apply_float_offset_out
+        if constexpr (direction == ConversionDirection::YUV_TO_RGB || direction == ConversionDirection::RGB_TO_RGB) {
+          process_plane(dstp[1], m_uy_B, m_vr_B, v_patch_B, true);
+          process_plane(dstp[2], m_uy_R, m_vr_R, v_patch_R, true);
+        }
+        else {
+          process_plane(dstp[1], m_uy_B, m_vr_B, v_patch_B, false);
+          process_plane(dstp[2], m_uy_R, m_vr_R, v_patch_R, false);
+        }
+        }
     } // x loop
 
     srcp[0] += srcPitch[0];
@@ -1363,68 +1484,81 @@ static void convert_yuv_to_planarrgb_sse2_internal(BYTE* (&dstp)[3], int(&dstPit
 }
 #undef XP_LAMBDA_CAPTURE_FIX
 
-template<typename pixel_t_src, bool lessthan16bit>
-void convert_yuv_to_planarrgb_uintN_sse2(BYTE * (&dstp)[3], int(&dstPitch)[3], const BYTE * (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix & m,
+template<ConversionDirection direction, typename pixel_t_src, bool lessthan16bit>
+void convert_yuv_to_planarrgb_sse2(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m,
   int bits_per_pixel, int bits_per_pixel_target, bool force_float)
 {
-  // [Same dispatcher logic as AVX2 version, just calling _sse2_internal instead]
+  // Accuracy forever: forced float or float input
   if (force_float || std::is_floating_point<pixel_t_src>::value) {
     if (bits_per_pixel_target == 8) {
-      convert_yuv_to_planarrgb_sse2_internal<pixel_t_src, false, true, uint8_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      convert_yuv_to_planarrgb_sse2_internal<direction, pixel_t_src, false, true, uint8_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
     }
     else if (bits_per_pixel_target < 16) {
-      convert_yuv_to_planarrgb_sse2_internal<pixel_t_src, false, true, uint16_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      convert_yuv_to_planarrgb_sse2_internal<direction, pixel_t_src, false, true, uint16_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
     }
     else if (bits_per_pixel_target == 16) {
-      convert_yuv_to_planarrgb_sse2_internal<pixel_t_src, false, false, uint16_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      convert_yuv_to_planarrgb_sse2_internal<direction, pixel_t_src, false, false, uint16_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
     }
-    else {
-      convert_yuv_to_planarrgb_sse2_internal<pixel_t_src, false, false, float, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+    else { // 32 bit float target
+      convert_yuv_to_planarrgb_sse2_internal<direction, pixel_t_src, false, false, float, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
     }
     return;
   }
 
-  // this is needed to avoid instantiating the full integer conversion logic when not needed,
-  // it can result static_asssert failure.
+  // Integer input paths
   if constexpr (!std::is_floating_point<pixel_t_src>::value) {
     const bool need_conversion = bits_per_pixel_target != bits_per_pixel;
     if (!need_conversion) {
-      convert_yuv_to_planarrgb_sse2_internal<pixel_t_src, lessthan16bit, lessthan16bit, pixel_t_src, YuvRgbConversionType::NATIVE_INT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      // No bit-depth conversion, just color space conversion
+      convert_yuv_to_planarrgb_sse2_internal<direction, pixel_t_src, lessthan16bit, lessthan16bit, pixel_t_src, YuvRgbConversionType::NATIVE_INT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
       return;
     }
 
-    const bool full_d = m.offset_rgb == 0;
+    const bool full_d = m.offset_out == 0;
     if (bits_per_pixel_target >= 8 && bits_per_pixel <= 16) {
       if (bits_per_pixel_target == 8) {
         if (full_d)
-          convert_yuv_to_planarrgb_sse2_internal<pixel_t_src, lessthan16bit, true, uint8_t, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+          convert_yuv_to_planarrgb_sse2_internal<direction, pixel_t_src, lessthan16bit, true, uint8_t, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
         else
-          convert_yuv_to_planarrgb_sse2_internal<pixel_t_src, lessthan16bit, true, uint8_t, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+          convert_yuv_to_planarrgb_sse2_internal<direction, pixel_t_src, lessthan16bit, true, uint8_t, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
       }
       else if (bits_per_pixel_target < 16) {
         if (full_d)
-          convert_yuv_to_planarrgb_sse2_internal<pixel_t_src, lessthan16bit, true, uint16_t, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+          convert_yuv_to_planarrgb_sse2_internal<direction, pixel_t_src, lessthan16bit, true, uint16_t, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
         else
-          convert_yuv_to_planarrgb_sse2_internal<pixel_t_src, lessthan16bit, true, uint16_t, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+          convert_yuv_to_planarrgb_sse2_internal<direction, pixel_t_src, lessthan16bit, true, uint16_t, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
       }
       else if (bits_per_pixel_target == 16) {
         if (full_d)
-          convert_yuv_to_planarrgb_sse2_internal<pixel_t_src, lessthan16bit, false, uint16_t, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+          convert_yuv_to_planarrgb_sse2_internal<direction, pixel_t_src, lessthan16bit, false, uint16_t, YuvRgbConversionType::BITCONV_INT_FULL>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
         else
-          convert_yuv_to_planarrgb_sse2_internal<pixel_t_src, lessthan16bit, false, uint16_t, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+          convert_yuv_to_planarrgb_sse2_internal<direction, pixel_t_src, lessthan16bit, false, uint16_t, YuvRgbConversionType::BITCONV_INT_LIMITED>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
       }
-      else {
-        convert_yuv_to_planarrgb_sse2_internal<pixel_t_src, lessthan16bit, false, float, YuvRgbConversionType::FLOAT_OUTPUT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      else { // 32 bit float target
+        convert_yuv_to_planarrgb_sse2_internal<direction, pixel_t_src, lessthan16bit, false, float, YuvRgbConversionType::FLOAT_OUTPUT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
       }
     }
   }
 }
 
-// Template instantiations
-template void convert_yuv_to_planarrgb_uintN_sse2<uint8_t, true>(BYTE * (&dstp)[3], int(&dstPitch)[3], const BYTE * (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix & m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
-template void convert_yuv_to_planarrgb_uintN_sse2<uint16_t, true>(BYTE * (&dstp)[3], int(&dstPitch)[3], const BYTE * (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix & m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
-template void convert_yuv_to_planarrgb_uintN_sse2<uint16_t, false>(BYTE * (&dstp)[3], int(&dstPitch)[3], const BYTE * (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix & m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
-template void convert_yuv_to_planarrgb_uintN_sse2<float, false>(BYTE * (&dstp)[3], int(&dstPitch)[3], const BYTE * (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix & m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+// Template instantiations for SSE2
+// YUV_TO_RGB
+template void convert_yuv_to_planarrgb_sse2<ConversionDirection::YUV_TO_RGB, uint8_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_sse2<ConversionDirection::YUV_TO_RGB, uint16_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_sse2<ConversionDirection::YUV_TO_RGB, uint16_t, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_sse2<ConversionDirection::YUV_TO_RGB, float, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+
+// RGB_TO_YUV
+template void convert_yuv_to_planarrgb_sse2<ConversionDirection::RGB_TO_YUV, uint8_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_sse2<ConversionDirection::RGB_TO_YUV, uint16_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_sse2<ConversionDirection::RGB_TO_YUV, uint16_t, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_sse2<ConversionDirection::RGB_TO_YUV, float, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+
+// YUV_TO_YUV (for future use)
+template void convert_yuv_to_planarrgb_sse2<ConversionDirection::YUV_TO_YUV, uint8_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_sse2<ConversionDirection::YUV_TO_YUV, uint16_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_sse2<ConversionDirection::YUV_TO_YUV, uint16_t, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_sse2<ConversionDirection::YUV_TO_YUV, float, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
 
 
 // packed rgb helper
