@@ -1,12 +1,47 @@
-
 Sampling
 ========
+
+.. note::
+   This page describes the state of AviSynth as of circa 2010, when the only
+   relevant formats were YUY2, YV12 and RGB24/32, and VirtualDub was the
+   primary preview host. Several aspects are now outdated:
+
+   - **YV16 (YUV422P8) and YV24 (YUV444P8)** were introduced in AviSynth 2.6,
+     making YUY2 a legacy compatibility format. Use ``ConvertToYV16`` instead
+     of ``ConvertToYUY2`` where possible.
+   - **Chroma placement-aware resampling** was introduced in AviSynth 2.6 via
+     ``ConvertToPlanarGeneric``, replacing the fixed 0.75/0.25 and 0.5/0.5
+     averaging kernels described in the Upsampling section. The ``chromaresample``,
+     ``ChromaInPlacement`` and ``ChromaOutPlacement`` parameters give full
+     control over the conversion geometry.
+   - **Frame properties** (``_ChromaLocation``, ``_Matrix``, ``_ColorRange``)
+     were introduced in AviSynth+, allowing filters to carry and respect chroma
+     placement metadata automatically.
+   - **The VirtualDub codec upsampling problem** described in the CUE section
+     is specific to the 2010 workflow of delivering YV12 to VirtualDub via a
+     codec. Modern preview and encoding tools handle colorspace conversion
+     independently of AviSynth.
+   - As of AviSynth+ 3.7.6, ``ConvertToYUY2`` and ``ConvertToYV12`` route all
+     conversions through ``ConvertToPlanarGeneric``, so the specific kernel
+     weights (0.75/0.25 interlaced, 0.5/0.5 progressive) documented in the
+     Upsampling section no longer reflect actual AviSynth behavior. The
+     default resampler is bicubic (b=1/3, c=1/3) with MPEG-2 left chroma
+     placement, which is geometrically correct and of higher quality than the
+     historical approximations.
+   - ``ConvertBackToYUY2`` is now an alias for ``ConvertToYUY2``; the
+     left-pixel-only hack described in the RGB→YUY2 subsampling section no
+     longer applies. It is kept for backward compatibility with pre-2.5 scripts.
+     It is now equivalent to ``ConvertToYUY2``, and still accepts only a single 
+     ``matrix`` parameter and does not support interlaced material.
+
+   The theoretical sections on color format layouts, chroma subsampling
+   geometry, MPEG-1 vs MPEG-2 sampling, and DV sampling remain accurate
+   and are not affected by the above changes.
 
 .. toctree::
     :maxdepth: 3
 
 .. contents:: Table of contents
-
 
 
 Color format conversions and the Chroma Upsampling Error
@@ -773,7 +808,7 @@ AviSynth/VDub filter which attempts to do this doesn't exist yet.
 | [`The 4:2:0 Interlaced Chroma Problem <http://www.hometheaterhifi.com/volume_8_2/dvd-benchmark-special-report-chroma-bug-4-2001.html>`_]
 | [`The 4:2:0 Interlaced Chroma Problem - Television and Video Advice <http://members.aol.com/ajaynejr/vidbug2.htm>`_]
 
-$Date: 2010/06/05 14:47:46 $
+$Date: 2026/03/02 21:16:00 $
 
 .. _The Chroma Upsampling Error:
     http://www.hometheaterhifi.com/volume_8_2/dvd-benchmark-special-report-chroma-bug-4-2001.html
