@@ -187,13 +187,6 @@ static void BuildMatrix_Rgb2Yuv_core(double Kr, double Kb, int int_arith_shift, 
       matrix.v_g -= v_sum;
     }
 
-    // Special precalculations for direct RGB to YUY2
-    double dku = Suv_f / (Srgb_f * (1.0 - Kb)) * mulfac;
-    double dkv = Suv_f / (Srgb_f * (1.0 - Kr)) * mulfac;
-    matrix.ku = round_coeff(dku);
-    matrix.kv = round_coeff(dkv);
-    matrix.ku_luma = -round_coeff(dku * Srgb_f / Sy_f);
-    matrix.kv_luma = -round_coeff(dkv * Srgb_f / Sy_f);
   }
 
   // in: rgb. out: yuv

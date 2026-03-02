@@ -40,6 +40,7 @@
 #include <avisynth.h>
 #include <stdint.h>
 #include "convert.h"
+#include "convert_matrix.h"
 #include "../filters/resample.h"
 #include "convert_helper.h"
 #include "convert_bits.h"
@@ -197,6 +198,11 @@ public:
   static AVSValue __cdecl CreateYUV420(AVSValue args, void* user_data, IScriptEnvironment* env);
   static AVSValue __cdecl CreateYUV422(AVSValue args, void* user_data, IScriptEnvironment* env);
   static AVSValue __cdecl CreateYUV444(AVSValue args, void* user_data, IScriptEnvironment* env);
+  // YUY2 targets: route through YV16, no GetFrame in this class needed.
+  // Placed here as the natural hub for all YUV format conversion routing.
+  static AVSValue __cdecl CreateConvertToYUY2(AVSValue args, void* user_data, IScriptEnvironment* env);
+  static AVSValue __cdecl CreateConvertBackToYUY2(AVSValue args, void* user_data, IScriptEnvironment* env);
+
 
 private:
   static AVSValue Create(AVSValue& args, const char* filter, bool strip_alpha_legacy_8bit, bool to_yuva, IScriptEnvironment* env);

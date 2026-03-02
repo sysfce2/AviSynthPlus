@@ -130,6 +130,7 @@ ConvertToY::ConvertToY(PClip src, const char *matrix_name, IScriptEnvironment* e
     return;
   }
 
+  // Keep YUY2 compat path w/o pre-converting to YV16, extracting Y from YUY2 is extremely easy
   if (vi.IsYUY2()) {
     yuy2_input = true;
     vi.pixel_type = target_pixel_type;
@@ -1918,11 +1919,6 @@ AVSValue ConvertToPlanarGeneric::Create(AVSValue& args, const char* filter, bool
     vi = clip->GetVideoInfo();
     converted = true;
   }
-  else if (vi.IsYUY2()) { // 8 bit only
-    clip = new ConvertYUY2ToYV16(clip, env);
-    vi = clip->GetVideoInfo();
-    converted = true;
-  }
   else if (!vi.IsPlanar())
     env->ThrowError("%s: Can only convert from Planar YUV.", filter);
 
@@ -2117,6 +2113,84 @@ AVSValue __cdecl ConvertToPlanarGeneric::CreateYV411(AVSValue args, void* user_d
   if (only_8bit && vi.BitsPerComponent() != 8)
     env->ThrowError("ConvertToYV411: only 8 bit sources allowed");
   return Create(args, "ConvertToYV411", only_8bit, to_yuva, env);
+AVSValue __cdecl ConvertToPlanarGeneric::CreateConvertToYUY2(AVSValue args, void*, IScriptEnvironment* env)
+{
+  PClip clip = args[0].AsClip();
+  VideoInfo vi = clip->GetVideoInfo();
+
+  // Fast no-op: YUY2 source, no parameters at all.
+  // Do not touch frame properties - caller's responsibility.
+  if (vi.IsYUY2()
+    && !args[1].Defined()   // interlaced
+    && !args[2].Defined()   // matrix
+    && !args[3].Defined()   // ChromaInPlacement
+    && !args[4].Defined()   // chromaresample
+    && !args[5].Defined()   // ChromaOutPlacement
+    && !args[6].Defined()   // param1
+    && !args[7].Defined()   // param2
+    && !args[8].Defined()   // param3
+    && !args[9].Defined()   // bits
+    && !args[10].Defined()) // quality
+    return clip;
+
+  // YUY2 is 8-bit only: bits= must be 8 if specified.
+  // We check here to give a proper ConvertToYUY2-specific error message,
+  // rather than letting CreateYUV422 complain about something unrelated.
+  // Source can be any bit depth - the conversion chain will downconvert.
+  if (args[9].Defined() && args[9].AsInt() != 8)
+    env->ThrowError("ConvertToYUY2: bits must be 8, YUY2 is an 8-bit format");
+
+  // Rebuild args with bits=8 forced, so CreateYUV422 sees an explicit
+  // 8-bit target regardless of source bit depth.
+  // This also means the void*1 path in CreateYUV422 won't reject
+  // high bit depth sources - the bits=8 in args drives the downconvert.
+  AVSValue new_args[11] = {
+    args[0],     // clip
+    args[1],     // interlaced
+    args[2],     // matrix
+    args[3],     // ChromaInPlacement
+    args[4],     // chromaresample
+    args[5],     // ChromaOutPlacement
+    args[6],     // param1
+    args[7],     // param2
+    args[8],     // param3
+    AVSValue(8), // bits: always 8 for YUY2, overrides source depth
+    args[10]     // quality
+  };
+
+  // (void*)1: allow any source bit depth, bits=8 in args enforces 8-bit output.
+  // The legacy (void*)0 source-depth check is not appropriate here since
+  // we explicitly want to allow e.g. 10-bit YUV420 → 8-bit YUY2.
+  PClip yv16 = CreateYUV422(AVSValue(new_args, 11), (void*)1, env).AsClip();
+
+  // Lossless repack YV16->YUY2.
+  // Frame properties preserved via NewVideoFrameP in GetFrame.
+  return new ConvertYV16ToYUY2(yv16, env);
+}
+
+AVSValue __cdecl ConvertToPlanarGeneric::CreateConvertBackToYUY2(AVSValue args, void*, IScriptEnvironment* env)
+{
+  // ConvertBackToYUY2 was a pre-2.5 optimization for RGB roundtrip workflows.
+  // It was never interlaced-aware (hardcoded interlaced=false).
+  // Now obsolete - forward to ConvertToYUY2::Create with full parameter array.
+  // ConvertBackToYUY2 signature: c[matrix]s
+  // ConvertToYUY2 signature:     c[interlaced]b[matrix]s[ChromaInPlacement]s
+  //                               [chromaresample]s[ChromaOutPlacement]s
+  //                               [param1]f[param2]f[param3]f[bits]i[quality]b
+  AVSValue new_args[11] = {
+    args[0],        // clip
+    AVSValue(false),// interlaced: was always false in ConvertBackToYUY2
+    args[1],        // matrix: pass through
+    AVSValue(),     // ChromaInPlacement: not defined
+    AVSValue(),     // chromaresample: not defined
+    AVSValue(),     // ChromaOutPlacement: not defined
+    AVSValue(),     // param1: not defined
+    AVSValue(),     // param2: not defined
+    AVSValue(),     // param3: not defined
+    AVSValue(),     // bits: not defined (will be forced to 8 inside)
+    AVSValue()      // quality: not defined
+  };
+  return CreateConvertToYUY2(AVSValue(new_args, 11), nullptr, env);
 }
 
 

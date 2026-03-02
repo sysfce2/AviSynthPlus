@@ -43,10 +43,6 @@ struct ConversionMatrix {
   int u_r, u_g, u_b;
   int v_r, v_g, v_b;
 
-  // used in YUY2 RGB->YUY2 asm
-  int ku, ku_luma;
-  int kv, kv_luma;
-
   float y_r_f, y_g_f, y_b_f;
   float u_r_f, u_g_f, u_b_f;
   float v_r_f, v_g_f, v_b_f;
