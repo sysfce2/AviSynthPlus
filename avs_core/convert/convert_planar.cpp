@@ -420,6 +420,8 @@ ConvertRGBToYUV444::ConvertRGBToYUV444(PClip src, const char *matrix_name, bool 
 
 }
 
+#if 0
+// Kept for reference
 template<int pixel_step, bool copyalpha>
 static void convert_rgb24or32_to_yuv444_c(BYTE* dstY, BYTE* dstU, BYTE* dstV, BYTE* dstA, const BYTE* srcp, size_t Ypitch, size_t UVpitch, size_t Apitch, size_t Spitch, size_t width, size_t height, const ConversionMatrix& m)
 {
@@ -459,6 +461,7 @@ static void convert_rgb24or32_to_yuv444_c(BYTE* dstY, BYTE* dstU, BYTE* dstV, BY
     }
   }
 }
+#endif
 
 
 PVideoFrame __stdcall ConvertRGBToYUV444::GetFrame(int n, IScriptEnvironment* env)
@@ -475,68 +478,16 @@ PVideoFrame __stdcall ConvertRGBToYUV444::GetFrame(int n, IScriptEnvironment* en
   BYTE* dstU = dst->GetWritePtr(PLANAR_U);
   BYTE* dstV = dst->GetWritePtr(PLANAR_V);
 
-  const int Spitch = src->GetPitch();
-
   const int Ypitch = dst->GetPitch(PLANAR_Y);
   const int UVpitch = dst->GetPitch(PLANAR_U);
-
-  if (pixel_step == 6 || pixel_step == 8) {
-    env->ThrowError("Invalid pixel step. 16 bit packed formats are not allowed here. This is a bug.");
-  }
-
-  if (pixel_step != 4 && pixel_step != 3 && pixel_step != -1 && pixel_step != -2) {
-    env->ThrowError("Invalid pixel step. This is a bug.");
-  }
-  if ((pixel_step == 3) && targetHasAlpha) {
-    env->ThrowError("Alpha copy from RGB24 or RGB48 is not possible, this is a bug.");
-  }
 
   const bool packedRGBsource = pixel_step > 0;
 
   if (packedRGBsource) {
-    // Only 8 bit RGB24 and RGB32 packed formats are allowed here.
-    // RGB48 and RGB64 are supported only as planar RGBP16 or RGBAP16, these formats are pre-converted.
-    const BYTE* srcp = src->GetReadPtr();
-
-    // targetHasAlpha is true only if Alpha must be preserved from RGB32 or RGB64 on converting to YUVA444
-    BYTE* dstA = targetHasAlpha ? dst->GetWritePtr(PLANAR_A) : nullptr;
-    const int Apitch = targetHasAlpha ? dst->GetPitch(PLANAR_A) : 0;
-
-#ifdef INTEL_INTRINSICS
-    // sse2 for 8 bit only (pixel_step==3,4), todo
-    if (((pixel_step == 3) || (pixel_step == 4)) && (env->GetCPUFlags() & CPUF_SSE2)) {
-      if (pixel_step == 3)
-        convert_rgb24_to_yv24_sse2(dstY, dstU, dstV, srcp, Ypitch, UVpitch, Spitch, vi.width, vi.height, matrix);
-      else if (pixel_step == 4 && !targetHasAlpha)
-        convert_rgb32_to_yv24_sse2<false>(dstY, dstU, dstV, dstA, srcp, Ypitch, UVpitch, Apitch, Spitch, vi.width, vi.height, matrix);
-      else if (pixel_step == 4 && targetHasAlpha)
-        convert_rgb32_to_yv24_sse2<true>(dstY, dstU, dstV, dstA, srcp, Ypitch, UVpitch, Apitch, Spitch, vi.width, vi.height, matrix);
-      return dst;
+    env->ThrowError("Packed RGB is no more allowed here, already preconverted to planar RGB. This is a bug.");
     }
 
-#ifdef X86_32
-    if (((pixel_step == 3) || (pixel_step == 4)) && (env->GetCPUFlags() & CPUF_MMX)) {
-      if (pixel_step == 3)
-        convert_rgb24_to_yv24_mmx(dstY, dstU, dstV, srcp, Ypitch, UVpitch, Spitch, vi.width, vi.height, matrix);
-      else if (pixel_step == 4 && !targetHasAlpha)
-        convert_rgb32_to_yv24_mmx<false>(dstY, dstU, dstV, dstA, srcp, Ypitch, UVpitch, Apitch, Spitch, vi.width, vi.height, matrix);
-      else if (pixel_step == 4 && targetHasAlpha)
-        convert_rgb32_to_yv24_mmx<true>(dstY, dstU, dstV, dstA, srcp, Ypitch, UVpitch, Apitch, Spitch, vi.width, vi.height, matrix);
-      return dst;
-  }
-#endif
-#endif
-    // SIMD/C for planar RGB and C-code for packed RGB
-
-    if (pixel_step == 3)
-      convert_rgb24or32_to_yuv444_c<3, false>(dstY, dstU, dstV, dstA, srcp, Ypitch, UVpitch, Apitch, Spitch, vi.width, vi.height, matrix);
-    else if (pixel_step == 4 && !targetHasAlpha)
-      convert_rgb24or32_to_yuv444_c<4, false>(dstY, dstU, dstV, dstA, srcp, Ypitch, UVpitch, Apitch, Spitch, vi.width, vi.height, matrix);
-    else if (pixel_step == 4 && targetHasAlpha)
-      convert_rgb24or32_to_yuv444_c<4, true>(dstY, dstU, dstV, dstA, srcp, Ypitch, UVpitch, Apitch, Spitch, vi.width, vi.height, matrix);
-    return dst;
-  }
-
+  // here we do planar RGB only
   const int bits_per_pixel = source_bit_depth;
 
   // copy or fill alpha
@@ -1874,7 +1825,12 @@ AVSValue ConvertToPlanarGeneric::Create(AVSValue& args, const char* filter, bool
 
   if (vi.IsRGB()) { // packed or planar source
     const bool keep_packedrgb_alpha = to_yuva && (vi.IsRGB32() || vi.IsRGB64());
-    if (vi.IsRGB48() || vi.IsRGB64()) {
+    // 3.7.6: We convert ALL packed RGB formats to planar RGB!
+    // The only case where a RGB32->YV24 is a bit slower is: SSE2-only but no SSSE3 capable CPU.
+    // All other cases are quicker, when converting to planar first and then to YUV444, than doing packed RGB->YUV444 in one step.
+    // On AVX2 capable CPUs using the PlanarRGB-YUV engine, we are +80% quicker
+    // doing RGB32->PlanarRGB->YUV444 than doing RGB32->YUV444 in the old SSSE3 step.
+    if (!vi.IsPlanar()) {
       // we convert to intermediate PlanarRGB, RGB48/64->YUV444 is slow C, planarRGB  is fast
       // Default ConvertToPlanarRGB call
       AVSValue new_args[10] = { clip, AVSValue(), AVSValue(), AVSValue(), AVSValue(), AVSValue(), AVSValue(), AVSValue(), AVSValue(), AVSValue() };
@@ -2064,44 +2020,83 @@ AVSValue ConvertToPlanarGeneric::Create(AVSValue& args, const char* filter, bool
 }
 
 AVSValue __cdecl ConvertToPlanarGeneric::CreateYUV420(AVSValue args, void* user_data, IScriptEnvironment* env) {
-  PClip clip = args[0].AsClip();
-  const VideoInfo& vi = clip->GetVideoInfo();
   bool only_8bit = reinterpret_cast<intptr_t>(user_data) == 0;
   bool to_yuva = reinterpret_cast<intptr_t>(user_data) == 2;
-  if (only_8bit && vi.BitsPerComponent() != 8)
-    env->ThrowError("ConvertToYV12: only 8 bit sources allowed");
+  if (only_8bit) {
+    // "ConvertToYV12" syntax
+    if (args[9].Defined() && args[9].AsInt() != 8)
+      env->ThrowError("ConvertToYV12: only 8 bit output supported. "
+        "Use ConvertToYUV420 for higher bit depth.");
+    AVSValue new_args[11] = {
+      args[0], args[1], args[2], args[3], args[4],
+      args[5], args[6], args[7], args[8],
+      AVSValue(8), // bits forced to 8
+      args[10]
+    };
+    AVSValue new_args_val(new_args, 11); // named, lives until end of scope
+    return Create(new_args_val, "ConvertToYUV420", only_8bit, to_yuva, env);
+  }
   return Create(args, "ConvertToYUV420", only_8bit, to_yuva, env);
 }
 
 AVSValue __cdecl ConvertToPlanarGeneric::CreateYUV422(AVSValue args, void* user_data, IScriptEnvironment* env) {
-  PClip clip = args[0].AsClip();
-  const VideoInfo& vi = clip->GetVideoInfo();
   bool only_8bit = reinterpret_cast<intptr_t>(user_data) == 0;
   bool to_yuva = reinterpret_cast<intptr_t>(user_data) == 2;
-  if (only_8bit && vi.BitsPerComponent() != 8)
-    env->ThrowError("ConvertToYV16: only 8 bit sources allowed");
+  if (only_8bit) {
+    // "ConvertToYV16" syntax
+    if (args[9].Defined() && args[9].AsInt() != 8)
+      env->ThrowError("ConvertToYV16: only 8 bit output supported. "
+        "Use ConvertToYUV422 for higher bit depth.");
+    AVSValue new_args[11] = {
+      args[0], args[1], args[2], args[3], args[4],
+      args[5], args[6], args[7], args[8],
+      AVSValue(8),
+      args[10]
+    };
+    AVSValue new_args_val(new_args, 11);
+    return Create(new_args_val, "ConvertToYUV422", only_8bit, to_yuva, env);
+  }
   return Create(args, "ConvertToYUV422", only_8bit, to_yuva, env);
 }
 
 AVSValue __cdecl ConvertToPlanarGeneric::CreateYUV444(AVSValue args, void* user_data, IScriptEnvironment* env) {
-  PClip clip = args[0].AsClip();
-  const VideoInfo& vi = clip->GetVideoInfo();
   bool only_8bit = reinterpret_cast<intptr_t>(user_data) == 0;
   bool to_yuva = reinterpret_cast<intptr_t>(user_data) == 2;
-  if (only_8bit && vi.BitsPerComponent() != 8)
-    env->ThrowError("ConvertToYV24: only 8 bit sources allowed");
+  if (only_8bit) {
+    // "ConvertToYV24" syntax
+    // parameter index skip back by 1 compared to 420/422, no ChromaOutPlacement parameter, bits is at index 8 instead of 9
+    if (args[8].Defined() && args[8].AsInt() != 8)
+      env->ThrowError("ConvertToYV24: only 8 bit output supported. "
+        "Use ConvertToYUV444 for higher bit depth.");
+    AVSValue new_args[10] = {
+      args[0], args[1], args[2], args[3], args[4],
+      args[5], args[6], args[7],
+      AVSValue(8),
+      args[9]
+    };
+    AVSValue new_args_val(new_args, 10);
+    return Create(new_args_val, "ConvertToYUV444", only_8bit, to_yuva, env);
+  }
   return Create(args, "ConvertToYUV444", only_8bit, to_yuva, env);
 }
 
 AVSValue __cdecl ConvertToPlanarGeneric::CreateYV411(AVSValue args, void* user_data, IScriptEnvironment* env) {
-  PClip clip = args[0].AsClip();
-  const VideoInfo& vi = clip->GetVideoInfo();
   bool only_8bit = reinterpret_cast<intptr_t>(user_data) == 0;
-  // though Avisynth does not have YUVA411, make similar to others
   bool to_yuva = reinterpret_cast<intptr_t>(user_data) == 2;
-  if (only_8bit && vi.BitsPerComponent() != 8)
-    env->ThrowError("ConvertToYV411: only 8 bit sources allowed");
-  return Create(args, "ConvertToYV411", only_8bit, to_yuva, env);
+  // parameter index skip back by 1 compared to 420/422, no ChromaOutPlacement parameter, bits is at index 8 instead of 9
+  if (args[8].Defined() && args[8].AsInt() != 8)
+    env->ThrowError("ConvertToYV411: only 8 bit output supported, "
+      "no high bit depth YUV411 format exists.");
+  AVSValue new_args[10] = {
+    args[0], args[1], args[2], args[3], args[4],
+    args[5], args[6], args[7],
+    AVSValue(8),
+    args[9]
+  };
+  AVSValue new_args_val(new_args, 10);
+  return Create(new_args_val, "ConvertToYV411", only_8bit, to_yuva, env);
+}
+
 AVSValue __cdecl ConvertToPlanarGeneric::CreateConvertToYUY2(AVSValue args, void*, IScriptEnvironment* env)
 {
   PClip clip = args[0].AsClip();

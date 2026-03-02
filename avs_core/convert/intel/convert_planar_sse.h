@@ -37,6 +37,7 @@
 
 #include <avs/types.h>
 #include "../convert_matrix.h"
+#include "../convert_helper.h"
 
 void convert_yuy2_to_y8_sse2(const BYTE *srcp, BYTE *dstp, size_t src_pitch, size_t dst_pitch, size_t width, size_t height);
 #ifdef X86_32
@@ -45,34 +46,6 @@ void convert_yuy2_to_y8_mmx(const BYTE *srcp, BYTE *dstp, size_t src_pitch, size
 
 void convert_rgb32_to_y8_sse2(const BYTE *srcp, BYTE *dstp, size_t src_pitch, size_t dst_pitch, size_t width, size_t height, const ConversionMatrix &matrix);
 void convert_rgb24_to_y8_sse2(const BYTE *srcp, BYTE *dstp, size_t src_pitch, size_t dst_pitch, size_t width, size_t height, const ConversionMatrix &matrix);
-#ifdef X86_32
-void convert_rgb32_to_y8_mmx(const BYTE *srcp, BYTE *dstp, size_t src_pitch, size_t dst_pitch, size_t width, size_t height, const ConversionMatrix &matrix);
-void convert_rgb24_to_y8_mmx(const BYTE *srcp, BYTE *dstp, size_t src_pitch, size_t dst_pitch, size_t width, size_t height, const ConversionMatrix &matrix);
-#endif
-
-template<bool copyalpha>
-void convert_rgb32_to_yv24_sse2(BYTE* dstY, BYTE* dstU, BYTE* dstV, BYTE* dstA, const BYTE*srcp, size_t dst_pitch_y, size_t UVpitch, size_t Apitch, size_t src_pitch, size_t width, size_t height, const ConversionMatrix &matrix);
-void convert_rgb24_to_yv24_sse2(BYTE* dstY, BYTE* dstU, BYTE* dstV, const BYTE*srcp, size_t dst_pitch_y, size_t UVpitch, size_t src_pitch, size_t width, size_t height, const ConversionMatrix &matrix);
-
-#ifdef X86_32
-template<bool copyalpha>
-void convert_rgb32_to_yv24_mmx(BYTE* dstY, BYTE* dstU, BYTE* dstV, BYTE* dstA, const BYTE*srcp, size_t dst_pitch_y, size_t UVpitch, size_t Apitch, size_t src_pitch, size_t width, size_t height, const ConversionMatrix& matrix);
-void convert_rgb24_to_yv24_mmx(BYTE* dstY, BYTE* dstU, BYTE* dstV, const BYTE*srcp, size_t dst_pitch_y, size_t UVpitch, size_t src_pitch, size_t width, size_t height, const ConversionMatrix &matrix);
-#endif
-
-template<typename pixel_t, int bits_per_pixel>
-void convert_planarrgb_to_yuv_uint8_14_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m);
-
-void convert_planarrgb_to_yuv_float_sse2(BYTE *(&dstp)[3], int(&dstPitch)[3], const BYTE *(&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix &m);
-
-template<int bits_per_pixel>
-#if defined(GCC) || defined(CLANG)
-__attribute__((__target__("sse4.1")))
-#endif
-void convert_planarrgb_to_yuv_uint16_sse41(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m);
-
-template<int bits_per_pixel>
-void convert_planarrgb_to_yuv_uint16_sse2(BYTE *(&dstp)[3], int (&dstPitch)[3], const BYTE *(&srcp)[3], const int (&srcPitch)[3], int width, int height, const ConversionMatrix &m);
 
 template<ConversionDirection direction, typename pixel_t_src, bool lessthan16bit>
 void convert_yuv_to_planarrgb_sse2(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m,
