@@ -1317,7 +1317,6 @@ static void Draw_VectorScope_circle_targets_axes(int bits_per_pixel,
     /*fulls=*/true, full_range,
     /*srcBitDepth=*/32, /*dstBitDepth=*/show_bits);
 
-  const int show_size = (1 << show_bits);
   const int limit_showwidth = (1 << show_bits) - 1;
 
   pitch /= sizeof(pixel_t);
@@ -1325,9 +1324,6 @@ static void Draw_VectorScope_circle_targets_axes(int bits_per_pixel,
   pixel_t* dstp = reinterpret_cast<pixel_t*>(dstp8);
   pixel_t* dstp_u = reinterpret_cast<pixel_t*>(dstp8_u);
   pixel_t* dstp_v = reinterpret_cast<pixel_t*>(dstp8_v);
-
-  // possible to display >8 bit data stuffed into 8 bit size
-  const int show_bit_shift = show_bits - 8;
 
   if (params.targets) {
     // ColorBars ground truth linear RGB (0.75 amplitude, Rec. BT.801-1)

@@ -3040,7 +3040,7 @@ void ScriptEnvironment::SetMaxCPU(const char* features)
     if (mode != 0)
       token.resize(token.size() - 1);
 
-    CPUlevel cpulevel;
+    CPUlevel cpulevel = CL_NONE;
 
     const char* t = token.c_str();
 

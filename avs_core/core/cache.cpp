@@ -621,7 +621,7 @@ CacheGuard::CacheGuard(const PClip& child, const char *name, IScriptEnvironment*
 CacheGuard::~CacheGuard()
 { }
 
-PClip CacheGuard::GetCache(IScriptEnvironment* env_, bool use_child_if_notfound, PClip child)
+PClip CacheGuard::GetCache(IScriptEnvironment* env_, bool use_child_if_notfound)
 {
   std::unique_lock<std::mutex> global_lock(mutex);
 
@@ -687,7 +687,7 @@ PVideoFrame __stdcall CacheGuard::GetFrame(int n, IScriptEnvironment* env_)
   //const bool chainedCtor = IEnv->GetInvokeStackSize() > 0;
   const bool chainedCtor = false;
  
-  return GetCache(env, chainedCtor, child)->GetFrame(n, env);
+  return GetCache(env, chainedCtor)->GetFrame(n, env);
 }
 
 void __stdcall CacheGuard::GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env_)
@@ -701,7 +701,7 @@ void __stdcall CacheGuard::GetAudio(void* buf, int64_t start, int64_t count, ISc
   //const bool chainedCtor = IEnv->GetInvokeStackSize() > 0;
   const bool chainedCtor = false;
 
-  return GetCache(env, chainedCtor, child)->GetAudio(buf, start, count, env);
+  return GetCache(env, chainedCtor)->GetAudio(buf, start, count, env);
 }
 
 const VideoInfo& __stdcall CacheGuard::GetVideoInfo()

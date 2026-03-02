@@ -1102,8 +1102,6 @@ static void draw_colorbars_yuv(uint8_t* pY8, uint8_t* pU8, uint8_t* pV8, int pit
   pitchY /= sizeof(pixel_t);
   pitchUV /= sizeof(pixel_t);
 
-  constexpr bool is_float = std::is_same<pixel_t, float>::value;
-
   const int shift = sizeof(pixel_t) == 4 ? 0 : (bits_per_pixel - 8);
 
   // Pre-compute conversion constants for float limited range,
@@ -1536,8 +1534,6 @@ public:
     frame = env->NewVideoFrame(vi);
 
     uint32_t* p = (uint32_t *)frame->GetWritePtr();
-
-    int y = 0;
 
     // set basic frame properties
     auto props = env->getFramePropsRW(frame);
