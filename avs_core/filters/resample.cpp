@@ -53,7 +53,6 @@
 #include <avs/alignment.h>
 #include <avs/minmax.h>
 #include "../convert/convert_planar.h"
-#include "../convert/convert_yuy2.h"
 #include "../convert/convert_helper.h"
 
 #include <type_traits>

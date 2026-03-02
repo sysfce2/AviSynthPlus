@@ -2,33 +2,33 @@
 ConvertToXXXX function
 ======================
 
-*RGB interleaved*
+*RGB interleaved (packed)*
 ::
 
   ConvertToRGB(clip [, string matrix, bool interlaced,
          string ChromaInPlacement,
-         string chromaresample,
-         float param1, float param2, float param3] )
+         string chromaresample, float param1, float param2, float param3,
+         int bits, bool quality] )
 
   ConvertToRGB24(clip [, string matrix, bool interlaced,
          string ChromaInPlacement,
-         string chromaresample,
-         float param1, float param2, float param3] )
+         string chromaresample, float param1, float param2, float param3,
+         int bits, bool quality] )
 
   ConvertToRGB32(clip [, string matrix, bool interlaced,
          string ChromaInPlacement,
-         string chromaresample,
-         float param1, float param2, float param3] )
+         string chromaresample, float param1, float param2, float param3,
+         int bits, bool quality] )
 
   ConvertToRGB48(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
-         string chromaresample,
-         float param1, float param2, float param3 ] )
+         string chromaresample, float param1, float param2, float param3,
+         int bits, bool quality] )
        
   ConvertToRGB64(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
-         string chromaresample,
-         float param1, float param2, float param3 ] ) 
+         string chromaresample, float param1, float param2, float param3,
+         int bits, bool quality] )
 
 
 *RGB planar*
@@ -36,13 +36,11 @@ ConvertToXXXX function
 
     ConvertToPlanarRGB(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
-         string chromaresample,
-         float param1, float param2, float param3,
+         string chromaresample, float param1, float param2, float param3,
          int bits, bool quality] )
     ConvertToPlanarRGBA(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
-         string chromaresample,
-         float param1, float param2, float param3,
+         string chromaresample, float param1, float param2, float param3,
          int bits, bool quality] )
 
 
@@ -51,16 +49,16 @@ ConvertToXXXX function
 
     ConvertToYV24(clip [, bool interlaced, string matrix,
          string ChromaInPlacement,
-         string chromaresample,
-         float param1, float param2, float param3] )
+         string chromaresample, float param1, float param2, float param3,
+         int bits, bool quality] )
     ConvertToYUV444(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
-         string chromaresample,
-         float param1, float param2, float param3] )
+         string chromaresample, float param1, float param2, float param3,
+         int bits, bool quality] )
     ConvertToYUVA444(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
-         string chromaresample,
-         float param1, float param2, float param3] )
+         string chromaresample, float param1, float param2, float param3,
+         int bits, bool quality] )
 
 
 *YUV422, YUVA422*
@@ -70,27 +68,31 @@ ConvertToXXXX function
          string ChromaInPlacement,
          string chromaresample,
          string ChromaOutPlacement
-         float param1, float param2, float param3] )
+         float param1, float param2, float param3,
+         int bits, bool quality] )
+
     ConvertToYUV422(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
          string chromaresample,
          string ChromaOutPlacement,
-         float param1, float param2, float param3] )
+         float param1, float param2, float param3,
+         int bits, bool quality] )
     ConvertToYUVA422(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
          string chromaresample,
          string ChromaOutPlacement,
-         float param1, float param2, float param3] )
+         float param1, float param2, float param3,
+         int bits, bool quality] )
 
 *YUY2*
 ::
-
     ConvertToYUY2(clip [, bool interlaced, string matrix,
          string ChromaInPlacement,
          string chromaresample,
-         float param1, float param2, float param3] )
+         string ChromaOutPlacement,
+         float param1, float param2, float param3,
+         int bits, bool quality] )
     ConvertBackToYUY2(clip [, string matrix ] )
-
 
 *YUV420, YUVA420*
 ::
@@ -99,17 +101,20 @@ ConvertToXXXX function
          string ChromaInPlacement,
          string chromaresample,
          string ChromaOutPlacement,
-         float param1, float param2, float param3] )
+         float param1, float param2, float param3,
+         int bits, bool quality] )
     ConvertToYUV420(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
          string chromaresample,
          string ChromaOutPlacement,
-         float param1, float param2, float param3] )
+         float param1, float param2, float param3,
+         int bits, bool quality] )
     ConvertToYUVA420(clip, [ string matrix, bool interlaced,
          string ChromaInPlacement,
          string chromaresample,
          string ChromaOutPlacement,
-         float param1, float param2, float param3] )
+         float param1, float param2, float param3,
+         int bits, bool quality] )
 
 
 *YUV411*
@@ -118,12 +123,14 @@ ConvertToXXXX function
     ConvertToYV411(clip [, bool interlaced, string matrix,
          string ChromaInPlacement,
          string chromaresample,
-         float param1, float param2, float param3] )
+         float param1, float param2, float param3,
+         int bits, bool quality] )
     ConvertToYUV411(clip [, bool interlaced, string matrix,
          string ChromaInPlacement,
          string chromaresample,
-         float param1, float param2, float param3] )
-         
+         float param1, float param2, float param3,
+         int bits, bool quality] )
+
 (the 2nd one is just an alias)
 
 *Y-only*
@@ -145,6 +152,8 @@ Notes:
 - 8 bit YUV formats has their own old names, but can be written in the generic naming convention: 
   YV12=YUV420P8, YV16=YUV422P8, YV24=YUV444P8
 - If possible, avoid using YUY2 which is kept for compatibility. Use YV16 instead.
+  YUY2 is always 8-bit and packed; YV16 is the planar equivalent supporting all
+  bit depths and is handled more efficiently throughout the filter chain.
 
 +----------------+-----------+--------------+---------------------------------------------------------------+-------------+
 | Color formats  | Bit depth | Sample ratio | Description                                                   | planar/     |
@@ -187,14 +196,31 @@ or the target placement is different from the source chroma placement read from 
 Such functions are ``ConvertToYV12``/``ConvertToYUV420``/``ConvertToYUVA420`` or 
 ``ConvertToYV16``/``ConvertToYUV422``/``ConvertToYUVA422``.
 
-Note ConvertToRGB always converts to RGB32 – unless your source is RGB24, in which case no conversion is done. 
-If you need 24-bit RGB for some reason, use ConvertToRGB24 explicitly.
+``ConvertToRGB`` (without numeric suffix) is adaptive:
+
+- **Packed RGB source** (RGB24/32/48/64): returned unchanged.
+- **Planar RGB source**: converted to the matching packed format,
+  preserving bit depth and alpha capability. PlanarRGBA converts to
+  RGB32/64 (with alpha); PlanarRGB converts to RGB24/48 (without alpha).
+- **YUV 8-bit source**: converted to RGB32.
+- **YUV 16-bit source**: converted to RGB64.
+- **YUV 10/12/14-bit or float source**: not supported; use
+  ``ConvertToRGB64`` or ``ConvertToPlanarRGB`` explicitly, or reduce
+  bit depth with ``ConvertBits(8)`` / ``ConvertBits(16)`` first.
+
+The ``bits`` parameter (8 or 16) overrides the adaptive target bit depth,
+allowing for example a 16-bit source to be converted to an 8-bit packed
+RGB output. Values other than 8 or 16 are not accepted.
+
+For explicit control of output format use ``ConvertToRGB24``,
+``ConvertToRGB32``, ``ConvertToRGB48`` or ``ConvertToRGB64``.
 
 Syntax and operation of ``ConvertToRGB24`` is identical to ``ConvertToRGB``,
-except that the output format is 24-bit; if the source is RGB32, the alpha
-channel will be stripped.
+except that the output format is 24-bit; if the source is RGB32 or planar RGBA, 
+the alpha channel will be stripped.
 
-Use ConvertBackToYUY2 to convert back to YUY2 with minimal color-blurring when you have previously applied a YUY2 -> RGB conversion. 
+``ConvertBackToYUY2`` is kept for backward compatibility with 2.5x scripts.
+It is now equivalent to ``ConvertToYUY2``. It was an old hack. See "History" section at the end of this document.
 
 There is no unique way of converting YUV to RGB or vice-versa. There are different conversion matrices in use.
 The following should be correct in most cases, see 
@@ -593,6 +619,38 @@ The YUY2 will be converted to YV16 first without applying *ChromaInPlacement*,
 
 Then YV16 will be converted to YV24 while applying *chromaresample*. 
 *ChromaOutPlacement* won't be used since our target is YV24.
+
+History
+'''''''
+``ConvertBackToYUY2`` was introduced in Avisynth 2.02 (circa 2002) as an explicit
+workaround for a horizontal chroma shift introduced by ``ConvertToYUY2``'s 1-2-1
+averaging kernel in the ``YUY2 → RGB → YUY2`` roundtrip workflow that was common
+before native YUV processing was available.
+
+When Avisynth 2.50 added YV12 support, the YV12↔YUY2 conversion used XviD's
+routines, which were later replaced in 2.51 with custom SSE/iSSE code using a
+0.75/0.25 weighted vertical kernel — faster than a correct resampler but
+geometrically wrong: it introduced a quarter-pixel vertical chroma shift for
+progressive material, and asymmetric opposite-direction shifts for top and bottom
+fields in interlaced material. This was diagnosed precisely by Gavino in 2009
+(Doom9 thread #147629), who showed the round-trip kernel was ``[3,12,1]/16`` and
+``[1,12,3]/16`` for top and bottom fields respectively, where the correct MPEG-2
+kernel would give ``[3,26,3]/32``. The speed rationale for the approximation was
+confirmed by Tritical: the double-``pavgb`` trick with a subtract-one correction
+was the fastest available implementation at the time.
+
+When ``ConvertToPlanarGeneric`` was introduced with AviSynth+ (based on the 2.60
+development work by IanB), the correct infrastructure — placement-aware resampling
+with proper ``_ChromaLocation`` frame property handling — became available. However
+the legacy fast-path shortcuts were preserved alongside it, meaning most scripts
+continued to hit the old buggy kernels unless explicit options were passed.
+
+In 3.7.6 the legacy direct conversion kernels are removed entirely. All
+``ConvertToYUY2`` paths now route through YV16 via ``ConvertToPlanarGeneric``,
+giving correct chroma placement, full frame property support, and access to the
+AVX2/AVX512 resampler paths in Intel. ``ConvertBackToYUY2`` forwards to ``ConvertToYUY2``;
+the left-pixel-only hack is no longer needed since the YV16 lossless repack path
+eliminates chroma resampling loss entirely for roundtrip workflows.
 
 
 Sampling
