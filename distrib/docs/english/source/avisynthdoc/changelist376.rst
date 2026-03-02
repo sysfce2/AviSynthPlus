@@ -28,6 +28,11 @@ Additions, changes
 - ``ConvertToPlanarRGB(A)``: added ``quality`` parameter: forces 32-bit float
   internal processing instead of S18.13 fixed-point arithmetic when converting
   from YUV, regardless of source or target bit-depth. See :doc:`ConvertToPlanarRGB <./corefilters/convert>`.
+- "ConvertToYUV(A)xxx" and legacy 8 bit name versions: ``bits`` parameter: on-the-fly bit-depth conversions to RGB->YUV conversion.
+  See :doc:`ConvertToYUV444 <./corefilters/convert>`.
+- ``ConvertToYUV(A)xxx`` and legacy 8 bit name versions: added ``quality`` parameter: forces 32-bit float
+  internal processing instead of S18.13 fixed-point arithmetic when converting
+  to YUV, regardless of source or target bit-depth. See :doc:`ConvertToYUV444 <./corefilters/convert>`.
 - "ResetMask": add parameter float "opacity"
 - "AddAlphaPlane": add parameter float "opacity"
 - "Layer": YUY2 is handled as YV16 (lessen source code bloat)
@@ -70,6 +75,24 @@ Additions, changes
     computed from ground-truth linear RGB values converted through the active
     YUV matrix, giving accurate Cb/Cr coordinates at all bit depths including
     32-bit float.
+- "ConvertToYUY2": rewritten to route all conversions through YV16 as
+  intermediate format, using the full ``ConvertToPlanarGeneric`` infrastructure.
+  ``ChromaOutPlacement`` parameter added (was missing, present in ConvertToYV16).
+  All source formats (YV12, YUV420/422/444, planar/packed RGB, high bit depth)
+  are now handled correctly. ``bits`` parameter accepted; must be 8 if specified.
+  See :doc:`Convert <./corefilters/convert>`.
+- "ConvertBackToYUY2": kept for backward compatibility; now forwards to
+  ``ConvertToYUY2``. The pre-2.5 left-pixel-only chroma hack is no longer
+  needed or applied; the YV16 lossless repack path avoids chroma resampling
+  loss entirely for roundtrip workflows.
+- "ConvertToYV12" (legacy 8-bit name): the YUY2 fast-path shortcut is removed;
+  now routes directly through ``ConvertToPlanarGeneric::CreateYUV420``.
+  ``bits=`` parameter semantics corrected: the legacy 8-bit-named functions
+  (``ConvertToYV12``, ``ConvertToYV16``, ``ConvertToYV24``) now check the
+  *target* bit depth rather than the source bit depth, allowing high-depth
+  sources when ``bits=8`` is explicitly specified.
+- 8 bit packed RGB formats are converted to planar RGB before 444 conversion.
+  Stop using direct rgb-yv24 conversions (16 bits were already converted for long time).
 
 
 Build environment, Interface
@@ -129,6 +152,21 @@ Build environment, Interface
 
 Bugfixes
 ~~~~~~~~
+- Fix: "ConvertToYUY2" / "ConvertToYV12": YV12<->YUY2 interlaced conversion
+  used asymmetric 0.75/0.25 chroma interpolation coefficients instead of the
+  MPEG-2 specified 7/8,1/8 and 3/8,5/8 coefficients, introducing opposite-
+  direction vertical chroma shifts in top and bottom fields. First diagnosed
+  by Gavino in 2009; now resolved by routing through ``ConvertToPlanarGeneric``.
+- Fix: "ConvertToYUY2" / "ConvertToYV12": progressive YV12<->YUY2 conversion
+  used asymmetric 0.75/0.25 averaging (quarter-pixel offset) instead of the
+  correct 0.5/0.5 midpoint average for left-sited chroma, introducing a
+  1/4-pixel vertical chroma shift.
+- Fix: "ConvertToYUY2": ``_ChromaLocation``, ``_Matrix`` and ``_ColorRange``
+  frame properties were not read from YV12 source frames and not written to
+  YUY2 output frames in the legacy direct conversion path.
+- Fix: "ConvertToYUY2": SSE2 interlaced upsampling used wrong weighting
+  direction for the lower line of each field pair (75%/25% toward current
+  instead of 25%/75% toward next), differing from the C reference implementation.
 - Fix: memory leak in Subframe/MakePropertyWritable after static-frame sources (ColorBars, BlankClip)
 - Fix: "Histogram" Color2 mode to copy alpha channel from source for alpha-carrying formats
   (YUVA, RGBPA, RGB32, RGB64); initialize alpha to zero in the histogram panel area.
@@ -237,7 +275,11 @@ Documentation
 - Update :doc:`Histogram <./corefilters/histogram>` with new vectorscope parameters
 - Update :doc:`ColorBars <./corefilters/colorbars>`
 - Update :ref:`matrix syntax <matrix_parameter_syntax>`
-
+- Update :doc:`Convert <./corefilters/convert>` with ``ConvertToYUY2``
+  ``ChromaOutPlacement`` parameter and corrected chroma placement behavior.
+- Update :doc:`Convert <./corefilters/convert>` with ``bits`` and ``quality`` parameters
+- Update :doc:`Sampling <./advancedtopics/sampling>` with historical content notes 
+  on legacy ``YUY2`` handling.
 - Add another Ubuntu->Windows DLL cross-compilation guide:
   See :ref:`Ubuntu->Windows mingw crosscompilation<compiling_avsplus_crosscompiling2>`
 
@@ -245,7 +287,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/02/24 20:24:00 $
+$Date: 2026/03/02 21:50:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus
