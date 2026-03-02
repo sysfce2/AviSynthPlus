@@ -438,15 +438,18 @@ Horizontals                Hor+Vert    Verticals
  416     611    579  404    128  186   362   609    556   624    C-RaspberryPi5 llvm 14 vector attrib
   90     185     94  403                                         C-RaspberryPi5 llvm 14 vector attrib + integer madd@H
  180     182    162          67        213   212    206   639    C-RaspberryPi5 llvm 14 no vector attrib
-1230    1168   1129                                              C-ClangCl in VS2022 SSE2
+ 942     985    982  993               976  1114    982  1920    C-ClangCl in 3.7.6 VS2026 SSE2 (MSVC tuned simd_c and even more tuned vector-friendly code)
 1270    1238   1186                   1550  1555   1560  3670    C-ClangCl in VS2022 AVX2
 1051    1126   1102                                              C-Intel ICX 2025 SSE2
 1513    2355   1560 1128                                 1969    C-Intel ICX 2025 SSE4.2  smart madd!
 1938    2413   1775 1061    442  453  1136  1126   1037  3511    C-Intel ICX 2025 AVX2
  212     188    187  264     73   64   223   195    198   268    C-MSVC SSE2 3.7.3
  417     463    360                    449   424    384   352    C-MSVC SSE2 3.7.4 (some unrolling vs. 3.7.3)
- 215     215     97  928     79   79   220   744     96  1951    C-MSVC SSE2 (zero optim on 8-16, did not tolerate vector-friendly code)
- 201     206     99                                              C-MSVC AVX2 (zero optim also on 8-16, not even using SSE2 xmm registers)
+ 215     215     97  928     79   79   220   744     96  1951    C-MSVC SSE2 (zero optim seen in asm on 8-16, did not tolerate vector-friendly code)
+ 595     638    634  976               552   382     95  1940    C-MSVC SSE2 3.7.6 (MSVC tuned simd_c and vector-friendly code)
+ 591     616    620                    700   670    518  1950    C-MSVC SSE2 3.7.6 (MSVC tuned simd_c and even more tuned vector-friendly code)
+ 853     913    924 1107               880   860    713  3777    C-MSVC AVX2 3.7.6 (MSVC tuned simd_c and vector-friendly code)
+ 201     206     99                                              C-MSVC AVX2 3.7.4 (zero optim seen in asm also on 8-16, not even using SSE2 xmm registers)
  597     631    651                                              C-Intel SSE4.2  3.7.4 code
 1183    1193    889                                              C-Intel AVX2    3.7.4 code
 5600                       2140                                  SIMD-avsresize (AVX2 or AVX512?)
@@ -458,6 +461,7 @@ Horizontals                Hor+Vert    Verticals
 2373    2181   1893 1306    868  723  2660  2137   2670  1886    SIMD-MSVC SSSE3 + incrementing offsets in V, 20-25% gain in integer verticals
 2294    2979   2595 1460    859  976  2623  2865   2625  1962    SIMD-Intel ICX 2025 SSSE3
 4395    4616   4160 2570   1664 1720  5110  5870   5085  2999    SIMD-Intel ICX 2025 AVX2 Surprisingly slow at vertical float FIXME, slower than C :)
+4755    4453   4255 3540   1447 1537  3560  4592   3920  7837    SIMD-ClangCL 3.7.6
 
 * float has different optimization: 8 pixels 2 coeffs
 ** on aarch64 the float benchmarks included a ConvertBits(8) at the end.
@@ -477,10 +481,12 @@ Considerations for aarch64 (Armv8a, includes neon, e.g. RPi5 with gcc 12.2, llvm
 
 On x86 platforms MSVC is unusable regarding integer vectorization, the more the code helps to
 recognize vectorization patterns the slower assembly it produces, e.g. horizontal resizer AVX2 16 bit: 
-MSVC 99 fps, MSVC+clangcl: 1186 fps, Intel+LLVM: 1775 fps. Joke.
+MSVC 99 fps (634 after tuning), MSVC+clangcl: 1186 fps, Intel+LLVM: 1775 fps. Joke. We use
+only for internal testing and reference, not for actual builds, everithing is SIMD optimized in Avisynth for x86.
 
 MSVC on x86 is only capable of vectorizing 32 bit float code, and even then it is not the fastest.
 There is no reason to not use clangcl for x86 Visual Studio builds. It comes officially with VS2022 for free.
+2026 update: simd_c was tuned for better MSVC auto-vectorization.
 
 */
 
@@ -500,7 +506,7 @@ void resize_v_c_planar_uint8_16_t_auto_vectorized(BYTE* dst8, const BYTE* src8, 
   else if constexpr (sizeof(pixel_t) == 2) limit = pixel_t((1 << bits_per_pixel) - 1);
 
   // for 16 bits only
-  [[maybe_unused]] Int16x4 shifttosigned_short(-32768);
+  [[maybe_unused]] Int16x8 shifttosigned_short(-32768);
   [[maybe_unused]] const Int32x4 shiftfromsigned_int(32768 << FPScale16bits);
 
   const int filter_size = program->filter_size;
@@ -552,10 +558,11 @@ void resize_v_c_planar_uint8_16_t_auto_vectorized(BYTE* dst8, const BYTE* src8, 
         }
         else {
           // uint16_t
-          auto src16_1 = Int16x4::from_ptr(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr));
-          auto src16_2 = Int16x4::from_ptr(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr + src_pitch));
-          auto src16_3 = Int16x4::from_ptr(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr + 2 * src_pitch));
-          auto src16_4 = Int16x4::from_ptr(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr + 3 * src_pitch));
+          // only lo 64 bit (4x16) is used
+          auto src16_1 = Int16x8::from_ptr_lo(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr));
+          auto src16_2 = Int16x8::from_ptr_lo(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr + src_pitch));
+          auto src16_3 = Int16x8::from_ptr_lo(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr + 2 * src_pitch));
+          auto src16_4 = Int16x8::from_ptr_lo(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr + 3 * src_pitch));
 
           // Turn unsigned to signed 16 bit, will be adjusted back before scaling back and storing.
           // Since there's a little hope that short*short pattern is recognized by the compiler, though 
@@ -567,10 +574,10 @@ void resize_v_c_planar_uint8_16_t_auto_vectorized(BYTE* dst8, const BYTE* src8, 
             src16_4 += shifttosigned_short;
           }
           // widen short->int
-          src_1 = Int32x4::convert_from(src16_1);
-          src_2 = Int32x4::convert_from(src16_2);
-          src_3 = Int32x4::convert_from(src16_3);
-          src_4 = Int32x4::convert_from(src16_4);
+          src_1 = Int32x4::convert_from_lo(src16_1);
+          src_2 = Int32x4::convert_from_lo(src16_2);
+          src_3 = Int32x4::convert_from_lo(src16_3);
+          src_4 = Int32x4::convert_from_lo(src16_4);
         }
 
         result += src_1 * coeff_1;
@@ -595,11 +602,11 @@ void resize_v_c_planar_uint8_16_t_auto_vectorized(BYTE* dst8, const BYTE* src8, 
         }
         else {
           // uint16_t
-          auto src16 = Int16x4::from_ptr(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr));
+          auto src16 = Int16x8::from_ptr_lo(reinterpret_cast<const short* AVS_RESTRICT>(src2_ptr));
           if constexpr (!lessthan16bit) {
             src16 += shifttosigned_short;
           }
-          src = Int32x4::convert_from(src16); // widen short->int
+          src = Int32x4::convert_from_lo(src16); // widen short->int
         }
 
         result += src * a_coeff;
@@ -854,7 +861,7 @@ static void resize_h_c_planar(BYTE* dst8, const BYTE* src8, int dst_pitch, int s
 // 8 pixel instead of real-SIMD 16 to ease register pressure 
 // and the make the compiler task easier
 template<typename pixel_t, bool lessthan16bit>
-AVS_FORCEINLINE static void process_two_8pixels_h_uint8_16_core(const pixel_t* AVS_RESTRICT src_ptr, const short* AVS_RESTRICT current_coeff, Int32x4& result, const Int16x8& shifttosigned_8xshort) {
+AVS_FORCEINLINE static void process_two_8pixels_h_uint8_16_core(const pixel_t* AVS_RESTRICT src_ptr, const short* AVS_RESTRICT current_coeff, Int32x4& AVS_RESTRICT result, const Int16x8& shifttosigned_8xshort) {
 
   Int16x8 data;
   // using signed int16 (short) until the coeff multiplication
@@ -890,7 +897,7 @@ AVS_FORCEINLINE static void process_two_8pixels_h_uint8_16_core(const pixel_t* A
 
 
 template<typename pixel_t, bool lessthan16bit>
-AVS_FORCEINLINE static void process_two_4pixels_h_uint8_16_core(const pixel_t* AVS_RESTRICT src_ptr, const short* AVS_RESTRICT current_coeff, Int32x4& result, const Int32x4& shifttosigned_4xint) {
+AVS_FORCEINLINE static void process_two_4pixels_h_uint8_16_core(const pixel_t* AVS_RESTRICT src_ptr, const short* AVS_RESTRICT current_coeff, Int32x4& AVS_RESTRICT result, const Int32x4& shifttosigned_4xint) {
   Int32x4 data;
 
   // this one is using full int32 internally
@@ -916,9 +923,19 @@ AVS_FORCEINLINE static void process_two_4pixels_h_uint8_16_core(const pixel_t* A
 }
 
 template<bool safe_aligned_mode, typename pixel_t, bool lessthan16bit>
-AVS_FORCEINLINE static void process_two_pixels_h_uint8_16(const pixel_t* src_ptr, const int begin1, const int begin2, const short* AVS_RESTRICT current_coeff, const int filter_size,
-  Int32x4& result1, Int32x4& result2, const int kernel_size,
-  const Int16x8& shifttosigned) {
+AVS_FORCEINLINE static void process_two_pixels_h_uint8_16(const pixel_t* AVS_RESTRICT src_ptr, const int begin1, const int begin2, const short* AVS_RESTRICT current_coeff, const int filter_size,
+  Int32x4& _result1, Int32x4& _result2, const int kernel_size,
+  const Int16x8& shifttosigned)
+{
+  // Reference parameters (_result1, _result2) have known addresses, so MSVC
+  // treats them as aliased memory and emits scalar extract+writeback on every
+  // loop iteration (movd/vpextrd to memory after each vpaddd).
+  // By copying to local variables, MSVC gains full ownership and keeps the
+  // accumulators in XMM registers for the entire loop, writing back only once
+  // at the end. This alone gave a ~25% speedup (106 -> 183 fps on MSVC).
+  // this problem with Clang/GCC was not observed.
+  Int32x4 result1 = _result1;
+  Int32x4 result2 = _result2;
 
   int ksmod8;
   // 16 is too much for C optimizer
@@ -938,7 +955,11 @@ AVS_FORCEINLINE static void process_two_pixels_h_uint8_16(const pixel_t* src_ptr
 
   if constexpr (!safe_aligned_mode) {
     // working with the original, unaligned kernel_size
-    if (i == kernel_size) return;
+    if (i == kernel_size) {
+      _result1 = result1;
+      _result2 = result2;
+      return;
+    }
 
     const int ksmod4 = kernel_size / 4 * 4;
     // Process 4 elements if needed
@@ -948,7 +969,11 @@ AVS_FORCEINLINE static void process_two_pixels_h_uint8_16(const pixel_t* src_ptr
       process_two_4pixels_h_uint8_16_core<pixel_t, lessthan16bit>(src_ptr1 + i, current_coeff + i, result1, shifttosigned_4);
       process_two_4pixels_h_uint8_16_core<pixel_t, lessthan16bit>(src_ptr2 + i, current_coeff + filter_size + i, result2, shifttosigned_4);
       i += 4;
-      if (i == kernel_size) return;
+      if (i == kernel_size) {
+        _result1 = result1;
+        _result2 = result2;
+        return;
+    }
     }
 
     // Process remaining 1-3 elements with scalar operations
@@ -983,11 +1008,15 @@ AVS_FORCEINLINE static void process_two_pixels_h_uint8_16(const pixel_t* src_ptr
 
     }
   }
+
+  _result1 = result1;
+  _result2 = result2;
 }
 
 
+// NO Forceinline! Helps MSVC, by starting a new stack trame and have enough registers again.
 template<bool is_safe, typename pixel_t, bool lessthan16bit>
-AVS_FORCEINLINE static void process_eight_pixels_h_uint8_16(const pixel_t * AVS_RESTRICT src, int x, const short* current_coeff_base, int filter_size,
+static void process_eight_pixels_h_uint8_16(const pixel_t * AVS_RESTRICT src, int x, const short* current_coeff_base, int filter_size,
   const Int32x4& rounder128, const Int16x8& shifttosigned, const uint16_t clamp_limit,
   pixel_t* AVS_RESTRICT dst,
   ResamplingProgram* program)
@@ -998,8 +1027,6 @@ AVS_FORCEINLINE static void process_eight_pixels_h_uint8_16(const pixel_t * AVS_
   const int unaligned_kernel_size = program->filter_size_real;
 
   // Unrolled processing of all 8 pixels
-
-  // hadd_epi32 or other SIMD pattern is not recognized, do it differently
 
   // 0 & 1
   Int32x4 result0 = rounder128;
@@ -1018,10 +1045,13 @@ AVS_FORCEINLINE static void process_eight_pixels_h_uint8_16(const pixel_t * AVS_
   current_coeff += 2 * filter_size;
 
   Int32x4 sumQuad1234;
-  sumQuad1234.set(0, result0.horiz_add_int32());
+  sumQuad1234 = make_from_horiz_sums(result0, result1, result2, result3);
+  /* provided and optimized from simd_c.h
+  sumQuad1234.set(0, result1.horiz_add_int32());
   sumQuad1234.set(1, result1.horiz_add_int32());
   sumQuad1234.set(2, result2.horiz_add_int32());
   sumQuad1234.set(3, result3.horiz_add_int32());
+  */
 
   // 4 & 5
   result0 = rounder128;
@@ -1040,10 +1070,7 @@ AVS_FORCEINLINE static void process_eight_pixels_h_uint8_16(const pixel_t * AVS_
   // current_coeff += 2 * filter_size; // not needed anymore
 
   Int32x4 sumQuad5678;
-  sumQuad5678.set(0, result0.horiz_add_int32());
-  sumQuad5678.set(1, result1.horiz_add_int32());
-  sumQuad5678.set(2, result2.horiz_add_int32());
-  sumQuad5678.set(3, result3.horiz_add_int32());
+  sumQuad5678 = make_from_horiz_sums(result0, result1, result2, result3);
 
   // correct if signed, scale back, store
   if constexpr (sizeof(pixel_t) == 2 && !lessthan16bit) {
@@ -1654,8 +1681,10 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
   // at the right and bottom ends, since we may have variable kernel sizes due to boundary conditions.
   resize_prepare_coeffs(program, env, simd_coeff_count_padding);
 
+#ifdef INTEL_INTRINSICS_AVX512
   const bool has_AVX512_base = (CPU & CPUF_AVX512_BASE) == CPUF_AVX512_BASE; // group flag!
   const bool has_AVX512_fast = (CPU & CPUF_AVX512_FAST) == CPUF_AVX512_FAST; // group flag!
+#endif
 
   if (pixelsize == 1)
   {
@@ -2227,7 +2256,9 @@ ResamplerV FilteredResizeV::GetResampler(int CPU, int pixelsize, int bits_per_pi
   // for SIMD friendliness and more: consolidate the kernel_size vs filter_size at the end.
   // See comments at FilteredResizeH::GetResampler
 
+#ifdef INTEL_INTRINSICS_AVX512
   const bool has_AVX512_base = (CPU & CPUF_AVX512_BASE) == CPUF_AVX512_BASE;
+#endif
 
   if (program->filter_size == 1) {
     // Fast pointresize
