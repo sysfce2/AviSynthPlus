@@ -228,19 +228,8 @@ PVideoFrame __stdcall ConvertToY::GetFrame(int n, IScriptEnvironment* env) {
       }
       return dst;
     }
-
-#ifdef X86_32
-    if ((pixelsize==1) && (env->GetCPUFlags() & CPUF_MMX)) {
-      if (pixel_step == 4) {
-        convert_rgb32_to_y8_mmx(srcp, dstp, src_pitch, dst_pitch, width, height, matrix);
-      } else {
-        convert_rgb24_to_y8_mmx(srcp, dstp, src_pitch, dst_pitch, width, height, matrix);
-      }
-      return dst;
-    }
 #endif
-#endif
-    // Slow C
+    // C
     const int srcMod = src_pitch + width * pixel_step;
     if(pixelsize==1) {
       for (int y=0; y<vi.height; y++) {
@@ -1892,7 +1881,7 @@ AVSValue ConvertToPlanarGeneric::Create(AVSValue& args, const char* filter, bool
       // clip, matrix,  interlaced, chromainplacement, chromaresample, param1, param2, param3, bits, quality
       // convert to planar RGBA only if RGB64 and target is YUVA (need to keep alpha)
       const intptr_t planar_rgb_type = keep_packedrgb_alpha ? -2 : -1;
-      clip = ConvertToRGB::Create(AVSValue(new_args, 10), (void *)planar_rgb_type, env).AsClip();
+      clip = CreateConvertToRGB(AVSValue(new_args, 10), (void *)planar_rgb_type, env).AsClip();
       vi = clip->GetVideoInfo();
     }
 

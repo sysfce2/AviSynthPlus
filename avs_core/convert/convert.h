@@ -35,59 +35,10 @@
 #ifndef __Convert_H__
 #define __Convert_H__
 
-#include "../core/internal.h"
-#include "convert_matrix.h"
+#include <avisynth.h>
 
-/********************************************************
- *******   Colorspace GenericVideoFilter Classes   ******
- *******************************************************/
-
-// YUY2 only
-class ConvertToRGB : public GenericVideoFilter
-/**
-  * Class to handle conversion to RGB & RGBA
- **/
-{
-public:
-  ConvertToRGB(PClip _child, bool rgb24, const char* matrix_name, IScriptEnvironment* env);
-  PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
-
-  int __stdcall SetCacheHints(int cachehints, int frame_range) override {
-    AVS_UNUSED(frame_range);
-    return cachehints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
-  }
-
-  static AVSValue __cdecl Create(AVSValue args, void* user_data, IScriptEnvironment* env);
-
-private:
-  int theMatrix;
-  int theColorRange;
-  // separate out set for rgb target
-  int theOutMatrix;
-  int theOutColorRange;
-  ConversionMatrix matrix;
-};
-
-// YUY2 only
-class ConvertToYV12 : public GenericVideoFilter
-/**
-  * Class for conversions to YV12
- **/
-{
-public:
-  ConvertToYV12(PClip _child, bool _interlaced, IScriptEnvironment* env);
-  PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
-
-  int __stdcall SetCacheHints(int cachehints, int frame_range) override {
-    AVS_UNUSED(frame_range);
-    return cachehints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
-  }
-
-  static AVSValue __cdecl Create(AVSValue args,void*, IScriptEnvironment* env);
-
-private:
-  bool interlaced;
-};
-
+AVSValue __cdecl CreateConvertToAdaptivePackedRGB(AVSValue args, void* user_data, IScriptEnvironment* env);
+AVSValue __cdecl CreateConvertToPackedRGB(AVSValue args, void* user_data, IScriptEnvironment* env);
+AVSValue __cdecl CreateConvertToRGB(AVSValue args, void* user_data, IScriptEnvironment* env);
 
 #endif  // __Convert_H__
