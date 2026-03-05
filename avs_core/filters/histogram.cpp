@@ -1325,85 +1325,86 @@ static void Draw_VectorScope_circle_targets_axes(int bits_per_pixel,
   pixel_t* dstp_u = reinterpret_cast<pixel_t*>(dstp8_u);
   pixel_t* dstp_v = reinterpret_cast<pixel_t*>(dstp8_v);
 
+  // ===== -I AND +Q SIGNAL RGB VALUES FOR VECTORSCOPE GRATICULE =====
+  // These feed through the same matrix-aware make_yuv path as the color bar patches,
+  // giving correct UV pixel coordinates for any matrix and any bit depth.
+  // 
+  // Note: -I and +Q are analog NTSC test signals that don't map cleanly to digital RGB/YUV.
+  // We maintain two separate specifications for backward compatibility:
+  //
+  // RGB-NATIVE: Lifted to studio black (code 16), broadcast-safe
+  //   Used when vectorscope processes RGB sources or when drawing RGB graticules
+  //   -I: RGB(16, 90, 130) at 8-bit → produces Y≈77 after matrix conversion
+  //   +Q: RGB(92, 16, 143) at 8-bit → produces Y≈63 after matrix conversion
+  //
+  // YUV-TARGETED: Zero-luma pure chroma definition  
+  //   Used when vectorscope processes YUV sources
+  //   -I: Converts to Y=16, Cb=158, Cr=95 (legacy ColorBars YUV output)
+  //   +Q: Converts to Y=16, Cb=174, Cr=149 (legacy ColorBars YUV output)
+  //   Contains out-of-range RGB components (super-blacks)
+  //
+  // Note 2: These will not lay exactly on UV's 33° and 123° degree lines, since those 
+  // angles are defined in the original NTSC YIQ color space, which differs from the YUV 
+  // space produced by BT.601/BT.709 matrix conversions.
+
+  // this one is not used, this is YUV vectorscope, we cannot determine that the YUV was converted from
+  // an RGB ColorBars.
+  /*
+  static const RGBEntry iq_rgb_native[] = {
+      { "-I", MINUS_I_R,     MINUS_I_G,     MINUS_I_B     }, // RGB-native (studio black lift)
+      { "+Q", PLUS_Q_R,      PLUS_Q_G,      PLUS_Q_B      }, // RGB-native (studio black lift)
+      { "+I", PLUS_I_R,      PLUS_I_G,      PLUS_I_B      }, // n/a ColorBarsHD only, which is YUV-only
+  };
+  */
+
+  // ColorBars ground truth linear RGB (0.75 amplitude, Rec. BT.801-1)
+  // Top 2/3 bars: LtGrey, Yellow, Cyan, Green, Magenta, Red, Blue
+  // (White/LtGrey sits at UV center, not a useful vectorscope target)
+  struct RGBEntry { const char* name; double r, g, b; };
+  static const RGBEntry bar_rgb[] = {
+      { "Yellow",  0.75, 0.75, 0.0  },
+      { "Cyan",    0.0,  0.75, 0.75 },
+      { "Green",   0.0,  0.75, 0.0  },
+      { "Magenta", 0.75, 0.0,  0.75 },
+      { "Red",     0.75, 0.0,  0.0  },
+      { "Blue",    0.0,  0.0,  0.75 },
+  };
+
+  static const RGBEntry iq_rgb_yuv_targeted[] = {
+      { "-I", MINUS_I_R_YUV, MINUS_I_G_YUV, MINUS_I_B_YUV }, // YUV-targeted (zero-luma)
+      { "+Q", PLUS_Q_R_YUV,  PLUS_Q_G_YUV,  PLUS_Q_B_YUV  }, // YUV-targeted (zero-luma)
+      { "+I", PLUS_I_R_YUV,  PLUS_I_G_YUV,  PLUS_I_B_YUV }, // ColorBarsHD only (same for both)
+  };
+
+  const int half_box = 4 * (1 << (show_bits - 8));
+
+  // ---- Pixel position helper ----
+  // Converts normalised chroma [-0.5..0.5] to vectorscope pixel coordinate.
+  // Always from full range float, since the YUV squares are obtained from the linear RGB values.
+  // Target is limited/full range aware.
+  auto uv_to_px_float = [&](double uv_norm) -> int {
+    return clamp(
+      (int)((float)uv_norm * conv_consts_fullrange_float_origin.mul_factor + conv_consts_fullrange_float_origin.dst_offset + 0.5f),
+      0, (1 << show_bits) - 1);
+    };
+
+  // Box color (brownish, visible on the wheel background) ----
+  pixel_t box_luma, box_u, box_v;
+  if constexpr (std::is_integral<pixel_t>::value) {
+    // Tan/beige: Y=80, slightly orange/brown tint
+    box_luma = (pixel_t)(80 << (bits_per_pixel - 8));
+    box_u = (pixel_t)(140 << (bits_per_pixel - 8));
+    box_v = (pixel_t)(120 << (bits_per_pixel - 8));
+  }
+  else {
+    box_luma = c8tof(80);
+    box_u = uv8tof(140);
+    box_v = uv8tof(120);
+  }
+
   if (params.targets) {
-    // ColorBars ground truth linear RGB (0.75 amplitude, Rec. BT.801-1)
-    // Top 2/3 bars: LtGrey, Yellow, Cyan, Green, Magenta, Red, Blue
-    // (White/LtGrey sits at UV center, not a useful vectorscope target)
-    struct RGBEntry { const char* name; double r, g, b; };
-    static const RGBEntry bar_rgb[] = {
-        { "Yellow",  0.75, 0.75, 0.0  },
-        { "Cyan",    0.0,  0.75, 0.75 },
-        { "Green",   0.0,  0.75, 0.0  },
-        { "Magenta", 0.75, 0.0,  0.75 },
-        { "Red",     0.75, 0.0,  0.0  },
-        { "Blue",    0.0,  0.0,  0.75 },
-    };
 
-    // ===== -I AND +Q SIGNAL RGB VALUES FOR VECTORSCOPE GRATICULE =====
-    // These feed through the same matrix-aware make_yuv path as the color bar patches,
-    // giving correct UV pixel coordinates for any matrix and any bit depth.
-    // 
-    // Note: -I and +Q are analog NTSC test signals that don't map cleanly to digital RGB/YUV.
-    // We maintain two separate specifications for backward compatibility:
-    //
-    // RGB-NATIVE: Lifted to studio black (code 16), broadcast-safe
-    //   Used when vectorscope processes RGB sources or when drawing RGB graticules
-    //   -I: RGB(16, 90, 130) at 8-bit → produces Y≈77 after matrix conversion
-    //   +Q: RGB(92, 16, 143) at 8-bit → produces Y≈63 after matrix conversion
-    //
-    // YUV-TARGETED: Zero-luma pure chroma definition  
-    //   Used when vectorscope processes YUV sources
-    //   -I: Converts to Y=16, Cb=158, Cr=95 (legacy ColorBars YUV output)
-    //   +Q: Converts to Y=16, Cb=174, Cr=149 (legacy ColorBars YUV output)
-    //   Contains out-of-range RGB components (super-blacks)
-    //
-    // Note 2: These will not lay exactly on UV's 33° and 123° degree lines, since those 
-    // angles are defined in the original NTSC YIQ color space, which differs from the YUV 
-    // space produced by BT.601/BT.709 matrix conversions.
-
-    // this one is not used, this is YUV vectorscope, we cannot determine that the YUV was converted from
-    // an RGB ColorBars.
-    /*
-    static const RGBEntry iq_rgb_native[] = {
-        { "-I", MINUS_I_R,     MINUS_I_G,     MINUS_I_B     }, // RGB-native (studio black lift)
-        { "+Q", PLUS_Q_R,      PLUS_Q_G,      PLUS_Q_B      }, // RGB-native (studio black lift)
-        { "+I", PLUS_I_R,      PLUS_I_G,      PLUS_I_B      }, // n/a ColorBarsHD only, which is YUV-only
-    };
-    */
-
-    static const RGBEntry iq_rgb_yuv_targeted[] = {
-        { "-I", MINUS_I_R_YUV, MINUS_I_G_YUV, MINUS_I_B_YUV }, // YUV-targeted (zero-luma)
-        { "+Q", PLUS_Q_R_YUV,  PLUS_Q_G_YUV,  PLUS_Q_B_YUV  }, // YUV-targeted (zero-luma)
-        { "+I", PLUS_I_R_YUV,  PLUS_I_G_YUV,  PLUS_I_B_YUV }, // ColorBarsHD only (same for both)
-    };
-
-    // Box color (brownish, visible on the wheel background) ----
-    pixel_t box_luma, box_u, box_v;
-    if constexpr (std::is_integral<pixel_t>::value) {
-      // Tan/beige: Y=80, slightly orange/brown tint
-      box_luma = (pixel_t)(80 << (bits_per_pixel - 8));
-      box_u = (pixel_t)(140 << (bits_per_pixel - 8));
-      box_v = (pixel_t)(120 << (bits_per_pixel - 8));
-    }
-    else {
-      box_luma = c8tof(80);
-      box_u = uv8tof(140);
-      box_v = uv8tof(120);
-    }
-
-    const int half_box = 4 * (1 << (show_bits - 8));
-
-    // ---- Pixel position helper ----
-    // Converts normalised chroma [-0.5..0.5] to vectorscope pixel coordinate.
-    // Always from full range float, since the YUV squares are obtained from the linear RGB values.
-    // Target is limited/full range aware.
-    auto uv_to_px_float = [&](double uv_norm) -> int {
-      return clamp(
-        (int)((float)uv_norm * conv_consts_fullrange_float_origin.mul_factor + conv_consts_fullrange_float_origin.dst_offset + 0.5f),
-        0, (1 << show_bits) - 1);
-      };
-
-    // ---- Draw colour-bar target boxes ----
+    // ---- Draw colorbar target boxes ----
     for (auto& e : bar_rgb) {
       double dY, dU, dV;
       GetYUVFromMatrix(matrix, e.r, e.g, e.b, dY, dU, dV);
@@ -1426,62 +1427,62 @@ static void Draw_VectorScope_circle_targets_axes(int bits_per_pixel,
         limit_showwidth);
 
     }
+  }
 
-    if (params.iq) {
-      // ---- Draw +Q and -I target boxes ----
-      // These are matrix-independent (they are phase references, not primaries),
-      // but still need the same pixel-coordinate conversion.
-      for (auto& e : iq_rgb_yuv_targeted) {
-        double dY, dU, dV;
-        GetYUVFromMatrix(matrix, e.r, e.g, e.b, dY, dU, dV);
-        int cx = uv_to_px_float(dU);
-        int cy = uv_to_px_float(dV);
-        // yuv.u and yuv.v are already the correct pixel_t values at the virtual target
-        // (show) bit depth.
+  if (params.iq) {
+    // ---- Draw +Q and -I target boxes ----
+    // These are matrix-independent (they are phase references, not primaries),
+    // but still need the same pixel-coordinate conversion.
+    for (auto& e : iq_rgb_yuv_targeted) {
+      double dY, dU, dV;
+      GetYUVFromMatrix(matrix, e.r, e.g, e.b, dY, dU, dV);
+      int cx = uv_to_px_float(dU);
+      int cy = uv_to_px_float(dV);
+      // yuv.u and yuv.v are already the correct pixel_t values at the virtual target
+      // (show) bit depth.
 
-        DrawModeColor2_DrawRect<pixel_t>(
-          dstp, pitch, dstp_u, dstp_v, pitchUV,
-          cx, cy, half_box, half_box,
-          swidth, sheight,
-          box_luma, box_u, box_v,
-          limit_showwidth);
+      DrawModeColor2_DrawRect<pixel_t>(
+        dstp, pitch, dstp_u, dstp_v, pitchUV,
+        cx, cy, half_box, half_box,
+        swidth, sheight,
+        box_luma, box_u, box_v,
+        limit_showwidth);
 
-      }
     }
+  }
 
-    // ---- Radial lines ----
-    pixel_t line_luma;
-    if constexpr (std::is_integral<pixel_t>::value)
-      line_luma = (pixel_t)(120 << (bits_per_pixel - 8));
-    else
-      line_luma = c8tof(120);
+  // ---- Radial lines ----
+  pixel_t line_luma;
+  if constexpr (std::is_integral<pixel_t>::value)
+    line_luma = (pixel_t)(120 << (bits_per_pixel - 8));
+  else
+    line_luma = c8tof(120);
 
-    // Angles to draw(matching PPro vectorscope) :
-    // 0°, 90°, 180°, 270° — the axis cross
-    // 33°, 123°, 213°, 303° — the ±I/±Q diagonals
-    // knowing that in UV space these are not exactly at 33° and 123°
+  // Angles to draw(matching PPro vectorscope) :
+  // 0°, 90°, 180°, 270° — the axis cross
+  // 33°, 123°, 213°, 303° — the ±I/±Q diagonals
+  // knowing that in UV space these are not exactly at 33° and 123°
 
-    if (params.axes) {
-      const double angles90[] = {
-          0.0, 90.0, 180.0, 270.0
-      };
-      const int limit = (1 << (show_bits - 1)) - 1;
-      const int show_bit_shift = show_bits - 8;
-      for (double ang : angles90)
-        DrawRadialLine<pixel_t>(dstp, pitch,
-          limit, show_bit_shift, ang, line_luma);
-    }
+  if (params.axes) {
+    const double angles90[] = {
+        0.0, 90.0, 180.0, 270.0
+    };
+    const int limit = (1 << (show_bits - 1)) - 1;
+    const int show_bit_shift = show_bits - 8;
+    for (double ang : angles90)
+      DrawRadialLine<pixel_t>(dstp, pitch,
+        limit, show_bit_shift, ang, line_luma);
+  }
 
-    if (params.iq_lines) {
-      const double anglesIQ[] = {
-          33.0, 123.0, 213.0, 303.0
-      };
-      const int limit = (1 << (show_bits - 1)) - 1;
-      const int show_bit_shift = show_bits - 8;
-      for (double ang : anglesIQ)
-        DrawRadialLine<pixel_t>(dstp, pitch,
-          limit, show_bit_shift, ang, line_luma);
-    }
+  if (params.iq_lines) {
+    const double anglesIQ[] = {
+        33.0, 123.0, 213.0, 303.0
+    };
+    const int limit = (1 << (show_bits - 1)) - 1;
+    const int show_bit_shift = show_bits - 8;
+    for (double ang : anglesIQ)
+      DrawRadialLine<pixel_t>(dstp, pitch,
+        limit, show_bit_shift, ang, line_luma);
   }
 }
 
