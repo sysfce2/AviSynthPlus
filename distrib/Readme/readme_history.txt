@@ -8,11 +8,41 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
+20260306 3.7.5.r45xx (pre 3.7.6)
+--------------------------------
+- Reenable YUY2 in planar target conversions as source (disabled in r4549)
+- ConvertToY also gets bits and quality parameters, latter is used when source is RGB.
 
-20260220 3.7.5.r45XX (pre 3.7.6)
+20260305 3.7.5.r4549 (pre 3.7.6)
+--------------------------------
+- Fix: memory leak in Subframe/MakePropertyWritable after static-frame sources (ColorBars, BlankClip)
+- any->YUV conversions (See https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/convert.html`.
+  - accept bits and quality parameters, similar to ConvertToPlanarRGB
+  - the legacy 8-bit-named functions (``ConvertToYV12``, ``ConvertToYV16``, 
+    ``ConvertToYV24``) allowing high-depth sources.
+  - "ConvertToYUY2": rewritten to route all conversions through YV16.
+  - "ConvertToYUY2": ``ChromaOutPlacement`` parameter added (was missing, present in ConvertToYV16).
+  - "ConvertBackToYUY2": kept for backward compatibility; now forwards to ``ConvertToYUY2``. The pre-2.5 left-pixel-only chroma hack is no longer
+    needed or applied; the YV16 lossless repack path avoids chroma resampling loss entirely for roundtrip workflows.
+  - 8 bit packed RGB formats are converted to planar RGB before 444 conversion.
+    Utilizing the optimized planar RGB infrastructure.
+  - Fix: "ConvertToYUY2" / "ConvertToYV12": progressive YV12<->YUY2 conversion (use generic YV16/YV12 path)
+  - Fix: "ConvertToYUY2": ``_ChromaLocation``, ``_Matrix`` and ``_ColorRange``
+    frame properties were not read from YV12 source frames and not written to YUY2 output frames 
+    in the old legacy direct conversion path.
+  - Fix: "ConvertToYUY2": SSE2 interlaced upsampling used wrong weighting direction, differing from the C reference implementation.
+- Update https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/convert.html`
+  - matrix syntax
+  - ConvertToYUY2
+  - ``bits`` and ``quality`` parameters
+- Update Sampling https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/advancedtopics/sampling.html with historical content notes 
+  on legacy ``YUY2`` handling.
+
+20260220 3.7.5.r4529 (pre 3.7.6)
 --------------------------------
 - Fix Colorbars inaccurate 10+ bit, by using ground truth linear RGB, similarly to ColorBarsHD.
-  Full refactoring.
+  - Full refactoring.
+  - update doc: https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/colorbars.html
 - Histogram "color" and "color2" (Vectorscope modes) 
   - full refactoring.
   - Drawing is now matrix and color range aware. target positions (75%) +-I and +Q.
@@ -22,6 +52,7 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   - Fix: copy alpha from clip, initialize alpha to zero in the histogram area. 
   - Accurate pixel positioning and scaling to the active histogram area, 
     limited/full range aware.
+  - update doc: https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/histogram.html
 
 
 20260216 3.7.5.r4523 (pre 3.7.6)
