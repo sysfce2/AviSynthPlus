@@ -40,10 +40,6 @@
 #include "convert_planar.h"
 #include "convert_rgb.h"
 
-#ifdef INTEL_INTRINSICS
-#include "intel/convert_sse.h"
-#endif
-
 #include <avs/alignment.h>
 #include <avs/minmax.h>
 #include <avs/config.h>
@@ -69,14 +65,14 @@ extern const AVSFunction Convert_filters[] = {
   { "ConvertToRGB64", BUILTIN_FUNC_PREFIX, "c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f[bits]i[quality]b", CreateConvertToPackedRGB, (void *)64 },
   { "ConvertToPlanarRGB",  BUILTIN_FUNC_PREFIX, "c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f[bits]i[quality]b", CreateConvertToRGB, (void *)-1 },
   { "ConvertToPlanarRGBA", BUILTIN_FUNC_PREFIX, "c[matrix]s[interlaced]b[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f[bits]i[quality]b", CreateConvertToRGB, (void *)-2 },
-  { "ConvertToY8",    BUILTIN_FUNC_PREFIX, "c[matrix]s", ConvertToY::Create, (void*)0 }, // user_data == 0 -> only 8 bit sources
+  { "ConvertToY8",    BUILTIN_FUNC_PREFIX, "c[matrix]s[bits]i[quality]b", ConvertToPlanarGeneric::CreateY, (void*)0 }, // user_data == 0 -> only 8 bit sources
   { "ConvertToYV12",  BUILTIN_FUNC_PREFIX, "c[interlaced]b[matrix]s[ChromaInPlacement]s[chromaresample]s[ChromaOutPlacement]s[param1]f[param2]f[param3]f[bits]i[quality]b", ConvertToPlanarGeneric::CreateYUV420, (void*)0 },
   { "ConvertToYV24",  BUILTIN_FUNC_PREFIX, "c[interlaced]b[matrix]s[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f[bits]i[quality]b", ConvertToPlanarGeneric::CreateYUV444, (void*)0},
   { "ConvertToYV16",  BUILTIN_FUNC_PREFIX, "c[interlaced]b[matrix]s[ChromaInPlacement]s[chromaresample]s[ChromaOutPlacement]s[param1]f[param2]f[param3]f[bits]i[quality]b", ConvertToPlanarGeneric::CreateYUV422, (void*)0},
   { "ConvertToYV411", BUILTIN_FUNC_PREFIX, "c[interlaced]b[matrix]s[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f[bits]i[quality]b", ConvertToPlanarGeneric::CreateYV411, (void*)0},
   { "ConvertToYUY2",  BUILTIN_FUNC_PREFIX, "c[interlaced]b[matrix]s[ChromaInPlacement]s[chromaresample]s[ChromaOutPlacement]s[param1]f[param2]f[param3]f[bits]i[quality]b", ConvertToPlanarGeneric::CreateConvertToYUY2 },
   { "ConvertBackToYUY2", BUILTIN_FUNC_PREFIX, "c[matrix]s", ConvertToPlanarGeneric::CreateConvertBackToYUY2 },
-  { "ConvertToY",       BUILTIN_FUNC_PREFIX, "c[matrix]s", ConvertToY::Create, (void*)1 }, // user_data == 1 -> any bit depth sources
+  { "ConvertToY",       BUILTIN_FUNC_PREFIX, "c[matrix]s[bits]i[quality]b", ConvertToPlanarGeneric::CreateY, (void*)1 }, // user_data == 1 -> any bit depth sources
   { "ConvertToYUV411", BUILTIN_FUNC_PREFIX, "c[interlaced]b[matrix]s[ChromaInPlacement]s[chromaresample]s[param1]f[param2]f[param3]f[bits]i[quality]b", ConvertToPlanarGeneric::CreateYV411, (void*)1}, // alias for ConvertToYV411, 8 bit check later
   { "ConvertToYUV420",  BUILTIN_FUNC_PREFIX, "c[interlaced]b[matrix]s[ChromaInPlacement]s[chromaresample]s[ChromaOutPlacement]s[param1]f[param2]f[param3]f[bits]i[quality]b", ConvertToPlanarGeneric::CreateYUV420, (void*)1},
   { "ConvertToYUV422",  BUILTIN_FUNC_PREFIX, "c[interlaced]b[matrix]s[ChromaInPlacement]s[chromaresample]s[ChromaOutPlacement]s[param1]f[param2]f[param3]f[bits]i[quality]b", ConvertToPlanarGeneric::CreateYUV422, (void*)1},
@@ -171,8 +167,10 @@ AVSValue __cdecl CreateConvertToPackedRGB(AVSValue args, void* user_data, IScrip
 // Since 3.7.6 YUY2 is pre-converted to YV16 before dispatch, so no class is needed.
 // Called from ConvertToRGB24/32/48/64 and ConvertToPlanarRGB(A) registrations,
 // and from any internal env->Invoke("ConvertToRGB",...) calls.
-// Only ConvertToPlanarRGB has bits and quality parameters.
-// When you add new parameters, find all places env->Invoke("ConvertToRGB",...)
+// All ToRGB variants has bits and quality parameters, bit the quality=true and on-the-fly bit depth
+// conversion logic is only implemented for YUV->PlanarRGB path.
+
+// Note: when you add new parameters, find all places env->Invoke("ConvertToRGB",...)
 // and check parameter count!
 AVSValue __cdecl CreateConvertToRGB(AVSValue args, void* user_data, IScriptEnvironment* env)
 {
@@ -181,7 +179,7 @@ AVSValue __cdecl CreateConvertToRGB(AVSValue args, void* user_data, IScriptEnvir
 
   // Before any conversions, convert YUY2 to YV16
   if (vi.IsYUY2()) {
-    clip = new ConvertYUY2ToYV16(clip, env);
+    clip = new ConvertYUY2ToYV16_or_Y(clip, false /*to_y*/, env);
     vi = clip->GetVideoInfo();
   }
 
@@ -207,11 +205,18 @@ AVSValue __cdecl CreateConvertToRGB(AVSValue args, void* user_data, IScriptEnvir
     // conversion to planar or packed RGB is always from 444
     // clip, interlaced, matrix, chromainplacement, chromaresample, param1, param2, param3, bits, quality   Check for ConvertToYUV444 param list!!!! Count must match!
     clip = ConvertToPlanarGeneric::CreateYUV444(AVSValue(new_args, 10), (void*)1, env).AsClip(); // (void *)1: not restricted to 8 bits
+    // detect bit-depth change and quality parameter for forced float conversion --> compulsory planar rgb intermediate.
     if ((target_rgbtype == 24 || target_rgbtype == 32)) {
       if (vi.BitsPerComponent() != 8) {
         original_target_is_packed = true;
         needConvertFinalBitdepth = true;
         finalBitdepth = 8;
+        target_rgbtype = (target_rgbtype == 24) ? -1 : -2; // planar rgb intermediate
+      }
+      else if (quality) {
+        // even if bit-depth is already 8, quality=true forces float processing and thus planar RGB intermediate
+        // which handles the parameter automatically
+        original_target_is_packed = true;
         target_rgbtype = (target_rgbtype == 24) ? -1 : -2; // planar rgb intermediate
       }
     }
@@ -220,6 +225,12 @@ AVSValue __cdecl CreateConvertToRGB(AVSValue args, void* user_data, IScriptEnvir
         original_target_is_packed = true;
         needConvertFinalBitdepth = true;
         finalBitdepth = 16;
+        target_rgbtype = (target_rgbtype == 48) ? -1 : -2; // planar rgb intermediate
+      }
+      else if (quality) {
+        // even if bit-depth is already 16, quality=true forces float processing and thus planar RGB intermediate
+        // which handles the parameter automatically
+        original_target_is_packed = true;
         target_rgbtype = (target_rgbtype == 48) ? -1 : -2; // planar rgb intermediate
       }
     }
@@ -232,30 +243,41 @@ AVSValue __cdecl CreateConvertToRGB(AVSValue args, void* user_data, IScriptEnvir
     }
     int rgbtype_param = 0;
     bool reallyConvert = true;
+    bool planar_rgb_conversion_for_packed_rgb_target = false;
+
     switch (target_rgbtype)
     {
     case -1: case -2:
       rgbtype_param = target_rgbtype; break; // planar RGB(A)
     case 24:
       rgbtype_param = 3; break; // RGB24
+      // Direct YV24->RGB24 by legacy code
     case 32:
       rgbtype_param = 4; break; // RGB32
     case 48:
-    case 64: {
-      // Unlike RGB24/32, 16 bit packed format have no direct conversions.
+    case 64:
+      planar_rgb_conversion_for_packed_rgb_target = true;
+      break;
+    }
+
+    if (planar_rgb_conversion_for_packed_rgb_target) {
+      // Unlike parameter-less RGB24/32, 16 bit packed format have no direct conversions at all.
       // 1.) YUV->PlanarRGB first (recursive call),
       // 2.) then fall through to the planar RGB->packed RGB path below for the final repack
       // So instead of unoptimized code of YUV(A)444P16->RGB48/64 we convert to PlanarRGB(A) then to RGB48/64
-      AVSValue new_args2[10] = { clip, args[1], args[2], args[3], args[4], args[5], args[6], args[7], /*bits*/ AVSValue(), /*quality*/ AVSValue() };
-      const intptr_t target_planar_rgb_type = (target_rgbtype == 48) ? -1 : vi.IsYUVA() ? -2 : -1; // planar RGB or RGBA intermediate
+      // Also: when quality=true or bit-depth conversion is needed, the planar RGB intermediate is required anyway
+      AVSValue new_args2[10] = { clip, args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]/*bits*/, args[9]/*quality*/ };
+      const intptr_t target_planar_rgb_type = (target_rgbtype == 48 || target_rgbtype == 24) ? -1 : vi.IsYUVA() ? -2 : -1; // planar RGB or RGBA intermediate
       // RGB48 target, planar RGB intermediate with 16 bit components. No alpha.
       // RGB64 target, planar RGB or RGBA intermediate with 16 bit components, depending on source alpha
       clip = CreateConvertToRGB(AVSValue(new_args2, 10), (void*)target_planar_rgb_type, env).AsClip();
       vi = clip->GetVideoInfo(); // must update vi for fall-through
       reallyConvert = false;     // skip ConvertYUV444ToRGB, fall through
-      rgbtype_param = target_rgbtype == 48 ? 6 : 8;         // n/a for this path, kept for reference
-    }
-           break; // RGB48, RGB64
+      rgbtype_param =
+        target_rgbtype == 24 ? 3 :
+        target_rgbtype == 32 ? 4 :
+        target_rgbtype == 48 ? 6 :
+        target_rgbtype == 64 ? 8 : 0 ;
     }
 
     if (reallyConvert) {

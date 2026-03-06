@@ -2377,7 +2377,7 @@ PClip FilteredResize::CreateResizeH(PClip clip, double subrange_left, double sub
   // Convert interleaved yuv to planar yuv
   PClip result = clip;
   if (vi.IsYUY2()) {
-    result = new ConvertYUY2ToYV16(result, env);
+    result = new ConvertYUY2ToYV16_or_Y(result, false /*to_y*/, env);
   }
 
   result = new FilteredResizeH(result, subrange_left, subrange_width, target_width, func, preserve_center, chroma_placement, env);

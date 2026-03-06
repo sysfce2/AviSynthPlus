@@ -239,7 +239,8 @@ enum class ConversionDirection {
   YUV_TO_RGB,
   RGB_TO_YUV,
   YUV_TO_YUV,
-  RGB_TO_RGB
+  RGB_TO_RGB,
+  RGB_TO_Y
 };
 
 #endif  // __Convert_helper_H__

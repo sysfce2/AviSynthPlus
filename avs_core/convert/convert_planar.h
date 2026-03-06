@@ -67,36 +67,10 @@ void fill_plane(uint8_t * dstp, int height, int row_size, int pitch, pixel_t val
 
 ResamplingFunction* getResampler(const char* resampler, AVSValue param1, AVSValue param2, AVSValue param3, bool throw_on_error, IScriptEnvironment* env);
 
-class ConvertToY : public GenericVideoFilter
-{
-public:
-  ConvertToY(PClip src, const char *matrix_name, IScriptEnvironment* env);
-  PVideoFrame __stdcall GetFrame(int n,IScriptEnvironment* env) override;
-
-  int __stdcall SetCacheHints(int cachehints, int frame_range) override {
-    AVS_UNUSED(frame_range);
-    return cachehints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
-  }
-
-  static AVSValue __cdecl Create(AVSValue args, void*, IScriptEnvironment* env);
-private:
-  bool blit_luma_only;
-  bool yuy2_input;
-  bool packed_rgb_input;
-  bool planar_rgb_input;
-  int pixel_step;
-  int pixelsize;
-  int theMatrix;
-  int theColorRange;
-  int theOutColorRange;
-  ConversionMatrix matrix;
-};
-
-
 class ConvertRGBToYUV444 : public GenericVideoFilter
 {
 public:
-  ConvertRGBToYUV444(PClip src, const char *matrix_name, bool keep_packedrgb_alpha, int _target_bit_depth, bool _quality, bool& bitdepthConverted, IScriptEnvironment* env);
+  ConvertRGBToYUV444(PClip src, const char *matrix_name, bool keep_packedrgb_alpha, int _target_bit_depth, bool _quality, bool& bitdepthConverted, bool _to_y, IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
   int __stdcall SetCacheHints(int cachehints, int frame_range) override {
@@ -115,16 +89,17 @@ private:
   int source_bit_depth;
   int target_bit_depth;
   bool quality;
+  bool to_y;
   // primarily for alpha plane conversion
   BitDepthConvFuncPtr conv_function;
   BitDepthConvFuncPtr conv_function_chroma; // 32bit float YUV chroma
   BitDepthConvFuncPtr conv_function_a;
 };
 
-class ConvertYUY2ToYV16 : public GenericVideoFilter
+class ConvertYUY2ToYV16_or_Y : public GenericVideoFilter
 {
 public:
-  ConvertYUY2ToYV16(PClip src, IScriptEnvironment* env);
+  ConvertYUY2ToYV16_or_Y(PClip src, bool _to_y, IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
   int __stdcall SetCacheHints(int cachehints, int frame_range) override {
@@ -133,6 +108,9 @@ public:
   }
 
   static AVSValue __cdecl Create(AVSValue args, void*, IScriptEnvironment* env);
+
+private:
+  bool to_y;
 };
 
 class ConvertYUV444ToRGB : public GenericVideoFilter
@@ -194,6 +172,7 @@ public:
     return cachehints == CACHE_GET_MTMODE ? MT_NICE_FILTER : 0;
   }
 
+  static AVSValue __cdecl CreateY(AVSValue args, void* user_data, IScriptEnvironment* env);
   static AVSValue __cdecl CreateYV411(AVSValue args, void* user_data, IScriptEnvironment* env);
   static AVSValue __cdecl CreateYUV420(AVSValue args, void* user_data, IScriptEnvironment* env);
   static AVSValue __cdecl CreateYUV422(AVSValue args, void* user_data, IScriptEnvironment* env);

@@ -178,7 +178,7 @@ AVSValue __cdecl SwapUVToY::CreateYToY8(AVSValue args, void* , IScriptEnvironmen
 {
   PClip clip = args[0].AsClip();
   if(clip->GetVideoInfo().IsYUY2())
-    return new ConvertToY(clip, "Rec601" /*n/a*/, env);
+    return new ConvertYUY2ToYV16_or_Y(clip, true /*to_y*/, env);
   else
     return new SwapUVToY(clip, YToY8, env);
 }
@@ -210,7 +210,7 @@ AVSValue __cdecl SwapUVToY::CreateAnyToY8(AVSValue args, void* user_data, IScrip
   }
 
   if(clip->GetVideoInfo().IsYUY2() && mode == YToY8)
-    return new ConvertToY(clip, "Rec601" /*n/a*/, env);
+    return new ConvertYUY2ToYV16_or_Y(clip, true /*to_y*/, env);
 
   if (clip->GetVideoInfo().IsY() && mode == YToY8)
     return clip;
@@ -661,7 +661,7 @@ CombinePlanes::CombinePlanes(PClip _child, PClip _clip2, PClip _clip3, PClip _cl
     }
     else if (vi_test.IsYUY2()) {
       AVSValue emptyValue;
-      clips[i] = new ConvertYUY2ToYV16(clips[i], env);
+      clips[i] = new ConvertYUY2ToYV16_or_Y(clips[i], false /*to_y*/, env);
     }
   }
 

@@ -414,7 +414,7 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
 
   constexpr int INT_ARITH_SHIFT =
     (direction == ConversionDirection::YUV_TO_RGB) ? 13 :
-    (direction == ConversionDirection::RGB_TO_YUV) ? 15 :
+    (direction == ConversionDirection::RGB_TO_YUV || direction == ConversionDirection::RGB_TO_Y) ? 15 :
     (direction == ConversionDirection::YUV_TO_YUV) ? 14 : 13;
 
   // 8 bit        uint8_t
@@ -568,7 +568,13 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
         // V output = v_r*R + v_g*G + v_b*B
         v_patch_R = _mm256_set1_epi32(luma_or_rgbin_pivot * (m.v_r + m.v_g + m.v_b) + chroma_offset_out_for_patch);
       }
-      else {
+      else if constexpr (direction == ConversionDirection::RGB_TO_Y) {
+        // RGB→YUV: All RGB inputs are pivoted, need to account for all three
+        // Out0=Y (luma offset), No chroma
+        // Y output = y_r*R + y_g*G + y_b*B
+        v_patch_G = _mm256_set1_epi32(luma_or_rgbin_pivot * (m.y_r + m.y_g + m.y_b) + offset_out_for_patch);
+      }
+      else if constexpr (direction == ConversionDirection::YUV_TO_YUV) {
         // for YUV->YUV
         // FIXME: untested, no AviSynth caller yet. Suspect m.y_b/m.y_r should be
         // m.u_b/m.v_r (chroma diagonal), and offset should be chroma_offset_out_for_patch.
@@ -600,12 +606,15 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
     m_y_g_f = _mm256_mul_ps(_mm256_set1_ps(m.y_g_f), scale_f_avx2);
     m_y_b_f = _mm256_mul_ps(_mm256_set1_ps(m.y_b_f), scale_f_avx2);
     m_y_r_f = _mm256_mul_ps(_mm256_set1_ps(m.y_r_f), scale_f_avx2);
-    m_u_g_f = _mm256_mul_ps(_mm256_set1_ps(m.u_g_f), scale_f_avx2);
-    m_u_b_f = _mm256_mul_ps(_mm256_set1_ps(m.u_b_f), scale_f_avx2);
-    m_u_r_f = _mm256_mul_ps(_mm256_set1_ps(m.u_r_f), scale_f_avx2);
-    m_v_g_f = _mm256_mul_ps(_mm256_set1_ps(m.v_g_f), scale_f_avx2);
-    m_v_b_f = _mm256_mul_ps(_mm256_set1_ps(m.v_b_f), scale_f_avx2);
-    m_v_r_f = _mm256_mul_ps(_mm256_set1_ps(m.v_r_f), scale_f_avx2);
+    if constexpr (direction != ConversionDirection::RGB_TO_Y) {
+      m_u_g_f = _mm256_mul_ps(_mm256_set1_ps(m.u_g_f), scale_f_avx2);
+      m_u_b_f = _mm256_mul_ps(_mm256_set1_ps(m.u_b_f), scale_f_avx2);
+      m_u_r_f = _mm256_mul_ps(_mm256_set1_ps(m.u_r_f), scale_f_avx2);
+      m_v_g_f = _mm256_mul_ps(_mm256_set1_ps(m.v_g_f), scale_f_avx2);
+      m_v_b_f = _mm256_mul_ps(_mm256_set1_ps(m.v_b_f), scale_f_avx2);
+      m_v_r_f = _mm256_mul_ps(_mm256_set1_ps(m.v_r_f), scale_f_avx2);
+    }
+
     if constexpr (direction == ConversionDirection::YUV_TO_RGB || direction == ConversionDirection::RGB_TO_RGB) {
       // RGB output: same offset for all channels
       float rgb_out_offset_scaled = m.offset_out_f * scale_f;
@@ -613,7 +622,7 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
       m_offset_out_u_or_b_f = _mm256_set1_ps(rgb_out_offset_scaled);
       m_offset_out_v_or_r_f = _mm256_set1_ps(rgb_out_offset_scaled);
     }
-    else {
+    else if constexpr (direction == ConversionDirection::RGB_TO_YUV || direction == ConversionDirection::YUV_TO_YUV) {
 
       // YUV output
       float y_out_offset = m.offset_out_f;
@@ -626,6 +635,11 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
       m_offset_out_y_or_g_f = _mm256_set1_ps(y_out_offset_scaled);
       m_offset_out_u_or_b_f = _mm256_set1_ps(uv_center_offset);
       m_offset_out_v_or_r_f = _mm256_set1_ps(uv_center_offset);
+    }
+    else if constexpr (direction == ConversionDirection::RGB_TO_Y) {
+      // no chroma output
+      float y_out_offset_scaled = m.offset_out_f * scale_f;
+      m_offset_out_y_or_g_f = _mm256_set1_ps(y_out_offset_scaled);
     }
 
     if constexpr (direction == ConversionDirection::YUV_TO_RGB) {
@@ -651,6 +665,14 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
       //   = v_g*in0 + v_b*in1 + v_r*in2
       coeff_out2_in0 = m_v_g_f; coeff_out2_in1 = m_v_b_f; coeff_out2_in2 = m_v_r_f;
     }
+    else if constexpr (direction == ConversionDirection::RGB_TO_Y) {
+      // RGB→YUV: outputs are YUV (rows Y,U,V), inputs are RGB in memory order (G, B, R)
+      // Out0=Y, No chroma output
+      // Inputs: in0=G, in1=B, in2=R
+      // Y = y_r*R + y_g*G + y_b*B
+      //   = y_g*in0 + y_b*in1 + y_r*in2
+      coeff_out0_in0 = m_y_g_f; coeff_out0_in1 = m_y_b_f; coeff_out0_in2 = m_y_r_f;
+    }
     else if constexpr (direction == ConversionDirection::YUV_TO_YUV) {
       // YUV→YUV: outputs are YUV (rows Y,U,V), inputs are YUV (columns Y,U,V)
       // For BT.601→BT.709 conversion, this is a fused matrix
@@ -659,7 +681,7 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
       coeff_out1_in0 = m_y_b_f; coeff_out1_in1 = m_u_b_f; coeff_out1_in2 = m_v_b_f;
       coeff_out2_in0 = m_y_r_f; coeff_out2_in1 = m_u_r_f; coeff_out2_in2 = m_v_r_f;
     }
-    else { // RGB_TO_RGB
+    else if constexpr (direction == ConversionDirection::RGB_TO_RGB) { // RGB_TO_RGB
       // RGB→RGB: outputs are RGB (rows R,G,B), inputs are RGB (columns R,G,B)
       // For gamut conversion or color correction
       // Out0=G_out, Out1=B_out, Out2=R_out
@@ -680,11 +702,15 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
       round_and_out_offset_u_or_b = round_mask_plus_offset_out_scaled_i;
       round_and_out_offset_v_or_r = round_mask_plus_offset_out_scaled_i;
     }
-    else { // RGB_TO_YUV or YUV_TO_YUV
+    else  if constexpr (direction == ConversionDirection::RGB_TO_YUV || direction == ConversionDirection::YUV_TO_YUV) {
       // output YUV: different offsets for Y vs U/V
       round_and_out_offset_y_or_g = round_mask_plus_offset_out_scaled_i;
       round_and_out_offset_u_or_b = round_mask_plus_offset_out_chroma_scaled_i;
       round_and_out_offset_v_or_r = round_mask_plus_offset_out_chroma_scaled_i;
+    }
+    else if constexpr (direction == ConversionDirection::RGB_TO_Y) {
+      // no chroma output
+      round_and_out_offset_y_or_g = round_mask_plus_offset_out_scaled_i;
     }
 
     // Pack coefficients based on direction
@@ -726,6 +752,14 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
       m_uy_R = _mm256_set1_epi32((static_cast<uint16_t>(m.v_g) << 16) | static_cast<uint16_t>(m.v_b));
       m_vr_R = _mm256_set1_epi32((static_cast<uint16_t>(round_and_out_offset_v_or_r) << 16) | static_cast<uint16_t>(m.v_r));
     }
+    else if constexpr (direction == ConversionDirection::RGB_TO_Y) {
+      // RGB→Y: Out0=Y, No chroma output
+      // Inputs are: in0=G, in1=B, in2=R
+      // Y = y_r*R + y_g*G + y_b*B
+      //   = y_g*in0 + y_b*in1 + y_r*in2
+      m_uy_G = _mm256_set1_epi32((static_cast<uint16_t>(m.y_g) << 16) | static_cast<uint16_t>(m.y_b));
+      m_vr_G = _mm256_set1_epi32((static_cast<uint16_t>(round_and_out_offset_y_or_g) << 16) | static_cast<uint16_t>(m.y_r));
+    }
   }
 
   const int rowsize = width * sizeof(pixel_t);
@@ -754,7 +788,7 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
       // float workflow
       __m256 in0_1_f_lo, in0_1_f_hi, in0_2_f_lo, in0_2_f_hi;
       __m256 in1_1_f_lo, in1_1_f_hi, in1_2_f_lo, in1_2_f_hi;
-      __m256 in2_1_f_lo, in2_1_f_hi, in2_2_f_lo, in2_2_f_hi ;
+      __m256 in2_1_f_lo, in2_1_f_hi, in2_2_f_lo, in2_2_f_hi;
 
       // Avisynth FRAME_ALIGN == 64, so when final_is_float, we cannot process 32 pixels at once at the end of the line
       // Can I write all 32 pixels (blockA+B+C+D)?
@@ -845,7 +879,7 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
             in0_2_f_hi = _mm256_add_ps(in0_2_f_hi, offset_in_f);
           }
           else {
-            // RGB source: all channels need offset_in adjustments if studio RGB
+            // RGB source: all channels need offset_in adjustments if studio RGB RGB_TO_RGB, RGB_TO_YUV, RGB_TO_Y
             in0_1_f_lo = _mm256_add_ps(in0_1_f_lo, offset_in_f);
             in0_1_f_hi = _mm256_add_ps(in0_1_f_hi, offset_in_f);
             in0_2_f_lo = _mm256_add_ps(in0_2_f_lo, offset_in_f);
@@ -860,9 +894,10 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
             in2_2_f_hi = _mm256_add_ps(in2_2_f_hi, offset_in_f);
           }
 
-        } else {
+        }
+        else {
           // integer input
-          
+
           // Order: move to int32, and only then adjust offset_in.
           // Superblacks would yield negative values that can only be sign-extend to int32
           // with excessive operations, see the U and V workaround.
@@ -946,11 +981,14 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
             out0_lo = _mm256_fmadd_ps(coeff_out0_in2, in2_lo, _mm256_fmadd_ps(coeff_out0_in1, in1_lo, _mm256_fmadd_ps(coeff_out0_in0, in0_lo, m_offset_out_y_or_g_f)));
             out0_hi = _mm256_fmadd_ps(coeff_out0_in2, in2_hi, _mm256_fmadd_ps(coeff_out0_in1, in1_hi, _mm256_fmadd_ps(coeff_out0_in0, in0_hi, m_offset_out_y_or_g_f)));
 
-            out1_lo = _mm256_fmadd_ps(coeff_out1_in2, in2_lo, _mm256_fmadd_ps(coeff_out1_in1, in1_lo, _mm256_fmadd_ps(coeff_out1_in0, in0_lo, m_offset_out_u_or_b_f)));
-            out1_hi = _mm256_fmadd_ps(coeff_out1_in2, in2_hi, _mm256_fmadd_ps(coeff_out1_in1, in1_hi, _mm256_fmadd_ps(coeff_out1_in0, in0_hi, m_offset_out_u_or_b_f)));
+            if constexpr (direction != ConversionDirection::RGB_TO_Y) {
 
-            out2_lo = _mm256_fmadd_ps(coeff_out2_in2, in2_lo, _mm256_fmadd_ps(coeff_out2_in1, in1_lo, _mm256_fmadd_ps(coeff_out2_in0, in0_lo, m_offset_out_v_or_r_f)));
-            out2_hi = _mm256_fmadd_ps(coeff_out2_in2, in2_hi, _mm256_fmadd_ps(coeff_out2_in1, in1_hi, _mm256_fmadd_ps(coeff_out2_in0, in0_hi, m_offset_out_v_or_r_f)));
+              out1_lo = _mm256_fmadd_ps(coeff_out1_in2, in2_lo, _mm256_fmadd_ps(coeff_out1_in1, in1_lo, _mm256_fmadd_ps(coeff_out1_in0, in0_lo, m_offset_out_u_or_b_f)));
+              out1_hi = _mm256_fmadd_ps(coeff_out1_in2, in2_hi, _mm256_fmadd_ps(coeff_out1_in1, in1_hi, _mm256_fmadd_ps(coeff_out1_in0, in0_hi, m_offset_out_u_or_b_f)));
+
+              out2_lo = _mm256_fmadd_ps(coeff_out2_in2, in2_lo, _mm256_fmadd_ps(coeff_out2_in1, in1_lo, _mm256_fmadd_ps(coeff_out2_in0, in0_lo, m_offset_out_v_or_r_f)));
+              out2_hi = _mm256_fmadd_ps(coeff_out2_in2, in2_hi, _mm256_fmadd_ps(coeff_out2_in1, in1_hi, _mm256_fmadd_ps(coeff_out2_in0, in0_hi, m_offset_out_v_or_r_f)));
+            }
           };
 
         // output variables
@@ -1097,15 +1135,17 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
           };
 
         process_from_float_plane_avx2(dstp[0], out0_1_f_lo, out0_1_f_hi, out0_2_f_lo, out0_2_f_hi);
-        process_from_float_plane_avx2(dstp[1], out1_1_f_lo, out1_1_f_hi, out1_2_f_lo, out1_2_f_hi);
-        process_from_float_plane_avx2(dstp[2], out2_1_f_lo, out2_1_f_hi, out2_2_f_lo, out2_2_f_hi);
+        if constexpr (direction != ConversionDirection::RGB_TO_Y) {
+          process_from_float_plane_avx2(dstp[1], out1_1_f_lo, out1_1_f_hi, out1_2_f_lo, out1_2_f_hi);
+          process_from_float_plane_avx2(dstp[2], out2_1_f_lo, out2_1_f_hi, out2_2_f_lo, out2_2_f_hi);
+        }
         // end of float_matrix_workflow
       }
       else {
         // start of integer matrix arithmetic path, both for integer and float target
         if constexpr (lessthan16bit) {
           // offset_in is added, stored as negative
-          if constexpr (direction == ConversionDirection::RGB_TO_YUV || direction == ConversionDirection::RGB_TO_RGB) {
+          if constexpr (direction == ConversionDirection::RGB_TO_YUV || direction == ConversionDirection::RGB_TO_RGB || direction == ConversionDirection::RGB_TO_Y) {
             // RGB sources: same input offset for G, B and R
             in0_1 = _mm256_adds_epi16(in0_1, offset_in); in0_2 = _mm256_adds_epi16(in0_2, offset_in); // G1 G2
             in1_1 = _mm256_adds_epi16(in1_1, offset_in); in1_2 = _mm256_adds_epi16(in1_2, offset_in); // B1 B2
@@ -1118,7 +1158,7 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
         }
         else {
           // make unsigned to signed by flipping MSB
-          if constexpr (direction == ConversionDirection::RGB_TO_YUV || direction == ConversionDirection::RGB_TO_RGB) {
+          if constexpr (direction == ConversionDirection::RGB_TO_YUV || direction == ConversionDirection::RGB_TO_RGB || direction == ConversionDirection::RGB_TO_Y) {
             // RGB sources: same pivoting offset for G, B and R
             // pivot the pixel, adjust the offset_in separately, if any, later
             in0_1 = _mm256_xor_si256(in0_1, sign_flip_mask); in0_2 = _mm256_xor_si256(in0_2, sign_flip_mask); // G1 G2
@@ -1223,7 +1263,7 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
                 _mm256_store_ps(ptr, _mm256_mul_ps(_mm256_cvtepi32_ps(b), scale_f_avx2));
               };
 
-            store_block(f_dst, blockA, apply_float_offset_out );
+            store_block(f_dst, blockA, apply_float_offset_out);
             store_block(f_dst + 8, blockB, apply_float_offset_out);
 
             // Safety check: only store the first half of the 32-pixel block if row width allows
@@ -1278,9 +1318,12 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
           process_plane(dstp[1], m_uy_B, m_vr_B, v_patch_B, true);
           process_plane(dstp[2], m_uy_R, m_vr_R, v_patch_R, true);
         }
-        else {
+        else if constexpr (direction == ConversionDirection::RGB_TO_YUV || direction == ConversionDirection::YUV_TO_YUV) {
           process_plane(dstp[1], m_uy_B, m_vr_B, v_patch_B, false);
           process_plane(dstp[2], m_uy_R, m_vr_R, v_patch_R, false);
+        }
+        else if constexpr (direction != ConversionDirection::RGB_TO_Y) {
+          // no other planes
         }
       } // if float_matrix_workflow else integer_matrix_arithmetic
     } // x
@@ -1288,8 +1331,10 @@ static void convert_yuv_to_planarrgb_avx2_internal(BYTE* (&dstp)[3], int(&dstPit
     srcp[1] += srcPitch[1];
     srcp[2] += srcPitch[2];
     dstp[0] += dstPitch[0];
-    dstp[1] += dstPitch[1];
-    dstp[2] += dstPitch[2];
+    if constexpr (direction != ConversionDirection::RGB_TO_Y) {
+      dstp[1] += dstPitch[1];
+      dstp[2] += dstPitch[2];
+    }
   } // y
 }
 
@@ -1378,6 +1423,12 @@ template void convert_yuv_to_planarrgb_avx2<ConversionDirection::RGB_TO_YUV, uin
 template void convert_yuv_to_planarrgb_avx2<ConversionDirection::RGB_TO_YUV, uint16_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
 template void convert_yuv_to_planarrgb_avx2<ConversionDirection::RGB_TO_YUV, uint16_t, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
 template void convert_yuv_to_planarrgb_avx2<ConversionDirection::RGB_TO_YUV, float, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+
+// RGB_TO_Y
+template void convert_yuv_to_planarrgb_avx2<ConversionDirection::RGB_TO_Y, uint8_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_avx2<ConversionDirection::RGB_TO_Y, uint16_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_avx2<ConversionDirection::RGB_TO_Y, uint16_t, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
+template void convert_yuv_to_planarrgb_avx2<ConversionDirection::RGB_TO_Y, float, false>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
 
 // YUV_TO_YUV (for future use - e.g., BT.601 → BT.709)
 template void convert_yuv_to_planarrgb_avx2<ConversionDirection::YUV_TO_YUV, uint8_t, true>(BYTE* (&dstp)[3], int(&dstPitch)[3], const BYTE* (&srcp)[3], const int(&srcPitch)[3], int width, int height, const ConversionMatrix& m, int bits_per_pixel, int bits_per_pixel_target, bool force_float);
