@@ -86,6 +86,7 @@ ConvertToXXXX function
 
 *YUY2*
 ::
+
     ConvertToYUY2(clip [, bool interlaced, string matrix,
          string ChromaInPlacement,
          string chromaresample,
@@ -136,8 +137,8 @@ ConvertToXXXX function
 *Y-only*
 ::
 
-    ConvertToY8(clip [, string matrix] )
-    ConvertToY(clip, [ string matrix ] )
+    ConvertToY8(clip [, string matrix, int bits, bool quality] )] )
+    ConvertToY(clip [, string matrix, int bits, bool quality] ) ] )
 
 
 Color formats
@@ -208,7 +209,7 @@ Such functions are ``ConvertToYV12``/``ConvertToYUV420``/``ConvertToYUVA420`` or
   ``ConvertToRGB64`` or ``ConvertToPlanarRGB`` explicitly, or reduce
   bit depth with ``ConvertBits(8)`` / ``ConvertBits(16)`` first.
 
-The ``bits`` parameter (8 or 16) overrides the adaptive target bit depth,
+The ``bits`` parameter (8 or 16) overrides ConvertToRGB's adaptive target bit depth,
 allowing for example a 16-bit source to be converted to an 8-bit packed
 RGB output. Values other than 8 or 16 are not accepted.
 
@@ -518,7 +519,9 @@ Syntax and parameters
 
 .. describe:: bits
 
-    Used by ConvertToPlanarRGB(A) to perform on-the-fly output bit-depth conversion.
+    Used to perform output bit-depth conversion. Between Planar RGB and YUV/Y formats the conversion
+    is single-pass. When intermediate format conversion is needed (e.g. RGB64->YUV444P8 is RGB64->PlanarRGB16->YUV444P8, 
+    the bit-depth conversion occurs in the RGBP->YUV part.
 
     **Internal calculation methods of 8-16 bit sources** (when conversion is needed)
 
@@ -542,7 +545,7 @@ Syntax and parameters
 
     ``bool  quality = false``
 
-    Available in ConvertToPlanarRGB(A) only.
+    Only affects YUV (Y) - RGB conversions, where matrix operation is involved.
 
     When ``false`` (default), the internal calculation method is chosen automatically
     based on the target range and bit depth, as described in the ``bits`` table above:
@@ -607,10 +610,23 @@ Conversion paths
 
 The following conversion paths occur
 
--   YUV planar -> RGB via YV24
--   YUV planar -> YUY2 via YV16
--   RGB -> YUV planar via YV24
--   YUY2 -> YUV planar via YV16
+-   411/420/422 YUV planar -> RGB via YUV444
+-   YUV planar -> YUY2 via YV16 (8 bit YUV422)
+-   YUV planar -> Y: direct
+-   Planar RGB -> 444: direct
+-   Planar RGB -> Y planar: direct
+-   Packed RGB -> Y/YUV planar: via Planar RGB(A) (A: depending on the target YUV's alpha-needs)
+-   Any RGB -> 411/420/422 YUV planar via YUV444
+-   YUY2 -> Y: direct
+-   YUY2 -> Any: via YV16
+-   Any -> YUY2: via YV16
+-   YV24 -> packed RGB24/32: (quality=false): direct conversion.
+-   YV24 -> packed RGB24/32: (quality=true): via planar RGB.
+-   YUV planar -> packed RGB48/64: via planar RGB
+
+When bit depth change needed, and the transformation does not integrate bit-depth conversion 
+(E.g. clipYUV.ConvertToPlanarRGB(bits=xxx) does include, but clipY8bit.ConvertToY(bits=yyy) does not).
+then an extra ConvertBits() is called internally.
 
 Suppose you have a YUY2 clip for example and you convert it to YV24.
 
@@ -667,8 +683,8 @@ Color conversions
 +----------+------------------------------------------------------------+
 | Changes: |                                                            |
 +==========+============================================================+
-| v3.7.6   || Add "quality" parameter to ConvertToPlanarRGB(A)          |
-|          || Add "bits" parameter to ConvertToPlanarRGB(A)             |
+| v3.7.6   || Add "quality" parameter to ConvertToXXXX                  |
+|          || Add "bits" parameter to ConvertToXXXX                     |
 |          || Document ":same" in matrix specifier                      |
 +----------+------------------------------------------------------------+
 | v3.7.3   || Added "sinpow",  "sinclin2" and "userdefined2" to         |
@@ -691,4 +707,4 @@ Color conversions
 | v2.50    | ConvertToYV12                                              |
 +----------+------------------------------------------------------------+
 
-$Date: 2026/02/24 20:25:00 $
+$Date: 2026/03/06 20:20:00 $
