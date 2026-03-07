@@ -46,6 +46,7 @@
 #include <tuple>
 #include <map>
 #include <algorithm>
+#include <cassert>
 
 #ifdef AVS_WINDOWS
 #include <avs/win.h>
@@ -191,233 +192,167 @@ AVSValue __cdecl CreateConvertToRGB(AVSValue args, void* user_data, IScriptEnvir
   // can be overridden later
   // -1,-2: Planar RGB(A)
   // 24,32,48,64: RGB24/32/48/64
+  const bool original_target_is_packed = target_rgbtype > 0; // 24,32,48,64
 
-  const int target_bits_per_pixel = args[8].AsInt(vi.BitsPerComponent()); // only for planar rgb(a) target
+  const int target_bits_per_pixel = args[8].AsInt(vi.BitsPerComponent());
+  // for legacy packed formats it's 8 for target_rgbtype==24,32, and 16 for target_rgbtype==48,64
+  // for planar RGB(A) target, it can be any bit depth supported by the source and the conversion logic (8,10,12,14,16,32)
+
   const bool quality = args[9].AsBool(false); // yuv-planarrgb float workflow
 
   // planar YUV-like source
   if (vi.IsPlanar() && (vi.IsYUV() || vi.IsYUVA())) {
-    bool original_target_is_packed = false;
-    bool needConvertFinalBitdepth = false;
-    int finalBitdepth = -1;
     // here we keep the bit depth, later, the RGB conversion will take target_bits_per_pixel into account
-    AVSValue new_args[10] = { clip, args[2], args[1], args[3], args[4], args[5], args[6], args[7], vi.BitsPerComponent(), quality};
+    AVSValue new_args[10] = { clip, args[2], args[1], args[3], args[4], args[5], args[6], args[7], vi.BitsPerComponent(), quality };
     // conversion to planar or packed RGB is always from 444
     // clip, interlaced, matrix, chromainplacement, chromaresample, param1, param2, param3, bits, quality   Check for ConvertToYUV444 param list!!!! Count must match!
     clip = ConvertToPlanarGeneric::CreateYUV444(AVSValue(new_args, 10), (void*)1, env).AsClip(); // (void *)1: not restricted to 8 bits
-    // detect bit-depth change and quality parameter for forced float conversion --> compulsory planar rgb intermediate.
-    if ((target_rgbtype == 24 || target_rgbtype == 32)) {
-      if (vi.BitsPerComponent() != 8) {
-        original_target_is_packed = true;
-        needConvertFinalBitdepth = true;
-        finalBitdepth = 8;
-        target_rgbtype = (target_rgbtype == 24) ? -1 : -2; // planar rgb intermediate
-      }
-      else if (quality) {
-        // even if bit-depth is already 8, quality=true forces float processing and thus planar RGB intermediate
-        // which handles the parameter automatically
-        original_target_is_packed = true;
-        target_rgbtype = (target_rgbtype == 24) ? -1 : -2; // planar rgb intermediate
-      }
-    }
-    else if ((target_rgbtype == 48 || target_rgbtype == 64)) {
-      if (vi.BitsPerComponent() != 16) {
-        original_target_is_packed = true;
-        needConvertFinalBitdepth = true;
-        finalBitdepth = 16;
-        target_rgbtype = (target_rgbtype == 48) ? -1 : -2; // planar rgb intermediate
-      }
-      else if (quality) {
-        // even if bit-depth is already 16, quality=true forces float processing and thus planar RGB intermediate
-        // which handles the parameter automatically
-        original_target_is_packed = true;
-        target_rgbtype = (target_rgbtype == 48) ? -1 : -2; // planar rgb intermediate
-      }
-    }
-    else if (target_rgbtype < 0) {
-      // planar rgb(a) target
-      if (target_bits_per_pixel != vi.BitsPerComponent()) {
-        needConvertFinalBitdepth = true;
-        finalBitdepth = target_bits_per_pixel;
-      }
-    }
-    int rgbtype_param = 0;
-    bool reallyConvert = true;
-    bool planar_rgb_conversion_for_packed_rgb_target = false;
 
-    switch (target_rgbtype)
-    {
-    case -1: case -2:
-      rgbtype_param = target_rgbtype; break; // planar RGB(A)
-    case 24:
-      rgbtype_param = 3; break; // RGB24
-      // Direct YV24->RGB24 by legacy code
-    case 32:
-      rgbtype_param = 4; break; // RGB32
-    case 48:
-    case 64:
-      planar_rgb_conversion_for_packed_rgb_target = true;
-      break;
+    // planar RGB(A) target or packed needing intermediate: set finalBitdepth if conversion needed
+    // also: when quality==true, we need to use the float workflow which requires a planar RGB(A) intermediate
+    if (target_rgbtype > 0) {
+      // packed RGB target: redirect to planar rgb(a) intermediate if bit-depth mismatch or quality mode
+      const bool hasAlpha = (target_rgbtype == 32 || target_rgbtype == 64);
+      if (vi.BitsPerComponent() != target_bits_per_pixel || quality)
+        target_rgbtype = hasAlpha ? -2 : -1;
     }
 
-    if (planar_rgb_conversion_for_packed_rgb_target) {
+    if (target_rgbtype == 48 || target_rgbtype == 64) {
       // Unlike parameter-less RGB24/32, 16 bit packed format have no direct conversions at all.
       // 1.) YUV->PlanarRGB first (recursive call),
       // 2.) then fall through to the planar RGB->packed RGB path below for the final repack
       // So instead of unoptimized code of YUV(A)444P16->RGB48/64 we convert to PlanarRGB(A) then to RGB48/64
       // Also: when quality=true or bit-depth conversion is needed, the planar RGB intermediate is required anyway
       AVSValue new_args2[10] = { clip, args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8]/*bits*/, args[9]/*quality*/ };
-      const intptr_t target_planar_rgb_type = (target_rgbtype == 48 || target_rgbtype == 24) ? -1 : vi.IsYUVA() ? -2 : -1; // planar RGB or RGBA intermediate
-      // RGB48 target, planar RGB intermediate with 16 bit components. No alpha.
-      // RGB64 target, planar RGB or RGBA intermediate with 16 bit components, depending on source alpha
+
+      const intptr_t target_planar_rgb_type =
+        (target_rgbtype == 24 || target_rgbtype == 48) ? -1 : // no-alpha target: skip alpha even if source has it
+        vi.IsYUVA() ? -2 :  // alpha target + alpha source: preserve it
+        -1;   // alpha target + no alpha source: no alpha to copy
+      // Note: target_rgbtype == 24 is currently never reached here (24/32 use direct conversion path),
+      // but kept for when 24/32-bit packed is also redirected to the planar intermediate path in the future.
+
       clip = CreateConvertToRGB(AVSValue(new_args2, 10), (void*)target_planar_rgb_type, env).AsClip();
       vi = clip->GetVideoInfo(); // must update vi for fall-through
-      reallyConvert = false;     // skip ConvertYUV444ToRGB, fall through
-      rgbtype_param =
-        target_rgbtype == 24 ? 3 :
-        target_rgbtype == 32 ? 4 :
-        target_rgbtype == 48 ? 6 :
-        target_rgbtype == 64 ? 8 : 0 ;
+      // Fall through to planar RGB source path below to do the final pack
+      // reuses the same PlanarRGBtoPackedRGB logic.
     }
-
-    if (reallyConvert) {
+    else {
+      // Direct YUV444->RGB conversion path
       bool bitdepthConverted = false;
-      if (needConvertFinalBitdepth) {
-        // Optional bit-depth conversion in PackedRGBtoPlanarRGB.
-        // int->float full/narrow range, int-int full/narrow supported
-        clip = new ConvertYUV444ToRGB(clip, matrix_name, rgbtype_param, finalBitdepth, quality, /*ref*/bitdepthConverted, env);
-        vi = clip->GetVideoInfo();
-        if (bitdepthConverted) {
-          needConvertFinalBitdepth = false; // done in-process
-        }
-      }
-      else {
-        // pass -1 as finalBitdepth, signing that no bit-depth conversion required
-        // output bitdepthConverted is n/a
-        clip = new ConvertYUV444ToRGB(clip, matrix_name, rgbtype_param, -1 /*no bit-depth conversion*/, quality, /*ref*/bitdepthConverted, env);
-        vi = clip->GetVideoInfo();
-      }
+      const int finalBitdepth = (vi.BitsPerComponent() != target_bits_per_pixel) ?
+        target_bits_per_pixel : -1; // -1 means: no need to convert
 
-      if (needConvertFinalBitdepth) {
-        // plain Invoke and no "new ConvertBits()": this detects and keeps source and target ranges
-        AVSValue new_args[2] = { clip, finalBitdepth };
+      // Optional bit-depth conversion in PackedRGBtoPlanarRGB.
+      // Note: all formats are bit-depth-converted if finalBitdepth != -1
+      // (historically there were cases and bit-depths which were not implemented to have in-line bit-depth conversion)
+      // pass -1 as finalBitdepth, signing that no bit-depth conversion required
+
+      const int rgbtype_param = (target_rgbtype == -1 || target_rgbtype == -2) ? target_rgbtype : // planar RGB(A)
+        target_rgbtype == 24 ? 3 : 4; // RGB24 or RGB32 "pixel_step" parameter for legacy direct YUV444->RGB24/32 conversion
+
+      clip = new ConvertYUV444ToRGB(clip, matrix_name, rgbtype_param,
+        finalBitdepth, // -1 if no conversion needed
+        quality, /*ref*/bitdepthConverted, env);
+      vi = clip->GetVideoInfo();
+      // When direct YUV-RGB24/32 conversion happens, the result is not planar!
+
+      const bool needConvertFinalBitdepth = finalBitdepth != -1;
+
+      if (needConvertFinalBitdepth && !bitdepthConverted) {
+        AVSValue new_args[] = { clip, finalBitdepth };
         clip = env->Invoke("ConvertBits", AVSValue(new_args, 2)).AsClip();
         vi = clip->GetVideoInfo();
       }
 
-      if (original_target_is_packed) {
+      // We can still have RGB24/32 here, YV24->24/32 is still valid
+      if (original_target_is_packed && vi.IsPlanar()) {
         // from any planar rgb(a) -> rgb24/32/48/64
         // source here is always a 8/16bit planar RGB(A), but we used
         // planar intermediate.
         // finally it has to be converted to RGB24/32/48/64
-        const bool isRGBA = target_rgbtype == -2;
-        clip = new PlanarRGBtoPackedRGB(clip, isRGBA);
+        clip = new PlanarRGBtoPackedRGB(clip, target_rgbtype == -2);
         vi = clip->GetVideoInfo();
       }
       return clip;
     }
+  } // end of YUV->RGB path
+  else {
+    if (haveOpts)
+      env->ThrowError("ConvertToRGB: ChromaPlacement and ChromaResample options are not supported.");
   }
 
-  if (haveOpts)
-    env->ThrowError("ConvertToRGB: ChromaPlacement and ChromaResample options are not supported.");
+  // This part can fallthrough from the YUV path when target is packed RGB
 
-  // planar RGB-like source
+  // RGB->RGB paths (planar or packed) do not support ChromaPlacement and ChromaResample options, as they are meaningless for RGB formats.
+
+  // Planar RGB(A) source
   if (vi.IsPlanarRGB() || vi.IsPlanarRGBA())
   {
-    bool needConvertFinalBitdepth = false;
-    int finalBitdepth = -1;
-
-    if (target_rgbtype < 0) // planar to planar
-    {
-      if (vi.IsPlanarRGB()) {
-        // rgbp->rgbpa create with default alpha
-        if (target_rgbtype == -2)
-          clip = new AddAlphaPlane(clip, nullptr, 0.0f, false, env);
-      }
-      else {
-        // planar rgba source
-        if (target_rgbtype == -1)
-          clip = new RemoveAlphaPlane(clip, env);
-      }
-      if (target_bits_per_pixel != vi.BitsPerComponent()) {
-        needConvertFinalBitdepth = true;
-        finalBitdepth = target_bits_per_pixel;
-      }
-    }
-    // planar to packed 24/32/48/64
-    else if (target_rgbtype == 24 || target_rgbtype == 32) {
-      if (vi.BitsPerComponent() != 8) {
-        needConvertFinalBitdepth = true;
-        finalBitdepth = 8;
-      }
-    }
-    else if (target_rgbtype == 48 || target_rgbtype == 64) {
-      if (vi.BitsPerComponent() != 16) {
-        needConvertFinalBitdepth = true;
-        finalBitdepth = 16;
-      }
+    // Handle alpha channel add/remove for planar-to-planar
+    if (target_rgbtype < 0) {
+      if (vi.IsPlanarRGB() && target_rgbtype == -2)
+        clip = new AddAlphaPlane(clip, nullptr, 0.0f, false, env);
+      else if (vi.IsPlanarRGBA() && target_rgbtype == -1)
+        clip = new RemoveAlphaPlane(clip, env);
     }
 
-    if (needConvertFinalBitdepth) {
+    // Convert bit depth if needed
+    if (vi.BitsPerComponent() != target_bits_per_pixel) {
+      AVSValue args[] = { clip, target_bits_per_pixel };
       // plain Invoke instead of "new ConvertBits", this detects and keeps source and target ranges
-      AVSValue new_args[2] = { clip, finalBitdepth };
-      clip = env->Invoke("ConvertBits", AVSValue(new_args, 2)).AsClip();
-      vi = clip->GetVideoInfo();
+      clip = env->Invoke("ConvertBits", AVSValue(args, 2)).AsClip();
     }
 
+    // Convert planar to packed
     if (target_rgbtype >= 0) {
-      // planar to packed
-      bool hasAlpha = target_rgbtype == 32 || target_rgbtype == 64 || (target_rgbtype == 0 && vi.IsPlanarRGBA());
+      bool hasAlpha = (target_rgbtype == 32 || target_rgbtype == 64);
       clip = new PlanarRGBtoPackedRGB(clip, hasAlpha);
     }
 
     return clip;
   } // Planar RGB(A) source
 
-  // conversions from packed RGB:
+  // YUV source is done
+  // Planar RGB(A) source is done
+  // Now remains packed RGB source
+  // Conversions from packed RGB
 
-  if (target_rgbtype == 24 || target_rgbtype == 32) {
-    if (vi.ComponentSize() != 1) {
-      // 64->32, 48->24
+  // Packed to Packed
+  if (target_rgbtype >= 0) {
+    // target bit depth (8-bit for 24/32, 16-bit for 48/64)
+    // target_bits_per_pixel is same as target_rgbtype
+
+    if (vi.BitsPerComponent() != target_bits_per_pixel) {
+      AVSValue args[] = { clip, target_bits_per_pixel };
       // using Invoke instead of new ConvertBits, this detects and keeps source and target ranges
-      AVSValue new_args[2] = { clip, 8 };
-      clip = env->Invoke("ConvertBits", AVSValue(new_args, 2)).AsClip();
-      vi = clip->GetVideoInfo(); // new format
+      clip = env->Invoke("ConvertBits", AVSValue(args, 2)).AsClip();
+      vi = clip->GetVideoInfo();
     }
+
+    bool target_has_alpha = (target_rgbtype == 32 || target_rgbtype == 64);
+    bool source_has_alpha = (vi.IsRGB32() || vi.IsRGB64());
+
+    // between packed RGB types, alpha add/remove
+    if (target_has_alpha && !source_has_alpha)
+      return new RGBtoRGBA(clip);
+    if (!target_has_alpha && source_has_alpha)
+      return new RGBAtoRGB(clip);
+
+    return clip;
   }
-  else if (target_rgbtype == 48 || target_rgbtype == 64) {
-    if (vi.ComponentSize() != 2) {
-      // 32->64, 24->48
-      // using Invoke instead of new ConvertBits, this detects and keeps source and target ranges
-      AVSValue new_args[2] = { clip, 16 };
-      clip = env->Invoke("ConvertBits", AVSValue(new_args, 2)).AsClip();
-      vi = clip->GetVideoInfo(); // new format
-    }
-  }
 
-  // between packed RGB types, alpha add
-  if (target_rgbtype == 32 || target_rgbtype == 64)
-    if (vi.IsRGB24() || vi.IsRGB48())
-      return new RGBtoRGBA(clip); // 24->32 or 48->64
-
-  // between packed RGB types, alpha remove
-  if (target_rgbtype == 24 || target_rgbtype == 48)
-    if (vi.IsRGB32() || vi.IsRGB64())
-      return new RGBAtoRGB(clip); // 32->24 or 64->48
-
-  // <0: target is planar RGB(A)
-  if (target_rgbtype < 0) {
-    // RGB24/32/48/64 ->
-    const bool isSrcRGBA = vi.IsRGB32() || vi.IsRGB64();
-    const bool isTargetRGBA = target_rgbtype == -2;
-    clip = new PackedRGBtoPlanarRGB(clip, isSrcRGBA, isTargetRGBA);
+  // Packed to Planar
+  // RGB24/32/48/64 ->
+  const bool isSrcRGBA = vi.IsRGB32() || vi.IsRGB64();
+  const bool isTargetRGBA = target_rgbtype == -2; // -2 planar RGBA, -1 planar RGB
+  clip = new PackedRGBtoPlanarRGB(clip, isSrcRGBA, isTargetRGBA);
+  vi = clip->GetVideoInfo(); // new format
+  // no embedded bitdepth conversion in PackedRGBtoPlanarRGB
+  if (target_bits_per_pixel != vi.BitsPerComponent()) {
+    AVSValue new_args[2] = { clip, target_bits_per_pixel };
+    clip = env->Invoke("ConvertBits", AVSValue(new_args, 2)).AsClip();
     vi = clip->GetVideoInfo(); // new format
-    // no embedded bitdepth conversion in PackedRGBtoPlanarRGB
-    if (target_bits_per_pixel != vi.BitsPerComponent()) {
-      AVSValue new_args[2] = { clip, target_bits_per_pixel };
-      clip = env->Invoke("ConvertBits", AVSValue(new_args, 2)).AsClip();
-      vi = clip->GetVideoInfo(); // new format
-    }
   }
 
   return clip;
