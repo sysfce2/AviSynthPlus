@@ -1351,19 +1351,19 @@ void convert_yuv_to_planarrgb_avx2(BYTE* (&dstp)[3], int(&dstPitch)[3], const BY
     // limited/full is handled automatically through scaling and offsets
     // lessthan16bit_target is still important due to clamping
     if (bits_per_pixel_target == 8) {
-      convert_yuv_to_planarrgb_avx2_internal<direction, pixel_t_src, false /*lessthan16bit for input is n/a in forced float mode*/, true, uint8_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      convert_yuv_to_planarrgb_avx2_internal<direction, pixel_t_src, lessthan16bit, true, uint8_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
     }
     else if (bits_per_pixel_target < 16) {
       // lessthan16bit_target is false. Need signed pack and clamping
-      convert_yuv_to_planarrgb_avx2_internal<direction, pixel_t_src, false /*lessthan16bit for input is n/a in forced float mode*/, true, uint16_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      convert_yuv_to_planarrgb_avx2_internal<direction, pixel_t_src, lessthan16bit, true, uint16_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
     }
     else if (bits_per_pixel_target == 16) { // == 16
-      convert_yuv_to_planarrgb_avx2_internal<direction, pixel_t_src, false /*lessthan16bit for input is n/a in forced float mode*/, false, uint16_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      convert_yuv_to_planarrgb_avx2_internal<direction, pixel_t_src, lessthan16bit, false, uint16_t, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
     }
     else { // 32 bit float target
       // limited/full is handled automatically through scaling and offsets
       // lessthan16bit_target doesn't matter since float output has no clamping
-      convert_yuv_to_planarrgb_avx2_internal<direction, pixel_t_src, false /*lessthan16bit for input is n/a in forced float mode*/, false, float, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
+      convert_yuv_to_planarrgb_avx2_internal<direction, pixel_t_src, lessthan16bit, false, float, YuvRgbConversionType::FORCE_FLOAT>(dstp, dstPitch, srcp, srcPitch, width, height, m, bits_per_pixel, bits_per_pixel_target);
     }
     return;
   }
