@@ -46,6 +46,7 @@
 #include <cstdio>
 #include <stdint.h>
 #include <string>
+#include <vector>
 #include "../core/info.h"
 
 
@@ -132,16 +133,20 @@ private:
 
 class ShowCRC32 : public GenericVideoFilter
   /**
-    * Class to display frame number on a video clip
+    * Class to display CRC32 checksum of selected planes on a video clip
    **/
 {
   uint32_t crc32_table[256];
 
   void build_crc32_table(void);
+  std::string compute_crc_text(PVideoFrame& crc_frame, std::vector<uint32_t>& out_values) const;
 
 public:
-  ShowCRC32(PClip _child, bool _scroll, int _offset, int _x, int _y, const char _fontname[], int _size,
-            int _textcolor, int _halocolor, int font_width, int font_angle, bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env);
+  ShowCRC32(PClip _child, PClip _crc_child, bool _scroll, int _offset, int _x, int _y,
+            const char _fontname[], int _size,
+            int _textcolor, int _halocolor, int font_width, int font_angle,
+            bool _bold, bool _italic, bool _noaa,
+            const char* channels, int _mode, bool _compatible_mode, int _showmode, IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
   static AVSValue __cdecl Create(AVSValue args, void*, IScriptEnvironment* env);
@@ -149,10 +154,14 @@ public:
   int __stdcall SetCacheHints(int cachehints, int frame_range) override {
     AVS_UNUSED(frame_range);
     return cachehints == CACHE_GET_MTMODE ? MT_MULTI_INSTANCE : 0;
-    // Antialiaser usage -> MT_MULTI_INSTANCE (with NICE_FILTER rect area conflicts)
   }
 
 private:
+  PClip crc_child;
+  bool doY, doU, doV, doR, doG, doB, doA;
+  const int mode;
+  bool compatible_mode;
+  const int showmode;
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   Antialiaser antialiaser;
 #else
@@ -165,7 +174,7 @@ private:
   const int textcolor, halocolor;
   [[maybe_unused]] const bool bold;
   [[maybe_unused]] const bool italic; // n/a in NO_WIN_GDI
-  [[maybe_unused]] const bool noaa; // n/a in NO_WIN_GDI
+  [[maybe_unused]] const bool noaa;   // n/a in NO_WIN_GDI
 };
 
 

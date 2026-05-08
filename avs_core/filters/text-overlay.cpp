@@ -79,8 +79,8 @@ extern const AVSFunction Text_filters[] = {
   ShowFrameNumber::Create },
 
   { "ShowCRC32",BUILTIN_FUNC_PREFIX,
-        "c[scroll]b[offset]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b",
-        ShowCRC32::Create },
+  "c[scroll]b[offset]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b[channels]s[mode]i[showmode]i",
+  ShowCRC32::Create },
 
   { "ShowSMPTE",BUILTIN_FUNC_PREFIX,
   "c[fps]f[offset]s[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b",
@@ -1199,9 +1199,10 @@ AVSValue __cdecl ShowFrameNumber::Create(AVSValue args, void*, IScriptEnvironmen
  *******   Show CRC32 Number    ******
  ************************************/
 
-ShowCRC32::ShowCRC32(PClip _child, bool _scroll, int _offset, int _x, int _y, const char _fontname[],
-  int _size, int _textcolor, int _halocolor, int font_width, int font_angle, 
-  bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env)
+ShowCRC32::ShowCRC32(PClip _child, PClip _crc_child, bool _scroll, int _offset, int _x, int _y,
+  const char _fontname[], int _size, int _textcolor, int _halocolor, int font_width, int font_angle,
+  bool _bold, bool _italic, bool _noaa,
+  const char* channels, int _mode, bool _compatible_mode, int _showmode, IScriptEnvironment* env)
   : GenericVideoFilter(_child),
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   antialiaser(vi.width, vi.height, _fontname, _size,
@@ -1210,13 +1211,31 @@ ShowCRC32::ShowCRC32(PClip _child, bool _scroll, int _offset, int _x, int _y, co
     _bold, _italic, _noaa,
     font_width, font_angle),
 #endif
+  crc_child(_crc_child),
+  mode(_mode),
+  compatible_mode(_compatible_mode),
+  showmode(_showmode),
   scroll(_scroll), offset(_offset), size(_size), x(_x), y(_y),
   textcolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor),
   halocolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor),
   bold(_bold), italic(_italic), noaa(_noaa)
 {
   AVS_UNUSED(env);
-  
+
+  doB = doG = doR = doA = doY = doU = doV = false;
+  for (int k = 0; channels[k] != '\0'; ++k) {
+    switch (channels[k]) {
+    case 'B': case 'b': doB = true; break;
+    case 'G': case 'g': doG = true; break;
+    case 'R': case 'r': doR = true; break;
+    case 'A': case 'a': doA = true; break;
+    case 'Y': case 'y': doY = true; break;
+    case 'U': case 'u': doU = true; break;
+    case 'V': case 'v': doV = true; break;
+    default: break;
+    }
+  }
+
   build_crc32_table();
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
@@ -1224,9 +1243,7 @@ ShowCRC32::ShowCRC32(PClip _child, bool _scroll, int _offset, int _x, int _y, co
   // internal font
   current_font = GetBitmapFont(size, "Terminus", bold, false);
   chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
-  if (current_font == nullptr)
-  {
-    // size
+  if (current_font == nullptr) {
     current_font = GetBitmapFont(size, "", bold, false);
     if (current_font == nullptr)
       current_font = GetBitmapFont(size, "", !bold, false);
@@ -1248,11 +1265,121 @@ void ShowCRC32::build_crc32_table(void) {
   }
 }
 
+std::string ShowCRC32::compute_crc_text(PVideoFrame& crc_frame, std::vector<uint32_t>& out_values) const {
+  out_values.clear();
+  char buf[16];
+
+  if (compatible_mode) {
+    // Packed format, default parameters: hash the raw interleaved buffer directly.
+    const uint8_t* ptr = crc_frame->GetReadPtr();
+    int rowsize = crc_frame->GetRowSize();
+    int pitch   = crc_frame->GetPitch();
+    int height  = crc_frame->GetHeight();
+    uint32_t crc = 0xFFFFFFFF;
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < rowsize; x++) {
+        uint32_t t = (ptr[x] ^ crc) & 0xFF;
+        crc = (crc >> 8) ^ crc32_table[t];
+      }
+      ptr += pitch;
+    }
+    crc = ~crc;
+    out_values.push_back(crc);
+    snprintf(buf, sizeof(buf), "%08X", (unsigned int)crc);
+    return buf;
+  }
+
+  const VideoInfo& crc_vi = crc_child->GetVideoInfo();
+
+  struct PlaneEntry { int id; const char* label; bool active; };
+  PlaneEntry entries[4];
+  int nentries = 0;
+
+  if (crc_vi.IsYUV() || crc_vi.IsYUVA()) {
+    entries[nentries++] = { PLANAR_Y, "Y", doY };
+    if (crc_vi.NumComponents() > 1) {
+      entries[nentries++] = { PLANAR_U, "U", doU };
+      entries[nentries++] = { PLANAR_V, "V", doV };
+    }
+    if (crc_vi.IsYUVA())
+      entries[nentries++] = { PLANAR_A, "A", doA };
+  } else { // PlanarRGB(A) — displayed in logical R,G,B,A order regardless of physical plane order
+    entries[nentries++] = { PLANAR_R, "R", doR };
+    entries[nentries++] = { PLANAR_G, "G", doG };
+    entries[nentries++] = { PLANAR_B, "B", doB };
+    if (crc_vi.IsPlanarRGBA())
+      entries[nentries++] = { PLANAR_A, "A", doA };
+  }
+
+  if (mode == 0) {
+    // Combined CRC over all selected planes in order
+    uint32_t crc = 0xFFFFFFFF;
+    for (int i = 0; i < nentries; i++) {
+      if (!entries[i].active) continue;
+      const uint8_t* ptr = crc_frame->GetReadPtr(entries[i].id);
+      int rowsize = crc_frame->GetRowSize(entries[i].id);
+      int pitch   = crc_frame->GetPitch(entries[i].id);
+      int height  = crc_frame->GetHeight(entries[i].id);
+      for (int y = 0; y < height; y++) {
+        for (int x = 0; x < rowsize; x++) {
+          uint32_t t = (ptr[x] ^ crc) & 0xFF;
+          crc = (crc >> 8) ^ crc32_table[t];
+        }
+        ptr += pitch;
+      }
+    }
+    crc = ~crc;
+    out_values.push_back(crc);
+    snprintf(buf, sizeof(buf), "%08X", (unsigned int)crc);
+    return buf;
+  } else {
+    // Separate CRC per plane, displayed as "Y:XXXXXXXX U:XXXXXXXX ..."
+    std::string result;
+    for (int i = 0; i < nentries; i++) {
+      if (!entries[i].active) continue;
+      const uint8_t* ptr = crc_frame->GetReadPtr(entries[i].id);
+      int rowsize = crc_frame->GetRowSize(entries[i].id);
+      int pitch   = crc_frame->GetPitch(entries[i].id);
+      int height  = crc_frame->GetHeight(entries[i].id);
+      uint32_t crc = 0xFFFFFFFF;
+      for (int y = 0; y < height; y++) {
+        for (int x = 0; x < rowsize; x++) {
+          uint32_t t = (ptr[x] ^ crc) & 0xFF;
+          crc = (crc >> 8) ^ crc32_table[t];
+        }
+        ptr += pitch;
+      }
+      crc = ~crc;
+      out_values.push_back(crc);
+      if (!result.empty()) result += ' ';
+      snprintf(buf, sizeof(buf), "%s:%08X", entries[i].label, (unsigned int)crc);
+      result += buf;
+    }
+    return result;
+  }
+}
+
 
 PVideoFrame ShowCRC32::GetFrame(int n, IScriptEnvironment* env) {
   PVideoFrame frame = child->GetFrame(n, env);
+  PVideoFrame crc_frame = crc_child->GetFrame(n, env);
   n += offset;
   if (n < 0) return frame;
+
+  std::vector<uint32_t> crc_vals;
+  std::string crc_str = compute_crc_text(crc_frame, crc_vals);
+
+  if (showmode >= 1) {
+    env->MakePropertyWritable(&frame);
+    AVSMap* avsmap = env->getFramePropsRW(frame);
+    std::vector<int64_t> int64array(crc_vals.size());
+    for (size_t i = 0; i < crc_vals.size(); i++)
+      int64array[i] = static_cast<int64_t>(crc_vals[i]); // uint32 fits non-negative in int64
+    env->propSetIntArray(avsmap, "ShowCRC32", int64array.data(), (int)int64array.size());
+  }
+
+  if (showmode == 2)
+    return frame;
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   HDC hdc = antialiaser.GetDC();
@@ -1268,26 +1395,7 @@ PVideoFrame ShowCRC32::GetFrame(int n, IScriptEnvironment* env) {
   FillRect(hdc, &r, (HBRUSH)GetStockObject(BLACK_BRUSH));
 #endif
 
-  auto ptr = frame->GetReadPtr();
-  auto pitch = frame->GetPitch();
-  auto width = frame->GetRowSize();
-  auto height = frame->GetHeight();
-  uint32_t crc = 0xFFFFFFFF;;
-
-  for (int yy = 0; yy < height; yy++) {
-    for (int xx = 0; xx < width; xx++)
-    {
-      uint8_t b = ptr[xx];
-      uint32_t t = (b ^ crc) & 0xFF;
-      crc = (crc >> 8) ^ crc32_table[t];
-    }
-    ptr += pitch;
-  }
-  crc = ~crc;
-
-  char text[16];
-  snprintf(text, sizeof(text), "%08X", (int)crc);
-  text[15] = 0;
+  const char* text = crc_str.c_str();
 
   if (x != DefXY || y != DefXY) {
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
@@ -1341,9 +1449,36 @@ PVideoFrame ShowCRC32::GetFrame(int n, IScriptEnvironment* env) {
 
 AVSValue __cdecl ShowCRC32::Create(AVSValue args, void*, IScriptEnvironment* env)
 {
-  PClip clip = args[0].AsClip();
-  bool scroll = args[1].AsBool(false);
-  const int offset = args[2].AsInt(0);
+  PClip original = args[0].AsClip();
+  const VideoInfo& vi = original->GetVideoInfo();
+
+  // Compatible mode: packed format, no explicit channels/mode — hash raw interleaved buffer.
+  const bool is_packed = vi.IsYUY2() || vi.IsRGB24() || vi.IsRGB32() || vi.IsRGB48() || vi.IsRGB64();
+  const bool compatible_mode = is_packed && !args[14].Defined() && !args[15].Defined();
+
+  // Build a planar CRC child so per-plane access works for packed formats.
+  PClip crc_child;
+  if (!compatible_mode && vi.IsYUY2()) {
+    AVSValue a[1] = { original };
+    crc_child = env->Invoke("ConvertToYV16", AVSValue(a, 1)).AsClip();
+  } else if (!compatible_mode && (vi.IsRGB32() || vi.IsRGB64())) {
+    AVSValue a[1] = { original };
+    crc_child = env->Invoke("ConvertToPlanarRGBA", AVSValue(a, 1)).AsClip();
+  } else if (!compatible_mode && (vi.IsRGB24() || vi.IsRGB48())) {
+    AVSValue a[1] = { original };
+    crc_child = env->Invoke("ConvertToPlanarRGB", AVSValue(a, 1)).AsClip();
+  } else {
+    crc_child = original;
+  }
+
+  const VideoInfo& crc_vi = crc_child->GetVideoInfo();
+  const char* default_channels = crc_vi.IsRGB() ? "RGBA" : "YUVA";
+  const char* channels = args[14].AsString(default_channels);
+  const int mode = args[15].AsInt(0);
+  const int showmode = args[16].AsInt(0);
+  if (showmode < 0 || showmode > 2)
+    env->ThrowError("ShowCRC32: showmode must be 0, 1 or 2");
+
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   const int x = args[3].IsFloat() ? int(args[3].AsFloat() * 8 + 0.5) : DefXY;
   const int y = args[4].IsFloat() ? int(args[4].AsFloat() * 8 + 0.5) : DefXY;
@@ -1367,12 +1502,15 @@ AVSValue __cdecl ShowCRC32::Create(AVSValue args, void*, IScriptEnvironment* env
   const bool bold = args[11].AsBool(false); // intentionally different
 #endif
   const bool italic = args[12].AsBool(false);
-  const bool noaa = args[13].AsBool(false);
+  const bool noaa   = args[13].AsBool(false);
 
   if ((x == DefXY) ^ (y == DefXY))
     env->ThrowError("ShowCRC32: both x and y position must be specified");
 
-  return new ShowCRC32(clip, scroll, offset, x, y, font, size, text_color, halo_color, font_width, font_angle, bold, italic, noaa, env);
+  return new ShowCRC32(original, crc_child,
+    args[1].AsBool(false), args[2].AsInt(0),
+    x, y, font, size, text_color, halo_color, font_width, font_angle,
+    bold, italic, noaa, channels, mode, compatible_mode, showmode, env);
 }
 
 
