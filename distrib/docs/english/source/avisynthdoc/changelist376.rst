@@ -263,6 +263,16 @@ Bugfixes
   in v3.7.5, intermediate calculations could slightly exceed the boundary (e.g., 360.00000000000006
   when interpolating from 0 to 360.0 in 564 steps), requiring this clamp to prevent out-of-range errors.
 - Fix: ``Text`` filter crash when input contains a zero-length line (e.g. ``Text("\n")``).
+- Fix: "Layer"/"Overlay" subsampled YUV chroma alignment:
+
+  * "Layer": x/y offsets that are not aligned to the chroma grid (e.g. odd x for 4:2:0/4:2:2)
+    are now accepted as-is, matching "Overlay" behaviour.  Previously they were silently snapped
+    to the nearest aligned value; that snap also incorrectly shifted the luma start position,
+    causing a one-pixel luma displacement that did not occur in Overlay.
+  * "Layer"/"Overlay": the last chroma column/row of the blend region is now correctly processed
+    when the overlay position is not chroma-grid-aligned.  A ceiling formula replaces the old
+    floor division, which caused the rightmost column or bottom row of affected chroma pixels
+    to be skipped.
 
 
 Optimizations
@@ -349,6 +359,8 @@ Documentation
   See :ref:`Ubuntu->Windows mingw crosscompilation<compiling_avsplus_crosscompiling2>`
 - Add :doc:`ColorBarsUHD <./corefilters/colorbarsuhd>`
 - Add :doc:`SetFilterProp / SetFilterPropPassthrough <./corefilters/setfilterprop>`
+- Add ``ShowCRC32`` documentation to :doc:`showframes <./corefilters/showframes>`
+  (filter exists since 3.7.0; rst page was not updated at the time).
 - Update :doc:`Layer <./corefilters/layer>` with ``"mulovr"`` mode, ``"top_left"`` placement
   option, and related chroma-placement refactoring notes.
 - Update :doc:`Overlay <./corefilters/overlay>` with ``"placement"`` parameter for ``"blend"`` mode.

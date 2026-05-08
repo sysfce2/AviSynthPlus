@@ -2,11 +2,12 @@
 ShowFrames
 ==========
 
-Set of filters to overlay frame numbers and timecodes onto a video clip:
+Set of filters to overlay frame numbers, timecodes, and debug information onto a video clip:
 
 * `ShowFrameNumber`_ displays the frame number on each frame.
 * `ShowSMPTE`_ displays SMPTE timecodes.
 * `ShowTime`_ displays time for the current frame.
+* `ShowCRC32`_ computes and displays the CRC32 checksum of the default plane (debug filter).
 
 See the `Examples`_ section for visuals.
 
@@ -392,6 +393,107 @@ See the :ref:`ShowTime examples <ShowTime-examples>` section.
 
     Default: false
 
+.. _ShowCRC32:
+
+ShowCRC32
+---------
+
+A debug filter that computes the CRC32 checksum of the **default plane** of each frame
+and overlays the result as an 8-character uppercase hexadecimal string (e.g. ``"AB12CD34"``).
+Only the default plane is checksummed: luma (Y) for YUV clips, the green plane for planar RGB,
+or the interleaved data for packed formats such as YUY2.
+
+The text placement and scrolling behaviour are identical to `ShowFrameNumber`_.
+
+.. rubric:: Syntax and Parameters
+
+::
+
+    ShowCRC32 (clip, bool "scroll", int "offset", float "x", float "y", string "font", float "size",
+               int "text_color", int "halo_color", float "font_width", float "font_angle",
+               bool "bold", bool "italic", bool "noaa")
+
+.. describe:: clip
+
+    Source clip; all color formats supported.
+
+.. describe:: scroll
+
+    | If *true*, the checksum will be drawn only once on the video and
+      scroll from top to bottom;
+    | If *false*, it will be drawn on one side, stacked vertically as often
+      as it fits.
+
+    Default: false
+
+.. describe:: offset
+
+    Frame number offset added to the internal counter. A positive value makes the
+    display start from a later logical frame; a negative value from an earlier one.
+
+    Default: 0
+
+.. describe:: x, y
+
+    Text position. Their interpretation corresponds to :doc:`Subtitle's <subtitle>`
+    *align=4*. ``x`` and ``y`` must be used together or not at all; when present,
+    the ``scroll`` option is ignored.
+
+    Default: 0.0, 0.0
+
+.. describe:: font
+
+    Font name; can be the name of any installed Windows font.
+
+    Default: "Arial"
+
+.. describe:: size
+
+    Height of the text in pixels.
+
+    Default: 24
+
+.. describe:: text_color, halo_color
+
+    | Colors for font fill and outline respectively. Default is yellow and black.
+    | See :doc:`Subtitle <subtitle>` and the :doc:`colors <../syntax/syntax_colors>`
+      page for more information on specifying colors.
+
+    Default: $00FFFF00, $00000000
+
+.. describe:: font_width
+
+    | Set character width in logical units, to the nearest 0.125 unit.
+    | See the example section of :doc:`Subtitle <subtitle>` for an example.
+
+    Default: 0 (use Windows' default width)
+
+.. describe:: font_angle
+
+    Adjust the baseline angle of text in degrees anti-clockwise to the
+    nearest 0.1 degree.
+
+    Default: 0.0 (no rotation)
+
+.. describe:: bold
+
+    Using bold letters or not.
+
+    Default: true on Windows GDI, false otherwise (e.g. Linux)
+
+.. describe:: italic
+
+    Using italic letters or not.
+
+    Default: false
+
+.. describe:: noaa
+
+    Disables antialiasing when drawing the text.
+
+    Default: false
+
+
 Examples
 --------
 
@@ -492,6 +594,8 @@ Changelog
 +=================+=============================================================================+
 | AviSynth+ 3.7.3 | Add ``bold``, ``italic`` and ``noaa``                                       |
 +-----------------+-----------------------------------------------------------------------------+
+| AviSynth+ 3.7.0 | Added ``ShowCRC32``.                                                        |
++-----------------+-----------------------------------------------------------------------------+
 | AviSynth 2.6.0  || All functions: position (x,y) can be float (previously int) (with 0.125    |
 |                 |  pixel granularity).                                                        |
 |                 || ShowSMPTE: added drop-frame for other framerates (other than 30).          |
@@ -502,7 +606,7 @@ Changelog
 | AviSynth 2.5.6  | Added ``offset`` and other options.                                         |
 +-----------------+-----------------------------------------------------------------------------+
 
-$Date: 2023/11/03 11:15:00 $
+$Date: 2026/05/08 11:02:00 $
 
 .. _Interlaced Fieldbased:
     http://avisynth.nl/index.php/Interlaced_fieldbased

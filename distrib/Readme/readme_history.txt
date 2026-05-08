@@ -8,8 +8,30 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
-20260430 3.7.5.rXXXX (pre 3.7.6)
+
+20260506 3.7.5.r4589 (pre 3.7.6)
 --------------------------------
+TL;DR (since r4565):
+- Layer/Overlay/Merge: weighted and masked-merge kernels unified into a shared family (C/SSE4.1/AVX2/NEON);
+  SIMD chroma-placement mask downsampling for 4:2:0/4:2:2/4:1:1 sources;
+  "placement" parameter for Overlay "blend" (new) and Layer (new "top_left" option added):
+  values are "mpeg2" (default), "mpeg1", "top_left".
+- Layer: new "mulovr" mode (Overlay-compatible YUV multiply with luma-driven chroma desaturation);
+  new "top_left" placement option; legacy MMX/iSSE removed.
+- Merge (non-masked) C/SIMD integer arithmetic unified.
+- SIMD additions: AVX2/SSE4.1/NEON float chroma-mask row preparation; AVX2 float weighted merge.
+- Further optimizations: Invert (AVX2/SSE2), ExtractX (direct packed-RGB path),
+  ConvertBits int depth-reduce C loop, PlanarRGB(A)->RGB32/64 (AVX2).
+- SetFilterProp: conditional injection by filter argument value; capture mode;
+  SetFilterPropPassthrough helper; GetFilterProps() diagnostics function.
+  See also: https://github.com/AviSynth/AviSynthPlus/issues/393
+  and the online documentation at https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/corefilters/setfilterprop.html
+
+- Bug fixes: Text("\n") crash on zero-length lines; Layer no longer silently rounds odd x/y
+  offsets on subsampled YUV — accepts them as-is like Overlay; ceiling formula for
+  non-grid-aligned positions — last chroma column/row is no longer skipped in either filter.
+Full change list: https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
+
 - Layer: add "mulovr" mode — Overlay-style multiply for YUV(A) formats only (RGB raises an error).
   The overlay luma (Y) plane drives darkening of all base planes: dark overlay Y pulls base luma toward
   black and simultaneously desaturates base chroma toward neutral (128d for 8-bit integer, 0.0 for float).
