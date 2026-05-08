@@ -9,6 +9,15 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
+20260508 3.7.5.r45XX (pre 3.7.6)
+--------------------------------
+- ShowCRC32: new "channels" (select planes), "mode" (0=combined, 1=per-plane), and
+  "showmode" (0=display, 1=display+frameprop, 2=frameprop only) parameters;
+  frame property "ShowCRC32" is an int64 array of unsigned 32-bit CRC values;
+  planar RGB(A) planes always in R,G,B,A order; packed formats with default parameters
+  hash the raw buffer unchanged (backward-compatible).
+- rstdoc: document Invert's chroma inversion behavior
+
 20260506 3.7.5.r4589 (pre 3.7.6)
 --------------------------------
 TL;DR (since r4565):

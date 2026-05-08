@@ -125,6 +125,20 @@ Additions, changes
   overlay Y; pass 2 processes luma at full resolution.  The ``"placement"`` parameter is respected for
   correct 4:2:0 / 4:2:2 mask downsampling.
   See :doc:`Layer <./corefilters/layer>`.
+- ``ShowCRC32``: add ``channels``, ``mode``, and ``showmode`` parameters.
+
+  * ``channels`` — selects which planes to checksum using their initial letters (Y, U, V, A for YUV;
+    R, G, B, A for RGB), defaulting to all planes.  Unrecognised letters are silently ignored.
+  * ``mode`` — ``0`` (default): one combined CRC32 over all selected planes; ``1``: separate CRC32
+    per plane displayed as ``"Y:XXXXXXXX U:XXXXXXXX ..."``.
+  * ``showmode`` — ``0`` (default): display text only; ``1``: display text and store result as frame
+    property ``"ShowCRC32"`` (``int64`` array — one element for ``mode=0``, one per active plane for
+    ``mode=1``); ``2``: store frame property only, no text drawn.  Values are unsigned 32-bit integers
+    stored as ``int64``.
+  * For packed formats (YUY2, RGB24/32/48/64) with default parameters the raw interleaved buffer
+    is hashed directly, preserving backward compatibility.
+  * Planar RGB(A): planes are always processed in R, G, B, A logical order.
+  See :doc:`showframes <./corefilters/showframes>`.
 - "Layer": add ``"top_left"`` option for the ``"placement"`` parameter — HEVC/AV1 left+top co-sited
   chroma (point-sample, fastest).  Affects ``"mul"``, ``"add"``, ``"subtract"``, ``"lighten"``,
   ``"darken"``, and ``"mulovr"`` modes with 4:2:0 / 4:2:2 sources.
@@ -361,6 +375,7 @@ Documentation
 - Add :doc:`SetFilterProp / SetFilterPropPassthrough <./corefilters/setfilterprop>`
 - Add ``ShowCRC32`` documentation to :doc:`showframes <./corefilters/showframes>`
   (filter exists since 3.7.0; rst page was not updated at the time).
+  Document new ``channels`` and ``mode`` parameters added in 3.7.6.
 - Update :doc:`Layer <./corefilters/layer>` with ``"mulovr"`` mode, ``"top_left"`` placement
   option, and related chroma-placement refactoring notes.
 - Update :doc:`Overlay <./corefilters/overlay>` with ``"placement"`` parameter for ``"blend"`` mode.
