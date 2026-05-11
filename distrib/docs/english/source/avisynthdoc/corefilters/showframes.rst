@@ -37,7 +37,7 @@ See the :ref:`ShowFrameNumber examples <ShowFrameNumber-examples>` section.
 
     ShowFrameNumber (clip, bool "scroll", int "offset", float "x", float "y", string "font", float "size",
                      int "text_color", int "halo_color", float "font_width", float "font_angle",
-                     bool "bold", bool "italic", bool "noaa")
+                     bool "bold", bool "italic", bool "noaa", bool "gdi")
 
 .. describe:: clip
 
@@ -69,9 +69,11 @@ See the :ref:`ShowFrameNumber examples <ShowFrameNumber-examples>` section.
 
 .. describe:: font
 
-    Font name; can be the name of any installed Windows font.
+    | Font name; can be the name of any installed Windows font when ``gdi=true``.
+    | When ``gdi=false``, only internal bitmap fonts are available (``"Terminus"``
+      or ``"info_h"``).
 
-    Default: "Arial"
+    Default: "Arial" when ``gdi=true``, "Terminus" when ``gdi=false``
 
 .. describe:: size
 
@@ -105,7 +107,7 @@ See the :ref:`ShowFrameNumber examples <ShowFrameNumber-examples>` section.
 
     | Using bold letters or not
 
-    Default: true on Windows GDI, false otherwise (e.g. in Linux)
+    Default: true when ``gdi=true``, false when ``gdi=false``
 
 .. describe:: italic
 
@@ -118,6 +120,16 @@ See the :ref:`ShowFrameNumber examples <ShowFrameNumber-examples>` section.
     | Disables antialiasing when drawing the text
 
     Default: false
+
+.. describe:: gdi
+
+    | When *true*, text is rendered using the Windows GDI Antialiaser, which
+      produces antialiased output but is slower.
+    | When *false*, the built-in bitmap font (Terminus) is used. This is faster
+      and is the only option on non-Windows platforms.
+    | Ignored (forced to *false*) on non-Windows builds.
+
+    Default: true on Windows (with GDI support), false otherwise
 
 
 .. _ShowSMPTE:
@@ -160,7 +172,7 @@ See the :ref:`ShowSMPTE examples <ShowSMPTE-examples>` section.
 
     ShowSMPTE (clip, float "fps", string "offset", int "offset_f", float "x", float "y", string "font",
                float "size", int "text_color", int "halo_color", float "font_width", float "font_angle",
-               bool "bold", bool "italic", bool "noaa")
+               bool "bold", bool "italic", bool "noaa", bool "gdi")
 
 .. describe:: clip
 
@@ -194,9 +206,11 @@ See the :ref:`ShowSMPTE examples <ShowSMPTE-examples>` section.
 
 .. describe:: font
 
-    Font name; can be the name of any installed Windows font.
+    | Font name; can be the name of any installed Windows font when ``gdi=true``.
+    | When ``gdi=false``, only internal bitmap fonts are available (``"Terminus"``
+      or ``"info_h"``).
 
-    Default: "Arial"
+    Default: "Arial" when ``gdi=true``, "Terminus" when ``gdi=false``
 
 .. describe:: size
 
@@ -230,7 +244,7 @@ See the :ref:`ShowSMPTE examples <ShowSMPTE-examples>` section.
 
     | Using bold letters or not
 
-    Default: true on Windows GDI, false otherwise (e.g. in Linux)
+    Default: true when ``gdi=true``, false when ``gdi=false``
 
 .. describe:: italic
 
@@ -243,6 +257,16 @@ See the :ref:`ShowSMPTE examples <ShowSMPTE-examples>` section.
     | Disables antialiasing when drawing the text
 
     Default: false
+
+.. describe:: gdi
+
+    | When *true*, text is rendered using the Windows GDI Antialiaser, which
+      produces antialiased output but is slower.
+    | When *false*, the built-in bitmap font (Terminus) is used. This is faster
+      and is the only option on non-Windows platforms.
+    | Ignored (forced to *false*) on non-Windows builds.
+
+    Default: true on Windows (with GDI support), false otherwise
 
 Drop-Frame versus Non-Drop-Frame Time Code
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -321,7 +345,7 @@ See the :ref:`ShowTime examples <ShowTime-examples>` section.
 
     ShowTime (clip, int "offset_f", float "x", float "y", string "font", float "size",
               int "text_color", int "halo_color", float "font_width", float "font_angle",
-              bool "bold", bool "italic", bool "noaa")
+              bool "bold", bool "italic", bool "noaa", bool "gdi")
 
 .. describe:: clip
 
@@ -343,9 +367,11 @@ See the :ref:`ShowTime examples <ShowTime-examples>` section.
 
 .. describe:: font
 
-    Font name; can be the name of any installed Windows font.
+    | Font name; can be the name of any installed Windows font when ``gdi=true``.
+    | When ``gdi=false``, only internal bitmap fonts are available (``"Terminus"``
+      or ``"info_h"``).
 
-    Default: "Arial"
+    Default: "Arial" when ``gdi=true``, "Terminus" when ``gdi=false``
 
 .. describe:: size
 
@@ -379,7 +405,7 @@ See the :ref:`ShowTime examples <ShowTime-examples>` section.
 
     | Using bold letters or not
 
-    Default: true on Windows GDI, false otherwise (e.g. in Linux)
+    Default: true when ``gdi=true``, false when ``gdi=false``
 
 .. describe:: italic
 
@@ -392,6 +418,16 @@ See the :ref:`ShowTime examples <ShowTime-examples>` section.
     | Disables antialiasing when drawing the text
 
     Default: false
+
+.. describe:: gdi
+
+    | When *true*, text is rendered using the Windows GDI Antialiaser, which
+      produces antialiased output but is slower.
+    | When *false*, the built-in bitmap font (Terminus) is used. This is faster
+      and is the only option on non-Windows platforms.
+    | Ignored (forced to *false*) on non-Windows builds.
+
+    Default: true on Windows (with GDI support), false otherwise
 
 .. _ShowCRC32:
 
@@ -421,7 +457,7 @@ The text placement and scrolling behaviour are identical to `ShowFrameNumber`_.
     ShowCRC32 (clip, bool "scroll", int "offset", float "x", float "y", string "font", float "size",
                int "text_color", int "halo_color", float "font_width", float "font_angle",
                bool "bold", bool "italic", bool "noaa", string "channels", int "mode",
-               int "showmode")
+               int "showmode", bool "gdi")
 
 .. describe:: clip
 
@@ -453,9 +489,11 @@ The text placement and scrolling behaviour are identical to `ShowFrameNumber`_.
 
 .. describe:: font
 
-    Font name; can be the name of any installed Windows font.
+    | Font name; can be the name of any installed Windows font when ``gdi=true``.
+    | When ``gdi=false``, only internal bitmap fonts are available (``"Terminus"``
+      or ``"info_h"``).
 
-    Default: "Arial"
+    Default: "Arial" when ``gdi=true``, "Terminus" when ``gdi=false``
 
 .. describe:: size
 
@@ -489,7 +527,7 @@ The text placement and scrolling behaviour are identical to `ShowFrameNumber`_.
 
     Using bold letters or not.
 
-    Default: true on Windows GDI, false otherwise (e.g. Linux)
+    Default: true when ``gdi=true``, false when ``gdi=false``
 
 .. describe:: italic
 
@@ -537,6 +575,16 @@ The text placement and scrolling behaviour are identical to `ShowFrameNumber`_.
       type for AviSynth frame properties).
 
     Default: 0
+
+.. describe:: gdi
+
+    | When *true*, text is rendered using the Windows GDI Antialiaser, which
+      produces antialiased output but is slower.
+    | When *false*, the built-in bitmap font (Terminus) is used. This is faster
+      and is the only option on non-Windows platforms.
+    | Ignored (forced to *false*) on non-Windows builds.
+
+    Default: true on Windows (with GDI support), false otherwise
 
 
 Examples
@@ -667,6 +715,11 @@ Changelog
 +-----------------+-----------------------------------------------------------------------------+
 | Version         | Changes                                                                     |
 +=================+=============================================================================+
+| AviSynth+ 3.7.6 || All four filters: add ``gdi`` parameter to select between Windows GDI     |
+|                 |  antialiased rendering (slow, high quality) and the built-in bitmap font    |
+|                 |  (fast, cross-platform). Defaults to ``true`` on Windows with GDI.          |
+|                 || ``font``, ``bold`` defaults are now ``gdi``-dependent.                     |
++-----------------+-----------------------------------------------------------------------------+
 | AviSynth+ 3.7.6 || ``ShowCRC32``: add ``channels``, ``mode``, and ``showmode`` parameters.    |
 |                 || ``channels``: select planes individually.                                  |
 |                 || ``mode``: combined (0) or per-plane (1) CRC output.                        |

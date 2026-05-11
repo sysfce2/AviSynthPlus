@@ -125,6 +125,15 @@ Additions, changes
   overlay Y; pass 2 processes luma at full resolution.  The ``"placement"`` parameter is respected for
   correct 4:2:0 / 4:2:2 mask downsampling.
   See :doc:`Layer <./corefilters/layer>`.
+- ``ShowFrameNumber``, ``ShowSMPTE``, ``ShowTime``, ``ShowCRC32``, ``Info``, ``Compare``: add ``gdi`` bool parameter.
+
+  * When ``gdi=true`` (default on Windows with GDI), the Windows GDI Antialiaser is used for antialiased
+    text rendering (existing behavior). When ``gdi=false``, the built-in bitmap font (Terminus) is used
+    instead: faster, cross-platform compatible, and the only option on non-Windows builds.
+  * ``font`` default is now ``gdi``-dependent: "Arial" / "Courier New" for GDI, "Terminus" otherwise.
+  * ``bold`` default is now ``gdi``-dependent: ``true`` for GDI, ``false`` for the bitmap font path.
+  See :doc:`showframes <./corefilters/showframes>`, :doc:`info <./corefilters/info>`, and :doc:`compare <./corefilters/compare>`.
+
 - ``ShowCRC32``: add ``channels``, ``mode``, and ``showmode`` parameters.
 
   * ``channels`` — selects which planes to checksum using their initial letters (Y, U, V, A for YUV;

@@ -29,10 +29,10 @@ Syntax and Parameters
 
 ::
 
-    Info (clip clip, string "font", float "size", int "text_color", int "halo_color", 
+    Info (clip clip, string "font", float "size", int "text_color", int "halo_color",
           bool "bold", bool "italic", bool "noaa",
           bool "cpu",
-          float "x", float "y", int "align")
+          float "x", float "y", int "align", bool "gdi")
 
 .. describe:: clip
 
@@ -41,9 +41,11 @@ Syntax and Parameters
 
 .. describe:: font
 
-    Font name; can be the name of any installed Windows font.
+    | Font name; can be the name of any installed Windows font when ``gdi=true``.
+    | When ``gdi=false``, only internal bitmap fonts are available (``"Terminus"``
+      or ``"info_h"``).
 
-    Default: "Courier New"
+    Default: "Courier New" when ``gdi=true``, "Terminus" when ``gdi=false``
 
 .. describe:: size
 
@@ -71,10 +73,9 @@ Syntax and Parameters
 
 .. describe:: bold
 
-    | Using bold letters or not
-    | Default is true, since bold has better visibility.
+    | Using bold letters or not.
 
-    Default: true
+    Default: true when ``gdi=true``, false when ``gdi=false``
 
 .. describe:: italic
 
@@ -109,10 +110,20 @@ Syntax and Parameters
       9 is top right, 3: bottom-right, etc..
 
     Default: 7 (top-left)
-    
-    Note: on Windows-GDI systems the whole text box is aligned. Within the box the text lines
-    are left aligned. On non-Windows-GDI (e.g. Linux) the individual lines are aligned 
-    horizontally as well.
+
+    Note: when ``gdi=true`` (Windows GDI), the whole text box is aligned and its
+    content is left-aligned within the box. When ``gdi=false`` (e.g. Linux or
+    ``gdi=false`` on Windows), each line is aligned individually.
+
+.. describe:: gdi
+
+    | When *true*, text is rendered using the Windows GDI Antialiaser, which
+      produces antialiased output but is slower.
+    | When *false*, the built-in bitmap font (Terminus) is used. This is faster
+      and is the only option on non-Windows platforms.
+    | Ignored (forced to *false*) on non-Windows builds.
+
+    Default: true on Windows (with GDI support), false otherwise
 
 
 Examples
@@ -160,6 +171,11 @@ Changelog
 +-----------------+-----------------------------------------------------------------------+
 | Version         | Changes                                                               |
 +=================+=======================================================================+
+| AviSynth+ 3.7.6 || Add ``gdi`` parameter to select between Windows GDI antialiased      |
+|                 |  rendering (slow, high quality) and the built-in bitmap font (fast,   |
+|                 |  cross-platform). Defaults to ``true`` on Windows with GDI.           |
+|                 || ``font``, ``bold`` defaults are now ``gdi``-dependent.               |
++-----------------+-----------------------------------------------------------------------+
 | AviSynth+ 3.7.4 || Add ``cpu`` parameter                                                |
 |                 || Add ``x, y, align`` parameters                                       |
 |                 || Draw partially visible lines as well                                 |

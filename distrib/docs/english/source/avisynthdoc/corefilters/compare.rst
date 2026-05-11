@@ -30,7 +30,7 @@ Syntax and Parameters
 
 ::
 
-    Compare (clip filtered, clip original, string "channels", string "logfile", bool "show_graph")
+    Compare (clip filtered, clip original, string "channels", string "logfile", bool "show_graph", bool "gdi")
 
 .. describe:: filtered, original
 
@@ -68,6 +68,16 @@ Syntax and Parameters
 
     Default: true
 
+.. describe:: gdi
+
+    | When *true*, text is rendered using the Windows GDI Antialiaser, which
+      produces antialiased output but is slower.
+    | When *false*, the built-in bitmap font (Terminus) is used. This is faster
+      and is the only option on non-Windows platforms.
+    | Ignored (forced to *false*) on non-Windows builds.
+
+    Default: true on Windows (with GDI support), false otherwise
+
 
 Examples
 --------
@@ -100,6 +110,10 @@ Changelog
 +-----------------+-------------------------------------------------------------+
 | Version         | Changes                                                     |
 +=================+=============================================================+
+| AviSynth+ 3.7.6 | Add ``gdi`` parameter to select between Windows GDI         |
+|                 | antialiased rendering (slow, high quality) and the built-in |
+|                 | bitmap font (fast, cross-platform).                         |
++-----------------+-------------------------------------------------------------+
 | AviSynth+ 3.7.2 || Fix: ``channels`` now defaults to "Y" instead of "YUV" for |
 |                 |  greyscale input.                                           |
 |                 || Compare: fix 10-14 bit support (graph, PSNR).              |
