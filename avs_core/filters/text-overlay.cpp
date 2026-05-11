@@ -75,22 +75,22 @@ static HFONT LoadFont(const char name[], int size, bool bold, bool italic, int w
 
 extern const AVSFunction Text_filters[] = {
   { "ShowFrameNumber",BUILTIN_FUNC_PREFIX,
-  "c[scroll]b[offset]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b",
+  "c[scroll]b[offset]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b[gdi]b",
   ShowFrameNumber::Create },
 
   { "ShowCRC32",BUILTIN_FUNC_PREFIX,
-  "c[scroll]b[offset]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b[channels]s[mode]i[showmode]i",
+  "c[scroll]b[offset]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b[channels]s[mode]i[showmode]i[gdi]b",
   ShowCRC32::Create },
 
   { "ShowSMPTE",BUILTIN_FUNC_PREFIX,
-  "c[fps]f[offset]s[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b",
+  "c[fps]f[offset]s[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b[gdi]b",
   ShowSMPTE::CreateSMTPE },
 
   { "ShowTime",BUILTIN_FUNC_PREFIX,
-  "c[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b",
+  "c[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b[gdi]b",
   ShowSMPTE::CreateTime },
 
-  { "Info", BUILTIN_FUNC_PREFIX, "c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b[noaa]b[cpu]b[x]f[y]f[align]i", FilterInfo::Create },  // clip
+  { "Info", BUILTIN_FUNC_PREFIX, "c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b[noaa]b[cpu]b[x]f[y]f[align]i[gdi]b", FilterInfo::Create },  // clip
 
   { "Subtitle",BUILTIN_FUNC_PREFIX,
   "cs[x]f[y]f[first_frame]i[last_frame]i[font]s[size]f[text_color]i[halo_color]i"
@@ -100,10 +100,10 @@ extern const AVSFunction Text_filters[] = {
 #else
     SimpleText::Create // poor man's SubTitle, it's simulated with SimpleText
 #endif
-},       // see docs!
+  },       // see docs!
 
   { "Compare",BUILTIN_FUNC_PREFIX,
-  "cc[channels]s[logfile]s[show_graph]b",
+  "cc[channels]s[logfile]s[show_graph]b[gdi]b",
   Compare::Create },
 
   { "Text",BUILTIN_FUNC_PREFIX,
@@ -1051,15 +1051,18 @@ void Antialiaser::GetAlphaRect()
  ************************************/
 
 ShowFrameNumber::ShowFrameNumber(PClip _child, bool _scroll, int _offset, int _x, int _y, const char _fontname[],
-                                 int _size, int _textcolor, int _halocolor, int font_width, int font_angle, 
-                                 bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env)
+                                 int _size, int _textcolor, int _halocolor, int font_width, int font_angle,
+                                 bool _bold, bool _italic, bool _noaa, bool _gdi, IScriptEnvironment* env)
  : GenericVideoFilter(_child),
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  antialiaser(vi.width, vi.height, _fontname, _size,
+  use_gdi(_gdi),
+  antialiaser(_gdi ? std::make_unique<Antialiaser>(vi.width, vi.height, _fontname, _size,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
     _bold, _italic, _noaa,
-    font_width, font_angle),
+    font_width, font_angle) : nullptr),
+#else
+  use_gdi(false),
 #endif
   scroll(_scroll), offset(_offset), size(_size), x(_x), y(_y),
   textcolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor),
@@ -1068,19 +1071,15 @@ ShowFrameNumber::ShowFrameNumber(PClip _child, bool _scroll, int _offset, int _x
 {
   AVS_UNUSED(env);
 
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-#else
-  // internal font
-  current_font = GetBitmapFont(size, "Terminus", bold, false);
-  chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
-  if (current_font == nullptr)
-  {
-    // size
-    current_font = GetBitmapFont(size, "", bold, false);
-    if (current_font == nullptr)
-      current_font = GetBitmapFont(size, "", !bold, false);
+  if (!use_gdi) {
+    current_font = GetBitmapFont(size, "Terminus", bold, false);
+    chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
+    if (current_font == nullptr) {
+      current_font = GetBitmapFont(size, "", bold, false);
+      if (current_font == nullptr)
+        current_font = GetBitmapFont(size, "", !bold, false);
+    }
   }
-#endif
 }
 
 enum { DefXY = (int)0x80000000 };
@@ -1090,68 +1089,58 @@ PVideoFrame ShowFrameNumber::GetFrame(int n, IScriptEnvironment* env) {
   n+=offset;
   if (n < 0) return frame;
 
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  HDC hdc = antialiaser.GetDC();
-  if (!hdc) return frame;
-#else
-  if (current_font == nullptr)
-    return frame;
-#endif
-  env->MakeWritable(&frame);
-
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  RECT r = { 0, 0, 32767, 32767 };
-  FillRect(hdc, &r, (HBRUSH)GetStockObject(BLACK_BRUSH));
-#endif
   char text[16];
   snprintf(text, sizeof(text), "%05d", n);
   text[15] = 0;
-  if (x!=DefXY || y!=DefXY) {
+
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-    SetTextAlign(hdc, TA_BASELINE|TA_LEFT);
-    TextOut(hdc, x+16, y+16, text, (int)strlen(text));
-#else
-    std::string s_utf8 = charToUtf8(text, true);
-    SimpleTextOutW(current_font.get(), vi, frame, x, y, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement);
+  if (use_gdi) {
+    HDC hdc = antialiaser->GetDC();
+    if (!hdc) return frame;
+    env->MakeWritable(&frame);
+    RECT r = { 0, 0, 32767, 32767 };
+    FillRect(hdc, &r, (HBRUSH)GetStockObject(BLACK_BRUSH));
+    if (x!=DefXY || y!=DefXY) {
+      SetTextAlign(hdc, TA_BASELINE|TA_LEFT);
+      TextOut(hdc, x+16, y+16, text, (int)strlen(text));
+    } else if (scroll) {
+      int n1 = vi.IsFieldBased() ? (n/2) : n;
+      int y2 = size + size * (n1 % (vi.height * 8 / size));
+      SetTextAlign(hdc, TA_BASELINE | (child->GetParity(n) ? TA_LEFT : TA_RIGHT));
+      TextOut(hdc, child->GetParity(n) ? 32 : vi.width*8+8, y2, text, (int)strlen(text));
+    } else {
+      SetTextAlign(hdc, TA_BASELINE | (child->GetParity(n) ? TA_LEFT : TA_RIGHT));
+      int text_len = (int)strlen(text);
+      for (int y2 = size; y2 < vi.height * 8; y2 += size)
+        TextOut(hdc, child->GetParity(n) ? 32 : vi.width * 8 + 8, y2, text, text_len);
+    }
+    GdiFlush();
+    antialiaser->Apply(vi, &frame, frame->GetPitch());
+    return frame;
+  }
 #endif
+  if (current_font == nullptr)
+    return frame;
+  env->MakeWritable(&frame);
+  std::string s_utf8 = charToUtf8(text, true);
+  if (x!=DefXY || y!=DefXY) {
+    SimpleTextOutW(current_font.get(), vi, frame, x, y, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement);
   } else if (scroll) {
     int n1 = vi.IsFieldBased() ? (n/2) : n;
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-    int y2 = size + size * (n1 % (vi.height * 8 / size));
-    SetTextAlign(hdc, TA_BASELINE | (child->GetParity(n) ? TA_LEFT : TA_RIGHT));
-    TextOut(hdc, child->GetParity(n) ? 32 : vi.width*8+8, y2, text, (int)strlen(text));
-#else
     int y2 = size + size * (n1 % (vi.height / size));
-    std::string s_utf8 = charToUtf8(text, true);
     if(child->GetParity(n))
       SimpleTextOutW(current_font.get(), vi, frame, 4, y2, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement); // left
     else
       SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, s_utf8, false, textcolor, halocolor, true, 3, chromaplacement); // right
-#endif
-
-  }
-  else {
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-    SetTextAlign(hdc, TA_BASELINE | (child->GetParity(n) ? TA_LEFT : TA_RIGHT));
-    int text_len = (int)strlen(text);
-    for (int y2 = size; y2 < vi.height * 8; y2 += size)
-      TextOut(hdc, child->GetParity(n) ? 32 : vi.width * 8 + 8, y2, text, text_len);
-#else
-    std::string s_utf8 = charToUtf8(text, true);
+  } else {
     // size-1 because of bottom alignment
     for (int y2 = size - 1; y2 < vi.height; y2 += size) {
       if (child->GetParity(n))
         SimpleTextOutW(current_font.get(), vi, frame, 4, y2, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement); // bottom-left
       else
-        SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, s_utf8, false, textcolor, halocolor, true, 3,chromaplacement); // bottom-right
+        SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, s_utf8, false, textcolor, halocolor, true, 3, chromaplacement); // bottom-right
     }
-#endif
   }
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  GdiFlush();
-
-  antialiaser.Apply(vi, &frame, frame->GetPitch());
-#endif
   return frame;
 }
 
@@ -1162,33 +1151,32 @@ AVSValue __cdecl ShowFrameNumber::Create(AVSValue args, void*, IScriptEnvironmen
   bool scroll = args[1].AsBool(false);
   const int offset = args[2].AsInt(0);
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  const int x = args[3].IsFloat() ? int(args[3].AsFloat() * 8 + 0.5) : DefXY;
-  const int y = args[4].IsFloat() ? int(args[4].AsFloat() * 8 + 0.5) : DefXY;
-  const char* font = args[5].AsString("Arial");
-  const int size = int(args[6].AsFloat(24)*8+0.5);
-  const int font_width = int(args[9].AsFloat(0) * 8 + 0.5);
+  const bool gdi = args[14].AsBool(true);
+  const int x = args[3].IsFloat() ? int(args[3].AsFloat() * (gdi ? 8 : 1) + 0.5) : DefXY;
+  const int y = args[4].IsFloat() ? int(args[4].AsFloat() * (gdi ? 8 : 1) + 0.5) : DefXY;
+  const char* font = args[5].AsString(gdi ? "Arial" : "Terminus");
+  const int size = int(args[6].AsFloat(24) * (gdi ? 8 : 1) + 0.5);
+  const int font_width = int(args[9].AsFloat(0) * (gdi ? 8 : 1) + 0.5);
+  const bool bold = args[11].AsBool(gdi);
 #else
+  const bool gdi = false;
   const int x = args[3].IsFloat() ? int(args[3].AsFloat() + 0.5) : DefXY;
   const int y = args[4].IsFloat() ? int(args[4].AsFloat() + 0.5) : DefXY;
   const char* font = args[5].AsString("Terminus");
   const int size = int(args[6].AsFloat(24) + 0.5);
   const int font_width = int(args[9].AsFloat(0) + 0.5);
+  const bool bold = args[11].AsBool(false);
 #endif
   const int text_color = args[7].AsInt(0xFFFF00);
   const int halo_color = args[8].AsInt(0);
   const int font_angle = int(args[10].AsFloat(0) * 10 + 0.5);
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  const bool bold = args[11].AsBool(true);
-#else
-  const bool bold = args[11].AsBool(false); // intentionally different
-#endif
   const bool italic = args[12].AsBool(false);
   const bool noaa = args[13].AsBool(false);
 
   if ((x==DefXY) ^ (y==DefXY))
   env->ThrowError("ShowFrameNumber: both x and y position must be specified");
 
-  return new ShowFrameNumber(clip, scroll, offset, x, y, font, size, text_color, halo_color, font_width, font_angle, bold, italic, noaa, env);
+  return new ShowFrameNumber(clip, scroll, offset, x, y, font, size, text_color, halo_color, font_width, font_angle, bold, italic, noaa, gdi, env);
 }
 
 
@@ -1201,15 +1189,18 @@ AVSValue __cdecl ShowFrameNumber::Create(AVSValue args, void*, IScriptEnvironmen
 
 ShowCRC32::ShowCRC32(PClip _child, PClip _crc_child, bool _scroll, int _offset, int _x, int _y,
   const char _fontname[], int _size, int _textcolor, int _halocolor, int font_width, int font_angle,
-  bool _bold, bool _italic, bool _noaa,
+  bool _bold, bool _italic, bool _noaa, bool _gdi,
   const char* channels, int _mode, bool _compatible_mode, int _showmode, IScriptEnvironment* env)
   : GenericVideoFilter(_child),
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  antialiaser(vi.width, vi.height, _fontname, _size,
+  use_gdi(_gdi),
+  antialiaser(_gdi ? std::make_unique<Antialiaser>(vi.width, vi.height, _fontname, _size,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
     _bold, _italic, _noaa,
-    font_width, font_angle),
+    font_width, font_angle) : nullptr),
+#else
+  use_gdi(false),
 #endif
   crc_child(_crc_child),
   mode(_mode),
@@ -1238,17 +1229,15 @@ ShowCRC32::ShowCRC32(PClip _child, PClip _crc_child, bool _scroll, int _offset, 
 
   build_crc32_table();
 
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-#else
-  // internal font
-  current_font = GetBitmapFont(size, "Terminus", bold, false);
-  chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
-  if (current_font == nullptr) {
-    current_font = GetBitmapFont(size, "", bold, false);
-    if (current_font == nullptr)
-      current_font = GetBitmapFont(size, "", !bold, false);
+  if (!use_gdi) {
+    current_font = GetBitmapFont(size, "Terminus", bold, false);
+    chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
+    if (current_font == nullptr) {
+      current_font = GetBitmapFont(size, "", bold, false);
+      if (current_font == nullptr)
+        current_font = GetBitmapFont(size, "", !bold, false);
+    }
   }
-#endif
 }
 
 void ShowCRC32::build_crc32_table(void) {
@@ -1381,68 +1370,55 @@ PVideoFrame ShowCRC32::GetFrame(int n, IScriptEnvironment* env) {
   if (showmode == 2)
     return frame;
 
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  HDC hdc = antialiaser.GetDC();
-  if (!hdc) return frame;
-#else
-  if (current_font == nullptr)
-    return frame;
-#endif
-  env->MakeWritable(&frame);
-
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  RECT r = { 0, 0, 32767, 32767 };
-  FillRect(hdc, &r, (HBRUSH)GetStockObject(BLACK_BRUSH));
-#endif
-
   const char* text = crc_str.c_str();
 
-  if (x != DefXY || y != DefXY) {
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-    SetTextAlign(hdc, TA_BASELINE | TA_LEFT);
-    TextOut(hdc, x + 16, y + 16, text, (int)strlen(text));
-#else
-    std::string s_utf8 = charToUtf8(text, true);
-    SimpleTextOutW(current_font.get(), vi, frame, x, y, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement);
-#endif
+  if (use_gdi) {
+    HDC hdc = antialiaser->GetDC();
+    if (!hdc) return frame;
+    env->MakeWritable(&frame);
+    RECT r = { 0, 0, 32767, 32767 };
+    FillRect(hdc, &r, (HBRUSH)GetStockObject(BLACK_BRUSH));
+    if (x != DefXY || y != DefXY) {
+      SetTextAlign(hdc, TA_BASELINE | TA_LEFT);
+      TextOut(hdc, x + 16, y + 16, text, (int)strlen(text));
+    } else if (scroll) {
+      int n1 = vi.IsFieldBased() ? (n / 2) : n;
+      int y2 = size + size * (n1 % (vi.height * 8 / size));
+      SetTextAlign(hdc, TA_BASELINE | (child->GetParity(n) ? TA_LEFT : TA_RIGHT));
+      TextOut(hdc, child->GetParity(n) ? 32 : vi.width * 8 + 8, y2, text, (int)strlen(text));
+    } else {
+      SetTextAlign(hdc, TA_BASELINE | (child->GetParity(n) ? TA_LEFT : TA_RIGHT));
+      int text_len = (int)strlen(text);
+      for (int y2 = size; y2 < vi.height * 8; y2 += size)
+        TextOut(hdc, child->GetParity(n) ? 32 : vi.width * 8 + 8, y2, text, text_len);
+    }
+    GdiFlush();
+    antialiaser->Apply(vi, &frame, frame->GetPitch());
+    return frame;
   }
-  else if (scroll) {
+#endif
+  if (current_font == nullptr)
+    return frame;
+  env->MakeWritable(&frame);
+  std::string s_utf8 = charToUtf8(text, true);
+  if (x != DefXY || y != DefXY) {
+    SimpleTextOutW(current_font.get(), vi, frame, x, y, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement);
+  } else if (scroll) {
     int n1 = vi.IsFieldBased() ? (n / 2) : n;
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-    int y2 = size + size * (n1 % (vi.height * 8 / size));
-    SetTextAlign(hdc, TA_BASELINE | (child->GetParity(n) ? TA_LEFT : TA_RIGHT));
-    TextOut(hdc, child->GetParity(n) ? 32 : vi.width * 8 + 8, y2, text, (int)strlen(text));
-#else
     int y2 = size + size * (n1 % (vi.height / size));
-    std::string s_utf8 = charToUtf8(text, true);
     if (child->GetParity(n))
       SimpleTextOutW(current_font.get(), vi, frame, 4, y2, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement); // left
     else
       SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, s_utf8, false, textcolor, halocolor, true, 3, chromaplacement); // right
-#endif
-
-  }
-  else {
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-    SetTextAlign(hdc, TA_BASELINE | (child->GetParity(n) ? TA_LEFT : TA_RIGHT));
-    int text_len = (int)strlen(text);
-    for (int y2 = size; y2 < vi.height * 8; y2 += size)
-      TextOut(hdc, child->GetParity(n) ? 32 : vi.width * 8 + 8, y2, text, text_len);
-#else
-    std::string s_utf8 = charToUtf8(text, true);
+  } else {
     for (int y2 = size; y2 < vi.height; y2 += size) {
       if (child->GetParity(n))
         SimpleTextOutW(current_font.get(), vi, frame, 4, y2, s_utf8, false, textcolor, halocolor, true, 1, chromaplacement); // left
       else
         SimpleTextOutW(current_font.get(), vi, frame, vi.width - 1, y2, s_utf8, false, textcolor, halocolor, true, 3, chromaplacement); // right
     }
-#endif
   }
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  GdiFlush();
-
-  antialiaser.Apply(vi, &frame, frame->GetPitch());
-#endif
   return frame;
 }
 
@@ -1480,27 +1456,25 @@ AVSValue __cdecl ShowCRC32::Create(AVSValue args, void*, IScriptEnvironment* env
     env->ThrowError("ShowCRC32: showmode must be 0, 1 or 2");
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  const int x = args[3].IsFloat() ? int(args[3].AsFloat() * 8 + 0.5) : DefXY;
-  const int y = args[4].IsFloat() ? int(args[4].AsFloat() * 8 + 0.5) : DefXY;
-  const char* font = args[5].AsString("Arial");
-  const int size = int(args[6].AsFloat(24) * 8 + 0.5);
-  const int font_width = int(args[9].AsFloat(0) * 8 + 0.5);
+  const bool gdi = args[17].AsBool(true);
+  const int x = args[3].IsFloat() ? int(args[3].AsFloat() * (gdi ? 8 : 1) + 0.5) : DefXY;
+  const int y = args[4].IsFloat() ? int(args[4].AsFloat() * (gdi ? 8 : 1) + 0.5) : DefXY;
+  const char* font = args[5].AsString(gdi ? "Arial" : "Terminus");
+  const int size = int(args[6].AsFloat(24) * (gdi ? 8 : 1) + 0.5);
+  const int font_width = int(args[9].AsFloat(0) * (gdi ? 8 : 1) + 0.5);
+  const bool bold = args[11].AsBool(gdi);
 #else
+  const bool gdi = false;
   const int x = args[3].IsFloat() ? int(args[3].AsFloat() + 0.5) : DefXY;
   const int y = args[4].IsFloat() ? int(args[4].AsFloat() + 0.5) : DefXY;
   const char* font = args[5].AsString("Terminus");
   const int size = int(args[6].AsFloat(24) + 0.5);
   const int font_width = int(args[9].AsFloat(0) + 0.5);
+  const bool bold = args[11].AsBool(false);
 #endif
   const int text_color = args[7].AsInt(0xFFFF00);
   const int halo_color = args[8].AsInt(0);
   const int font_angle = int(args[10].AsFloat(0) * 10 + 0.5);
-
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  const bool bold = args[11].AsBool(true);
-#else
-  const bool bold = args[11].AsBool(false); // intentionally different
-#endif
   const bool italic = args[12].AsBool(false);
   const bool noaa   = args[13].AsBool(false);
 
@@ -1510,7 +1484,7 @@ AVSValue __cdecl ShowCRC32::Create(AVSValue args, void*, IScriptEnvironment* env
   return new ShowCRC32(original, crc_child,
     args[1].AsBool(false), args[2].AsInt(0),
     x, y, font, size, text_color, halo_color, font_width, font_angle,
-    bold, italic, noaa, channels, mode, compatible_mode, showmode, env);
+    bold, italic, noaa, gdi, channels, mode, compatible_mode, showmode, env);
 }
 
 
@@ -1524,31 +1498,32 @@ AVSValue __cdecl ShowCRC32::Create(AVSValue args, void*, IScriptEnvironment* env
  **********************************/
 
 ShowSMPTE::ShowSMPTE(PClip _child, double _rate, const char* offset, int _offset_f, int _x, int _y, const char _fontname[],
-                     int _size, int _textcolor, int _halocolor, int font_width, int font_angle, bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env)
+                     int _size, int _textcolor, int _halocolor, int font_width, int font_angle, bool _bold, bool _italic, bool _noaa, bool _gdi, IScriptEnvironment* env)
   : GenericVideoFilter(_child),
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  antialiaser(vi.width, vi.height, _fontname, _size,
+  use_gdi(_gdi),
+  antialiaser(_gdi ? std::make_unique<Antialiaser>(vi.width, vi.height, _fontname, _size,
       vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
       vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
-      _bold, _italic, _noaa, // bold, italic, noaa; no params atm
-      font_width, font_angle),
+      _bold, _italic, _noaa,
+      font_width, font_angle) : nullptr),
+#else
+  use_gdi(false),
 #endif
   x(_x), y(_y),
   textcolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor),
   halocolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor),
   bold(_bold), italic(_italic), noaa(_noaa)
 {
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-#else
-  current_font = GetBitmapFont(_size, "Terminus", bold, false);
-  if (current_font == nullptr)
-  {
-    // size
-    current_font = GetBitmapFont(_size, "", bold, false);
-    if (current_font == nullptr)
-      current_font = GetBitmapFont(_size, "", !bold, false);
+  if (!use_gdi) {
+    current_font = GetBitmapFont(_size, "Terminus", bold, false);
+    chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
+    if (current_font == nullptr) {
+      current_font = GetBitmapFont(_size, "", bold, false);
+      if (current_font == nullptr)
+        current_font = GetBitmapFont(_size, "", !bold, false);
+    }
   }
-#endif
   int off_f, off_sec, off_min, off_hour;
 
   rate = int(_rate + 0.5);
@@ -1627,16 +1602,6 @@ PVideoFrame __stdcall ShowSMPTE::GetFrame(int n, IScriptEnvironment* env)
   n+=offset_f;
   if (n < 0) return frame;
 
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  HDC hdc = antialiaser.GetDC();
-  if (!hdc) return frame;
-#else
-  if (current_font == nullptr)
-    return frame;
-#endif
-
-  env->MakeWritable(&frame);
-
   if (dropframe) {
     if ((rate == 30) || (rate == 60) || (rate == 120)) {
   // at 10:00, 20:00, 30:00, etc. nothing should happen if offset=0
@@ -1681,17 +1646,23 @@ PVideoFrame __stdcall ShowSMPTE::GetFrame(int n, IScriptEnvironment* env)
   text[15] = 0;
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  SetTextAlign(hdc, TA_BASELINE|TA_CENTER);
-  TextOut(hdc, x+16, y+16, text, (int)strlen(text));
-  GdiFlush();
-
-  antialiaser.Apply(vi, &frame, frame->GetPitch());
-#else
+  if (use_gdi) {
+    HDC hdc = antialiaser->GetDC();
+    if (!hdc) return frame;
+    env->MakeWritable(&frame);
+    SetTextAlign(hdc, TA_BASELINE|TA_CENTER);
+    TextOut(hdc, x+16, y+16, text, (int)strlen(text));
+    GdiFlush();
+    antialiaser->Apply(vi, &frame, frame->GetPitch());
+    return frame;
+  }
+#endif
+  if (current_font == nullptr)
+    return frame;
+  env->MakeWritable(&frame);
   const bool utf8 = true;
   auto s_utf8 = charToUtf8(text, utf8);
   SimpleTextOutW(current_font.get(), vi, frame, x + 2, y + 2, s_utf8, true, textcolor, halocolor, false, 2 /* V baseline H center */, chromaplacement);
-#endif
-
   return frame;
 }
 
@@ -1706,31 +1677,29 @@ AVSValue __cdecl ShowSMPTE::CreateSMTPE(AVSValue args, void*, IScriptEnvironment
   const int xreal = arg0vi.width/2;
   const int yreal = arg0vi.height-8;
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  const int x = int(args[4].AsDblDef(xreal)*8+0.5);
-  const int y = int(args[5].AsDblDef(yreal)*8+0.5);
-  const char* font = args[6].AsString("Arial");
-  const int size = int(args[7].AsFloat(24)*8+0.5);
-  const int font_width = int(args[10].AsFloat(0) * 8 + 0.5);
+  const bool gdi = args[15].AsBool(true);
+  const int x = int(args[4].AsDblDef(xreal) * (gdi ? 8 : 1) + 0.5);
+  const int y = int(args[5].AsDblDef(yreal) * (gdi ? 8 : 1) + 0.5);
+  const char* font = args[6].AsString(gdi ? "Arial" : "Terminus");
+  const int size = int(args[7].AsFloat(24) * (gdi ? 8 : 1) + 0.5);
+  const int font_width = int(args[10].AsFloat(0) * (gdi ? 8 : 1) + 0.5);
+  const bool bold = args[12].AsBool(gdi);
 #else
+  const bool gdi = false;
   const int x = int(args[4].AsDblDef(xreal) + 0.5);
   const int y = int(args[5].AsDblDef(yreal) + 0.5);
   const char* font = args[6].AsString("Terminus");
   const int size = int(args[7].AsFloat(24) + 0.5);
   const int font_width = int(args[10].AsFloat(0) + 0.5);
+  const bool bold = args[12].AsBool(false);
 #endif
   const int text_color = args[8].AsInt(0xFFFF00);
   const int halo_color = args[9].AsInt(0);
   const int font_angle = int(args[11].AsFloat(0)*10+0.5);
-
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  const bool bold = args[12].AsBool(true);
-#else
-  const bool bold = args[12].AsBool(false); // intentionally different
-#endif
   const bool italic = args[13].AsBool(false);
   const bool noaa = args[14].AsBool(false);
 
-  return new ShowSMPTE(clip, dfrate, offset, offset_f, x, y, font, size, text_color, halo_color, font_width, font_angle, bold, italic, noaa, env);
+  return new ShowSMPTE(clip, dfrate, offset, offset_f, x, y, font, size, text_color, halo_color, font_width, font_angle, bold, italic, noaa, gdi, env);
 }
 
 AVSValue __cdecl ShowSMPTE::CreateTime(AVSValue args, void*, IScriptEnvironment* env)
@@ -1740,31 +1709,29 @@ AVSValue __cdecl ShowSMPTE::CreateTime(AVSValue args, void*, IScriptEnvironment*
   const int xreal = args[0].AsClip()->GetVideoInfo().width/2;
   const int yreal = args[0].AsClip()->GetVideoInfo().height-8;
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  const int x = int(args[2].AsDblDef(xreal)*8+0.5);
-  const int y = int(args[3].AsDblDef(yreal)*8+0.5);
-  const char* font = args[4].AsString("Arial");
-  const int size = int(args[5].AsFloat(24)*8+0.5);
-  const int font_width = int(args[8].AsFloat(0) * 8 + 0.5);
+  const bool gdi = args[13].AsBool(true);
+  const int x = int(args[2].AsDblDef(xreal) * (gdi ? 8 : 1) + 0.5);
+  const int y = int(args[3].AsDblDef(yreal) * (gdi ? 8 : 1) + 0.5);
+  const char* font = args[4].AsString(gdi ? "Arial" : "Terminus");
+  const int size = int(args[5].AsFloat(24) * (gdi ? 8 : 1) + 0.5);
+  const int font_width = int(args[8].AsFloat(0) * (gdi ? 8 : 1) + 0.5);
+  const bool bold = args[10].AsBool(gdi);
 #else
+  const bool gdi = false;
   const int x = int(args[2].AsDblDef(xreal) + 0.5);
   const int y = int(args[3].AsDblDef(yreal) + 0.5);
   const char* font = args[4].AsString("Terminus");
   const int size = int(args[5].AsFloat(24) + 0.5);
   const int font_width = int(args[8].AsFloat(0) + 0.5);
+  const bool bold = args[10].AsBool(false);
 #endif
   const int text_color = args[6].AsInt(0xFFFF00);
   const int halo_color = args[7].AsInt(0);
   const int font_angle = int(args[9].AsFloat(0)*10+0.5);
-
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  const bool bold = args[10].AsBool(true);
-#else
-  const bool bold = args[10].AsBool(false); // intentionally different
-#endif
   const bool italic = args[11].AsBool(false);
   const bool noaa = args[12].AsBool(false);
 
-  return new ShowSMPTE(clip, 0.0, NULL, offset_f, x, y, font, size, text_color, halo_color, font_width, font_angle, bold, italic, noaa, env);
+  return new ShowSMPTE(clip, 0.0, NULL, offset_f, x, y, font, size, text_color, halo_color, font_width, font_angle, bold, italic, noaa, gdi, env);
 }
 
 
@@ -2047,7 +2014,7 @@ GDIError:
 
 #endif
 
-static int CalcFontSizeForInfo(int w, int h, bool autolarge, int upper_limit)
+static int CalcFontSizeForInfo(int w, int h, bool autolarge, int upper_limit, bool gdi)
 {
   // if frame is smaller than minimum then font size will be decreased proportionally
   // normalized to 640x480 @fontsize=15:
@@ -2055,11 +2022,12 @@ static int CalcFontSizeForInfo(int w, int h, bool autolarge, int upper_limit)
   // Info screen takes horizontally ~0.6 * 640 pixels at font size 15
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  const int min_font_size = 1;
-  const int max_font_size = 255; // n/a
-  const int reference_font_size = 15;
-  const int reference_font_width = 8;
+  const int min_font_size = gdi ? 1 : 12;
+  const int max_font_size = gdi ? 255 : 32;
+  const int reference_font_size = gdi ? 15 : 18;
+  const int reference_font_width = gdi ? 8 : 10;
 #else
+  AVS_UNUSED(gdi);
   const int min_font_size = 12;
   const int max_font_size = 32;
   const int reference_font_size = 18; // 16x8 or 18x10, latter is more visible
@@ -2096,7 +2064,7 @@ static int CalcFontSizeForInfo(int w, int h, bool autolarge, int upper_limit)
     effective_font_size = std::min(effective_font_size, max_font_size);
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  return effective_font_size * 8; // GDI takes *8
+  return gdi ? effective_font_size * 8 : effective_font_size / 2 * 2;
 #else
   return effective_font_size / 2 * 2; // no odd sized fixed fonts atm.
 #endif
@@ -2317,34 +2285,34 @@ AVSValue __cdecl SimpleText::Create(AVSValue args, void*, IScriptEnvironment* en
  *******   FilterInfo Filter    ******
  **********************************/
 
-FilterInfo::FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa, 
-  bool _cpu, int _x, int _y, int _align, IScriptEnvironment* env)
+FilterInfo::FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa,
+  bool _cpu, int _x, int _y, int _align, bool _gdi, IScriptEnvironment* env)
   : GenericVideoFilter(_child), vii(AdjustVi()), size(_size),
   text_color(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor),
-  halo_color(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor)
+  halo_color(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor),
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  ,antialiaser(vi.width, vi.height, _fontname, size,
+  use_gdi(_gdi),
+  antialiaser(_gdi ? std::make_unique<Antialiaser>(vi.width, vi.height, _fontname, size,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
-    _bold, _italic, _noaa)
+    _bold, _italic, _noaa) : nullptr),
+#else
+  use_gdi(false),
 #endif
-  , bold(_bold), italic(_italic), noaa(_noaa),
+  bold(_bold), italic(_italic), noaa(_noaa),
   cpu(_cpu), x(_x), y(_y), align(_align)
 {
   AVS_UNUSED(env);
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-#else
-  // internal font
-  chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
-  current_font = GetBitmapFont(size, "Terminus", bold, false);
-  if (current_font == nullptr)
-  {
-    current_font = GetBitmapFont(size, "", bold, false);
-    if (current_font == nullptr)
-      current_font = GetBitmapFont(size, "", !bold, false);
-  }
-#endif
 
+  if (!use_gdi) {
+    chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
+    current_font = GetBitmapFont(size, "Terminus", bold, false);
+    if (current_font == nullptr) {
+      current_font = GetBitmapFont(size, "", bold, false);
+      if (current_font == nullptr)
+        current_font = GetBitmapFont(size, "", !bold, false);
+    }
+  }
 }
 
 
@@ -2534,8 +2502,12 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
   }
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  HDC hdcAntialias = antialiaser.GetDC();
-  if (!hdcAntialias)
+  HDC hdcAntialias = nullptr;
+  if (use_gdi) {
+    hdcAntialias = antialiaser->GetDC();
+    if (!hdcAntialias)
+      return frame;
+  } else if (current_font == nullptr)
     return frame;
 #else
   if (current_font == nullptr)
@@ -2670,6 +2642,7 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
     // "Text" fixed font mode: individual lines are aligned as well
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
+    if (use_gdi) {
     // So far RECT dimensions were hardcoded: RECT r = { 32, 16, min(3440,vi.width * 8), 900*2 };
     // More flexible way: get text extent
     RECT r;
@@ -2728,7 +2701,16 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
     env->MakeWritable(&frame);
     frame->GetWritePtr(); // Bump sequence_number
     int dst_pitch = frame->GetPitch();
-    antialiaser.Apply(vi, &frame, dst_pitch);
+    antialiaser->Apply(vi, &frame, dst_pitch);
+  } else {
+    env->MakeWritable(&frame);
+    frame->GetWritePtr(); // Bump sequence_number
+
+    bool utf8 = false;
+    std::string s_utf8 = charToUtf8(text, utf8);
+    int lsp = 0;
+    SimpleTextOutW_multi(current_font.get(), vi, frame, x, y, s_utf8, false, text_color, halo_color, true, align, lsp, chromaplacement);
+  }
 #else
     env->MakeWritable(&frame);
     frame->GetWritePtr(); // Bump sequence_number
@@ -2738,8 +2720,6 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
     std::string s_utf8 = charToUtf8(text, utf8);
 
     int lsp = 0; // line spacing n/a
-
-    const int chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
     SimpleTextOutW_multi(current_font.get(), vi, frame, x, y, s_utf8, false, text_color, halo_color, true, align, lsp, chromaplacement);
 #endif
   return frame;
@@ -2747,25 +2727,22 @@ PVideoFrame FilterInfo::GetFrame(int n, IScriptEnvironment* env)
 
 AVSValue __cdecl FilterInfo::Create(AVSValue args, void*, IScriptEnvironment* env)
 {
-    // 0   1      2       3             4         5       6      7       8    9  10    11
-    // c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b[noaa]b[cpu]b[x]f[y]f[align]
+    // 0   1      2       3             4         5       6      7       8    9  10    11      12
+    // c[font]s[size]f[text_color]i[halo_color]i[bold]b[italic]b[noaa]b[cpu]b[x]f[y]f[align]i[gdi]b
     PClip clip = args[0].AsClip();
-    // new parameters 20160823
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-    const char* font = args[1].AsString("Courier New");
-    int size = int(args[2].AsFloat(0) * 8 + 0.5);
-    const int upper_limit = -1; // no limit
+    const bool gdi = args[12].AsBool(true);
 #else
-    const char* font = args[1].AsString("Terminus");
-    int size = int(args[2].AsFloat(0));
-    const int upper_limit = 32; // max terminus font size is 32
+    const bool gdi = false;
 #endif
+    const char* font = args[1].AsString(gdi ? "Courier New" : "Terminus");
+    const int upper_limit = gdi ? -1 : 32;
+    int size = gdi ? int(args[2].AsFloat(0) * 8 + 0.5) : int(args[2].AsFloat(0));
     if (!args[2].Defined() || size < 0)
-      size = CalcFontSizeForInfo(clip->GetVideoInfo().width, clip->GetVideoInfo().height, size < 0, upper_limit);
-    // size <= 0 means autolarge over 640x480. Fixed font: up to size 32
+      size = CalcFontSizeForInfo(clip->GetVideoInfo().width, clip->GetVideoInfo().height, size < 0, upper_limit, gdi);
     const int text_color = args[3].AsInt(0xFFFF00);
     const int halo_color = args[4].AsInt(0);
-    const bool bold = args[5].AsBool(true); // bold has better visibility on NO_WIN_GDI terminus was well
+    const bool bold = args[5].AsBool(!gdi);
     const bool italic = args[6].AsBool(false);
     const bool noaa = args[7].AsBool(false);
     const bool cpu = args[8].AsBool(true);
@@ -2773,11 +2750,7 @@ AVSValue __cdecl FilterInfo::Create(AVSValue args, void*, IScriptEnvironment* en
     const int align = args[11].AsInt(7); // default top left
 
     const int info_default_x = 4; // subtitle: 8
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-    const int PIXEL_MUL_FACTOR = 8;
-#else
-    const int PIXEL_MUL_FACTOR = 1;
-#endif
+    const int PIXEL_MUL_FACTOR = gdi ? 8 : 1;
     // similar to SubTitle
     int defx, defy;
     bool x_center = false;
@@ -2819,7 +2792,7 @@ AVSValue __cdecl FilterInfo::Create(AVSValue args, void*, IScriptEnvironment* en
     if ((align < 1) || (align > 9))
       env->ThrowError("Info: Align values are 1 - 9 mapped to your numeric pad");
 
-    return new FilterInfo(clip, font, size, text_color, halo_color, bold, italic, noaa, cpu, x, y, align, env);
+    return new FilterInfo(clip, font, size, text_color, halo_color, bold, italic, noaa, cpu, x, y, align, gdi, env);
 }
 
 
@@ -2828,14 +2801,16 @@ AVSValue __cdecl FilterInfo::Create(AVSValue args, void*, IScriptEnvironment* en
  *******    Compare Filter    *******
  ***********************************/
 
-Compare::Compare(PClip _child1, PClip _child2, const char* channels, const char *fname, bool _show_graph, IScriptEnvironment* env)
+Compare::Compare(PClip _child1, PClip _child2, const char* channels, const char *fname, bool _show_graph, bool _gdi, IScriptEnvironment* env)
   : GenericVideoFilter(_child1),
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  antialiaser(vi.width, vi.height, "Courier New", 16 * 8,
+  use_gdi(_gdi),
+  antialiaser(_gdi ? std::make_unique<Antialiaser>(vi.width, vi.height, "Courier New", 16 * 8,
     (vi.IsYUV() || vi.IsYUVA()) ? 0xD21092 : 0xFFFF00,
     (vi.IsYUV() || vi.IsYUVA()) ? 0x108080 : 0,
-    true, false, false // bold, italic, noaa
-  ),
+    true, false, false) : nullptr),
+#else
+  use_gdi(false),
 #endif
   child2(_child2),
   log(nullptr),
@@ -2952,21 +2927,16 @@ Compare::Compare(PClip _child1, PClip _child2, const char* channels, const char 
       for (int i = 0; i < vi.num_frames; i++)
         psnrs[i] = 0;
   }
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-#else
-  // internal font
-  const bool bold = false;
-  const int size = 16;
-  current_font = GetBitmapFont(size, "Terminus", bold, false);
-  chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
-  if (current_font == nullptr)
-  {
-    // size
-    current_font = GetBitmapFont(size, "", bold, false);
-    if (current_font == nullptr)
-      current_font = GetBitmapFont(size, "", !bold, false);
+  if (!use_gdi) {
+    const int size = 16;
+    current_font = GetBitmapFont(size, "Terminus", false, false);
+    chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
+    if (current_font == nullptr) {
+      current_font = GetBitmapFont(size, "", false, false);
+      if (current_font == nullptr)
+        current_font = GetBitmapFont(size, "", true, false);
+    }
   }
-#endif
 }
 
 
@@ -2989,11 +2959,17 @@ Compare::~Compare()
 
 AVSValue __cdecl Compare::Create(AVSValue args, void*, IScriptEnvironment *env)
 {
+#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
+  const bool gdi = args[5].AsBool(true);
+#else
+  const bool gdi = false;
+#endif
   return new Compare( args[0].AsClip(),     // clip
             args[1].AsClip(),     // base clip
             args[2].AsString(""),   // channels
             args[3].AsString(""),   // logfile
             args[4].AsBool(true),   // show_graph
+            gdi,
             env);
 }
 
@@ -3259,16 +3235,15 @@ PVideoFrame __stdcall Compare::GetFrame(int n, IScriptEnvironment* env)
     int dst_pitch = f1->GetPitch();
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-    HDC hdc = antialiaser.GetDC();
-    if (hdc)
+    HDC hdc = nullptr;
+    if (use_gdi)
+      hdc = antialiaser->GetDC();
+    if (use_gdi ? hdc != nullptr : current_font != nullptr)
 #else
-    if(current_font != nullptr)
+    if (current_font != nullptr)
 #endif
     {
         char text[600];
-#if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-        RECT r = { 32, 16, min((51+(pixelsize==1 ? 0: 12))*67,vi.width * 8), 768 + 128 }; // orig: 3440: 51*67, not enough for 16 bit data
-#endif
         double PSNR_overall = 10.0 * log10(bytecount_overall * factor * factor / SSD_overall);
         if (pixelsize == 1)
             snprintf(text, sizeof(text),
@@ -3305,14 +3280,19 @@ PVideoFrame __stdcall Compare::GetFrame(int n, IScriptEnvironment* env)
                 PSNR_overall
             );
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-        DrawText(hdc, text, -1, &r, 0);
-        GdiFlush();
-
-        antialiaser.Apply(vi, &f1, dst_pitch);
+        if (use_gdi) {
+          RECT r = { 32, 16, min((51+(pixelsize==1 ? 0: 12))*67, vi.width * 8), 768 + 128 }; // orig: 3440: 51*67, not enough for 16 bit data
+          DrawText(hdc, text, -1, &r, 0);
+          GdiFlush();
+          antialiaser->Apply(vi, &f1, dst_pitch);
+        } else {
+          bool utf8 = true;
+          auto s_utf8 = charToUtf8(text, utf8);
+          SimpleTextOutW_multi(current_font.get(), vi, f1, 2, 1, s_utf8, true, text_color, halo_color, false, 0 /* no align */, 0 /*lsp*/, chromaplacement);
+        }
 #else
         bool utf8 = true;
         auto s_utf8 = charToUtf8(text, utf8);
-        const int chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
         SimpleTextOutW_multi(current_font.get(), vi, f1, 2, 1, s_utf8, true, text_color, halo_color, false, 0 /* no align */, 0 /*lsp*/, chromaplacement);
 #endif
     }

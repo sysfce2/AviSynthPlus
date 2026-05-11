@@ -104,7 +104,7 @@ class ShowFrameNumber : public GenericVideoFilter
 {
 public:
   ShowFrameNumber(PClip _child, bool _scroll, int _offset, int _x, int _y, const char _fontname[], int _size,
-      int _textcolor, int _halocolor, int font_width, int font_angle, bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env);
+      int _textcolor, int _halocolor, int font_width, int font_angle, bool _bold, bool _italic, bool _noaa, bool _gdi, IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
   static AVSValue __cdecl Create(AVSValue args, void*, IScriptEnvironment* env);
@@ -116,12 +116,12 @@ public:
   }
 
 private:
+  const bool use_gdi;
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  Antialiaser antialiaser;
-#else
+  std::unique_ptr<Antialiaser> antialiaser;
+#endif
   std::unique_ptr<BitmapFont> current_font;
   int chromaplacement;
-#endif
   const bool scroll;
   const int offset;
   const int size, x, y;
@@ -145,7 +145,7 @@ public:
   ShowCRC32(PClip _child, PClip _crc_child, bool _scroll, int _offset, int _x, int _y,
             const char _fontname[], int _size,
             int _textcolor, int _halocolor, int font_width, int font_angle,
-            bool _bold, bool _italic, bool _noaa,
+            bool _bold, bool _italic, bool _noaa, bool _gdi,
             const char* channels, int _mode, bool _compatible_mode, int _showmode, IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
@@ -162,12 +162,12 @@ private:
   const int mode;
   bool compatible_mode;
   const int showmode;
+  const bool use_gdi;
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  Antialiaser antialiaser;
-#else
+  std::unique_ptr<Antialiaser> antialiaser;
+#endif
   std::unique_ptr<BitmapFont> current_font;
   int chromaplacement;
-#endif
   const bool scroll;
   const int offset;
   const int size, x, y;
@@ -186,7 +186,7 @@ class ShowSMPTE : public GenericVideoFilter
 {
 public:
   ShowSMPTE(PClip _child, double _rate, const char* _offset, int _offset_f, int _x, int _y, const char _fontname[], int _size,
-            int _textcolor, int _halocolor, int font_width, int font_angle, bool _bold, bool _italic, bool _noaa, IScriptEnvironment* env);
+            int _textcolor, int _halocolor, int font_width, int font_angle, bool _bold, bool _italic, bool _noaa, bool _gdi, IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
   static AVSValue __cdecl CreateSMTPE(AVSValue args, void*, IScriptEnvironment* env);
@@ -199,12 +199,12 @@ public:
   }
 
 private:
+  const bool use_gdi;
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  Antialiaser antialiaser;
-#else
+  std::unique_ptr<Antialiaser> antialiaser;
+#endif
   std::unique_ptr<BitmapFont> current_font;
   int chromaplacement;
-#endif
   int rate;
   int offset_f;
   const int x, y;
@@ -302,7 +302,7 @@ class FilterInfo : public GenericVideoFilter
  **/
 {
 public:
-  FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa, bool _cpu, int _x, int _y, int _align, IScriptEnvironment* env);
+  FilterInfo( PClip _child, const char _fontname[], int _size, int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa, bool _cpu, int _x, int _y, int _align, bool _gdi, IScriptEnvironment* env);
   virtual ~FilterInfo(void);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
   bool __stdcall GetParity(int n) override;
@@ -323,12 +323,12 @@ private:
   const int size;
 
   const int text_color, halo_color;
+  const bool use_gdi;
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  Antialiaser antialiaser;
-#else
+  std::unique_ptr<Antialiaser> antialiaser;
+#endif
   std::unique_ptr<BitmapFont> current_font;
   int chromaplacement;
-#endif
   [[maybe_unused]] const bool bold;
   [[maybe_unused]] const bool italic;
   [[maybe_unused]] const bool noaa;
@@ -344,7 +344,7 @@ class Compare : public GenericVideoFilter
  **/
 {
 public:
-  Compare(PClip _child1, PClip _child2, const char* channels, const char *fname, bool _show_graph, IScriptEnvironment* env);
+  Compare(PClip _child1, PClip _child2, const char* channels, const char *fname, bool _show_graph, bool _gdi, IScriptEnvironment* env);
   ~Compare();
   static AVSValue __cdecl Create(AVSValue args, void* , IScriptEnvironment* env);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
@@ -361,12 +361,12 @@ public:
 
 
 private:
+  bool use_gdi;
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  Antialiaser antialiaser;
-#else
+  std::unique_ptr<Antialiaser> antialiaser;
+#endif
   std::unique_ptr<BitmapFont> current_font;
   int chromaplacement;
-#endif
   PClip child2;
   uint32_t mask;
   uint64_t mask64;
