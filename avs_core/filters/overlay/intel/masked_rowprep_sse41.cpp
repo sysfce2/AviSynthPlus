@@ -62,13 +62,28 @@ static void fill_mask422_sse41(
       _mm_storel_epi64((__m128i*)(dst + x), _mm_packus_epi16(avg, avg));
     }
   } else {
-    // 16-bit: 8 uint16 luma → 4 uint16 chroma per iteration.
-    const __m128i ones = _mm_set1_epi16(1);
+    // 16-bit: 8 uint16 luma -> 4 uint16 chroma per iteration.
+    // Use signed pivot to utilize madd_epi16 safely
+    const __m128i v_ones = _mm_set1_epi16(1);
+    const __m128i v_pivot16 = _mm_set1_epi16(-32768);
+    // 65536 corrects the double-bias subtraction, +1 handles the formula's rounding
+    const __m128i v_correct32 = _mm_set1_epi32(65536 + 1);
+
     [[maybe_unused]] const __m128i v_opacity32 = _mm_set1_epi32(opacity_i);
-    [[maybe_unused]] const __m128i v_half32    = _mm_set1_epi32(half);
+    [[maybe_unused]] const __m128i v_half32 = _mm_set1_epi32(half);
+
     for (; x <= width - 4; x += 4) {
-      __m128i v     = _mm_loadu_si128((const __m128i*)(src + x * 2));
-      __m128i avg32 = _mm_srli_epi32(_mm_add_epi32(_mm_madd_epi16(v, ones), _mm_set1_epi32(1)), 1);
+      __m128i v = _mm_loadu_si128((const __m128i*)(src + x * 2));
+
+      // unsigned 0..65535 -> signed -32768..32767
+      __m128i v_signed = _mm_add_epi16(v, v_pivot16);
+
+      // Pairwise add: (a - 32768) + (b - 32768) = a + b - 65536
+      __m128i sum32 = _mm_madd_epi16(v_signed, v_ones);
+
+      // Add 65536 back + 1 for rounding, then shift
+      __m128i avg32 = _mm_srli_epi32(_mm_add_epi32(sum32, v_correct32), 1);
+
       if constexpr (!full_opacity)
         avg32 = simd_magic_div_32(
           _mm_add_epi32(_mm_mullo_epi32(avg32, v_opacity32), v_half32),
@@ -199,14 +214,26 @@ static void fill_mask420_sse41(
       _mm_storel_epi64((__m128i*)(dst + x), _mm_packus_epi16(avg, avg));
     }
   } else {
-    const __m128i ones = _mm_set1_epi16(1);
+    // 16-bit: unsigned widening to avoid signed overflow in madd_epi16
     [[maybe_unused]] const __m128i v_opacity32 = _mm_set1_epi32(opacity_i);
     [[maybe_unused]] const __m128i v_half32    = _mm_set1_epi32(half);
     for (; x <= width - 4; x += 4) {
-      __m128i v0    = _mm_loadu_si128((const __m128i*)(row0 + x * 2));
-      __m128i v1    = _mm_loadu_si128((const __m128i*)(row1 + x * 2));
-      __m128i avg32 = _mm_srli_epi32(
-        _mm_add_epi32(_mm_add_epi32(_mm_madd_epi16(v0, ones), _mm_madd_epi16(v1, ones)), _mm_set1_epi32(2)), 2);
+      __m128i v0     = _mm_loadu_si128((const __m128i*)(row0 + x * 2)); // 8 uint16
+      __m128i v1     = _mm_loadu_si128((const __m128i*)(row1 + x * 2));
+      __m128i lo0    = _mm_cvtepu16_epi32(v0);
+      __m128i hi0    = _mm_cvtepu16_epi32(_mm_srli_si128(v0, 8));
+      __m128i lo1    = _mm_cvtepu16_epi32(v1);
+      __m128i hi1    = _mm_cvtepu16_epi32(_mm_srli_si128(v1, 8));
+      __m128i sum_lo = _mm_add_epi32(lo0, lo1);
+      __m128i sum_hi = _mm_add_epi32(hi0, hi1);
+      __m128i even32 = _mm_unpacklo_epi64(
+        _mm_shuffle_epi32(sum_lo, _MM_SHUFFLE(2, 0, 2, 0)),
+        _mm_shuffle_epi32(sum_hi, _MM_SHUFFLE(2, 0, 2, 0)));
+      __m128i odd32  = _mm_unpacklo_epi64(
+        _mm_shuffle_epi32(sum_lo, _MM_SHUFFLE(3, 1, 3, 1)),
+        _mm_shuffle_epi32(sum_hi, _MM_SHUFFLE(3, 1, 3, 1)));
+      __m128i avg32  = _mm_srli_epi32(
+        _mm_add_epi32(_mm_add_epi32(even32, odd32), _mm_set1_epi32(2)), 2);
       if constexpr (!full_opacity)
         avg32 = simd_magic_div_32(
           _mm_add_epi32(_mm_mullo_epi32(avg32, v_opacity32), v_half32),
@@ -423,15 +450,20 @@ static void fill_mask411_sse41(
       _mm_storel_epi64((__m128i*)(dst + x), _mm_packus_epi16(avg, avg));
     }
   } else {
-    const __m128i ones = _mm_set1_epi16(1);
+    // 16-bit: unsigned widening to avoid signed overflow in madd_epi16
     [[maybe_unused]] const __m128i v_opacity32 = _mm_set1_epi32(opacity_i);
     [[maybe_unused]] const __m128i v_half32    = _mm_set1_epi32(half);
     for (; x <= width - 4; x += 4) {
-      __m128i v0    = _mm_loadu_si128((const __m128i*)(src + x * 4));
-      __m128i v1    = _mm_loadu_si128((const __m128i*)(src + x * 4 + 8));
+      __m128i v0   = _mm_loadu_si128((const __m128i*)(src + x * 4));     // s0..s7
+      __m128i v1   = _mm_loadu_si128((const __m128i*)(src + x * 4 + 8)); // s8..s15
+      __m128i e0   = _mm_cvtepu16_epi32(v0);
+      __m128i e0h  = _mm_cvtepu16_epi32(_mm_srli_si128(v0, 8));
+      __m128i e1   = _mm_cvtepu16_epi32(v1);
+      __m128i e1h  = _mm_cvtepu16_epi32(_mm_srli_si128(v1, 8));
+      __m128i p01  = _mm_hadd_epi32(e0, e0h);  // [s0+s1, s2+s3, s4+s5, s6+s7]
+      __m128i p23  = _mm_hadd_epi32(e1, e1h);  // [s8+s9, s10+s11, s12+s13, s14+s15]
       __m128i avg32 = _mm_srli_epi32(
-        _mm_add_epi32(_mm_hadd_epi32(_mm_madd_epi16(v0, ones), _mm_madd_epi16(v1, ones)),
-                      _mm_set1_epi32(2)), 2);
+        _mm_add_epi32(_mm_hadd_epi32(p01, p23), _mm_set1_epi32(2)), 2);
       if constexpr (!full_opacity)
         avg32 = simd_magic_div_32(
           _mm_add_epi32(_mm_mullo_epi32(avg32, v_opacity32), v_half32),

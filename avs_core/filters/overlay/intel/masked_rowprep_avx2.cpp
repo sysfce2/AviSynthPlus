@@ -59,13 +59,28 @@ static void fill_mask422_avx2(
       _mm_storeu_si128((__m128i*)(dst + x), avx2_pack_u16_to_u8(avg));
     }
   } else {
+    // 16-bit: 16 uint16 luma -> 8 uint16 chroma per iteration.
     const __m256i ones = _mm256_set1_epi16(1);
+    const __m256i v_pivot16 = _mm256_set1_epi16(-32768);
+    // 65536 corrects the double-bias subtraction from madd, +1 handles the formula's rounding
+    const __m256i v_correct32 = _mm256_set1_epi32(65536 + 1);
+
     [[maybe_unused]] const __m256i v_opacity32 = _mm256_set1_epi32(opacity_i);
-    [[maybe_unused]] const __m256i v_half32    = _mm256_set1_epi32(half);
+    [[maybe_unused]] const __m256i v_half32 = _mm256_set1_epi32(half);
+
     for (; x <= width - 8; x += 8) {
-      __m256i v     = _mm256_loadu_si256((const __m256i*)(src + x * 2));
-      __m256i avg32 = _mm256_srli_epi32(
-        _mm256_add_epi32(_mm256_madd_epi16(v, ones), _mm256_set1_epi32(1)), 1);
+      // Load 16 pixels (32 bytes) of uint16_t data
+      __m256i v = _mm256_loadu_si256((const __m256i*)(src + x * 2));
+
+      // unsigned 0..65535 -> signed -32768..32767 safely
+      __m256i v_signed = _mm256_add_epi16(v, v_pivot16);
+
+      // Horizontal pair addition: (a - 32768) + (b - 32768) = a + b - 65536
+      __m256i sum32 = _mm256_madd_epi16(v_signed, ones);
+
+      // Add back 65536 to undo the bias, add 1 for rounding, then logical shift right
+      __m256i avg32 = _mm256_srli_epi32(_mm256_add_epi32(sum32, v_correct32), 1);
+
       if constexpr (!full_opacity)
         avg32 = simd_magic_div_32_avx2(
           _mm256_add_epi32(_mm256_mullo_epi32(avg32, v_opacity32), v_half32),
@@ -222,16 +237,28 @@ static void fill_mask420_avx2(
       _mm_storeu_si128((__m128i*)(dst + x), avx2_pack_u16_to_u8(avg));
     }
   } else {
-    const __m256i ones = _mm256_set1_epi16(1);
+    // uint16_t: unsigned widening to avoid signed overflow in madd_epi16
     [[maybe_unused]] const __m256i v_opacity32 = _mm256_set1_epi32(opacity_i);
     [[maybe_unused]] const __m256i v_half32    = _mm256_set1_epi32(half);
     for (; x <= width - 8; x += 8) {
-      __m256i v0    = _mm256_loadu_si256((const __m256i*)(row0 + x * 2));
-      __m256i v1    = _mm256_loadu_si256((const __m256i*)(row1 + x * 2));
-      __m256i avg32 = _mm256_srli_epi32(
-        _mm256_add_epi32(
-          _mm256_add_epi32(_mm256_madd_epi16(v0, ones), _mm256_madd_epi16(v1, ones)),
-          _mm256_set1_epi32(2)), 2);
+      __m256i v0     = _mm256_loadu_si256((const __m256i*)(row0 + x * 2));
+      __m256i v1     = _mm256_loadu_si256((const __m256i*)(row1 + x * 2));
+      __m256i r0_lo  = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v0));
+      __m256i r0_hi  = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v0, 1));
+      __m256i r1_lo  = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v1));
+      __m256i r1_hi  = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v1, 1));
+      __m256i sum_lo = _mm256_add_epi32(r0_lo, r1_lo);
+      __m256i sum_hi = _mm256_add_epi32(r0_hi, r1_hi);
+      __m256i sh_le  = _mm256_shuffle_epi32(sum_lo, 0x88);
+      __m256i sh_he  = _mm256_shuffle_epi32(sum_hi, 0x88);
+      __m256i even32 = _mm256_permute4x64_epi64(
+        _mm256_unpacklo_epi64(sh_le, sh_he), _MM_SHUFFLE(3, 1, 2, 0));
+      __m256i sh_lo  = _mm256_shuffle_epi32(sum_lo, 0xDD);
+      __m256i sh_ho  = _mm256_shuffle_epi32(sum_hi, 0xDD);
+      __m256i odd32  = _mm256_permute4x64_epi64(
+        _mm256_unpacklo_epi64(sh_lo, sh_ho), _MM_SHUFFLE(3, 1, 2, 0));
+      __m256i avg32  = _mm256_srli_epi32(
+        _mm256_add_epi32(_mm256_add_epi32(even32, odd32), _mm256_set1_epi32(2)), 2);
       if constexpr (!full_opacity)
         avg32 = simd_magic_div_32_avx2(
           _mm256_add_epi32(_mm256_mullo_epi32(avg32, v_opacity32), v_half32),
@@ -475,17 +502,26 @@ static void fill_mask411_avx2(
       _mm_storeu_si128((__m128i*)(dst + x), avx2_pack_u16_to_u8(avg));
     }
   } else {
-    const __m256i ones = _mm256_set1_epi16(1);
+    // uint16_t: unsigned widening to avoid signed overflow in madd_epi16
     [[maybe_unused]] const __m256i v_opacity32 = _mm256_set1_epi32(opacity_i);
     [[maybe_unused]] const __m256i v_half32    = _mm256_set1_epi32(half);
     for (; x <= width - 8; x += 8) {
-      __m256i v0 = _mm256_loadu_si256((const __m256i*)(src + x * 4));
-      __m256i v1 = _mm256_loadu_si256((const __m256i*)(src + x * 4 + 16));
-      __m256i m0 = _mm256_madd_epi16(v0, ones);
-      __m256i m1 = _mm256_madd_epi16(v1, ones);
+      __m256i v0   = _mm256_loadu_si256((const __m256i*)(src + x * 4));       // s0..s15
+      __m256i v1   = _mm256_loadu_si256((const __m256i*)(src + x * 4 + 16));  // s16..s31
+      __m256i lo0  = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v0));
+      __m256i hi0  = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v0, 1));
+      __m256i lo1  = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v1));
+      __m256i hi1  = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v1, 1));
+      __m256i pair0 = _mm256_hadd_epi32(lo0, hi0); // lo:[s0+s1,s2+s3,s8+s9,s10+s11] hi:[s4+s5,s6+s7,s12+s13,s14+s15]
+      __m256i pair1 = _mm256_hadd_epi32(lo1, hi1);
+      __m256i quad0 = _mm256_hadd_epi32(pair0, pair0); // lo:[G0,G2,G0,G2] hi:[G1,G3,G1,G3]
+      __m256i quad1 = _mm256_hadd_epi32(pair1, pair1); // lo:[G4,G6,G4,G6] hi:[G5,G7,G5,G7]
+      __m128i g0123 = _mm_unpacklo_epi32(_mm256_castsi256_si128(quad0),
+                                          _mm256_extracti128_si256(quad0, 1)); // [G0,G1,G2,G3]
+      __m128i g4567 = _mm_unpacklo_epi32(_mm256_castsi256_si128(quad1),
+                                          _mm256_extracti128_si256(quad1, 1)); // [G4,G5,G6,G7]
       __m256i avg32 = _mm256_srli_epi32(
-        _mm256_add_epi32(_mm256_hadd_epi32(m0, m1), _mm256_set1_epi32(2)), 2);
-      avg32 = _mm256_permute4x64_epi64(avg32, _MM_SHUFFLE(3, 1, 2, 0));
+        _mm256_add_epi32(_mm256_set_m128i(g4567, g0123), _mm256_set1_epi32(2)), 2);
       if constexpr (!full_opacity)
         avg32 = simd_magic_div_32_avx2(
           _mm256_add_epi32(_mm256_mullo_epi32(avg32, v_opacity32), v_half32),
