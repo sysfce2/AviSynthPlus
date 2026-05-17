@@ -181,7 +181,6 @@ static void layer_yuv_mul_f_c(BYTE* dstp8, const BYTE* ovrp8, const BYTE* maskp8
   }
 }
 
-/*
 /* Comparison of Multiply (Mul) blend mode: Overlay vs. Layer
  * Luma (Y): Compatible. Both use standard (Base * Overlay) / Max logic.
  * Chroma (UV): Incompatible. They utilize different "intent" for color:
