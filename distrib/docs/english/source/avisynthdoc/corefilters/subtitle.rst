@@ -32,7 +32,7 @@ versions of a frame at once, and you want to label them to remember which is whi
               int "last_frame", string "font", float "size", int "text_color",
               int "halo_color", int "align", int "spc", int "lsp", float "font_width",
               float "font_angle", bool "interlaced", string "font_filename", bool "utf8",
-              bool "bold", bool "italic", bool "noaa")
+              bool "bold", bool "italic", bool "noaa", string "placement", bool "gdi")
 
 .. describe:: clip
 
@@ -201,6 +201,42 @@ versions of a frame at once, and you want to label them to remember which is whi
 
     Default: false
 
+.. describe:: placement
+
+    Chroma location hint. Used in subsampled YUV formats, otherwise ignored.
+    Valid values are the same as in ``ChromaInPlacement`` and ``ChromaOutPlacement``
+    in the :doc:`Convert <convert>` functions.
+
+    Implemented values (when ``gdi=true``, the default):
+
+    - ``"MPEG2"`` (synonyms: ``"left"``) — default. Chroma samples on the left column.
+    - ``"MPEG1"`` (synonyms: ``"jpeg"``, ``"center"``) — chroma samples centered.
+    - ``"top_left"`` — UHD 4:2:0; chroma samples on the top-left pixel of the group.
+
+    When ``gdi=false``, only ``"left"`` and ``"center"`` are implemented (same as ``Text``).
+
+    Default value is
+
+    - read from ``"_ChromaLocation"`` frame property, otherwise ``"left"``
+    - override or set from ``"placement"`` parameter if parameter is other than ``"auto"``
+    - if ``"auto"`` + have frame property → use frame property
+    - if ``"auto"`` + no frame property → use ``"left"``
+    - no frame property and no parameter → use ``"left"``
+
+.. describe:: gdi
+
+    | When *true*, text is rendered using the Windows GDI Antialiaser, which
+      produces antialiased output and supports TrueType fonts, ``font_filename``,
+      ``font_width``, ``font_angle``, ``interlaced``, ``noaa``, and full
+      ``placement`` support including ``"top_left"``.
+    | When *false*, the built-in bitmap font (Terminus) is used — same rendering
+      as the ``Text`` filter. Faster and cross-platform compatible but limited:
+      ``font_filename``, ``font_width``, ``font_angle``, ``interlaced``, ``noaa``
+      and ``font`` (font name) are ignored; only ``"left"`` and ``"center"``
+      placement are implemented.
+
+    Default: true
+
 
 .. _Text:
 
@@ -222,7 +258,7 @@ of specifying ``lsp`` parameter.
           int "last_frame", string "font", float "size", int "text_color",
           int "halo_color", int "align", int "spc", int "lsp", float "font_width",
           float "font_angle", bool "interlaced", string "font_filename", bool "utf8",
-          bool "bold", bool "italic", bool "noaa", string "placement")
+          bool "bold", bool "italic", bool "noaa", string "placement", bool "gdi")
 
 .. describe:: clip
 
@@ -301,32 +337,30 @@ of specifying ``lsp`` parameter.
 .. describe:: placement
 
     Chroma location hint. Used in subsampled YUV formats, otherwise ignored.
-    Valid values for "placement" are the same as in ``ChromaInPlacement`` and 
-    ``ChromaOutPlacement`` in the :doc:`Convert <convert>` functions.
-    
-    The placement can be one of these strings: 
+    Valid values are the same as in ``ChromaInPlacement`` and ``ChromaOutPlacement``
+    in the :doc:`Convert <convert>` functions.
 
-    - ``"MPEG2"`` (synonyms: ``"left"``)
-      Subsampling used in MPEG-2 4:2:x and most other formats. Chroma samples are located on the left pixel column of the group (default).
-    - ``"MPEG1"`` (synonyms: ``"jpeg"``, ``"center"``)
-      Subsampling used in MPEG-1 4:2:0. Chroma samples are located on the center of each group of 4 pixels.
-    - ``"DV"``
-      Like MPEG-2, but U and V channels are co-sited vertically: V on the top row, and U on the bottom row. For 4:1:1, chroma is located on the leftmost column.
-    - ``"top_left"``
-      Subsampling used in UHD 4:2:0. Chroma samples are located on the top left pixel column of the group.
-    - ``bottom_left`` 4:2:0 only
-    - ``bottom``   4:2:0 only 
+    Implemented values (``Text`` and ``Subtitle`` with ``gdi=false``):
 
-    Meaningful values: "center", "left", "auto" at the moment, only ``"center"`` and ``"left"`` 
-    is implemented. 
-    
+    - ``"MPEG2"`` (synonyms: ``"left"``) — default. Chroma samples on the left column.
+    - ``"MPEG1"`` (synonyms: ``"jpeg"``, ``"center"``) — chroma samples centered.
+
     Default value is
-    
+
     - read from ``"_ChromaLocation"`` frame property, otherwise ``"left"``
     - override or set from ``"placement"`` parameter if parameter is other than ``"auto"``
-    - if ``"auto"`` + have frame property -> use frame property
-    - if ``"auto"`` + no frame property -> use ``"left"``
-    - no frame property and no parameter -> use ``"left"``
+    - if ``"auto"`` + have frame property → use frame property
+    - if ``"auto"`` + no frame property → use ``"left"``
+    - no frame property and no parameter → use ``"left"``
+
+.. describe:: gdi
+
+    This parameter has no effect in ``Text``. It is provided only to match the
+    parameter list with ``Subtitle``, because on non-Windows systems ``Subtitle``
+    is aliased to ``Text``, so each ``Subtitle`` parameter must exist in ``Text``
+    as well.
+
+    Default: false
 
 Examples
 --------
@@ -447,6 +481,13 @@ Changelog
 +-----------------+--------------------------------------------------------------------------+
 | Version         | Changes                                                                  |
 +=================+==========================================================================+
+| AviSynth+ 3.7.6 || Add ``placement`` parameter to ``Subtitle`` (chroma location, same as   |
+|                 |  ``Text``). When ``gdi=true``, ``"top_left"`` is also supported.         |
+|                 || Add ``gdi`` parameter to ``Subtitle`` and ``Text``. When ``false``,     |
+|                 |  ``Subtitle`` uses the built-in bitmap font instead of GDI rendering.    |
+|                 || Add ``gdi`` parameter to ``Text`` (accepted but ignored; for API         |
+|                 |  compatibility with ``Subtitle``).                                       |
++-----------------+--------------------------------------------------------------------------+
 | 3.7.4           | Feature: SubTitle to accept real LF (``\r``) or CR LF (``\r\n``) control |
 |                 | characters for line break.                                               |
 +-----------------+--------------------------------------------------------------------------+
