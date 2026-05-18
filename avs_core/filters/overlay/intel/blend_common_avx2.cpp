@@ -46,7 +46,7 @@
 #endif
 #include <immintrin.h>
 
-// simd_magic_div_32_avx2 is in masked_rowprep_avx2.hpp (included by masked_merge_avx2_impl.hpp).
+// simd_magic_div_32_avx2 is in masked_rowprep_avx2_impl.h (included by masked_merge_avx2_impl.hpp).
 // blend8_masked_avx2_row, blend16_masked_avx2_row, masked_merge_avx2_impl
 // (implementation-include, no guards — each TU gets its own compiled copy)
 #include "masked_merge_avx2_impl.hpp"
@@ -303,7 +303,7 @@ masked_merge_fn_t* get_overlay_blend_masked_fn_avx2(bool is_chroma, MaskMode mas
 
 // ---------------------------------------------------------------------------
 // Per-row chroma mask preparation for the scratch path in OF_blend.cpp.
-// Defined here so masked_rowprep_avx2.hpp is only included in this TU.
+// Defined here so masked_rowprep_avx2_impl.h is only included in this TU.
 // ---------------------------------------------------------------------------
 template<typename pixel_t, bool full_opacity>
 void do_fill_chroma_row_avx2(

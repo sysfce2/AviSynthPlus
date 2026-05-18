@@ -40,6 +40,7 @@
 #include "overlayfunctions.h"
 
 #include <stdint.h>
+#include <cstring>
 #include <type_traits>
 
 

@@ -2,7 +2,6 @@
 // AVX2 rowprep implementations + explicit template instantiations.
 // Compiled with -mavx2 -mfma (GCC/Clang) or /arch:AVX2 (MSVC) via handle_arch_flags(AVX2).
 //
-// simd_magic_div_32_avx2 lives in masked_rowprep_avx2.h (inline, needed by merge impl).
 // avx2_pack_* helpers are static — internal to this TU only.
 
 #if defined(_MSC_VER)
@@ -13,7 +12,7 @@
 
 #include "avs/config.h"
 #include "../blend_common.h"
-#include "masked_rowprep_avx2.h"   // own declarations + simd_magic_div_32_avx2 inline
+#include "masked_rowprep_avx2_impl.h"   // declarations + simd_magic_div_32_avx2 inline
 #include <vector>
 #include <cstdint>
 

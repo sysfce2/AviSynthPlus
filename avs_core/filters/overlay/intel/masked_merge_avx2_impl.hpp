@@ -15,7 +15,7 @@
 //   <vector>
 
 // Provides simd_magic_div_32_avx2 + prepare_effective_mask_for_row_avx2.
-#include "masked_rowprep_avx2.h"
+#include "masked_rowprep_avx2_impl.h"
 
 // ---------------------------------------------------------------------------
 // 8-bit row — mask already has opacity baked in by rowprep.
