@@ -1,4 +1,4 @@
-// Avisynth v2.5.  Copyright 2002 Ben Rudiak-Gould et al.
+﻿// Avisynth v2.5.  Copyright 2002 Ben Rudiak-Gould et al.
 // http://avisynth.nl
 
 // This program is free software; you can redistribute it and/or modify
@@ -42,6 +42,13 @@
 #include "text-overlay.h"
 #ifdef INTEL_INTRINSICS
 #include "intel/text-overlay_sse.h"
+#include "intel/getalpharect_impl.h"
+#include "intel/getalpharect_scalar.h"
+#ifdef INTEL_INTRINSICS_AVX512
+#include "intel/getalpharect_avx512.h"
+#endif
+#include "overlay/intel/masked_rowprep_sse41.h"
+#include "overlay/intel/masked_rowprep_avx2.h"
 #endif
 #include "../convert/convert_matrix.h"  // for RGB2YUV_Rec601
 #include "../convert/convert_helper.h"  // chroma location
@@ -57,6 +64,7 @@
 #include "../core/info.h"
 #include "../core/strings.h"
 #include "../core/audio.h"
+#include <bitset>
 
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
@@ -94,7 +102,7 @@ extern const AVSFunction Text_filters[] = {
 
   { "Subtitle",BUILTIN_FUNC_PREFIX,
   "cs[x]f[y]f[first_frame]i[last_frame]i[font]s[size]f[text_color]i[halo_color]i"
-  "[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s[utf8]b[bold]b[italic]b[noaa]b",
+  "[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s[utf8]b[bold]b[italic]b[noaa]b[placement]s[gdi]b",
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
     Subtitle::Create
 #else
@@ -108,7 +116,7 @@ extern const AVSFunction Text_filters[] = {
 
   { "Text",BUILTIN_FUNC_PREFIX,
   "cs[x]f[y]f[first_frame]i[last_frame]i[font]s[size]f[text_color]i[halo_color]i"
-  "[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s[utf8]b[bold]b[italic]b[noaa]b[placement]s",
+  "[align]i[spc]i[lsp]i[font_width]f[font_angle]f[interlaced]b[font_filename]s[utf8]b[bold]b[italic]b[noaa]b[placement]s[gdi]b",
     SimpleText::Create },
 
   { 0 }
@@ -123,11 +131,83 @@ extern const AVSFunction Text_filters[] = {
  *******   Anti-alias    ******
  *****************************/
 
-Antialiaser::Antialiaser(int width, int height, const char fontname[], int size, int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa, int font_width, int font_angle, bool _interlaced) :
-  alpha_calcs(0), w(width), h(height), textcolor(_textcolor), halocolor(_halocolor),
+// Select the best rowprep function for soa_mask_mode at construction time.
+using rowprep_u16_fn_t = const uint16_t*(*)(const uint16_t*, int, int, std::vector<uint16_t>&, int, int, MagicDiv);
+
+static rowprep_u16_fn_t select_rowprep_u16(MaskMode mode, int64_t cpuFlags)
+{
+#ifdef INTEL_INTRINSICS
+  if (cpuFlags & CPUF_AVX2) {
+    switch (mode) {
+    case MASK444:         return prepare_effective_mask_for_row_avx2<MASK444,         uint16_t, true>;
+    case MASK411:         return prepare_effective_mask_for_row_avx2<MASK411,         uint16_t, true>;
+    case MASK420:         return prepare_effective_mask_for_row_avx2<MASK420,         uint16_t, true>;
+    case MASK420_MPEG2:   return prepare_effective_mask_for_row_avx2<MASK420_MPEG2,   uint16_t, true>;
+    case MASK420_TOPLEFT: return prepare_effective_mask_for_row_avx2<MASK420_TOPLEFT, uint16_t, true>;
+    case MASK422:         return prepare_effective_mask_for_row_avx2<MASK422,         uint16_t, true>;
+    case MASK422_MPEG2:   return prepare_effective_mask_for_row_avx2<MASK422_MPEG2,   uint16_t, true>;
+    case MASK422_TOPLEFT: return prepare_effective_mask_for_row_avx2<MASK422_TOPLEFT, uint16_t, true>;
+    }
+  }
+  if (cpuFlags & CPUF_SSE4_1) {
+    switch (mode) {
+    case MASK444:         return prepare_effective_mask_for_row_sse41<MASK444,         uint16_t, true>;
+    case MASK411:         return prepare_effective_mask_for_row_sse41<MASK411,         uint16_t, true>;
+    case MASK420:         return prepare_effective_mask_for_row_sse41<MASK420,         uint16_t, true>;
+    case MASK420_MPEG2:   return prepare_effective_mask_for_row_sse41<MASK420_MPEG2,   uint16_t, true>;
+    case MASK420_TOPLEFT: return prepare_effective_mask_for_row_sse41<MASK420_TOPLEFT, uint16_t, true>;
+    case MASK422:         return prepare_effective_mask_for_row_sse41<MASK422,         uint16_t, true>;
+    case MASK422_MPEG2:   return prepare_effective_mask_for_row_sse41<MASK422_MPEG2,   uint16_t, true>;
+    case MASK422_TOPLEFT: return prepare_effective_mask_for_row_sse41<MASK422_TOPLEFT, uint16_t, true>;
+    }
+  }
+#else
+  (void)cpuFlags;
+#endif
+  switch (mode) {
+  case MASK444:         return prepare_effective_mask_for_row<MASK444,         uint16_t, true>;
+  case MASK411:         return prepare_effective_mask_for_row<MASK411,         uint16_t, true>;
+  case MASK420:         return prepare_effective_mask_for_row<MASK420,         uint16_t, true>;
+  case MASK420_MPEG2:   return prepare_effective_mask_for_row<MASK420_MPEG2,   uint16_t, true>;
+  case MASK420_TOPLEFT: return prepare_effective_mask_for_row<MASK420_TOPLEFT, uint16_t, true>;
+  case MASK422:         return prepare_effective_mask_for_row<MASK422,         uint16_t, true>;
+  case MASK422_MPEG2:   return prepare_effective_mask_for_row<MASK422_MPEG2,   uint16_t, true>;
+  case MASK422_TOPLEFT: return prepare_effective_mask_for_row<MASK422_TOPLEFT, uint16_t, true>;
+  }
+  return nullptr;
+}
+
+Antialiaser::Antialiaser(int width, int height, const char fontname[], int size,
+  int _textcolor, int _halocolor, bool _bold, bool _italic, bool _noaa,
+  int64_t cpuFlags,
+  int _chromaplacement,
+  int font_width, int font_angle, bool _interlaced) :
+  soa_buf(nullptr), w_stride(0),
+  chromaplacement(_chromaplacement),
+  w(width), h(height), textcolor(_textcolor), halocolor(_halocolor),
   dirty(true), interlaced(_interlaced),
   bold(_bold), italic(_italic), noaa(_noaa)
 {
+  // row preparation functions convert a luma mask to chroma masks with correct chroma placement
+  // for subsampled formats.
+  // Pre-select SIMD rowprep for all 8 MaskModes (411, 420 and 422 variants, 444)
+  for (int m = 0; m < 8; ++m)
+    rowprep_fns[m] = select_rowprep_u16(static_cast<MaskMode>(m), cpuFlags);
+
+#ifdef INTEL_INTRINSICS
+  // Select best GetAlphaRect implementation (noaa and interlaced baked in via template)
+  getalpharect_fn = nullptr;
+#ifdef INTEL_INTRINSICS_AVX512
+  if (cpuFlags & CPUF_AVX512_FAST)
+    getalpharect_fn = GetAlphaRect_select_avx512(_noaa, _interlaced);
+#endif
+  if (!getalpharect_fn && (cpuFlags & CPUF_AVX2))
+    getalpharect_fn = GetAlphaRect_select_avx2(_noaa, _interlaced);
+  if (!getalpharect_fn && (cpuFlags & CPUF_SSE4_1))
+    getalpharect_fn = GetAlphaRect_select_sse41(_noaa, _interlaced);
+  // nullptr means scalar fallback (called directly inside GetAlphaRect())
+#endif
+
   struct {
     BITMAPINFOHEADER bih;
     RGBQUAD clr[2];
@@ -164,8 +244,17 @@ Antialiaser::Antialiaser(int width, int height, const char fontname[], int size,
     SetTextColor(hdcAntialias, 0xffffff);
     SetBkColor(hdcAntialias, 0);
 
-    alpha_calcs = new(std::nothrow) unsigned short[width*height*4];
-    if (!alpha_calcs) FreeDC();
+    // 64 byte boundary of the four planes for row-interleaved SoA
+    // One single buffer allocation for multiple planes,
+    w_stride = (width + 31) & ~31;
+    soa_buf = new(std::nothrow) uint16_t[w_stride * height * 4];
+    if (!soa_buf) {
+      FreeDC();
+    } else {
+      uv_buf_ba.resize(width);
+      uv_buf_u.resize(width);
+      uv_buf_v.resize(width);
+    }
   }
   }
 }
@@ -173,7 +262,7 @@ Antialiaser::Antialiaser(int width, int height, const char fontname[], int size,
 
 Antialiaser::~Antialiaser() {
   FreeDC();
-  delete[] alpha_calcs;
+  delete[] soa_buf;
 }
 
 
@@ -199,9 +288,9 @@ void Antialiaser::FreeDC() {
 }
 
 
-void Antialiaser::Apply( const VideoInfo& vi, PVideoFrame* frame, int pitch)
+void Antialiaser::Apply(const VideoInfo& vi, PVideoFrame* frame, int pitch)
 {
-  if (!alpha_calcs) return;
+  if (!soa_buf) return;
 
   if (vi.IsRGB32())
     ApplyRGB_packed<uint8_t, true>((*frame)->GetWritePtr(), pitch);
@@ -213,473 +302,203 @@ void Antialiaser::Apply( const VideoInfo& vi, PVideoFrame* frame, int pitch)
     ApplyRGB_packed<uint16_t, false>((*frame)->GetWritePtr(), pitch);
   else if (vi.IsYUY2())
     ApplyYUY2((*frame)->GetWritePtr(), pitch);
-  else if (vi.IsYV12()) // YUV420 16/32 bit goes to generic path
-    ApplyYV12((*frame)->GetWritePtr(), pitch,
-              (*frame)->GetPitch(PLANAR_U),
-              (*frame)->GetWritePtr(PLANAR_U),
-              (*frame)->GetWritePtr(PLANAR_V) );
-  else if (vi.NumComponents() == 1) // Y8, Y16, Y32
-    ApplyPlanar((*frame)->GetWritePtr(), pitch, 0, 0, 0, 0, 0, vi.BitsPerComponent(), vi.IsRGB());
   else if (vi.IsPlanar()) {
-      if(vi.IsPlanarRGB() || vi.IsPlanarRGBA())
-          // internal buffer: Y-R, U-G, V-B
-        ApplyPlanar((*frame)->GetWritePtr(PLANAR_R), pitch,
-            (*frame)->GetPitch(PLANAR_G),
-            (*frame)->GetWritePtr(PLANAR_G),
-            (*frame)->GetWritePtr(PLANAR_B),
-            vi.GetPlaneWidthSubsampling(PLANAR_G),  // no subsampling
-            vi.GetPlaneHeightSubsampling(PLANAR_G),
-            vi.BitsPerComponent(), vi.IsRGB() );
-      else
-        ApplyPlanar((*frame)->GetWritePtr(), pitch,
-            (*frame)->GetPitch(PLANAR_U),
-            (*frame)->GetWritePtr(PLANAR_U),
-            (*frame)->GetWritePtr(PLANAR_V),
-            vi.GetPlaneWidthSubsampling(PLANAR_U),
-            vi.GetPlaneHeightSubsampling(PLANAR_U),
-            vi.BitsPerComponent(), vi.IsRGB());
-  }
-}
-
-
-void Antialiaser::ApplyYV12(BYTE* buf, int pitch, int pitchUV, BYTE* bufU, BYTE* bufV) {
-  if (dirty) {
-    GetAlphaRect();
-  xl &= -2; xr |= 1;
-  yb &= -2; yt |= 1;
-  }
-  const int w4 = w*4;
-  unsigned short* alpha = alpha_calcs + yb*w4;
-  buf  += pitch*yb;
-  bufU += (pitchUV*yb)>>1;
-  bufV += (pitchUV*yb)>>1;
-
-  for (int y=yb; y<=yt; y+=2) {
-    for (int x=xl; x<=xr; x+=2) {
-      const int x4 = x<<2;
-      const int basealpha00 = alpha[x4+0];
-      const int basealpha10 = alpha[x4+4];
-      const int basealpha01 = alpha[x4+0+w4];
-      const int basealpha11 = alpha[x4+4+w4];
-      const int basealphaUV = basealpha00 + basealpha10 + basealpha01 + basealpha11;
-
-      if (basealphaUV != 1024) {
-        buf[x+0]       = BYTE((buf[x+0]       * basealpha00 + alpha[x4+3]   ) >> 8);
-        buf[x+1]       = BYTE((buf[x+1]       * basealpha10 + alpha[x4+7]   ) >> 8);
-        buf[x+0+pitch] = BYTE((buf[x+0+pitch] * basealpha01 + alpha[x4+3+w4]) >> 8);
-        buf[x+1+pitch] = BYTE((buf[x+1+pitch] * basealpha11 + alpha[x4+7+w4]) >> 8);
-
-        const int au  = alpha[x4+2] + alpha[x4+6] + alpha[x4+2+w4] + alpha[x4+6+w4];
-        bufU[x>>1] = BYTE((bufU[x>>1] * basealphaUV + au) >> 10);
-
-        const int av  = alpha[x4+1] + alpha[x4+5] + alpha[x4+1+w4] + alpha[x4+5+w4];
-        bufV[x>>1] = BYTE((bufV[x>>1] * basealphaUV + av) >> 10);
+    const bool isRGB = vi.IsPlanarRGB() || vi.IsPlanarRGBA();
+    BYTE* bufY  = isRGB ? (*frame)->GetWritePtr(PLANAR_R) : (*frame)->GetWritePtr();
+    BYTE* bufU  = nullptr;
+    BYTE* bufV  = nullptr;
+    int pitchUV = 0;
+    if (vi.NumComponents() > 1) {
+      pitchUV = isRGB ? (*frame)->GetPitch(PLANAR_G) : (*frame)->GetPitch(PLANAR_U);
+      bufU    = isRGB ? (*frame)->GetWritePtr(PLANAR_G) : (*frame)->GetWritePtr(PLANAR_U);
+      bufV    = isRGB ? (*frame)->GetWritePtr(PLANAR_B) : (*frame)->GetWritePtr(PLANAR_V);
+    }
+    const int bpp = vi.BitsPerComponent();
+#define CALL_SOA(mode) \
+    switch (bpp) { \
+    case 8:  ApplyPlanar_SoA<mode,  8>(bufY, pitch, pitchUV, bufU, bufV, isRGB); break; \
+    case 10: ApplyPlanar_SoA<mode, 10>(bufY, pitch, pitchUV, bufU, bufV, isRGB); break; \
+    case 12: ApplyPlanar_SoA<mode, 12>(bufY, pitch, pitchUV, bufU, bufV, isRGB); break; \
+    case 14: ApplyPlanar_SoA<mode, 14>(bufY, pitch, pitchUV, bufU, bufV, isRGB); break; \
+    case 16: ApplyPlanar_SoA<mode, 16>(bufY, pitch, pitchUV, bufU, bufV, isRGB); break; \
+    case 32: ApplyPlanar_SoA<mode, 32>(bufY, pitch, pitchUV, bufU, bufV, isRGB); break; \
+    }
+    // Compute MaskMode from clip subsampling + stored chromaplacement
+    MaskMode mode = MASK444;
+    if (vi.IsYUV() || vi.IsYUVA()) {
+      const int sx = vi.GetPlaneWidthSubsampling(PLANAR_U);
+      const int sy = vi.GetPlaneHeightSubsampling(PLANAR_U);
+      if (sx == 2) {
+        mode = MASK411; // always center averaging
+      } else if (sx == 1 && sy == 1) {
+        switch (chromaplacement) {
+        case ChromaLocation_e::AVS_CHROMA_LEFT: mode = MASK420_MPEG2;   break;
+        case ChromaLocation_e::AVS_CHROMA_TOP_LEFT: mode = MASK420_TOPLEFT; break;
+        default: mode = MASK420; break; // center
+        }
+      } else if (sx == 1 && sy == 0) {
+        switch (chromaplacement) {
+        case ChromaLocation_e::AVS_CHROMA_LEFT:   mode = MASK422_MPEG2;   break;
+        case ChromaLocation_e::AVS_CHROMA_TOP_LEFT: mode = MASK422_TOPLEFT; break;
+        default: mode = MASK422; break; // center
+        }
       }
     }
-    buf += pitch<<1;
-    bufU += pitchUV;
-    bufV += pitchUV;
-    alpha += w<<3;
+    switch (mode) {
+    case MASK444:         CALL_SOA(MASK444);         break;
+    case MASK411:         CALL_SOA(MASK411);         break;
+    case MASK420:         CALL_SOA(MASK420);         break;
+    case MASK420_MPEG2:   CALL_SOA(MASK420_MPEG2);   break;
+    case MASK420_TOPLEFT: CALL_SOA(MASK420_TOPLEFT); break;
+    case MASK422:         CALL_SOA(MASK422);         break;
+    case MASK422_MPEG2:   CALL_SOA(MASK422_MPEG2);   break;
+    case MASK422_TOPLEFT: CALL_SOA(MASK422_TOPLEFT); break;
+    }
+#undef CALL_SOA
   }
 }
 
-
-template<int shiftX, int shiftY, int bits_per_pixel>
-void Antialiaser::ApplyPlanar_core(BYTE* buf, int pitch, int pitchUV, BYTE* bufU, BYTE* bufV, bool isRGB)
+// Hoping that bits_per_pixel template make it quicker
+template<MaskMode maskMode, int bits_per_pixel>
+void Antialiaser::ApplyPlanar_SoA(BYTE* buf, int pitch, int pitchUV, BYTE* bufU, BYTE* bufV, bool isRGB)
 {
-  const int stepX = 1<<shiftX;
-  const int stepY = 1<<shiftY;
+  constexpr int shiftX =
+    (maskMode == MASK444) ? 0 :
+    (maskMode == MASK411) ? 2 : 1;
+  constexpr int shiftY =
+    (maskMode == MASK420 || maskMode == MASK420_MPEG2 || maskMode == MASK420_TOPLEFT) ? 1 : 0;
+  constexpr int stepX = 1 << shiftX;
+  constexpr int stepY = 1 << shiftY;
 
   if (dirty) {
     GetAlphaRect();
-    xl &= -stepX; xr |= stepX-1;
-    yb &= -stepY; yt |= stepY-1;
+    xl &= -stepX; xr |= stepX - 1;
+    yb &= -stepY; yt |= stepY - 1;
   }
-  const int w4 = w*4;
-  unsigned short* alpha = alpha_calcs + yb*w4;
-  buf += pitch*yb;
+  // The abbreviation 'ba' stands for basealpha.
 
-  // Apply Y
-  // different paths for different bitdepth
-  // todo PF 161208 shiftX shiftY bits_per_pixel templates
-  // perpaps int->byte, short (faster??)
-  if constexpr(bits_per_pixel == 8) {
-    for (int y=yb; y<=yt; y+=1) {
-      for (int x=xl; x<=xr; x+=1) {
-        const int x4 = x<<2;
-        const int basealpha = alpha[x4+0];
-        if (basealpha != 256) {
-          buf[x] = BYTE((buf[x] * basealpha + alpha[x4 + 3]) >> 8);
-        }
+
+  // === Y/R plane — row-interleaved SoA: plane 0=ba (basealpha), 1=ry ===
+  const uint16_t* y_row_ptr = soa_buf + yb * 4 * w_stride;
+  BYTE* buf_row = buf + pitch * yb;
+
+  if constexpr (bits_per_pixel == 8) {
+    for (int y = yb; y <= yt; ++y) {
+      const uint16_t* ba_y = y_row_ptr;
+      const uint16_t* ry_y = y_row_ptr + w_stride;
+      for (int x = xl; x <= xr; ++x) {
+        const int ba = ba_y[x];
+        if (ba != 256)
+          buf_row[x] = BYTE((buf_row[x] * ba + ry_y[x]) >> 8);
       }
-      buf += pitch;
-      alpha += w4;
+      buf_row   += pitch;
+      y_row_ptr += 4 * w_stride;
     }
-  }
-  else if constexpr(bits_per_pixel >= 10 && bits_per_pixel <= 16) { // uint16_t
-    for (int y=yb; y<=yt; y+=1) {
-      for (int x=xl; x<=xr; x+=1) {
-        const int x4 = x<<2;
-        const int basealpha = alpha[x4+0];
-        if (basealpha != 256) {
-          reinterpret_cast<uint16_t *>(buf)[x] = (uint16_t)((reinterpret_cast<uint16_t *>(buf)[x] * basealpha + ((int)alpha[x4 + 3] << (bits_per_pixel-8))) >> 8);
-        }
+  } else if constexpr (bits_per_pixel >= 10 && bits_per_pixel <= 16) {
+    for (int y = yb; y <= yt; ++y) {
+      const uint16_t* ba_y = y_row_ptr;
+      const uint16_t* ry_y = y_row_ptr + w_stride;
+      uint16_t* p = reinterpret_cast<uint16_t*>(buf_row);
+      for (int x = xl; x <= xr; ++x) {
+        const int ba = ba_y[x];
+        if (ba != 256)
+          p[x] = (uint16_t)((p[x] * ba + (ry_y[x] << (bits_per_pixel - 8))) >> 8);
       }
-      buf += pitch;
-      alpha += w4;
+      buf_row   += pitch;
+      y_row_ptr += 4 * w_stride;
     }
-  }
-  else if constexpr(bits_per_pixel == 32) { // float assume 0..1.0 scale
-    for (int y=yb; y<=yt; y+=1) {
-      for (int x=xl; x<=xr; x+=1) {
-        const int x4 = x<<2;
-        const int basealpha = alpha[x4+0];
-        if (basealpha != 256) {
-          reinterpret_cast<float *>(buf)[x] = reinterpret_cast<float *>(buf)[x] * basealpha / 256.0f + alpha[x4 + 3] / 65536.0f;
-        }
+  } else { // float: Y/R plane assumes 0..1 scale
+    for (int y = yb; y <= yt; ++y) {
+      const uint16_t* ba_y = y_row_ptr;
+      const uint16_t* ry_y = y_row_ptr + w_stride;
+      float* p = reinterpret_cast<float*>(buf_row);
+      for (int x = xl; x <= xr; ++x) {
+        const int ba = ba_y[x];
+        if (ba != 256)
+          p[x] = p[x] * ba / 256.0f + ry_y[x] / 65536.0f;
       }
-      buf += pitch;
-      alpha += w4;
+      buf_row   += pitch;
+      y_row_ptr += 4 * w_stride;
     }
   }
 
   if (!bufU) return;
 
-  // This will not be fast, but it will be generic.
-  const int skipThresh = 256 << (shiftX+shiftY);
-  const int shifter = 8+shiftX+shiftY;
-  const int UVw4 = w<<(2+shiftY);
-  const int xlshiftX = xl>>shiftX;
+  // === U/G and V/B planes — plane 2=u, 3=v; chroma-placement-aware downsampling ===
+  const int uv_width = w >> shiftX;
+  const int xl_uv    = xl >> shiftX;
+  const int xr_uv    = xr >> shiftX;
+  // row preparation functions take full-width luma mask rows and downsample to UV width with correct chroma placement, returning a pointer to the prepared row (which may be buf_ba or an internal static buffer).
+  // rowprep output buffers (unused for MASK444 — rowprep returns input ptr directly).
+  std::vector<uint16_t>& buf_ba = uv_buf_ba;
+  std::vector<uint16_t>& buf_u  = uv_buf_u;
+  std::vector<uint16_t>& buf_v  = uv_buf_v;
 
-  alpha = alpha_calcs + yb*w4;
-  bufU += (pitchUV*yb)>>shiftY;
-  bufV += (pitchUV*yb)>>shiftY;
+  const uint16_t* uv_row_ptr = soa_buf + yb * 4 * w_stride;
+  BYTE* bufU_row = bufU + pitchUV * (yb >> shiftY);
+  BYTE* bufV_row = bufV + pitchUV * (yb >> shiftY);
 
-  // different paths for different bitdepth
-  if constexpr(bits_per_pixel == 8) {
-    for (int y=yb; y<=yt; y+=stepY) {
-      for (int x=xl, xs=xlshiftX; x<=xr; x+=stepX, xs+=1) {
-        unsigned short* UValpha = alpha + x*4;
-        int basealphaUV = 0;
-        int au = 0;
-        int av = 0;
-        for (int i = 0; i<stepY; i++) {
-          for (int j = 0; j<stepX; j++) {
-            basealphaUV += UValpha[0 + j*4];
-            av          += UValpha[1 + j*4];
-            au          += UValpha[2 + j*4];
-          }
-          UValpha += w4;
-        }
-        if (basealphaUV != skipThresh) {
-          bufU[xs] = BYTE((bufU[xs] * basealphaUV + au) >> shifter);
-          bufV[xs] = BYTE((bufV[xs] * basealphaUV + av) >> shifter);
-        }
-      }// end for x
-      bufU  += pitchUV;
-      bufV  += pitchUV;
-      alpha += UVw4;
-    }//end for y
-  }
-  else if constexpr(bits_per_pixel >= 10 && bits_per_pixel <= 16) { // uint16_t
-    for (int y=yb; y<=yt; y+=stepY) {
-      for (int x=xl, xs=xlshiftX; x<=xr; x+=stepX, xs+=1) {
-        unsigned short* UValpha = alpha + x*4;
-        int basealphaUV = 0;
-        int au = 0;
-        int av = 0;
-        for (int i = 0; i<stepY; i++) {
-          for (int j = 0; j<stepX; j++) {
-            basealphaUV += UValpha[0 + j*4];
-            av          += UValpha[1 + j*4];
-            au          += UValpha[2 + j*4];
-          }
-          UValpha += w4;
-        }
-        if (basealphaUV != skipThresh) {
-          reinterpret_cast<uint16_t *>(bufU)[xs] = (uint16_t)((reinterpret_cast<uint16_t *>(bufU)[xs] * basealphaUV + (au << (bits_per_pixel-8))) >> shifter);
-          reinterpret_cast<uint16_t *>(bufV)[xs] = (uint16_t)((reinterpret_cast<uint16_t *>(bufV)[xs] * basealphaUV + (av << (bits_per_pixel-8))) >> shifter);
-        }
-      }// end for x
-      bufU  += pitchUV;
-      bufV  += pitchUV;
-      alpha += UVw4;
-    }//end for y
-  }
-  else if constexpr(bits_per_pixel == 32) { // float. assume 0..1.0 scale
-    const float shifter_inv_f = 1.0f / (1 << shifter);
-    const float a_factor = shifter_inv_f / 256.0f;
-#ifdef FLOAT_CHROMA_IS_HALF_CENTERED
-    const float middle_shift_f = 0.0f;
-#else
-    const float middle_shift_f = isRGB ? 0.0f : 0.5f; // yes, correction needed in and out
-#endif
-    for (int y=yb; y<=yt; y+=stepY) {
-      for (int x=xl, xs=xlshiftX; x<=xr; x+=stepX, xs+=1) {
-        unsigned short* UValpha = alpha + x*4;
-        int basealphaUV = 0;
-        int au = 0;
-        int av = 0;
-        for (int i = 0; i<stepY; i++) {
-          for (int j = 0; j<stepX; j++) {
-            basealphaUV += UValpha[0 + j*4];
-            av          += UValpha[1 + j*4];
-            au          += UValpha[2 + j*4];
-          }
-          UValpha += w4;
-        }
-        if (basealphaUV != skipThresh) {
-          const float basealphaUV_f = (float)basealphaUV * shifter_inv_f;
-          reinterpret_cast<float *>(bufU)[xs] = (reinterpret_cast<float *>(bufU)[xs] + middle_shift_f) * basealphaUV_f + au * a_factor - middle_shift_f;
-          reinterpret_cast<float *>(bufV)[xs] = (reinterpret_cast<float *>(bufV)[xs] + middle_shift_f) * basealphaUV_f + av * a_factor - middle_shift_f;
-        }
-      }// end for x
-      bufU  += pitchUV;
-      bufV  += pitchUV;
-      alpha += UVw4;
-    }//end for y
-  }
-}
+  // mask_pitch for 420 modes: next luma row of same plane is 4*w_stride elements ahead in SoA layout
+  const int soa_row_pitch = 4 * w_stride;
 
-void Antialiaser::ApplyPlanar(BYTE* buf, int pitch, int pitchUV, BYTE* bufU, BYTE* bufV, int shiftX, int shiftY, int bits_per_pixel, bool isRGB) {
-  const int stepX = 1 << shiftX;
-  const int stepY = 1 << shiftY;
-  switch (bits_per_pixel) {
-  case 8:
-    if (shiftX == 0 && shiftY == 0) {
-      ApplyPlanar_core<0, 0, 8>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:4:4
-      return;
-    }
-    else if (shiftX == 1 && shiftY == 0) {
-      ApplyPlanar_core<1, 0, 8>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:2:2
-      return;
-    }
-    else if (shiftX == 1 && shiftY == 1) {
-      ApplyPlanar_core<1, 1, 8>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:2:0
-      return;
-    }
-    break;
-  case 10:
-    if (shiftX == 0 && shiftY == 0) {
-      ApplyPlanar_core<0, 0, 10>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:4:4
-      return;
-    }
-    else if (shiftX == 1 && shiftY == 0) {
-      ApplyPlanar_core<1, 0, 10>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:2:2
-      return;
-    }
-    else if (shiftX == 1 && shiftY == 1) {
-      ApplyPlanar_core<1, 1, 10>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:2:0
-      return;
-    }
-    break;
-  case 12:
-    if (shiftX == 0 && shiftY == 0) {
-      ApplyPlanar_core<0, 0, 12>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:4:4
-      return;
-    }
-    else if (shiftX == 1 && shiftY == 0) {
-      ApplyPlanar_core<1, 0, 12>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:2:2
-      return;
-    }
-    else if (shiftX == 1 && shiftY == 1) {
-      ApplyPlanar_core<1, 1, 12>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:2:0
-      return;
-    }
-    break;
-  case 14:
-    if (shiftX == 0 && shiftY == 0) {
-      ApplyPlanar_core<0, 0, 14>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:4:4
-      return;
-    }
-    else if (shiftX == 1 && shiftY == 0) {
-      ApplyPlanar_core<1, 0, 14>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:2:2
-      return;
-    }
-    else if (shiftX == 1 && shiftY == 1) {
-      ApplyPlanar_core<1, 1, 14>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:2:0
-      return;
-    }
-    break;
-  case 16:
-    if (shiftX == 0 && shiftY == 0) {
-      ApplyPlanar_core<0, 0, 16>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:4:4
-      return;
-    }
-    else if (shiftX == 1 && shiftY == 0) {
-      ApplyPlanar_core<1, 0, 16>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:2:2
-      return;
-    }
-    else if (shiftX == 1 && shiftY == 1) {
-      ApplyPlanar_core<1, 1, 16>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:2:0
-      return;
-    }
-    break;
-  case 32:
-    if (shiftX == 0 && shiftY == 0) {
-      ApplyPlanar_core<0, 0, 32>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:4:4
-      return;
-    }
-    else if (shiftX == 1 && shiftY == 0) {
-      ApplyPlanar_core<1, 0, 32>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:2:2
-      return;
-    }
-    else if (shiftX == 1 && shiftY == 1) {
-      ApplyPlanar_core<1, 1, 32>(buf, pitch, pitchUV, bufU, bufV, isRGB); // 4:2:0
-      return;
-    }
-    break;
-  }
-  // keep old path for for any nonstandard surprise
-
-  if (dirty) {
-    GetAlphaRect();
-    xl &= -stepX; xr |= stepX-1;
-    yb &= -stepY; yt |= stepY-1;
-  }
-  const int w4 = w*4;
-  unsigned short* alpha = alpha_calcs + yb*w4;
-  buf += pitch*yb;
-
-  // Apply Y
-  // different paths for different bitdepth
-  // todo PF 161208 shiftX shiftY bits_per_pixel templates
-  // perpaps int->byte, short (faster??)
-  if(bits_per_pixel == 8) {
-      for (int y=yb; y<=yt; y+=1) {
-          for (int x=xl; x<=xr; x+=1) {
-              const int x4 = x<<2;
-              const int basealpha = alpha[x4+0];
-              if (basealpha != 256) {
-                  buf[x] = BYTE((buf[x] * basealpha + alpha[x4 + 3]) >> 8);
-              }
-          }
-          buf += pitch;
-          alpha += w4;
+  // +1 * w_stride was already handled: Y
+  if constexpr (bits_per_pixel == 8) {
+    for (int y = yb; y <= yt; y += stepY) {
+      const uint16_t* ba_row = rowprep_fns[maskMode](uv_row_ptr,                soa_row_pitch, uv_width, buf_ba, 0, 0, {});
+      const uint16_t* u_row  = rowprep_fns[maskMode](uv_row_ptr + 2 * w_stride, soa_row_pitch, uv_width, buf_u,  0, 0, {});
+      const uint16_t* v_row  = rowprep_fns[maskMode](uv_row_ptr + 3 * w_stride, soa_row_pitch, uv_width, buf_v,  0, 0, {});
+      for (int xs = xl_uv; xs <= xr_uv; ++xs) {
+        const int ba = ba_row[xs];
+        if (ba != 256) {
+          bufU_row[xs] = BYTE((bufU_row[xs] * ba + u_row[xs]) >> 8);
+          bufV_row[xs] = BYTE((bufV_row[xs] * ba + v_row[xs]) >> 8);
+        }
       }
-  }
-  else if (bits_per_pixel >= 10 && bits_per_pixel <= 16) { // uint16_t
-      for (int y=yb; y<=yt; y+=1) {
-          for (int x=xl; x<=xr; x+=1) {
-              const int x4 = x<<2;
-              const int basealpha = alpha[x4+0];
-              if (basealpha != 256) {
-                  reinterpret_cast<uint16_t *>(buf)[x] = (uint16_t)((reinterpret_cast<uint16_t *>(buf)[x] * basealpha + ((int)alpha[x4 + 3] << (bits_per_pixel-8))) >> 8);
-              }
-          }
-          buf += pitch;
-          alpha += w4;
+      bufU_row   += pitchUV;
+      bufV_row   += pitchUV;
+      uv_row_ptr += stepY * 4 * w_stride;
+    }
+  } else if constexpr (bits_per_pixel >= 10 && bits_per_pixel <= 16) {
+    for (int y = yb; y <= yt; y += stepY) {
+      const uint16_t* ba_row = rowprep_fns[maskMode](uv_row_ptr,                soa_row_pitch, uv_width, buf_ba, 0, 0, {});
+      const uint16_t* u_row  = rowprep_fns[maskMode](uv_row_ptr + 2 * w_stride, soa_row_pitch, uv_width, buf_u,  0, 0, {});
+      const uint16_t* v_row  = rowprep_fns[maskMode](uv_row_ptr + 3 * w_stride, soa_row_pitch, uv_width, buf_v,  0, 0, {});
+      uint16_t* pU = reinterpret_cast<uint16_t*>(bufU_row);
+      uint16_t* pV = reinterpret_cast<uint16_t*>(bufV_row);
+      for (int xs = xl_uv; xs <= xr_uv; ++xs) {
+        const int ba = ba_row[xs];
+        if (ba != 256) {
+          pU[xs] = (uint16_t)((pU[xs] * ba + (u_row[xs] << (bits_per_pixel - 8))) >> 8);
+          pV[xs] = (uint16_t)((pV[xs] * ba + (v_row[xs] << (bits_per_pixel - 8))) >> 8);
+        }
       }
-  }
-  else { // float assume 0..1.0 scale
-      for (int y=yb; y<=yt; y+=1) {
-          for (int x=xl; x<=xr; x+=1) {
-              const int x4 = x<<2;
-              const int basealpha = alpha[x4+0];
-              if (basealpha != 256) {
-                  reinterpret_cast<float *>(buf)[x] = reinterpret_cast<float *>(buf)[x] * basealpha / 256.0f + alpha[x4 + 3] / 65536.0f;
-              }
-          }
-          buf += pitch;
-          alpha += w4;
+      bufU_row   += pitchUV;
+      bufV_row   += pitchUV;
+      uv_row_ptr += stepY * 4 * w_stride;
+    }
+  } else { // float UV
+    // 32-bit float UV neutral chroma is 0.0f
+    const float middle_shift = isRGB ? 0.0f : 0.5f; // yes, correction needed in and out
+    constexpr float scale_1_per_256 = 1.0f / 256.0f;
+    constexpr float scale_1_per_65536 = 1.0f / 65536.0f;
+    for (int y = yb; y <= yt; y += stepY) {
+      const uint16_t* ba_row = rowprep_fns[maskMode](uv_row_ptr,                soa_row_pitch, uv_width, buf_ba, 0, 0, {});
+      const uint16_t* u_row  = rowprep_fns[maskMode](uv_row_ptr + 2 * w_stride, soa_row_pitch, uv_width, buf_u,  0, 0, {});
+      const uint16_t* v_row  = rowprep_fns[maskMode](uv_row_ptr + 3 * w_stride, soa_row_pitch, uv_width, buf_v,  0, 0, {});
+      float* pU = reinterpret_cast<float*>(bufU_row);
+      float* pV = reinterpret_cast<float*>(bufV_row);
+      for (int xs = xl_uv; xs <= xr_uv; ++xs) {
+        const int ba = ba_row[xs];
+        if (ba != 256) {
+          const float ba_f = ba * scale_1_per_256;
+          pU[xs] = (pU[xs] + middle_shift) * ba_f + u_row[xs] * scale_1_per_65536 - middle_shift;
+          pV[xs] = (pV[xs] + middle_shift) * ba_f + v_row[xs] * scale_1_per_65536 - middle_shift;
+        }
       }
-  }
-
-  if (!bufU) return;
-
-  // This will not be fast, but it will be generic.
-  const int skipThresh = 256 << (shiftX+shiftY);
-  const int shifter = 8+shiftX+shiftY;
-  const int UVw4 = w<<(2+shiftY);
-  const int xlshiftX = xl>>shiftX;
-
-  alpha = alpha_calcs + yb*w4;
-  bufU += (pitchUV*yb)>>shiftY;
-  bufV += (pitchUV*yb)>>shiftY;
-
-  // different paths for different bitdepth
-  if(bits_per_pixel == 8) {
-      for (int y=yb; y<=yt; y+=stepY) {
-          for (int x=xl, xs=xlshiftX; x<=xr; x+=stepX, xs+=1) {
-              unsigned short* UValpha = alpha + x*4;
-              int basealphaUV = 0;
-              int au = 0;
-              int av = 0;
-              for (int i = 0; i<stepY; i++) {
-                  for (int j = 0; j<stepX; j++) {
-                      basealphaUV += UValpha[0 + j*4];
-                      av          += UValpha[1 + j*4];
-                      au          += UValpha[2 + j*4];
-                  }
-                  UValpha += w4;
-              }
-              if (basealphaUV != skipThresh) {
-                  bufU[xs] = BYTE((bufU[xs] * basealphaUV + au) >> shifter);
-                  bufV[xs] = BYTE((bufV[xs] * basealphaUV + av) >> shifter);
-              }
-          }// end for x
-          bufU  += pitchUV;
-          bufV  += pitchUV;
-          alpha += UVw4;
-      }//end for y
-  }
-  else if (bits_per_pixel >= 10 && bits_per_pixel <= 16) { // uint16_t
-      for (int y=yb; y<=yt; y+=stepY) {
-          for (int x=xl, xs=xlshiftX; x<=xr; x+=stepX, xs+=1) {
-              unsigned short* UValpha = alpha + x*4;
-              int basealphaUV = 0;
-              int au = 0;
-              int av = 0;
-              for (int i = 0; i<stepY; i++) {
-                  for (int j = 0; j<stepX; j++) {
-                      basealphaUV += UValpha[0 + j*4];
-                      av          += UValpha[1 + j*4];
-                      au          += UValpha[2 + j*4];
-                  }
-                  UValpha += w4;
-              }
-              if (basealphaUV != skipThresh) {
-                  reinterpret_cast<uint16_t *>(bufU)[xs] = (uint16_t)((reinterpret_cast<uint16_t *>(bufU)[xs] * basealphaUV + (au << (bits_per_pixel-8))) >> shifter);
-                  reinterpret_cast<uint16_t *>(bufV)[xs] = (uint16_t)((reinterpret_cast<uint16_t *>(bufV)[xs] * basealphaUV + (av << (bits_per_pixel-8))) >> shifter);
-              }
-          }// end for x
-          bufU  += pitchUV;
-          bufV  += pitchUV;
-          alpha += UVw4;
-      }//end for y
-  }
-  else { // float. assume 0..1.0 scale
-#ifdef FLOAT_CHROMA_IS_HALF_CENTERED
-      const float middle_shift_f = 0.0f;
-#else
-      const float middle_shift_f = isRGB ? 0.0f : 0.5f; // yes, correction needed in and out
-#endif
-      const float shifter_inv_f = 1.0f / (1 << shifter);
-      const float a_factor = shifter_inv_f / 256.0f;
-      for (int y=yb; y<=yt; y+=stepY) {
-          for (int x=xl, xs=xlshiftX; x<=xr; x+=stepX, xs+=1) {
-              unsigned short* UValpha = alpha + x*4;
-              int basealphaUV = 0;
-              int au = 0;
-              int av = 0;
-              for (int i = 0; i<stepY; i++) {
-                  for (int j = 0; j<stepX; j++) {
-                      basealphaUV += UValpha[0 + j*4];
-                      av          += UValpha[1 + j*4];
-                      au          += UValpha[2 + j*4];
-                  }
-                  UValpha += w4;
-              }
-              if (basealphaUV != skipThresh) {
-                  const float basealphaUV_f = (float)basealphaUV * shifter_inv_f;
-                  reinterpret_cast<float *>(bufU)[xs] = (reinterpret_cast<float *>(bufU)[xs] + middle_shift_f) * basealphaUV_f + au * a_factor - middle_shift_f;
-                  reinterpret_cast<float *>(bufV)[xs] = (reinterpret_cast<float *>(bufV)[xs] + middle_shift_f) * basealphaUV_f + av * a_factor - middle_shift_f;
-              }
-          }// end for x
-          bufU  += pitchUV;
-          bufV  += pitchUV;
-          alpha += UVw4;
-      }//end for y
+      bufU_row   += pitchUV;
+      bufV_row   += pitchUV;
+      uv_row_ptr += stepY * 4 * w_stride;
+    }
   }
 }
 
@@ -687,30 +506,34 @@ void Antialiaser::ApplyPlanar(BYTE* buf, int pitch, int pitchUV, BYTE* bufU, BYT
 void Antialiaser::ApplyYUY2(BYTE* buf, int pitch) {
   if (dirty) {
     GetAlphaRect();
-  xl &= -2; xr |= 1;
+    xl &= -2; xr |= 1;
   }
-  unsigned short* alpha = alpha_calcs + yb*w*4;
-  buf += pitch*yb;
+  const uint16_t* row_ptr = soa_buf + yb * 4 * w_stride;
+  buf += pitch * yb;
 
-  for (int y=yb; y<=yt; ++y) {
-    for (int x=xl; x<=xr; x+=2) {
-      const int basealpha0  = alpha[x*4+0];
-      const int basealpha1  = alpha[x*4+4];
-      const int basealphaUV = basealpha0 + basealpha1;
+  for (int y = yb; y <= yt; ++y) {
+    const uint16_t* ba_row = row_ptr;
+    const uint16_t* ry_row = row_ptr + w_stride;
+    const uint16_t* u_row  = row_ptr + 2 * w_stride;
+    const uint16_t* v_row  = row_ptr + 3 * w_stride;
+    for (int x = xl; x <= xr; x += 2) {
+      const int ba0  = ba_row[x];
+      const int ba1  = ba_row[x + 1];
+      const int baUV = ba0 + ba1;
 
-      if (basealphaUV != 512) {
-        buf[x*2+0] = BYTE((buf[x*2+0] * basealpha0 + alpha[x*4+3]) >> 8);
-        buf[x*2+2] = BYTE((buf[x*2+2] * basealpha1 + alpha[x*4+7]) >> 8);
+      if (baUV != 512) {
+        buf[x*2+0] = BYTE((buf[x*2+0] * ba0 + ry_row[x])     >> 8);
+        buf[x*2+2] = BYTE((buf[x*2+2] * ba1 + ry_row[x + 1]) >> 8);
 
-        const int au  = alpha[x*4+2] + alpha[x*4+6];
-        buf[x*2+1] = BYTE((buf[x*2+1] * basealphaUV + au) >> 9);
+        const int au = u_row[x] + u_row[x + 1];
+        buf[x*2+1] = BYTE((buf[x*2+1] * baUV + au) >> 9);
 
-        const int av  = alpha[x*4+1] + alpha[x*4+5];
-        buf[x*2+3] = BYTE((buf[x*2+3] * basealphaUV + av) >> 9);
+        const int av = v_row[x] + v_row[x + 1];
+        buf[x*2+3] = BYTE((buf[x*2+3] * baUV + av) >> 9);
       }
     }
-    buf += pitch;
-    alpha += w*4;
+    buf     += pitch;
+    row_ptr += 4 * w_stride;
   }
 }
 
@@ -719,23 +542,27 @@ template<typename pixel_t, bool has_alpha>
 void Antialiaser::ApplyRGB_packed(BYTE* buf, int pitch)
 {
   if (dirty) GetAlphaRect();
-  unsigned short* alpha = alpha_calcs + yb * w * 4;
-  buf += pitch * (h - yb - 1);
+  const uint16_t* row_ptr = soa_buf + yb * 4 * w_stride;
+  buf += pitch * (h - yb - 1);  // packed RGB is stored bottom-up
 
-  constexpr int pixel_step = has_alpha ? 4 : 3; // RGB32/64, RGB24/48
-  constexpr int alpha_shift = sizeof(pixel_t) == 1 ? 0 : 8; // RGB32/64, RGB24/48
+  constexpr int pixel_step  = has_alpha ? 4 : 3;
+  constexpr int alpha_shift = sizeof(pixel_t) == 1 ? 0 : 8;
   for (int y = yb; y <= yt; ++y) {
+    const uint16_t* ba_row = row_ptr;
+    const uint16_t* ry_row = row_ptr + w_stride;      // R addend
+    const uint16_t* gu_row = row_ptr + 2 * w_stride;  // G addend
+    const uint16_t* bv_row = row_ptr + 3 * w_stride;  // B addend
     for (int x = xl; x <= xr; ++x) {
-      pixel_t* buf2 = reinterpret_cast<pixel_t*>(buf) + (x * pixel_step);
-      const int basealpha = alpha[x * 4 + 0];
-      if (basealpha != 256) {
-        buf2[0] = (pixel_t)((buf2[0] * basealpha + (alpha[x*4+1] << alpha_shift)) >> 8);
-        buf2[1] = (pixel_t)((buf2[1] * basealpha + (alpha[x*4+2] << alpha_shift)) >> 8);
-        buf2[2] = (pixel_t)((buf2[2] * basealpha + (alpha[x*4+3] << alpha_shift)) >> 8);
+      const int ba = ba_row[x];
+      if (ba != 256) {
+        pixel_t* buf2 = reinterpret_cast<pixel_t*>(buf) + (x * pixel_step);
+        buf2[0] = (pixel_t)((buf2[0] * ba + (bv_row[x] << alpha_shift)) >> 8);  // B
+        buf2[1] = (pixel_t)((buf2[1] * ba + (gu_row[x] << alpha_shift)) >> 8);  // G
+        buf2[2] = (pixel_t)((buf2[2] * ba + (ry_row[x] << alpha_shift)) >> 8);  // R
       }
     }
-    buf -= pitch;
-    alpha += w*4;
+    buf     -= pitch;  // packed RGB is bottom-up
+    row_ptr += 4 * w_stride;
   }
 }
 
@@ -743,303 +570,17 @@ void Antialiaser::ApplyRGB_packed(BYTE* buf, int pitch)
 void Antialiaser::GetAlphaRect()
 {
   dirty = false;
-
-  static BYTE bitcnt[256],    // bit count
-              bitexl[256],    // expand to left bit
-              bitexr[256];    // expand to right bit
-  static bool fInited = false;
-  static unsigned short gamma[129]; // Gamma lookups
-
-  if (!fInited) {
-    fInited = true;
-
-    const double scale = 516*64/sqrt(128.0);
-    {for(int i=0; i<=128; i++)
-      gamma[i]=uint16_t(sqrt((double)i) * scale + 0.5); // Gamma = 2.0
-    }
-
-  {for(int i=0; i<256; i++) {
-      BYTE b=0, l=0, r=0;
-
-      if (i&  1) { b=1; l|=0x01; r|=0xFF; }
-      if (i&  2) { ++b; l|=0x03; r|=0xFE; }
-      if (i&  4) { ++b; l|=0x07; r|=0xFC; }
-      if (i&  8) { ++b; l|=0x0F; r|=0xF8; }
-      if (i& 16) { ++b; l|=0x1F; r|=0xF0; }
-      if (i& 32) { ++b; l|=0x3F; r|=0xE0; }
-      if (i& 64) { ++b; l|=0x7F; r|=0xC0; }
-      if (i&128) { ++b; l|=0xFF; r|=0x80; }
-
-      bitcnt[i] = b;
-      bitexl[i] = l;
-      bitexr[i] = r;
-    }}
+  const int srcpitch = (w + 4 + 3) & -4;
+#ifdef INTEL_INTRINSICS
+  if (getalpharect_fn) {
+    getalpharect_fn(lpAntialiasBits, soa_buf, w, h, w_stride, srcpitch,
+                    textcolor, halocolor, xl, yt, xr, yb);
+    return;
   }
-
-  const int RYtext = ((textcolor>>16)&255), GUtext = ((textcolor>>8)&255), BVtext = (textcolor&255);
-  const int RYhalo = ((halocolor>>16)&255), GUhalo = ((halocolor>>8)&255), BVhalo = (halocolor&255);
-
-  // Scaled Alpha
-  const int Atext = 255 - ((textcolor >> 24) & 0xFF);
-  const int Ahalo = 255 - ((halocolor >> 24) & 0xFF);
-
-  const int srcpitch = (w+4+3) & -4;
-
-  xl=0;
-  xr=w+1;
-  yt=-1;
-  yb=h;
-
-  unsigned short* dest = alpha_calcs;
-  for (int y=0; y<h; ++y) {
-    BYTE* src = (BYTE*)lpAntialiasBits + ((h-y-1)*8 + 20) * srcpitch + 2;
-    int wt = w;
-    do {
-      int i;
-
-#pragma warning(push)
-#pragma warning(disable: 4068)
-      DWORD tmp = 0;
-
-      if (interlaced) {
-#pragma unroll
-        for (int ii = -8; ii < 16; ++ii) {
-          tmp |= *reinterpret_cast<int*>(src + srcpitch*ii - 1);
-        }
-      } else {
-#if 0
-#pragma unroll
-
-        for (int i = -12; i < 20; ++i) {
-          tmp |= *reinterpret_cast<int*>(src + srcpitch*i - 1);
-        }
-#else
-        BYTE *tmpsrc = src + srcpitch*(-12) - 1;
-#pragma unroll
-        // PF 161208 speedup test manual unroll, no pragma in VS
-        for (int ii = -12; ii < 20; ii+=4) { // 0..31
-          tmp |= *reinterpret_cast<int*>(tmpsrc) |
-            *reinterpret_cast<int*>(tmpsrc+srcpitch*1) |
-            *reinterpret_cast<int*>(tmpsrc+srcpitch*2) |
-            *reinterpret_cast<int*>(tmpsrc+srcpitch*3)/* |
-            *reinterpret_cast<int*>(tmpsrc+srcpitch*4) |
-            *reinterpret_cast<int*>(tmpsrc+srcpitch*5) |
-            *reinterpret_cast<int*>(tmpsrc+srcpitch*6) |
-            *reinterpret_cast<int*>(tmpsrc+srcpitch*7)*/
-            ;
-          tmpsrc += srcpitch*4;
-        }
 #endif
-      }
-
-      tmp &= 0x00FFFFFF;
-#pragma warning(pop)
-
-
-      if (tmp != 0) {     // quick exit in a common case
-        if (wt >= xl) xl=wt;
-        if (wt <= xr) xr=wt;
-        if (y  >= yt) yt=y;
-        if (y  <= yb) yb=y;
-
-        int alpha1, alpha2;
-
-        alpha1 = alpha2 = 0;
-
-        if (interlaced) {
-          BYTE topmask=0, cenmask=0, botmask=0;
-          BYTE hmasks[16], mask;
-
-          for(i=-4; i<12; i++) {// For interlaced include extra half cells above and below
-            mask = src[srcpitch*i];
-            // How many lit pixels in the centre cell?
-            alpha1 += bitcnt[mask];
-            // turn on all halo bits if cell has any lit pixels
-            mask = - !! mask;
-            // Check left and right neighbours, extend the halo
-            // mask 8 pixels in from the nearest lit pixels.
-            mask |= bitexr[src[srcpitch*i-1]];
-            mask |= bitexl[src[srcpitch*i+1]];
-            hmasks[i+4] = mask;
-          }
-
-          // Extend halo vertically to 8x8 blocks
-          for(i=-4; i<4;  i++) topmask |= hmasks[i+4];
-          for(i=0;  i<8;  i++) cenmask |= hmasks[i+4];
-          for(i=4;  i<12; i++) botmask |= hmasks[i+4];
-          // Check the 3x1.5 cells above
-          for(mask = topmask, i=-4; i<4; i++) {
-            mask |= bitexr[ src[srcpitch*(i+8)-1] ];
-            mask |=    - !! src[srcpitch*(i+8)  ];
-            mask |= bitexl[ src[srcpitch*(i+8)+1] ];
-            hmasks[i+4] |= mask;
-          }
-          for(mask = cenmask, i=0; i<8; i++) {
-            mask |= bitexr[ src[srcpitch*(i+8)-1] ];
-            mask |=    - !! src[srcpitch*(i+8)  ];
-            mask |= bitexl[ src[srcpitch*(i+8)+1] ];
-            hmasks[i+4] |= mask;
-          }
-          for(mask = botmask, i=4; i<12; i++) {
-            mask |= bitexr[ src[srcpitch*(i+8)-1] ];
-            mask |=    - !! src[srcpitch*(i+8)  ];
-            mask |= bitexl[ src[srcpitch*(i+8)+1] ];
-            hmasks[i+4] |= mask;
-          }
-          // Check the 3x1.5 cells below
-          for(mask = botmask, i=11; i>=4; i--) {
-            mask |= bitexr[ src[srcpitch*(i-8)-1] ];
-            mask |=    - !! src[srcpitch*(i-8)  ];
-            mask |= bitexl[ src[srcpitch*(i-8)+1] ];
-            hmasks[i+4] |= mask;
-          }
-          for(mask = cenmask,i=7; i>=0; i--) {
-            mask |= bitexr[ src[srcpitch*(i-8)-1] ];
-            mask |=    - !! src[srcpitch*(i-8)  ];
-            mask |= bitexl[ src[srcpitch*(i-8)+1] ];
-            hmasks[i+4] |= mask;
-          }
-          for(mask = topmask, i=3; i>=-4; i--) {
-            mask |= bitexr[ src[srcpitch*(i-8)-1] ];
-            mask |=    - !! src[srcpitch*(i-8)  ];
-            mask |= bitexl[ src[srcpitch*(i-8)+1] ];
-            hmasks[i+4] |= mask;
-          }
-          // count the halo pixels
-          for(i=0; i<16; i++)
-            alpha2 += bitcnt[hmasks[i]];
-        }
-        else {
-          // How many lit pixels in the centre cell?
-          for(i=0; i<8; i++)
-            alpha1 += bitcnt[src[srcpitch*i]];
-          alpha1 *=2;
-
-          if (alpha1) {
-            // If we have any lit pixels we fully occupy the cell.
-            alpha2 = 128;
-          }
-          else {
-            // No lit pixels here so build the halo mask from the neighbours
-            BYTE cenmask = 0;
-
-            // Check left and right neighbours, extend the halo
-            // mask 8 pixels in from the nearest lit pixels.
-            for(i=0; i<8; i++) {
-              cenmask |= bitexr[src[srcpitch*i-1]];
-              cenmask |= bitexl[src[srcpitch*i+1]];
-            }
-
-            if (cenmask == 0xFF) {
-              // If we have hard adjacent lit pixels we fully occupy this cell.
-              alpha2 = 128;
-            }
-            else {
-              BYTE hmasks[8], mask;
-
-              mask = cenmask;
-#if 1
-              { // PF 161208 speedup test get first two bytes as word
-                int index = srcpitch*(0 + 8);
-                for (int ii = 0; ii < 8; ii++) {
-                  // Check the 3 cells above
-                  const uint16_t ab = *reinterpret_cast<uint16_t *>(src + index - 1);
-                  mask |= bitexr[ab & 0xFF];
-                  mask |= -!!(ab >> 8);
-                  mask |= bitexl[src[index + 1]];
-                  hmasks[ii] = mask;
-                  index += srcpitch;
-                }
-              }
-#else
-              for(i=0; i<8; i++) {
-                // Check the 3 cells above
-                mask |= bitexr[ src[srcpitch*(i+8)-1] ];
-                mask |=    - !! src[srcpitch*(i+8)  ];
-                mask |= bitexl[ src[srcpitch*(i+8)+1] ];
-                hmasks[i] = mask;
-              }
-#endif
-
-              mask = cenmask;
-#if 1
-              { // PF 161208 speedup test get first two bytes as word
-                int index = srcpitch*(7 - 8);
-                for (int ii = 7; ii >= 0; ii--) {
-                  // Check the 3 cells below
-                  const uint16_t ab = *reinterpret_cast<uint16_t *>(src + index - 1);
-                  mask |= bitexr[ab & 0xFF];
-                  mask |= -!!(ab >> 8);
-                  mask |= bitexl[src[index + 1]];
-                  alpha2 += bitcnt[hmasks[ii] | mask];
-                  index -= srcpitch;
-                }
-              }
-#else
-              for (i = 7; i >= 0; i--) {
-                // Check the 3 cells below
-                mask |= bitexr[src[srcpitch*(i - 8) - 1]];
-                mask |= -!!src[srcpitch*(i - 8)];
-                mask |= bitexl[src[srcpitch*(i - 8) + 1]];
-
-                alpha2 += bitcnt[hmasks[i] | mask];
-              }
-            }
-#endif
-              alpha2 *=2;
-            }
-          }
-        }
-
-        if (noaa)
-        {
-          // now many pixels are occupied from the 128
-          constexpr int lit_if_eq_or_morethan = 1; // if at least 1 pixel is lit: draw pixel
-          if (alpha1 >= lit_if_eq_or_morethan) {
-            alpha1 = 64 * 516 * Atext;
-            alpha2 = 0;
-          }
-          else {
-            if (alpha2 > alpha1 && alpha2 >= lit_if_eq_or_morethan) {
-              alpha1 = 0;
-              alpha2 = 64 * 516 * Ahalo;
-            }
-            else {
-              alpha1 = 0;
-              alpha2 = 0;
-            }
-          }
-        }
-        else
-        {
-          alpha2 = gamma[alpha2];
-          alpha1 = gamma[alpha1];
-          alpha2 -= alpha1;
-          alpha2 *= Ahalo;
-          alpha1 *= Atext;
-        }
-
-        // Pre calculate table for quick use  --  Pc = (Pc * dest[0] + dest[c]) >> 8;
-
-    dest[0] = (unsigned short)((64*516*255 - alpha1 -          alpha2)>>15);
-    dest[1] = (unsigned short)((    BVtext * alpha1 + BVhalo * alpha2)>>15);
-    dest[2] = (unsigned short)((    GUtext * alpha1 + GUhalo * alpha2)>>15);
-    dest[3] = (unsigned short)((    RYtext * alpha1 + RYhalo * alpha2)>>15);
-      }
-      else {
-        dest[0] = 256;
-        dest[1] = 0;
-        dest[2] = 0;
-        dest[3] = 0;
-      }
-
-      dest += 4;
-      ++src;
-    } while(--wt);
-  }
-
-  xl=w-xl;
-  xr=w-xr;
+  GetAlphaRect_select_scalar(noaa, interlaced)(
+      lpAntialiasBits, soa_buf, w, h, w_stride, srcpitch,
+      textcolor, halocolor, xl, yt, xr, yb);
 }
 
 #endif // #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
@@ -1060,7 +601,8 @@ ShowFrameNumber::ShowFrameNumber(PClip _child, bool _scroll, int _offset, int _x
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
     _bold, _italic, _noaa,
-    font_width, font_angle) : nullptr),
+    env->GetCPUFlagsEx(), ChromaLocation_e::AVS_CHROMA_CENTER /*center is quick*/,
+    font_width, font_angle, false) : nullptr),
 #else
   use_gdi(false),
 #endif
@@ -1069,11 +611,11 @@ ShowFrameNumber::ShowFrameNumber(PClip _child, bool _scroll, int _offset, int _x
   halocolor(vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor),
   bold(_bold), italic(_italic), noaa(_noaa)
 {
+  chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
   AVS_UNUSED(env);
 
   if (!use_gdi) {
     current_font = GetBitmapFont(size, "Terminus", bold, false);
-    chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
     if (current_font == nullptr) {
       current_font = GetBitmapFont(size, "", bold, false);
       if (current_font == nullptr)
@@ -1198,7 +740,8 @@ ShowCRC32::ShowCRC32(PClip _child, PClip _crc_child, bool _scroll, int _offset, 
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
     _bold, _italic, _noaa,
-    font_width, font_angle) : nullptr),
+    env->GetCPUFlagsEx(), ChromaLocation_e::AVS_CHROMA_CENTER /*center is quick*/,
+    font_width, font_angle, false) : nullptr),
 #else
   use_gdi(false),
 #endif
@@ -1503,10 +1046,11 @@ ShowSMPTE::ShowSMPTE(PClip _child, double _rate, const char* offset, int _offset
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
   use_gdi(_gdi),
   antialiaser(_gdi ? std::make_unique<Antialiaser>(vi.width, vi.height, _fontname, _size,
-      vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
-      vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
-      _bold, _italic, _noaa,
-      font_width, font_angle) : nullptr),
+    vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
+    vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
+    _bold, _italic, _noaa,
+    env->GetCPUFlagsEx(), ChromaLocation_e::AVS_CHROMA_CENTER /*center is quick*/,
+    font_width, font_angle, false) : nullptr),
 #else
   use_gdi(false),
 #endif
@@ -1747,8 +1291,8 @@ AVSValue __cdecl ShowSMPTE::CreateTime(AVSValue args, void*, IScriptEnvironment*
 Subtitle::Subtitle( PClip _child, const char _text[], int _x, int _y, int _firstframe,
                     int _lastframe, const char _fontname[], int _size, int _textcolor,
                     int _halocolor, int _align, int _spc, bool _multiline, int _lsp,
-                    int _font_width, int _font_angle, bool _interlaced, const char _font_filename[], const bool _utf8, 
-                    const bool _bold, const bool _italic, const bool _noaa, IScriptEnvironment* env)
+                    int _font_width, int _font_angle, bool _interlaced, const char _font_filename[], const bool _utf8,
+                    const bool _bold, const bool _italic, const bool _noaa, int _chromaplacement, IScriptEnvironment* env)
  : GenericVideoFilter(_child),
   x(_x), y(_y),
   firstframe(_firstframe), lastframe(_lastframe), size(_size),
@@ -1758,6 +1302,11 @@ Subtitle::Subtitle( PClip _child, const char _text[], int _x, int _y, int _first
   align(_align), spc(_spc),
   fontname(_fontname), text(_text), font_filename(_font_filename), utf8(_utf8),
   bold(_bold), italic(_italic), noaa(_noaa),
+  // only three types supported
+  chromaplacement(
+    _chromaplacement == ChromaLocation_e::AVS_CHROMA_CENTER ||
+    _chromaplacement == ChromaLocation_e::AVS_CHROMA_LEFT ||
+    _chromaplacement == ChromaLocation_e::AVS_CHROMA_TOP_LEFT ? _chromaplacement : ChromaLocation_e::AVS_CHROMA_LEFT),
   antialiaser(nullptr)
 {
   if (*font_filename) {
@@ -1765,10 +1314,8 @@ Subtitle::Subtitle( PClip _child, const char _text[], int _x, int _y, int _first
       font_filename, // font file name
       FR_PRIVATE,    // font characteristics
       NULL);
-    // If the function succeeds, the return value specifies the number of fonts added.
-    if (added_font_count == 0) {
+    if (added_font_count == 0)
       env->ThrowError("SubTitle: font %s not found", font_filename);
-    }
   }
 }
 
@@ -1778,15 +1325,11 @@ Subtitle::~Subtitle(void)
 {
   delete antialiaser;
   if (font_filename) {
-    // same as in AddFontResourceEx
-    BOOL b = RemoveFontResourceEx(
+    RemoveFontResourceEx(
       font_filename, // name of font file
       FR_PRIVATE,    // font characteristics
       NULL           // Reserved.
     );
-    if (!b) {
-      // we can't do anything
-    }
   }
 }
 
@@ -1799,19 +1342,19 @@ PVideoFrame Subtitle::GetFrame(int n, IScriptEnvironment* env)
   if (n >= firstframe && n <= lastframe) {
     env->MakeWritable(&frame);
     if (!antialiaser) // :FIXME: CriticalSection
-    InitAntialiaser(env);
+      InitAntialiaser(env);
     if (antialiaser) {
-    antialiaser->Apply(vi, &frame, frame->GetPitch());
-    // Release all the windows drawing stuff
-    // and just keep the alpha calcs
-    antialiaser->FreeDC();
-  }
+      antialiaser->Apply(vi, &frame, frame->GetPitch());
+      // Release all the windows drawing stuff
+      // and just keep the alpha calcs
+      antialiaser->FreeDC();
+    }
   }
   // if we get far enough away from the frames we're supposed to
   // subtitle, then junk the buffered drawing information
   if (antialiaser && (n < firstframe-10 || n > lastframe+10 || n == vi.num_frames-1)) {
-  delete antialiaser;
-  antialiaser = 0; // :FIXME: CriticalSection
+    delete antialiaser;
+    antialiaser = 0; // :FIXME: CriticalSection
   }
 
   return frame;
@@ -1839,6 +1382,24 @@ AVSValue __cdecl Subtitle::Create(AVSValue args, void*, IScriptEnvironment* env)
     const bool bold = args[18].AsBool(true);
     const bool italic = args[19].AsBool(false);
     const bool noaa = args[20].AsBool(false);
+    const char* placement_name = args[21].AsString(nullptr);
+    const bool gdi = args[22].AsBool(true);
+
+    if (!gdi)
+      return SimpleText::Create(args, nullptr, env);
+
+    VideoInfo vi = clip->GetVideoInfo();
+    int ChromaLocation_In = -1;
+    if (vi.IsYV411()) {
+      auto frame0 = clip->GetFrame(0, env);
+      const AVSMap* props = env->getFramePropsRO(frame0);
+      chromaloc_parse_merge_with_props(vi, placement_name, props, ChromaLocation_In, -1, env);
+    }
+    else if (vi.Is420() || vi.Is422() || vi.IsYUY2()) {
+      auto frame0 = clip->GetFrame(0, env);
+      const AVSMap* props = env->getFramePropsRO(frame0);
+      chromaloc_parse_merge_with_props(vi, placement_name, props, ChromaLocation_In, ChromaLocation_e::AVS_CHROMA_LEFT, env);
+    }
 
     if ((align < 1) || (align > 9))
      env->ThrowError("Subtitle: Align values are 1 - 9 mapped to your numeric pad");
@@ -1882,8 +1443,8 @@ AVSValue __cdecl Subtitle::Create(AVSValue args, void*, IScriptEnvironment* env)
       y = (clip->GetVideoInfo().height >> 1) * 8;
 
     return new Subtitle(clip, text, x, y, first_frame, last_frame, font, size, text_color,
-                      halo_color, align, spc, multiline, lsp, font_width, font_angle, interlaced, font_filename, utf8, 
-                      bold, italic, noaa, env);
+                      halo_color, align, spc, multiline, lsp, font_width, font_angle, interlaced, font_filename, utf8,
+                      bold, italic, noaa, ChromaLocation_In, env);
 }
 
 // multiline separator: string contains '\' and 'n' characters explicitely
@@ -1948,7 +1509,8 @@ static int CorrectYbyTextAndAlignment(int real_y, int align, int fontsize, int l
 void Subtitle::InitAntialiaser(IScriptEnvironment* env)
 {
   antialiaser = new Antialiaser(vi.width, vi.height, fontname, size, textcolor, halocolor, bold, italic, noaa,
-                                font_width, font_angle, interlaced);
+    env->GetCPUFlagsEx(), chromaplacement,
+    font_width, font_angle, interlaced);
 
   int real_x = x;
   int real_y = y;
@@ -2211,8 +1773,9 @@ AVSValue __cdecl SimpleText::Create(AVSValue args, void*, IScriptEnvironment* en
   const bool bold = args[18].AsBool(false); // valid SubTitle parameter since v3.7.3
   [[maybe_unused]] const bool italic = args[19].AsBool(false); // valid SubTitle parameter since v3.7.3, but in "Text" not implemented
   [[maybe_unused]] const bool noaa = args[20].AsBool(false); // valid SubTitle parameter since v3.7.3, but in "Text" not implemented
-  // "placement" as chroma location, only "Text"
-  const char* placement_name = args.ArraySize() >= 23 ? args[22].AsString(nullptr) : nullptr; // different from SubTitle, guard array access of extra parameter
+  // "placement" at [21], "gdi" at [22] — identical for both "Text" and "Subtitle" no-GDI fallback
+  const char* placement_name = args.ArraySize() >= 22 ? args[21].AsString(nullptr) : nullptr;
+  [[maybe_unused]] const bool gdi = args.ArraySize() >= 23 ? args[22].AsBool(false) : false; // ignored by SimpleText
 
   // parameters marked with n/a are ignored; parameter list is currently the same as SubTitle
 
@@ -2295,7 +1858,9 @@ FilterInfo::FilterInfo( PClip _child, const char _fontname[], int _size, int _te
   antialiaser(_gdi ? std::make_unique<Antialiaser>(vi.width, vi.height, _fontname, size,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_textcolor) : _textcolor,
     vi.IsYUV() || vi.IsYUVA() ? RGB2YUV_Rec601(_halocolor) : _halocolor,
-    _bold, _italic, _noaa) : nullptr),
+    _bold, _italic, _noaa,
+    env->GetCPUFlagsEx(), ChromaLocation_e::AVS_CHROMA_CENTER, /* quick */
+    0, 0, false) : nullptr),
 #else
   use_gdi(false),
 #endif
@@ -2742,7 +2307,7 @@ AVSValue __cdecl FilterInfo::Create(AVSValue args, void*, IScriptEnvironment* en
       size = CalcFontSizeForInfo(clip->GetVideoInfo().width, clip->GetVideoInfo().height, size < 0, upper_limit, gdi);
     const int text_color = args[3].AsInt(0xFFFF00);
     const int halo_color = args[4].AsInt(0);
-    const bool bold = args[5].AsBool(!gdi);
+    const bool bold = args[5].AsBool(gdi);
     const bool italic = args[6].AsBool(false);
     const bool noaa = args[7].AsBool(false);
     const bool cpu = args[8].AsBool(true);
@@ -2808,7 +2373,9 @@ Compare::Compare(PClip _child1, PClip _child2, const char* channels, const char 
   antialiaser(_gdi ? std::make_unique<Antialiaser>(vi.width, vi.height, "Courier New", 16 * 8,
     (vi.IsYUV() || vi.IsYUVA()) ? 0xD21092 : 0xFFFF00,
     (vi.IsYUV() || vi.IsYUVA()) ? 0x108080 : 0,
-    true, false, false) : nullptr),
+    true, false, false,
+    env->GetCPUFlagsEx(), ChromaLocation_e::AVS_CHROMA_CENTER, /* quick */
+    0, 0, false) : nullptr),
 #else
   use_gdi(false),
 #endif
@@ -3609,8 +3176,25 @@ void ApplyMessageEx(PVideoFrame* frame, const VideoInfo& vi, const char* message
   const bool bold = true;
   const bool italic = false;
   const bool noaa = false;
+
+  int chromaplacement;
+
+  // SD: Up to 720x576 (PAL/NTSC standard definition)
+  if (vi.width <= 720 || vi.height <= 576) {
+    chromaplacement = ChromaLocation_e::AVS_CHROMA_CENTER;
+  }
+  // HD: Up to 1920x1080 (Full HD)
+  else if (vi.width <= 1920 || vi.height <= 1080) {
+    chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
+  }
+  // UHD / 4K and above
+  else {
+    chromaplacement = ChromaLocation_e::AVS_CHROMA_TOP_LEFT;
+  }
+
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
-  Antialiaser antialiaser(vi.width, vi.height, "Arial", size, textcolor, halocolor, bold, italic, noaa);
+  const int64_t cpuFlags = env->GetCPUFlagsEx();
+  Antialiaser antialiaser(vi.width, vi.height, "Arial", size, textcolor, halocolor, bold, italic, noaa, cpuFlags, chromaplacement);
   HDC hdcAntialias = antialiaser.GetDC();
   if (hdcAntialias)
   {
@@ -3647,7 +3231,6 @@ void ApplyMessageEx(PVideoFrame* frame, const VideoInfo& vi, const char* message
   int x = 4;
   int y = 4;
 
-  const int chromaplacement = ChromaLocation_e::AVS_CHROMA_LEFT;
   SimpleTextOutW_multi(current_font.get(), vi, *frame, x, y, s_utf8, false, textcolor, halocolor, true, align, lsp, chromaplacement);
 
 #endif

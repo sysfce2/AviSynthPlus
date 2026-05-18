@@ -55,14 +55,93 @@
 
 
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
+#include "overlay/blend_common.h"  // MaskMode, PLACEMENT_*
+#include <vector>
+#ifdef INTEL_INTRINSICS
+#include "intel/getalpharect_impl.h"
+#endif
+
+/*
+ * Antialiaser — GDI-based anti-aliased text renderer for AviSynth+ video frames.
+ *
+ * OVERVIEW
+ * --------
+ * The caller draws text into an internal 8x-supersampled 1-bit GDI DIB via GetDC().
+ * Apply() then composites that text onto the video frame by:
+ *   1. GetAlphaRect() — scans the DIB, gamma-corrects, and computes per-pixel
+ *      blend weights (basealpha) and pre-scaled color addends (Y/R, U/G, V/B),
+ *      all as uint16_t values stored in soa_buf.
+ *   2. ApplyPlanar_SoA / ApplyYUY2 / ApplyRGB_packed — reads from soa_buf and
+ *      blends those values onto the actual video pixels.
+ *
+ * FORMAT-AGNOSTIC MASK BUFFER
+ * ---------------------------
+ * soa_buf is always uint16_t, regardless of the video format (8-bit, 10–16-bit
+ * integer, or 32-bit float).  GetAlphaRect() produces:
+ *   basealpha : 0..256  (256 = fully transparent — pixel untouched)
+ *   Y/R, U/G, V/B addends : 0..~65530
+ * These are fixed-point values scaled to 8-bit headroom.  The Apply functions
+ * rescale on the fly: integer formats left-shift the addend by (bpp-8), float
+ * formats divide by 65536.  The mask computation itself never needs to know the
+ * output bit depth.
+ *
+ * CHROMA PLACEMENT SUPPORT
+ * ------------------------
+ * For subsampled YUV formats the U/G and V/B planes in soa_buf are stored at
+ * full luma resolution.  When Apply() composites a subsampled clip, each UV
+ * output pixel is derived by spatially downsampling the corresponding luma-
+ * resolution mask row(s) using prepare_effective_mask_for_row<MaskMode,...>
+ * (from overlay/blend_common.h).  The MaskMode encodes both the subsampling
+ * ratio (4:4:4, 4:2:2, 4:2:0, 4:1:1) and the chroma siting (CENTER (MPEG1) / LEFT (MPEG2) /
+ * TOP_LEFT), giving correct chroma placement rather than a naive box average.
+ *
+ * Eight MaskModes cover all supported combinations.  rowprep_fns[8] holds one
+ * function pointer per MaskMode, with the best available SIMD tier (AVX2 /
+ * SSE4.1 / scalar) selected once at construction time from cpuFlags.  Apply()
+ * computes the actual MaskMode at call time from the VideoInfo subsampling
+ * factors and the stored chromaplacement member, so the same Antialiaser
+ * instance can be reused if the clip format ever changes.
+ *
+ * BUFFER LAYOUT  (row-interleaved SoA)
+ * -------------------------------------
+ * The original implementation stored the four mask components interleaved per
+ * pixel (AoS: [ba,bv,gu,ry] packed as four consecutive uint16_t).  That layout
+ * is ideal for GetAlphaRect() writes (one sequential stream) but stride-4 for
+ * the Apply readers.
+ *
+ * The current layout is row-interleaved SoA: within each scanline the four
+ * sub-planes are stored consecutively, each w_stride elements wide:
+ *
+ *   row y: [ ba_0..ba_n | ry_0..ry_n | u_0..u_n | v_0..v_n ]
+ *             plane 0        plane 1    plane 2    plane 3
+ *
+ *   row y, plane p: soa_buf + y * 4 * w_stride + p * w_stride
+ *
+ * w_stride = (w + 31) & ~31, rounding up to a multiple of 32 so every sub-row
+ * starts on a 64-byte cache-line boundary.
+ *
+ * This is a compromise between the two extremes:
+ *   - Full AoS (old): GetAlphaRect() writes one stream (optimal), Apply reads
+ *     with stride 4 (poor locality per plane).
+ *   - Full SoA (four separate plane allocations): Apply reads are stride-1
+ *     (optimal per plane), but GetAlphaRect() writes to four streams that are
+ *     w*h*2 bytes apart (~600 KB for 640×480), causing heavy cache thrashing.
+ *   - Row-interleaved SoA (current): GetAlphaRect() writes four streams that
+ *     are at most w_stride*2 bytes apart (<=1280 bytes for 640-wide), all within
+ *     one L1-cache-sized window per row.  Apply reads each plane stride-1 within
+ *     a row and steps by 4*w_stride between rows — well within prefetcher range.
+ *
+ * Overall throughput is broadly on par with the original AoS method while
+ * enabling correct chroma-placement-aware UV compositing.
+ */
 class Antialiaser
-/**
-  * Helper class to anti-alias text
- **/
 {
 public:
-  Antialiaser(int width, int height, const char fontname[], int size, 
-    int textcolor, int halocolor, bool _bold, bool _italic, bool _noaa, int font_width=0, int font_angle=0, bool _interlaced=false);
+  Antialiaser(int width, int height, const char fontname[], int size,
+    int textcolor, int halocolor, bool _bold, bool _italic, bool _noaa,
+    int64_t cpuFlags,
+    int chromaplacement,
+    int font_width=0, int font_angle=0, bool _interlaced=false);
   virtual ~Antialiaser();
   HDC GetDC();
   void FreeDC();
@@ -70,17 +149,24 @@ public:
   void Apply(const VideoInfo& vi, PVideoFrame* frame, int pitch);
 
 private:
-  void ApplyYV12(BYTE* buf, int pitch, int UVpitch,BYTE* bufV,BYTE* bufU);
-  template<int shiftX, int shiftY, int bits_per_pixel>
-  void ApplyPlanar_core(BYTE* buf, int pitch, int UVpitch,BYTE* bufV,BYTE* bufU,bool isRGB);
-  void ApplyPlanar(BYTE* buf, int pitch, int UVpitch,BYTE* bufV,BYTE* bufU, int shiftX, int shiftY, int pixelsize, bool isRGB);
+  template<MaskMode maskMode, int bits_per_pixel>
+  void ApplyPlanar_SoA(BYTE* buf, int pitch, int pitchUV, BYTE* bufU, BYTE* bufV, bool isRGB);
   void ApplyYUY2(BYTE* buf, int pitch);
 
   template<typename pixel_t, bool has_alpha>
   void ApplyRGB_packed(BYTE* buf, int pitch);
 
+  using rowprep_u16_fn_t = const uint16_t*(*)(const uint16_t*, int, int, std::vector<uint16_t>&, int, int, MagicDiv);
+
   void* lpAntialiasBits;
-  unsigned short* alpha_calcs;
+  // Row-interleaved SoA: each scanline holds [ba|ry|u|v], each sub-row w_stride wide.
+  // Row y, plane p: soa_buf + y * 4 * w_stride + p * w_stride
+  // w_stride = (w + 31) & ~31  — rounded up so each sub-row is 64-byte aligned.
+  uint16_t* soa_buf;   // single allocation: w_stride * h * 4 uint16_t
+  int w_stride;        // padded row stride (>= w, multiple of 32)
+  std::vector<uint16_t> uv_buf_ba, uv_buf_u, uv_buf_v; // scratch for ApplyPlanar_SoA UV section, sized w
+  rowprep_u16_fn_t rowprep_fns[8];  // one per MaskMode, SIMD variant selected at construction
+  int chromaplacement;              // PLACEMENT_MPEG1/MPEG2/TOPLEFT — used in Apply() per-call
   HDC hdcAntialias;
   HBITMAP hbmAntialias;
   HFONT hfontDefault;
@@ -92,6 +178,9 @@ private:
   bool bold, italic;
   bool noaa;
 
+#ifdef INTEL_INTRINSICS
+  getalpharect_fn_t getalpharect_fn;
+#endif
   void GetAlphaRect();
 };
 #endif
@@ -227,7 +316,7 @@ public:
   Subtitle( PClip _child, const char _text[], int _x, int _y, int _firstframe, int _lastframe,
             const char _fontname[], int _size, int _textcolor, int _halocolor, int _align,
             int _spc, bool _multiline, int _lsp, int _font_width, int _font_angle, bool _interlaced, const char _font_filename[], const bool _utf8,
-            const bool _bold, const bool _italic, const bool _noaa, IScriptEnvironment* env);
+            const bool _bold, const bool _italic, const bool _noaa, int _chromaplacement, IScriptEnvironment* env);
   virtual ~Subtitle(void);
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override;
 
@@ -252,6 +341,7 @@ private:
   const bool bold;
   const bool italic;
   const bool noaa;
+  const int chromaplacement;
   Antialiaser* antialiaser;
 };
 #endif
