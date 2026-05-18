@@ -9,6 +9,26 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
+20260518 3.7.5.r45XX (pre 3.7.6)
+--------------------------------
+- Subtitle: add "placement" string parameter — chroma location hint for subsampled
+  YUV (4:2:0, 4:2:2, 4:1:1). When gdi=true, all three siting modes are supported:
+  "MPEG2"/"left" (default), "MPEG1"/"center", and "top_left" (UHD 4:2:0/4:2:2).
+  Default is read from the _ChromaLocation frame property, falling back to "left".
+  When gdi=false only "left" and "center" are implemented (same as Text).
+- Subtitle: add "gdi" bool parameter. When false, Subtitle uses the built-in bitmap
+  font (Terminus) instead of Windows GDI rendering (same path as Text). Faster and
+  cross-platform compatible; placement is then limited to "left"/"center".
+  Default: true.
+- Text: add "gdi" bool parameter (accepted, has no effect; API compatibility with
+  Subtitle — on non-Windows Subtitle is aliased to Text). Default: false.
+- Subtitle Antialiaser (Windows GDI): GetAlphaRect() now has SSE4.1, AVX2, and
+  AVX512 SIMD implementations.
+  Internal mask buffer refactored to row-interleaved SoA layout for correct
+  chroma-placement-aware UV compositing via prepare_effective_mask_for_row
+  downsampling (8 MaskModes covering all subsampling ratios x siting variants;
+  SIMD rowprep dispatch matching Overlay/Layer).
+
 20260508 3.7.5.r45XX (pre 3.7.6)
 --------------------------------
 - ShowCRC32: new "channels" (select planes), "mode" (0=combined, 1=per-plane), and

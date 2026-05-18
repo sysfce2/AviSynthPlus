@@ -153,6 +153,22 @@ Additions, changes
   ``"darken"``, and ``"mulovr"`` modes with 4:2:0 / 4:2:2 sources.
 - "Overlay" ``"blend"`` mode: add ``"placement"`` parameter for correct luma-mask-to-chroma
   downsampling in 4:2:0 and 4:2:2 clips.  Values: ``"mpeg2"`` (default), ``"mpeg1"``, ``"top_left"``.
+- ``Subtitle``: add ``placement`` string parameter — chroma location hint for subsampled
+  YUV formats (4:2:0, 4:2:2, 4:1:1).  When ``gdi=true`` all three siting modes are
+  supported: ``"MPEG2"`` / ``"left"`` (default), ``"MPEG1"`` / ``"center"``, and
+  ``"top_left"`` (UHD 4:2:0 / 4:2:2 co-sited chroma).  The default is read from the
+  ``_ChromaLocation`` frame property, falling back to ``"left"``.
+  When ``gdi=false`` only ``"left"`` and ``"center"`` are implemented (same as ``Text``).
+  See :doc:`Subtitle / Text <./corefilters/subtitle>`.
+- ``Subtitle``: add ``gdi`` bool parameter.  When ``false``, Subtitle uses the built-in
+  bitmap font (Terminus) instead of Windows GDI rendering — the same path as the
+  ``Text`` filter.  Faster and cross-platform compatible; ``placement`` is then limited
+  to ``"left"`` / ``"center"``.  Default: ``true``.
+  See :doc:`Subtitle / Text <./corefilters/subtitle>`.
+- ``Text``: add ``gdi`` bool parameter (accepted, has no effect; present for API
+  compatibility with ``Subtitle`` — on non-Windows, ``Subtitle`` is aliased to ``Text``
+  so every ``Subtitle`` parameter must exist in ``Text``).  Default: ``false``.
+  See :doc:`Subtitle / Text <./corefilters/subtitle>`.
 
 
 Build environment, Interface
@@ -347,6 +363,17 @@ Optimizations
 - "ConvertBits": restructure integer-to-integer depth-reducing C loop to be more
   auto-vectorization-friendly.
 - ``PlanarRGB(A)`` → ``RGB32`` / ``RGB64``: add AVX2 conversion path.
+- ``Subtitle`` Antialiaser (Windows GDI path): ``GetAlphaRect()`` — the per-pixel
+  alpha/color weight computation from the 8×-supersampled GDI DIB — now has SSE4.1,
+  AVX2, and AVX512 SIMD implementations in addition to the scalar fallback; best tier
+  is selected once at construction time from cpu flags.
+- ``Subtitle`` Antialiaser: internal mask buffer refactored from AoS (interleaved
+  alpha/Y/U/V per pixel) to row-interleaved SoA layout, enabling correct
+  chroma-placement-aware UV compositing.  Each UV output pixel is derived by spatially
+  downsampling the luma-resolution mask row(s) via ``prepare_effective_mask_for_row``
+  (same family as Overlay/Layer); eight MaskModes cover all subsampling ratios
+  (4:4:4, 4:2:2, 4:2:0, 4:1:1) × siting variants (MPEG2/MPEG1/top_left); SIMD rowprep
+  dispatch (AVX2 / SSE4.1 / scalar) is selected at construction.
 
 Documentation
 ~~~~~~~~~~~~~
