@@ -63,7 +63,11 @@
 // Portable POPCNT64 wrapper.
 static inline int popcount64(uint64_t v) {
 #if defined(_MSC_VER) && !defined(__clang__) && !defined(__INTEL_COMPILER)
+#if defined(_WIN64)
   return (int)__popcnt64(v);
+#else
+  return (int)(__popcnt((unsigned)(v)) + __popcnt((unsigned)(v >> 32)));
+#endif
 #else
   return (int)__builtin_popcountll(v);
 #endif
