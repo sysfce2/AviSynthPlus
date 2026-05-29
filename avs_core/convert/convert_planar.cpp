@@ -1787,12 +1787,15 @@ AVSValue ConvertToPlanarGeneric::Create(AVSValue& args, const char* filter, bool
   else if (!vi.IsPlanar())
     env->ThrowError("%s: Can only convert from Planar YUV.", filter);
 
-  if (needConvertFinalBitdepth) {
+  // YV411 has no 8+ bits variant.
+  // A bit depth changing YV411->YUV4xx conversion must be reversed: first convert th format keeping 8 bits,
+  // then do the bit-depth conversion.
+  if (needConvertFinalBitdepth && !vi.IsYV411()) {
     // plain Invoke and no "new ConvertBits()": this detects and keeps source and target ranges
-    // FIXME: use fulls, fulld YUV->YUY (Y->Y where only limited/full is changed)
     AVSValue new_args[2] = { clip, target_bits_per_pixel };
     clip = env->Invoke("ConvertBits", AVSValue(new_args, 2)).AsClip();
     vi = clip->GetVideoInfo();
+    needConvertFinalBitdepth = false;
   }
 
   bits_per_pixel = vi.BitsPerComponent(); // rgb conversion or standalone ConvertBits() would alter it.
@@ -1952,13 +1955,25 @@ AVSValue ConvertToPlanarGeneric::Create(AVSValue& args, const char* filter, bool
   // ConvertToPlanarGeneric's GetFrame will recognize if alpha copy or fill-with-defaults needed
   AVSValue dummy_for_to_y;
 
-  return new ConvertToPlanarGeneric(clip, pixel_type,
+  clip = new ConvertToPlanarGeneric(clip, pixel_type,
     to_y ? false : args[1].AsBool(false), // interlaced
     ChromaLocation_In, 
     to_y ? dummy_for_to_y : args[4], // chromaresample
     param1, param2, param3,
     ChromaLocation_Out,
     env);
+
+  // If still not converted, do it now (YV411->YUVxxx 8+ bits)
+  if (needConvertFinalBitdepth) {
+    // plain Invoke and no "new ConvertBits()": this detects and keeps source and target ranges
+    AVSValue new_args[2] = { clip, target_bits_per_pixel };
+    clip = env->Invoke("ConvertBits", AVSValue(new_args, 2)).AsClip();
+    vi = clip->GetVideoInfo();
+    needConvertFinalBitdepth = false;
+  }
+
+  return clip;
+
 }
 
 AVSValue __cdecl ConvertToPlanarGeneric::CreateYUV420(AVSValue args, void* user_data, IScriptEnvironment* env) {
