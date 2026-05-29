@@ -2862,7 +2862,7 @@ PVideoFrame __stdcall Layer::GetFrame(int n, IScriptEnvironment* env)
           int src1_pitch = dstp_pitch;
           int src2_pitch = ovrp_pitch;
           // in merge.cpp/h
-          merge_plane(src1p, src2p, src1_pitch, src2_pitch, currentwidth * pixelsize /*src_rowsize*/, currentheight, 0.5f, bits_per_pixel, use_padded_width, env);
+          merge_plane(src1p, src2p, src1_pitch, src2_pitch, currentwidth * pixelsize /*src_rowsize*/, currentheight, actual_opacity, bits_per_pixel, use_padded_width, env);
         }
       }
       else {
