@@ -3707,14 +3707,12 @@ void resize_prepare_coeffs_AVX512_H(ResamplingProgram* p, IScriptEnvironment* en
 
   // Common variables for both float and integer paths
   void* SIMD_coeff = nullptr;
-  void* src_coeff = nullptr;
   size_t element_size = 0;
 
   // allocate for a larger target_size area and nullify the coeffs.
   // Even between target_size and target_size_aligned.
   if (p->bits_per_pixel == 32) {
     element_size = sizeof(float);
-    src_coeff = p->pixel_coefficient_float;
     SIMD_coeff = env->Allocate(element_size * target_size_aligned * filter_size_aligned, 64, AVS_NORMAL_ALLOC);
     if (!SIMD_coeff) {
       env->Free(SIMD_coeff);
@@ -3724,7 +3722,6 @@ void resize_prepare_coeffs_AVX512_H(ResamplingProgram* p, IScriptEnvironment* en
   }
   else {
     element_size = sizeof(short);
-    src_coeff = p->pixel_coefficient;
     SIMD_coeff = env->Allocate(element_size * target_size_aligned * filter_size_aligned, 64, AVS_NORMAL_ALLOC);
     if (!SIMD_coeff) {
       env->Free(SIMD_coeff);
@@ -3748,150 +3745,49 @@ void resize_prepare_coeffs_AVX512_H(ResamplingProgram* p, IScriptEnvironment* en
   // Process coefficients - common code for both types
   for (int x = 0; x < p->target_size; x += iSamplesAtATime)
   {
+    // clamp j so the last partial group doesn't overread pixel_coefficient
+    const int avail = std::min(iSamplesAtATime, p->target_size - x);
+    auto gc = [&](int j, int ki) -> short {
+      return *(current_coeff + filter_size_padded * std::min(j, avail - 1) + ki);
+    };
     // process by 2 rows because madd/dp can only make FMA from 2 unpacked uint16 pairs
-    for (int i = 0; i < filter_size_to_process; i += 2) // filter_size_to_process always even
+    // ks16 (iSamplesAtATime==32): filter always reads 16 vectors per x-group (advance by 16),
+    // so we must store all filter_size_aligned/2 pairs even when filter_size_real < 16.
+    // Extra iterations access zero-padded taps and produce zero coefficient pairs — harmless.
+    // ks64 (iSamplesAtATime==64): filter advances by filter_size_real*2 (variable), so it uses
+    // filter_size_to_process to store exactly that many pairs — must NOT use filter_size_aligned.
+    const int i_limit = (iSamplesAtATime == 32) ? filter_size_aligned : filter_size_to_process;
+    for (int i = 0; i < i_limit; i += 2)
     {
       if (iSamplesAtATime == 64) // 2 groups of 32 coeffs for columns 0..31 and 32..63
       {
         // use slow C-gathering, it is only once per filter init
         // first row
         const __m512i coef_rN_0_31 = _mm512_set_epi16(
-          *(current_coeff + (filter_size_padded * 31) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 30) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 29) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 28) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 27) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 26) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 25) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 24) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 23) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 22) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 21) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 20) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 19) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 18) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 17) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 16) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 15) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 14) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 13) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 12) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 11) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 10) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 9) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 8) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 7) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 6) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 5) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 4) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 3) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 2) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 1) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 0) + (i + 0))
+          gc(31,i+0),gc(30,i+0),gc(29,i+0),gc(28,i+0),gc(27,i+0),gc(26,i+0),gc(25,i+0),gc(24,i+0),
+          gc(23,i+0),gc(22,i+0),gc(21,i+0),gc(20,i+0),gc(19,i+0),gc(18,i+0),gc(17,i+0),gc(16,i+0),
+          gc(15,i+0),gc(14,i+0),gc(13,i+0),gc(12,i+0),gc(11,i+0),gc(10,i+0),gc( 9,i+0),gc( 8,i+0),
+          gc( 7,i+0),gc( 6,i+0),gc( 5,i+0),gc( 4,i+0),gc( 3,i+0),gc( 2,i+0),gc( 1,i+0),gc( 0,i+0)
         );
         const __m512i coef_rN_32_63 = _mm512_set_epi16(
-          *(current_coeff + (filter_size_padded * 63) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 62) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 61) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 60) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 59) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 58) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 57) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 56) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 55) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 54) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 53) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 52) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 51) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 50) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 49) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 48) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 47) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 46) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 45) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 44) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 43) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 42) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 41) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 40) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 39) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 38) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 37) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 36) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 35) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 34) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 33) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 32) + (i + 0))
+          gc(63,i+0),gc(62,i+0),gc(61,i+0),gc(60,i+0),gc(59,i+0),gc(58,i+0),gc(57,i+0),gc(56,i+0),
+          gc(55,i+0),gc(54,i+0),gc(53,i+0),gc(52,i+0),gc(51,i+0),gc(50,i+0),gc(49,i+0),gc(48,i+0),
+          gc(47,i+0),gc(46,i+0),gc(45,i+0),gc(44,i+0),gc(43,i+0),gc(42,i+0),gc(41,i+0),gc(40,i+0),
+          gc(39,i+0),gc(38,i+0),gc(37,i+0),gc(36,i+0),gc(35,i+0),gc(34,i+0),gc(33,i+0),gc(32,i+0)
         );
 
         // second row
         const __m512i coef_rNp1_0_31 = _mm512_set_epi16(
-          *(current_coeff + (filter_size_padded * 31) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 30) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 29) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 28) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 27) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 26) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 25) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 24) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 23) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 22) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 21) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 20) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 19) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 18) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 17) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 16) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 15) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 14) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 13) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 12) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 11) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 10) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 9) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 8) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 7) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 6) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 5) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 4) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 3) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 2) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 1) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 0) + (i + 1))
+          gc(31,i+1),gc(30,i+1),gc(29,i+1),gc(28,i+1),gc(27,i+1),gc(26,i+1),gc(25,i+1),gc(24,i+1),
+          gc(23,i+1),gc(22,i+1),gc(21,i+1),gc(20,i+1),gc(19,i+1),gc(18,i+1),gc(17,i+1),gc(16,i+1),
+          gc(15,i+1),gc(14,i+1),gc(13,i+1),gc(12,i+1),gc(11,i+1),gc(10,i+1),gc( 9,i+1),gc( 8,i+1),
+          gc( 7,i+1),gc( 6,i+1),gc( 5,i+1),gc( 4,i+1),gc( 3,i+1),gc( 2,i+1),gc( 1,i+1),gc( 0,i+1)
         );
         const __m512i coef_rNp1_32_63 = _mm512_set_epi16(
-          *(current_coeff + (filter_size_padded * 63) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 62) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 61) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 60) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 59) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 58) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 57) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 56) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 55) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 54) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 53) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 52) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 51) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 50) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 49) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 48) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 47) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 46) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 45) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 44) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 43) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 42) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 41) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 40) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 39) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 38) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 37) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 36) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 35) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 34) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 33) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 32) + (i + 1))
+          gc(63,i+1),gc(62,i+1),gc(61,i+1),gc(60,i+1),gc(59,i+1),gc(58,i+1),gc(57,i+1),gc(56,i+1),
+          gc(55,i+1),gc(54,i+1),gc(53,i+1),gc(52,i+1),gc(51,i+1),gc(50,i+1),gc(49,i+1),gc(48,i+1),
+          gc(47,i+1),gc(46,i+1),gc(45,i+1),gc(44,i+1),gc(43,i+1),gc(42,i+1),gc(41,i+1),gc(40,i+1),
+          gc(39,i+1),gc(38,i+1),gc(37,i+1),gc(36,i+1),gc(35,i+1),gc(34,i+1),gc(33,i+1),gc(32,i+1)
         );
 
         // unpack hi/lo
@@ -3914,74 +3810,18 @@ void resize_prepare_coeffs_AVX512_H(ResamplingProgram* p, IScriptEnvironment* en
         // use slow C-gathering, it is only once per filter init
         // first row
         const __m512i coef_rN_0_31 = _mm512_set_epi16(
-          *(current_coeff + (filter_size_padded * 31) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 30) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 29) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 28) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 27) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 26) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 25) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 24) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 23) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 22) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 21) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 20) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 19) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 18) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 17) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 16) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 15) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 14) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 13) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 12) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 11) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 10) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 9) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 8) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 7) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 6) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 5) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 4) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 3) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 2) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 1) + (i + 0)),
-          *(current_coeff + (filter_size_padded * 0) + (i + 0))
+          gc(31,i+0),gc(30,i+0),gc(29,i+0),gc(28,i+0),gc(27,i+0),gc(26,i+0),gc(25,i+0),gc(24,i+0),
+          gc(23,i+0),gc(22,i+0),gc(21,i+0),gc(20,i+0),gc(19,i+0),gc(18,i+0),gc(17,i+0),gc(16,i+0),
+          gc(15,i+0),gc(14,i+0),gc(13,i+0),gc(12,i+0),gc(11,i+0),gc(10,i+0),gc( 9,i+0),gc( 8,i+0),
+          gc( 7,i+0),gc( 6,i+0),gc( 5,i+0),gc( 4,i+0),gc( 3,i+0),gc( 2,i+0),gc( 1,i+0),gc( 0,i+0)
         );
 
         // second row
         const __m512i coef_rNp1_0_31 = _mm512_set_epi16(
-          *(current_coeff + (filter_size_padded * 31) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 30) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 29) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 28) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 27) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 26) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 25) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 24) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 23) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 22) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 21) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 20) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 19) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 18) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 17) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 16) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 15) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 14) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 13) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 12) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 11) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 10) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 9) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 8) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 7) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 6) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 5) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 4) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 3) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 2) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 1) + (i + 1)),
-          *(current_coeff + (filter_size_padded * 0) + (i + 1))
+          gc(31,i+1),gc(30,i+1),gc(29,i+1),gc(28,i+1),gc(27,i+1),gc(26,i+1),gc(25,i+1),gc(24,i+1),
+          gc(23,i+1),gc(22,i+1),gc(21,i+1),gc(20,i+1),gc(19,i+1),gc(18,i+1),gc(17,i+1),gc(16,i+1),
+          gc(15,i+1),gc(14,i+1),gc(13,i+1),gc(12,i+1),gc(11,i+1),gc(10,i+1),gc( 9,i+1),gc( 8,i+1),
+          gc( 7,i+1),gc( 6,i+1),gc( 5,i+1),gc( 4,i+1),gc( 3,i+1),gc( 2,i+1),gc( 1,i+1),gc( 0,i+1)
         );
 
         // unpack hi/lo
