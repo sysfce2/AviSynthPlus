@@ -132,4 +132,8 @@ void resize_v_avx512_planar_uint16_t_w_sr(BYTE* dst8, const BYTE* src8, int dst_
 
 void resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16(BYTE * dst8, const BYTE * src8, int dst_pitch, int src_pitch, ResamplingProgram * program, int width, int height, int bits_per_pixel);
 
+// transpose and hi/lo unpack of resampling program for permute-based H-resizers
+// allocate and fill pixel_coefficient_AVX512_H coeffs buffer of the ResamplingProgram
+void resize_prepare_coeffs_AVX512_H(ResamplingProgram* p, IScriptEnvironment* env, int iSamplesInTheGroup, int iGroupsCount);
+
 #endif // __Resample_AVX512_H__
