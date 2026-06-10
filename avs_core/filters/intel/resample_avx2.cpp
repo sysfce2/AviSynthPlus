@@ -74,6 +74,53 @@
 #define _mm256_set_m128(v0, v1) _mm256_insertf128_ps(_mm256_castps128_ps256(v1), (v0), 1)
 #endif
 
+// Useful dual-source permute helper functions for AVX2
+
+// Dual source float-granlarity lookup, like _mm512_permutex2var_ps-
+// _mm512_permutex2var_ps: two __m512 sources, index 0..31, zeroing bit handled
+// avx2_permutex2var_ps: two __m256 sources, index 0..15, no zeroing bit simulated
+static AVS_FORCEINLINE __m256 avx2_permutex2var_ps(__m256 a, __m256 b, __m256i idx) {
+  // 1. Permute from both sources independently
+  __m256 res_a = _mm256_permutevar8x32_ps(a, idx);
+  __m256 res_b = _mm256_permutevar8x32_ps(b, idx);
+
+  // 2. Use the 4th bit of the index (value 8) to select between A and B
+  // In AVX2, we use _mm256_blendv_ps
+  // blendv uses the sign bit (bit 31) of each float, so we shift bit 3 (value 8) to bit 31
+  __m256i select_mask = _mm256_slli_epi32(idx, 28); // Move bit 3 (value 8) to sign bit
+  return _mm256_blendv_ps(res_a, res_b, _mm256_castsi256_ps(select_mask));
+}
+
+// Dual source byte-granularity lookup, like _mm512_permutex2var_epi8.
+// _mm512_permutex2var_epi8: two __m512i sources, index 0..127, zeroing bit handled
+// avx2_permutex2var_epi8: two __m256i sources, index 0..63, no zeroing bit simulated
+static AVS_FORCEINLINE __m256i avx2_permutex2var_epi8(__m256i a, __m256i b, __m256i idx) {
+  //  idx(0-63) Source Lane(0/1) Byte offset
+  //    0–15     a         0        0–15
+  //    16–31    a         1        0–15
+  //    32–47    b         0        0–15
+  //    48–63    b         1        0–15
+
+  // 1. Prepare swapped versions of A and B (Swap 128-bit lanes)
+  __m256i a_swapped = _mm256_permute2x128_si256(a, a, 0x01);
+  __m256i b_swapped = _mm256_permute2x128_si256(b, b, 0x01);
+
+  // 2. Lookup from A (Lanes 0 and 1)
+  // idx & 16: if 0, use original lane; if 1, use swapped lane
+  __m256i shuf_a_norm = _mm256_shuffle_epi8(a, idx);
+  __m256i shuf_a_swap = _mm256_shuffle_epi8(a_swapped, idx);
+  __m256i res_a = _mm256_blendv_epi8(shuf_a_norm, shuf_a_swap, _mm256_slli_epi32(idx, 3));
+  // Note: blendv uses the top bit, so we shift bit 4 (16) to bit 7 (128)
+
+  // 3. Lookup from B (Lanes 2 and 3)
+  __m256i idx_b = _mm256_sub_epi8(idx, _mm256_set1_epi8(32));
+  __m256i shuf_b_norm = _mm256_shuffle_epi8(b, idx_b);
+  __m256i shuf_b_swap = _mm256_shuffle_epi8(b_swapped, idx_b);
+  __m256i res_b = _mm256_blendv_epi8(shuf_b_norm, shuf_b_swap, _mm256_slli_epi32(idx_b, 3));
+
+  // 4. Final Blend: Decide between Result A or Result B based on Bit 5 (value 32)
+  return _mm256_blendv_epi8(res_a, res_b, _mm256_slli_epi32(idx, 2));
+}
 
 //-------- AVX2 Horizontals
 
