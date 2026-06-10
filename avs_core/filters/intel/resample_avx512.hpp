@@ -45,46 +45,52 @@ Functions here are static, they will be compiled into each translation unit incl
 // We are using two separated source modules and include this hpp file templated
 // with UseVBMI/UseVNNI
 
+// Notes:
+// As of January 2026, Visual Studio 2026 ships with clang-cl (LLVM 20.1.8).
+// - This version typically avoids using VNNI vpdpwssd instructions, opting instead for separate madd and add operations.
+// - Masked permute operations are not optimized: for example, instead of using masked permutex2var_epi8,
+//   it performs a basic permutex2var_epi8 followed by an "and" with a pre-loaded zmm mask.
+// These behaviors result in slower code compared to MSVC builds, which utilize these instructions more efficiently.
+// These optimization issues are resolved in LLVM 21 (e.g., Intel C++ Compiler 2025.3).
 
 // helper function for simulating _mm512_permutex2var_epi8 when VBMI is not available
 // The MSB bit (128) zeroing effect is _not_ considered here, the indices must be all positive and within 0-127 range.
+// Helper for _mm512_permutex2var_epi8_SIMUL: gather 32 bytes from [a,b] using precomputed word_idx and shift_amt.
+// Extracted from lambda to ensure MSVC inlines it (lambdas are not reliably inlined by MSVC).
+// Accepts precomputed word_idx (target_idx>>1) and shift_amt ((target_idx<<3)&8) so callers outside
+// the y-loop can hoist these invariants, avoiding recomputation every row.
+// Returns 32 16-bit words with gathered bytes in low 8 bits (high 8 bits cleared).
+// Returning __m512i instead of __m256i lets callers feed unpacklo/hi_epi16 directly,
+// avoiding the cvtepu8_epi16 expansion round-trip that MSVC emits as vpmovwb+vpmovzxbw.
+AVS_FORCEINLINE static __m512i _permutex2var_epi8_sim_get32(__m512i word_idx, __m512i shift_amt, __m512i a, __m512i b)
+{
+  __m512i words = _mm512_permutex2var_epi16(a, word_idx, b);
+  // vpsrlvw: avoids k-register RAW dependency; MSVC compiles test_epi16_mask+mask_srli as
+  // vptestmw->k1->vpsrlw{k1}, creating a read-after-write through the mask unit (higher latency)
+  words = _mm512_srlv_epi16(words, shift_amt);
+  // clear high byte so the caller can use unpacklo/hi_epi16 without cvtepu8_epi16
+  return _mm512_and_si512(words, _mm512_set1_epi16(0x00FF));
+}
+
 template<bool UseVBMI>
 AVS_FORCEINLINE static __m512i _mm512_permutex2var_epi8_SIMUL(__m512i a, __m512i idx, __m512i b) {
   if constexpr (UseVBMI) {
     return _mm512_permutex2var_epi8(a, idx, b);
   }
   else {
-    // Constants
-    const __m512i v_one = _mm512_set1_epi16(1);
+    const __m512i c_8 = _mm512_set1_epi16(8);
 
-    // 1. Extract the byte indices for the first 32 and last 32 target pixels
-    // We expand them to 16-bit so we can treat them as word-indices
     __m512i idx_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(idx));
     __m512i idx_hi = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(idx, 1));
 
-    // Helper to process 32 bytes of the result at a time
-    auto get_32_bytes = [&](__m512i target_idx) {
-      // word_idx = byte_idx / 2
-      __m512i word_idx = _mm512_srli_epi16(target_idx, 1);
+    __m512i wi_lo = _mm512_srli_epi16(idx_lo, 1);
+    __m512i sa_lo = _mm512_and_si512(_mm512_slli_epi16(idx_lo, 3), c_8);
+    __m512i wi_hi = _mm512_srli_epi16(idx_hi, 1);
+    __m512i sa_hi = _mm512_and_si512(_mm512_slli_epi16(idx_hi, 3), c_8);
 
-      // VPERMT2W: Full 512-bit cross-lane word shuffle from 128-byte pool [a, b]
-      __m512i words = _mm512_permutex2var_epi16(a, word_idx, b);
+    __m256i res_0_31  = _mm512_cvtepi16_epi8(_permutex2var_epi8_sim_get32(wi_lo, sa_lo, a, b));
+    __m256i res_32_63 = _mm512_cvtepi16_epi8(_permutex2var_epi8_sim_get32(wi_hi, sa_hi, a, b));
 
-      // If the original byte index was odd, we need the High Byte of the word.
-      // We shift those words right by 8 to put the High Byte into the Low Byte position.
-      __mmask32 mask_odd = _mm512_test_epi16_mask(target_idx, v_one);
-      words = _mm512_mask_srli_epi16(words, mask_odd, words, 8);
-
-      // VPMOVWB: Truncates 32 words to 32 bytes LINEARLY (No lane scrambling)
-      // Returns a __m256i
-      return _mm512_cvtepi16_epi8(words);
-      };
-
-    // 2. Build the two 256-bit halves
-    __m256i res_0_31 = get_32_bytes(idx_lo);
-    __m256i res_32_63 = get_32_bytes(idx_hi);
-
-    // 3. Combine into final __m512i
     return _mm512_inserti64x4(_mm512_castsi256_si512(res_0_31), res_32_63, 1);
   }
 }
@@ -839,7 +845,7 @@ static void resize_h_planar_uint8_avx512_permutex_vstripe_ks8_internal(BYTE* dst
 
       // Insert each 128-bit register into the specific lane
       // __m512i perm_0 = _mm512_inserti32x4(_mm512_setzero_si512(), mm128i_perm_0_0_15, 0); // Lane 0
-      __m512i perm_0 = _mm512_inserti32x4(_mm512_zextsi128_si512(mm128i_perm_0_0_15), mm128i_perm_0_16_31, 1); // Lane 0+1
+      __m512i perm_0 = _mm512_inserti32x4(_mm512_castsi128_si512(mm128i_perm_0_0_15), mm128i_perm_0_16_31, 1); // Lane 0+1
       perm_0 = _mm512_inserti32x4(perm_0, mm128i_perm_0_32_47, 2); // Lane 2
       perm_0 = _mm512_inserti32x4(perm_0, mm128i_perm_0_48_63, 3); // Lane 3
 
@@ -1266,7 +1272,7 @@ static void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8_internal(BYTE
 
       // Insert each 128-bit register into the specific lane
 //      __m512i perm_0 = _mm512_inserti32x4(_mm512_setzero_si512(), mm128i_perm_0_0_15, 0); // Lane 0
-      __m512i perm_0 = _mm512_inserti32x4(_mm512_zextsi128_si512(mm128i_perm_0_0_15), mm128i_perm_0_16_31, 1); // Lane 0+1
+      __m512i perm_0 = _mm512_inserti32x4(_mm512_castsi128_si512(mm128i_perm_0_0_15), mm128i_perm_0_16_31, 1); // Lane 0+1
       perm_0 = _mm512_inserti32x4(perm_0, mm128i_perm_0_32_47, 2); // Lane 2
       perm_0 = _mm512_inserti32x4(perm_0, mm128i_perm_0_48_63, 3); // Lane 3
 
@@ -1802,7 +1808,7 @@ static void resize_h_planar_uint8_avx512_permutex_vstripe_ks16_internal(BYTE* ds
       __m128i mm128i_perm_0_0_15 = _mm256_cvtepi16_epi8(m256i_perm_0_0_15);
       __m128i mm128i_perm_0_16_31 = _mm256_cvtepi16_epi8(m256i_perm_0_16_31);
 
-      __m512i perm_0 = _mm512_inserti32x4(_mm512_zextsi128_si512(mm128i_perm_0_0_15), mm128i_perm_0_16_31, 1); // Lane 0+1 - 32 offsets only
+      __m512i perm_0 = _mm512_inserti32x4(_mm512_castsi128_si512(mm128i_perm_0_0_15), mm128i_perm_0_16_31, 1); // Lane 0+1 - 32 offsets only
 
       // Taps are contiguous (0, 1, 2, 3), so we increment perm indexes by 1 (in pairs by 2 each).
       const __m512i two_epi8 = _mm512_set1_epi8(2);
@@ -2176,8 +2182,8 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_internal(BYTE* dst8, 
       __m256i m256i_perm_0_32_47 = _mm512_cvtepi32_epi16(perm_0_32_47);
       __m256i m256i_perm_0_48_63 = _mm512_cvtepi32_epi16(perm_0_48_63);
 
-      __m512i perm_0_0_31 = _mm512_inserti64x4(_mm512_zextsi256_si512(m256i_perm_0_0_15), m256i_perm_0_16_31, 1);
-      __m512i perm_0_32_63 = _mm512_inserti64x4(_mm512_zextsi256_si512(m256i_perm_0_32_47), m256i_perm_0_48_63, 1);
+      __m512i perm_0_0_31 = _mm512_inserti64x4(_mm512_castsi256_si512(m256i_perm_0_0_15), m256i_perm_0_16_31, 1);
+      __m512i perm_0_32_63 = _mm512_inserti64x4(_mm512_castsi256_si512(m256i_perm_0_32_47), m256i_perm_0_48_63, 1);
 
       // Taps are contiguous (0, 1, 2, 3), so we increment perm indexes by 1.
       __m512i perm_1_0_31 = _mm512_add_epi16(perm_0_0_31, one_epi16);
@@ -2245,7 +2251,6 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_internal(BYTE* dst8, 
 
         if constexpr (UseVNNI)
         {
-          // Unlike _ks8, here in _ks4 LLVM did not use VNNI vpdpwssd, but decided to use madd and add. Perhaps it knows port pressure and latency?
           result_0_31lo = _mm512_dpwssd_epi32(rounder, src_r0r1_0_31lo, coef_r0r1_0_31lo);
           result_0_31lo = _mm512_dpwssd_epi32(result_0_31lo, src_r2r3_0_31lo, coef_r2r3_0_31lo);
 
