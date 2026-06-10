@@ -2321,8 +2321,6 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_internal(BYTE* dst8, 
 template<bool UseVNNI>
 void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_pretransposed_coeffs_internal(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
-  const int filter_size = program->filter_size; // aligned, practically the coeff table stride
-
   constexpr int PIXELS_AT_A_TIME = 64;
 
   // 'source_overread_beyond_targetx' indicates if the filter kernel can read beyond the target width.
@@ -2425,12 +2423,32 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_pretransposed_coeffs_
       const __m512i perm_r2r3_32_63lo = _mm512_unpacklo_epi16(perm_2_32_63, perm_3_32_63);
       const __m512i perm_r2r3_32_63hi = _mm512_unpackhi_epi16(perm_2_32_63, perm_3_32_63);
 
+      __m512i wi_r0r1_0_31lo={},sa_r0r1_0_31lo={},wi_r0r1_0_31hi={},sa_r0r1_0_31hi={};
+      __m512i wi_r0r1_32_63lo={},sa_r0r1_32_63lo={},wi_r0r1_32_63hi={},sa_r0r1_32_63hi={};
+      __m512i wi_r2r3_0_31lo={},sa_r2r3_0_31lo={},wi_r2r3_0_31hi={},sa_r2r3_0_31hi={};
+      __m512i wi_r2r3_32_63lo={},sa_r2r3_32_63lo={},wi_r2r3_32_63hi={},sa_r2r3_32_63hi={};
+      if constexpr (!UseVNNI) {
+        const __m512i c_8w = _mm512_set1_epi16(8);
+        auto make_wi_sa = [&](__m512i p, __m512i& wi, __m512i& sa) {
+          wi = _mm512_srli_epi16(p, 1);
+          sa = _mm512_and_si512(_mm512_slli_epi16(p, 3), c_8w);
+        };
+        make_wi_sa(perm_r0r1_0_31lo,  wi_r0r1_0_31lo,  sa_r0r1_0_31lo);
+        make_wi_sa(perm_r0r1_0_31hi,  wi_r0r1_0_31hi,  sa_r0r1_0_31hi);
+        make_wi_sa(perm_r0r1_32_63lo, wi_r0r1_32_63lo, sa_r0r1_32_63lo);
+        make_wi_sa(perm_r0r1_32_63hi, wi_r0r1_32_63hi, sa_r0r1_32_63hi);
+        make_wi_sa(perm_r2r3_0_31lo,  wi_r2r3_0_31lo,  sa_r2r3_0_31lo);
+        make_wi_sa(perm_r2r3_0_31hi,  wi_r2r3_0_31hi,  sa_r2r3_0_31hi);
+        make_wi_sa(perm_r2r3_32_63lo, wi_r2r3_32_63lo, sa_r2r3_32_63lo);
+        make_wi_sa(perm_r2r3_32_63hi, wi_r2r3_32_63hi, sa_r2r3_32_63hi);
+      }
+
       uint8_t* AVS_RESTRICT dst_ptr = dst8 + x + y_from * dst_pitch;
       const uint8_t* src_ptr = src8 + iStart + y_from * src_pitch; // all permute offsets relative to this start offset
 
       // Calculate remaining pixels for bounds checking in partial_load mode. 1..128 remaining pixels possible.
       const int remaining = program->source_size - iStart;
-      __mmask64 k1 = _bzhi_u64(~0ULL, remaining); // _bzhi_u64 creates a mask with the lower N bits set. If N >= 64, it returns all ones (~0ULL). 
+      __mmask64 k1 = _bzhi_u64(~0ULL, remaining); // _bzhi_u64 creates a mask with the lower N bits set. If N >= 64, it returns all ones (~0ULL).
       __mmask64 k2 = _bzhi_u64(~0ULL, std::max(0, remaining - 64));
 
       // mask is used to zero out every odd byte, so that the result of the permute is a
@@ -2453,17 +2471,27 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_pretransposed_coeffs_
           data_src2 = _mm512_loadu_si512(src_ptr + 64);
         }
 
-        __m512i src_r0r1_0_31lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_r0r1_0_31lo, data_src2);
-        __m512i src_r0r1_0_31hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_r0r1_0_31hi, data_src2);
-
-        __m512i src_r0r1_32_63lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_r0r1_32_63lo, data_src2);
-        __m512i src_r0r1_32_63hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_r0r1_32_63hi, data_src2);
-
-        __m512i src_r2r3_0_31lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_r2r3_0_31lo, data_src2);
-        __m512i src_r2r3_0_31hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_r2r3_0_31hi, data_src2);
-
-        __m512i src_r2r3_32_63lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_r2r3_32_63lo, data_src2);
-        __m512i src_r2r3_32_63hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_r2r3_32_63hi, data_src2);
+        __m512i src_r0r1_0_31lo, src_r0r1_0_31hi, src_r0r1_32_63lo, src_r0r1_32_63hi;
+        __m512i src_r2r3_0_31lo, src_r2r3_0_31hi, src_r2r3_32_63lo, src_r2r3_32_63hi;
+        if constexpr (UseVNNI) {
+          src_r0r1_0_31lo  = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_r0r1_0_31lo,  data_src2);
+          src_r0r1_0_31hi  = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_r0r1_0_31hi,  data_src2);
+          src_r0r1_32_63lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_r0r1_32_63lo, data_src2);
+          src_r0r1_32_63hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_r0r1_32_63hi, data_src2);
+          src_r2r3_0_31lo  = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_r2r3_0_31lo,  data_src2);
+          src_r2r3_0_31hi  = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_r2r3_0_31hi,  data_src2);
+          src_r2r3_32_63lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_r2r3_32_63lo, data_src2);
+          src_r2r3_32_63hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_r2r3_32_63hi, data_src2);
+        } else {
+          src_r0r1_0_31lo  = _permutex2var_epi8_sim_get32(wi_r0r1_0_31lo,  sa_r0r1_0_31lo,  data_src, data_src2);
+          src_r0r1_0_31hi  = _permutex2var_epi8_sim_get32(wi_r0r1_0_31hi,  sa_r0r1_0_31hi,  data_src, data_src2);
+          src_r0r1_32_63lo = _permutex2var_epi8_sim_get32(wi_r0r1_32_63lo, sa_r0r1_32_63lo, data_src, data_src2);
+          src_r0r1_32_63hi = _permutex2var_epi8_sim_get32(wi_r0r1_32_63hi, sa_r0r1_32_63hi, data_src, data_src2);
+          src_r2r3_0_31lo  = _permutex2var_epi8_sim_get32(wi_r2r3_0_31lo,  sa_r2r3_0_31lo,  data_src, data_src2);
+          src_r2r3_0_31hi  = _permutex2var_epi8_sim_get32(wi_r2r3_0_31hi,  sa_r2r3_0_31hi,  data_src, data_src2);
+          src_r2r3_32_63lo = _permutex2var_epi8_sim_get32(wi_r2r3_32_63lo, sa_r2r3_32_63lo, data_src, data_src2);
+          src_r2r3_32_63hi = _permutex2var_epi8_sim_get32(wi_r2r3_32_63hi, sa_r2r3_32_63hi, data_src, data_src2);
+        }
 
         __m512i result_0_31lo, result_0_31hi;
         __m512i result_32_63lo, result_32_63hi;
@@ -6814,8 +6842,6 @@ void resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks16_internal(BYTE* dst8,
 template<bool UseVNNI>
 void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_pretransposed_coeffs_internal(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
-  const int filter_size = program->filter_size;
-
   constexpr int PIXELS_AT_A_TIME = 64;
 
   const int width_safe_mod = (program->safelimit_128_pixels_each64th_target.overread_possible ? program->safelimit_128_pixels_each64th_target.source_overread_beyond_targetx : width) / PIXELS_AT_A_TIME * PIXELS_AT_A_TIME;
@@ -6888,6 +6914,38 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_pretransposed_coeffs_
 
       const __m512i two_epi16 = _mm512_set1_epi16(2);
 
+      __m512i wi_r0r1_0_31lo={},sa_r0r1_0_31lo={},wi_r0r1_0_31hi={},sa_r0r1_0_31hi={};
+      __m512i wi_r0r1_32_63lo={},sa_r0r1_32_63lo={},wi_r0r1_32_63hi={},sa_r0r1_32_63hi={};
+      __m512i wi_r2r3_0_31lo={},sa_r2r3_0_31lo={},wi_r2r3_0_31hi={},sa_r2r3_0_31hi={};
+      __m512i wi_r2r3_32_63lo={},sa_r2r3_32_63lo={},wi_r2r3_32_63hi={},sa_r2r3_32_63hi={};
+      __m512i wi_r4r5_0_31lo={},sa_r4r5_0_31lo={},wi_r4r5_0_31hi={},sa_r4r5_0_31hi={};
+      __m512i wi_r4r5_32_63lo={},sa_r4r5_32_63lo={},wi_r4r5_32_63hi={},sa_r4r5_32_63hi={};
+      __m512i wi_r6r7_0_31lo={},sa_r6r7_0_31lo={},wi_r6r7_0_31hi={},sa_r6r7_0_31hi={};
+      __m512i wi_r6r7_32_63lo={},sa_r6r7_32_63lo={},wi_r6r7_32_63hi={},sa_r6r7_32_63hi={};
+      if constexpr (!UseVNNI) {
+        const __m512i c_8w = _mm512_set1_epi16(8);
+        auto make_wi_sa = [&](__m512i p, __m512i& wi, __m512i& sa) {
+          wi = _mm512_srli_epi16(p, 1);
+          sa = _mm512_and_si512(_mm512_slli_epi16(p, 3), c_8w);
+        };
+        __m512i p_lo = perm_r0r1_0_31lo, p_hi = perm_r0r1_0_31hi;
+        __m512i p_lo2 = perm_r0r1_32_63lo, p_hi2 = perm_r0r1_32_63hi;
+        make_wi_sa(p_lo,  wi_r0r1_0_31lo,  sa_r0r1_0_31lo);  make_wi_sa(p_hi,  wi_r0r1_0_31hi,  sa_r0r1_0_31hi);
+        make_wi_sa(p_lo2, wi_r0r1_32_63lo, sa_r0r1_32_63lo); make_wi_sa(p_hi2, wi_r0r1_32_63hi, sa_r0r1_32_63hi);
+        p_lo  = _mm512_add_epi16(p_lo,  two_epi16); p_hi  = _mm512_add_epi16(p_hi,  two_epi16);
+        p_lo2 = _mm512_add_epi16(p_lo2, two_epi16); p_hi2 = _mm512_add_epi16(p_hi2, two_epi16);
+        make_wi_sa(p_lo,  wi_r2r3_0_31lo,  sa_r2r3_0_31lo);  make_wi_sa(p_hi,  wi_r2r3_0_31hi,  sa_r2r3_0_31hi);
+        make_wi_sa(p_lo2, wi_r2r3_32_63lo, sa_r2r3_32_63lo); make_wi_sa(p_hi2, wi_r2r3_32_63hi, sa_r2r3_32_63hi);
+        p_lo  = _mm512_add_epi16(p_lo,  two_epi16); p_hi  = _mm512_add_epi16(p_hi,  two_epi16);
+        p_lo2 = _mm512_add_epi16(p_lo2, two_epi16); p_hi2 = _mm512_add_epi16(p_hi2, two_epi16);
+        make_wi_sa(p_lo,  wi_r4r5_0_31lo,  sa_r4r5_0_31lo);  make_wi_sa(p_hi,  wi_r4r5_0_31hi,  sa_r4r5_0_31hi);
+        make_wi_sa(p_lo2, wi_r4r5_32_63lo, sa_r4r5_32_63lo); make_wi_sa(p_hi2, wi_r4r5_32_63hi, sa_r4r5_32_63hi);
+        p_lo  = _mm512_add_epi16(p_lo,  two_epi16); p_hi  = _mm512_add_epi16(p_hi,  two_epi16);
+        p_lo2 = _mm512_add_epi16(p_lo2, two_epi16); p_hi2 = _mm512_add_epi16(p_hi2, two_epi16);
+        make_wi_sa(p_lo,  wi_r6r7_0_31lo,  sa_r6r7_0_31lo);  make_wi_sa(p_hi,  wi_r6r7_0_31hi,  sa_r6r7_0_31hi);
+        make_wi_sa(p_lo2, wi_r6r7_32_63lo, sa_r6r7_32_63lo); make_wi_sa(p_hi2, wi_r6r7_32_63hi, sa_r6r7_32_63hi);
+      }
+
       uint8_t* AVS_RESTRICT dst_ptr = dst8 + x + y_from * dst_pitch;
       const uint8_t* src_ptr = src8 + iStart + y_from * src_pitch;
 
@@ -6915,10 +6973,18 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_pretransposed_coeffs_
         }
 
         // rows 0..1
-        __m512i src_r0r1_0_31lo  = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31lo_w,  data_src2);
-        __m512i src_r0r1_0_31hi  = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31hi_w,  data_src2);
-        __m512i src_r0r1_32_63lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_32_63lo_w, data_src2);
-        __m512i src_r0r1_32_63hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_32_63hi_w, data_src2);
+        __m512i src_r0r1_0_31lo, src_r0r1_0_31hi, src_r0r1_32_63lo, src_r0r1_32_63hi;
+        if constexpr (UseVNNI) {
+          src_r0r1_0_31lo  = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31lo_w,  data_src2);
+          src_r0r1_0_31hi  = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31hi_w,  data_src2);
+          src_r0r1_32_63lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_32_63lo_w, data_src2);
+          src_r0r1_32_63hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_32_63hi_w, data_src2);
+        } else {
+          src_r0r1_0_31lo  = _permutex2var_epi8_sim_get32(wi_r0r1_0_31lo,  sa_r0r1_0_31lo,  data_src, data_src2);
+          src_r0r1_0_31hi  = _permutex2var_epi8_sim_get32(wi_r0r1_0_31hi,  sa_r0r1_0_31hi,  data_src, data_src2);
+          src_r0r1_32_63lo = _permutex2var_epi8_sim_get32(wi_r0r1_32_63lo, sa_r0r1_32_63lo, data_src, data_src2);
+          src_r0r1_32_63hi = _permutex2var_epi8_sim_get32(wi_r0r1_32_63hi, sa_r0r1_32_63hi, data_src, data_src2);
+        }
 
         // for r2r3
         perm_rNrNp1_0_31lo_w  = _mm512_add_epi16(perm_rNrNp1_0_31lo_w,  two_epi16);
@@ -6926,10 +6992,18 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_pretransposed_coeffs_
         perm_rNrNp1_32_63lo_w = _mm512_add_epi16(perm_rNrNp1_32_63lo_w, two_epi16);
         perm_rNrNp1_32_63hi_w = _mm512_add_epi16(perm_rNrNp1_32_63hi_w, two_epi16);
 
-        __m512i src_r2r3_0_31lo  = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31lo_w,  data_src2);
-        __m512i src_r2r3_0_31hi  = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31hi_w,  data_src2);
-        __m512i src_r2r3_32_63lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_32_63lo_w, data_src2);
-        __m512i src_r2r3_32_63hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_32_63hi_w, data_src2);
+        __m512i src_r2r3_0_31lo, src_r2r3_0_31hi, src_r2r3_32_63lo, src_r2r3_32_63hi;
+        if constexpr (UseVNNI) {
+          src_r2r3_0_31lo  = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31lo_w,  data_src2);
+          src_r2r3_0_31hi  = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31hi_w,  data_src2);
+          src_r2r3_32_63lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_32_63lo_w, data_src2);
+          src_r2r3_32_63hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_32_63hi_w, data_src2);
+        } else {
+          src_r2r3_0_31lo  = _permutex2var_epi8_sim_get32(wi_r2r3_0_31lo,  sa_r2r3_0_31lo,  data_src, data_src2);
+          src_r2r3_0_31hi  = _permutex2var_epi8_sim_get32(wi_r2r3_0_31hi,  sa_r2r3_0_31hi,  data_src, data_src2);
+          src_r2r3_32_63lo = _permutex2var_epi8_sim_get32(wi_r2r3_32_63lo, sa_r2r3_32_63lo, data_src, data_src2);
+          src_r2r3_32_63hi = _permutex2var_epi8_sim_get32(wi_r2r3_32_63hi, sa_r2r3_32_63hi, data_src, data_src2);
+        }
 
         // for r4r5
         perm_rNrNp1_0_31lo_w  = _mm512_add_epi16(perm_rNrNp1_0_31lo_w,  two_epi16);
@@ -6960,10 +7034,18 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_pretransposed_coeffs_
         }
 
         // rows 4..5
-        __m512i src_r4r5_0_31lo  = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31lo_w,  data_src2);
-        __m512i src_r4r5_0_31hi  = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31hi_w,  data_src2);
-        __m512i src_r4r5_32_63lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_32_63lo_w, data_src2);
-        __m512i src_r4r5_32_63hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_32_63hi_w, data_src2);
+        __m512i src_r4r5_0_31lo, src_r4r5_0_31hi, src_r4r5_32_63lo, src_r4r5_32_63hi;
+        if constexpr (UseVNNI) {
+          src_r4r5_0_31lo  = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31lo_w,  data_src2);
+          src_r4r5_0_31hi  = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31hi_w,  data_src2);
+          src_r4r5_32_63lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_32_63lo_w, data_src2);
+          src_r4r5_32_63hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_32_63hi_w, data_src2);
+        } else {
+          src_r4r5_0_31lo  = _permutex2var_epi8_sim_get32(wi_r4r5_0_31lo,  sa_r4r5_0_31lo,  data_src, data_src2);
+          src_r4r5_0_31hi  = _permutex2var_epi8_sim_get32(wi_r4r5_0_31hi,  sa_r4r5_0_31hi,  data_src, data_src2);
+          src_r4r5_32_63lo = _permutex2var_epi8_sim_get32(wi_r4r5_32_63lo, sa_r4r5_32_63lo, data_src, data_src2);
+          src_r4r5_32_63hi = _permutex2var_epi8_sim_get32(wi_r4r5_32_63hi, sa_r4r5_32_63hi, data_src, data_src2);
+        }
 
         // for r6r7
         perm_rNrNp1_0_31lo_w  = _mm512_add_epi16(perm_rNrNp1_0_31lo_w,  two_epi16);
@@ -6971,10 +7053,18 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_pretransposed_coeffs_
         perm_rNrNp1_32_63lo_w = _mm512_add_epi16(perm_rNrNp1_32_63lo_w, two_epi16);
         perm_rNrNp1_32_63hi_w = _mm512_add_epi16(perm_rNrNp1_32_63hi_w, two_epi16);
 
-        __m512i src_r6r7_0_31lo  = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31lo_w,  data_src2);
-        __m512i src_r6r7_0_31hi  = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31hi_w,  data_src2);
-        __m512i src_r6r7_32_63lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_32_63lo_w, data_src2);
-        __m512i src_r6r7_32_63hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_32_63hi_w, data_src2);
+        __m512i src_r6r7_0_31lo, src_r6r7_0_31hi, src_r6r7_32_63lo, src_r6r7_32_63hi;
+        if constexpr (UseVNNI) {
+          src_r6r7_0_31lo  = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31lo_w,  data_src2);
+          src_r6r7_0_31hi  = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31hi_w,  data_src2);
+          src_r6r7_32_63lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_32_63lo_w, data_src2);
+          src_r6r7_32_63hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_32_63hi_w, data_src2);
+        } else {
+          src_r6r7_0_31lo  = _permutex2var_epi8_sim_get32(wi_r6r7_0_31lo,  sa_r6r7_0_31lo,  data_src, data_src2);
+          src_r6r7_0_31hi  = _permutex2var_epi8_sim_get32(wi_r6r7_0_31hi,  sa_r6r7_0_31hi,  data_src, data_src2);
+          src_r6r7_32_63lo = _permutex2var_epi8_sim_get32(wi_r6r7_32_63lo, sa_r6r7_32_63lo, data_src, data_src2);
+          src_r6r7_32_63hi = _permutex2var_epi8_sim_get32(wi_r6r7_32_63hi, sa_r6r7_32_63hi, data_src, data_src2);
+        }
 
         if constexpr (UseVNNI)
         {
@@ -7044,8 +7134,6 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_pretransposed_coeffs_
 template<bool UseVNNI>
 void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_pretransposed_coeffs_internal(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
-  const int filter_size = program->filter_size;
-
   constexpr int PIXELS_AT_A_TIME = 32;
 
   const int width_safe_mod = (program->safelimit_128_pixels_each64th_target.overread_possible ? program->safelimit_128_pixels_each64th_target.source_overread_beyond_targetx : width) / PIXELS_AT_A_TIME * PIXELS_AT_A_TIME;
@@ -7107,6 +7195,43 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_pretransposed_coeffs
 
       const __m512i two_epi16 = _mm512_set1_epi16(2);
 
+      // BASE path: precompute word-index (wi) and shift-amount (sa) for each tap-pair perm.
+      // perm_rNrNp1 holds 32 x 16-bit byte addresses; wi = addr>>1 selects the 16-bit word in
+      // {data_src, data_src2}, sa = (addr<<3)&8 selects high (1) or low (0) byte within that word.
+      // Precomputing here eliminates ~12 instructions/gather (cvtepu8+extract+slli+srli+maskz_mov)
+      // from the hot y-loop, leaving only the 3-instruction sim_get32 core per tap-pair.
+      __m512i wi_r0r1_lo={},sa_r0r1_lo={},wi_r0r1_hi={},sa_r0r1_hi={};
+      __m512i wi_r2r3_lo={},sa_r2r3_lo={},wi_r2r3_hi={},sa_r2r3_hi={};
+      __m512i wi_r4r5_lo={},sa_r4r5_lo={},wi_r4r5_hi={},sa_r4r5_hi={};
+      __m512i wi_r6r7_lo={},sa_r6r7_lo={},wi_r6r7_hi={},sa_r6r7_hi={};
+      __m512i wi_r8r9_lo={},sa_r8r9_lo={},wi_r8r9_hi={},sa_r8r9_hi={};
+      __m512i wi_r10r11_lo={},sa_r10r11_lo={},wi_r10r11_hi={},sa_r10r11_hi={};
+      __m512i wi_r12r13_lo={},sa_r12r13_lo={},wi_r12r13_hi={},sa_r12r13_hi={};
+      __m512i wi_r14r15_lo={},sa_r14r15_lo={},wi_r14r15_hi={},sa_r14r15_hi={};
+      if constexpr (!UseVNNI) {
+        const __m512i c_8w = _mm512_set1_epi16(8);
+        auto make_wi_sa = [&](__m512i p, __m512i& wi, __m512i& sa) {
+          wi = _mm512_srli_epi16(p, 1);
+          sa = _mm512_and_si512(_mm512_slli_epi16(p, 3), c_8w);
+        };
+        __m512i p_lo = perm_r0r1_0_31lo, p_hi = perm_r0r1_0_31hi;
+        make_wi_sa(p_lo, wi_r0r1_lo,   sa_r0r1_lo);   make_wi_sa(p_hi, wi_r0r1_hi,   sa_r0r1_hi);
+        p_lo = _mm512_add_epi16(p_lo, two_epi16); p_hi = _mm512_add_epi16(p_hi, two_epi16);
+        make_wi_sa(p_lo, wi_r2r3_lo,   sa_r2r3_lo);   make_wi_sa(p_hi, wi_r2r3_hi,   sa_r2r3_hi);
+        p_lo = _mm512_add_epi16(p_lo, two_epi16); p_hi = _mm512_add_epi16(p_hi, two_epi16);
+        make_wi_sa(p_lo, wi_r4r5_lo,   sa_r4r5_lo);   make_wi_sa(p_hi, wi_r4r5_hi,   sa_r4r5_hi);
+        p_lo = _mm512_add_epi16(p_lo, two_epi16); p_hi = _mm512_add_epi16(p_hi, two_epi16);
+        make_wi_sa(p_lo, wi_r6r7_lo,   sa_r6r7_lo);   make_wi_sa(p_hi, wi_r6r7_hi,   sa_r6r7_hi);
+        p_lo = _mm512_add_epi16(p_lo, two_epi16); p_hi = _mm512_add_epi16(p_hi, two_epi16);
+        make_wi_sa(p_lo, wi_r8r9_lo,   sa_r8r9_lo);   make_wi_sa(p_hi, wi_r8r9_hi,   sa_r8r9_hi);
+        p_lo = _mm512_add_epi16(p_lo, two_epi16); p_hi = _mm512_add_epi16(p_hi, two_epi16);
+        make_wi_sa(p_lo, wi_r10r11_lo, sa_r10r11_lo); make_wi_sa(p_hi, wi_r10r11_hi, sa_r10r11_hi);
+        p_lo = _mm512_add_epi16(p_lo, two_epi16); p_hi = _mm512_add_epi16(p_hi, two_epi16);
+        make_wi_sa(p_lo, wi_r12r13_lo, sa_r12r13_lo); make_wi_sa(p_hi, wi_r12r13_hi, sa_r12r13_hi);
+        p_lo = _mm512_add_epi16(p_lo, two_epi16); p_hi = _mm512_add_epi16(p_hi, two_epi16);
+        make_wi_sa(p_lo, wi_r14r15_lo, sa_r14r15_lo); make_wi_sa(p_hi, wi_r14r15_hi, sa_r14r15_hi);
+      }
+
       uint8_t* AVS_RESTRICT dst_ptr = dst8 + x + y_from * dst_pitch;
       const uint8_t* src_ptr = src8 + iStart + y_from * src_pitch;
 
@@ -7132,15 +7257,27 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_pretransposed_coeffs
         }
 
         // rows 0..1
-        __m512i src_r0r1_0_31lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
-        __m512i src_r0r1_0_31hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        __m512i src_r0r1_0_31lo, src_r0r1_0_31hi;
+        if constexpr (UseVNNI) {
+          src_r0r1_0_31lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
+          src_r0r1_0_31hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        } else {
+          src_r0r1_0_31lo = _permutex2var_epi8_sim_get32(wi_r0r1_lo, sa_r0r1_lo, data_src, data_src2);
+          src_r0r1_0_31hi = _permutex2var_epi8_sim_get32(wi_r0r1_hi, sa_r0r1_hi, data_src, data_src2);
+        }
 
         // for r2r3
         perm_rNrNp1_0_31lo_w = _mm512_add_epi16(perm_rNrNp1_0_31lo_w, two_epi16);
         perm_rNrNp1_0_31hi_w = _mm512_add_epi16(perm_rNrNp1_0_31hi_w, two_epi16);
 
-        __m512i src_r2r3_0_31lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
-        __m512i src_r2r3_0_31hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        __m512i src_r2r3_0_31lo, src_r2r3_0_31hi;
+        if constexpr (UseVNNI) {
+          src_r2r3_0_31lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
+          src_r2r3_0_31hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        } else {
+          src_r2r3_0_31lo = _permutex2var_epi8_sim_get32(wi_r2r3_lo, sa_r2r3_lo, data_src, data_src2);
+          src_r2r3_0_31hi = _permutex2var_epi8_sim_get32(wi_r2r3_hi, sa_r2r3_hi, data_src, data_src2);
+        }
 
         // for r4r5
         perm_rNrNp1_0_31lo_w = _mm512_add_epi16(perm_rNrNp1_0_31lo_w, two_epi16);
@@ -7162,15 +7299,27 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_pretransposed_coeffs
         }
 
         // rows 4..5
-        __m512i src_r4r5_0_31lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
-        __m512i src_r4r5_0_31hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        __m512i src_r4r5_0_31lo, src_r4r5_0_31hi;
+        if constexpr (UseVNNI) {
+          src_r4r5_0_31lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
+          src_r4r5_0_31hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        } else {
+          src_r4r5_0_31lo = _permutex2var_epi8_sim_get32(wi_r4r5_lo, sa_r4r5_lo, data_src, data_src2);
+          src_r4r5_0_31hi = _permutex2var_epi8_sim_get32(wi_r4r5_hi, sa_r4r5_hi, data_src, data_src2);
+        }
 
         // for r6r7
         perm_rNrNp1_0_31lo_w = _mm512_add_epi16(perm_rNrNp1_0_31lo_w, two_epi16);
         perm_rNrNp1_0_31hi_w = _mm512_add_epi16(perm_rNrNp1_0_31hi_w, two_epi16);
 
-        __m512i src_r6r7_0_31lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
-        __m512i src_r6r7_0_31hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        __m512i src_r6r7_0_31lo, src_r6r7_0_31hi;
+        if constexpr (UseVNNI) {
+          src_r6r7_0_31lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
+          src_r6r7_0_31hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        } else {
+          src_r6r7_0_31lo = _permutex2var_epi8_sim_get32(wi_r6r7_lo, sa_r6r7_lo, data_src, data_src2);
+          src_r6r7_0_31hi = _permutex2var_epi8_sim_get32(wi_r6r7_hi, sa_r6r7_hi, data_src, data_src2);
+        }
 
         // for r8r9
         perm_rNrNp1_0_31lo_w = _mm512_add_epi16(perm_rNrNp1_0_31lo_w, two_epi16);
@@ -7192,15 +7341,27 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_pretransposed_coeffs
         }
 
         // rows 8..9
-        __m512i src_r8r9_0_31lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
-        __m512i src_r8r9_0_31hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        __m512i src_r8r9_0_31lo, src_r8r9_0_31hi;
+        if constexpr (UseVNNI) {
+          src_r8r9_0_31lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
+          src_r8r9_0_31hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        } else {
+          src_r8r9_0_31lo = _permutex2var_epi8_sim_get32(wi_r8r9_lo, sa_r8r9_lo, data_src, data_src2);
+          src_r8r9_0_31hi = _permutex2var_epi8_sim_get32(wi_r8r9_hi, sa_r8r9_hi, data_src, data_src2);
+        }
 
         // for r10r11
         perm_rNrNp1_0_31lo_w = _mm512_add_epi16(perm_rNrNp1_0_31lo_w, two_epi16);
         perm_rNrNp1_0_31hi_w = _mm512_add_epi16(perm_rNrNp1_0_31hi_w, two_epi16);
 
-        __m512i src_r10r11_0_31lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
-        __m512i src_r10r11_0_31hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        __m512i src_r10r11_0_31lo, src_r10r11_0_31hi;
+        if constexpr (UseVNNI) {
+          src_r10r11_0_31lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
+          src_r10r11_0_31hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        } else {
+          src_r10r11_0_31lo = _permutex2var_epi8_sim_get32(wi_r10r11_lo, sa_r10r11_lo, data_src, data_src2);
+          src_r10r11_0_31hi = _permutex2var_epi8_sim_get32(wi_r10r11_hi, sa_r10r11_hi, data_src, data_src2);
+        }
 
         // for r12r13
         perm_rNrNp1_0_31lo_w = _mm512_add_epi16(perm_rNrNp1_0_31lo_w, two_epi16);
@@ -7222,15 +7383,27 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_pretransposed_coeffs
         }
 
         // rows 12..13
-        __m512i src_r12r13_0_31lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
-        __m512i src_r12r13_0_31hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        __m512i src_r12r13_0_31lo, src_r12r13_0_31hi;
+        if constexpr (UseVNNI) {
+          src_r12r13_0_31lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
+          src_r12r13_0_31hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        } else {
+          src_r12r13_0_31lo = _permutex2var_epi8_sim_get32(wi_r12r13_lo, sa_r12r13_lo, data_src, data_src2);
+          src_r12r13_0_31hi = _permutex2var_epi8_sim_get32(wi_r12r13_hi, sa_r12r13_hi, data_src, data_src2);
+        }
 
         // for r14r15
         perm_rNrNp1_0_31lo_w = _mm512_add_epi16(perm_rNrNp1_0_31lo_w, two_epi16);
         perm_rNrNp1_0_31hi_w = _mm512_add_epi16(perm_rNrNp1_0_31hi_w, two_epi16);
 
-        __m512i src_r14r15_0_31lo = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
-        __m512i src_r14r15_0_31hi = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        __m512i src_r14r15_0_31lo, src_r14r15_0_31hi;
+        if constexpr (UseVNNI) {
+          src_r14r15_0_31lo = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31lo_w, data_src2);
+          src_r14r15_0_31hi = _mm512_maskz_permutex2var_epi8(k_zh8, data_src, perm_rNrNp1_0_31hi_w, data_src2);
+        } else {
+          src_r14r15_0_31lo = _permutex2var_epi8_sim_get32(wi_r14r15_lo, sa_r14r15_lo, data_src, data_src2);
+          src_r14r15_0_31hi = _permutex2var_epi8_sim_get32(wi_r14r15_hi, sa_r14r15_hi, data_src, data_src2);
+        }
 
         if constexpr (UseVNNI)
         {
@@ -7285,7 +7458,6 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_pretransposed_coeffs
 template<bool UseVNNI>
 void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_2s32_ks64_pretransposed_coeffs_internal(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
-  const int filter_size = program->filter_size;
   int filter_size_real = program->filter_size_real;
   if ((filter_size_real / 2 * 2) != filter_size_real) filter_size_real++;
 
@@ -7341,6 +7513,23 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_2s32_ks64_pretransposed_c
 
       const __m512i two_epi16 = _mm512_set1_epi16(2);
 
+      // BASE: precompute wi/sa outside y-loop. perm vectors are epi16 (32 16-bit byte indices).
+      // Each kr step the perm advances by +2 bytes = +1 word, so wi += 1 and sa is invariant.
+      // perm_1 = perm_0 + 1: wi_p1[i] = wi_p0[i] + (perm_0[i] & 1), sa_p1 = sa_p0 ^ 8.
+      __m512i wi_g1_p0_base = {}, wi_g2_p0_base = {}, wi_g1_p1_base = {}, wi_g2_p1_base = {};
+      __m512i sa_g1_p0 = {}, sa_g2_p0 = {}, sa_g1_p1 = {}, sa_g2_p1 = {};
+      if constexpr (!UseVNNI) {
+        const __m512i c_8w = _mm512_set1_epi16(8);
+        sa_g1_p0      = _mm512_and_si512(_mm512_slli_epi16(perm_0_0_31, 3), c_8w);
+        wi_g1_p0_base = _mm512_srli_epi16(perm_0_0_31, 1);
+        sa_g1_p1      = _mm512_xor_si512(sa_g1_p0, c_8w);
+        wi_g1_p1_base = _mm512_add_epi16(wi_g1_p0_base, _mm512_srli_epi16(sa_g1_p0, 3));
+        sa_g2_p0      = _mm512_and_si512(_mm512_slli_epi16(perm_0_32_63, 3), c_8w);
+        wi_g2_p0_base = _mm512_srli_epi16(perm_0_32_63, 1);
+        sa_g2_p1      = _mm512_xor_si512(sa_g2_p0, c_8w);
+        wi_g2_p1_base = _mm512_add_epi16(wi_g2_p0_base, _mm512_srli_epi16(sa_g2_p0, 3));
+      }
+
       uint8_t* AVS_RESTRICT dst_ptr  = dst8 + x + y_from * dst_pitch;
       const uint8_t* src_ptr   = src8 + iStart   + y_from * src_pitch;
       const uint8_t* src_ptr_2 = src8 + iStart_2 + y_from * src_pitch;
@@ -7357,10 +7546,20 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_2s32_ks64_pretransposed_c
       {
         __m512i data_src, data_src2, data_src_2, data_src2_2;
 
-        __m512i perm_0_0_31w  = perm_0_0_31;
-        __m512i perm_0_32_63w = perm_0_32_63;
-        __m512i perm_1_0_31w  = perm_1_0_31;
-        __m512i perm_1_32_63w = perm_1_32_63;
+        // VBMI: reset working perm copies per row; BASE: reset running wi counters per row
+        __m512i perm_0_0_31w = {}, perm_0_32_63w = {}, perm_1_0_31w = {}, perm_1_32_63w = {};
+        __m512i wi_g1_p0 = {}, wi_g2_p0 = {}, wi_g1_p1 = {}, wi_g2_p1 = {};
+        if constexpr (UseVNNI) {
+          perm_0_0_31w  = perm_0_0_31;
+          perm_0_32_63w = perm_0_32_63;
+          perm_1_0_31w  = perm_1_0_31;
+          perm_1_32_63w = perm_1_32_63;
+        } else {
+          wi_g1_p0 = wi_g1_p0_base;
+          wi_g2_p0 = wi_g2_p0_base;
+          wi_g1_p1 = wi_g1_p1_base;
+          wi_g2_p1 = wi_g2_p1_base;
+        }
 
         if constexpr (partial_load) {
           data_src    = _mm512_maskz_loadu_epi8(k1,   src_ptr);
@@ -7384,20 +7583,33 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_2s32_ks64_pretransposed_c
 
         for (int kr = 0; kr < filter_size_real; kr += 2)
         {
-          __m512i src_r0_0_31  = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src,   perm_0_0_31w,  data_src2);
-          __m512i src_r0_32_63 = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src_2, perm_0_32_63w, data_src2_2);
-          __m512i src_r1_0_31  = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src,   perm_1_0_31w,  data_src2);
-          __m512i src_r1_32_63 = _mm512_maskz_permutex2var_epi8_SIMUL<UseVNNI>(k_zh8, data_src_2, perm_1_32_63w, data_src2_2);
+          __m512i src_r0_0_31, src_r0_32_63, src_r1_0_31, src_r1_32_63;
+          if constexpr (UseVNNI) {
+            src_r0_0_31  = _mm512_maskz_permutex2var_epi8_SIMUL<true>(k_zh8, data_src,   perm_0_0_31w,  data_src2);
+            src_r0_32_63 = _mm512_maskz_permutex2var_epi8_SIMUL<true>(k_zh8, data_src_2, perm_0_32_63w, data_src2_2);
+            src_r1_0_31  = _mm512_maskz_permutex2var_epi8_SIMUL<true>(k_zh8, data_src,   perm_1_0_31w,  data_src2);
+            src_r1_32_63 = _mm512_maskz_permutex2var_epi8_SIMUL<true>(k_zh8, data_src_2, perm_1_32_63w, data_src2_2);
+            perm_0_0_31w  = _mm512_add_epi16(perm_0_0_31w,  two_epi16);
+            perm_0_32_63w = _mm512_add_epi16(perm_0_32_63w, two_epi16);
+            perm_1_0_31w  = _mm512_add_epi16(perm_1_0_31w,  two_epi16);
+            perm_1_32_63w = _mm512_add_epi16(perm_1_32_63w, two_epi16);
+          } else {
+            // BASE: sim_get32 reads word wi (already indexed into [data_src | data_src2])
+            // and shifts by sa to extract the target byte; avoids full SIMUL recomputation
+            src_r0_0_31  = _permutex2var_epi8_sim_get32(wi_g1_p0, sa_g1_p0, data_src,   data_src2);
+            src_r0_32_63 = _permutex2var_epi8_sim_get32(wi_g2_p0, sa_g2_p0, data_src_2, data_src2_2);
+            src_r1_0_31  = _permutex2var_epi8_sim_get32(wi_g1_p1, sa_g1_p1, data_src,   data_src2);
+            src_r1_32_63 = _permutex2var_epi8_sim_get32(wi_g2_p1, sa_g2_p1, data_src_2, data_src2_2);
+            wi_g1_p0 = _mm512_add_epi16(wi_g1_p0, one_epi16);
+            wi_g2_p0 = _mm512_add_epi16(wi_g2_p0, one_epi16);
+            wi_g1_p1 = _mm512_add_epi16(wi_g1_p1, one_epi16);
+            wi_g2_p1 = _mm512_add_epi16(wi_g2_p1, one_epi16);
+          }
 
           __m512i src_r0r1_0_31lo  = _mm512_unpacklo_epi16(src_r0_0_31,  src_r1_0_31);
           __m512i src_r0r1_0_31hi  = _mm512_unpackhi_epi16(src_r0_0_31,  src_r1_0_31);
           __m512i src_r0r1_32_63lo = _mm512_unpacklo_epi16(src_r0_32_63, src_r1_32_63);
           __m512i src_r0r1_32_63hi = _mm512_unpackhi_epi16(src_r0_32_63, src_r1_32_63);
-
-          perm_0_0_31w  = _mm512_add_epi16(perm_0_0_31w,  two_epi16);
-          perm_0_32_63w = _mm512_add_epi16(perm_0_32_63w, two_epi16);
-          perm_1_0_31w  = _mm512_add_epi16(perm_1_0_31w,  two_epi16);
-          perm_1_32_63w = _mm512_add_epi16(perm_1_32_63w, two_epi16);
 
           if constexpr (UseVNNI)
           {
@@ -7569,6 +7781,36 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8_pretransposed_coeffs
         make_wi_sa(pw_7,   wi_lo_7, sa_lo_7, wi_hi_7, sa_hi_7);
       }
 
+      // 512-bit vpermi2b + vextracti64x4 + vpunpcklw/hi saturated port 5 on Ice Lake
+      // (56 port-5 uops/iter vs BASE's 32), costing ~8% vs the BASE simulation path.
+      // Combined 256-bit indices eliminate extract+unpack, matching BASE at 32 port-5 uops.
+      // Coefficient layout is unchanged; unpackbw+unpackqdq construction replicates the word
+      // order of unpacklo/hi_epi16. Dual-AVX-512-pipe CPUs (Sapphire Rapids+) may not have
+      // suffered this bottleneck due to higher port-5 throughput.
+      __m256i comb_01_g1lo={}, comb_01_g1hi={}, comb_01_g2lo={}, comb_01_g2hi={};
+      __m256i comb_23_g1lo={}, comb_23_g1hi={}, comb_23_g2lo={}, comb_23_g2hi={};
+      __m256i comb_45_g1lo={}, comb_45_g1hi={}, comb_45_g2lo={}, comb_45_g2hi={};
+      __m256i comb_67_g1lo={}, comb_67_g1hi={}, comb_67_g2lo={}, comb_67_g2hi={};
+      if constexpr (UseVNNI) {
+        auto make_combined = [&](__m256i pa, __m256i pb, __m256i& clo, __m256i& chi) {
+          __m256i t0 = _mm256_unpacklo_epi8(pa, pb);
+          __m256i t1 = _mm256_unpackhi_epi8(pa, pb);
+          clo = _mm256_unpacklo_epi64(t0, t1);
+          chi = _mm256_unpackhi_epi64(t0, t1);
+        };
+        __m256i p0g1 = _mm512_castsi512_si256(perm_0);
+        __m256i p0g2 = _mm512_extracti64x4_epi64(perm_0, 1);
+        // pw_N lower half is a free register alias; upper half = p0g2+N avoids 7 extra extracts
+        make_combined(p0g1, _mm512_castsi512_si256(pw_1), comb_01_g1lo, comb_01_g1hi);
+        make_combined(p0g2, _mm256_add_epi8(p0g2, _mm256_set1_epi8(1)), comb_01_g2lo, comb_01_g2hi);
+        make_combined(_mm512_castsi512_si256(pw_2), _mm512_castsi512_si256(pw_3), comb_23_g1lo, comb_23_g1hi);
+        make_combined(_mm256_add_epi8(p0g2, _mm256_set1_epi8(2)), _mm256_add_epi8(p0g2, _mm256_set1_epi8(3)), comb_23_g2lo, comb_23_g2hi);
+        make_combined(_mm512_castsi512_si256(pw_4), _mm512_castsi512_si256(pw_5), comb_45_g1lo, comb_45_g1hi);
+        make_combined(_mm256_add_epi8(p0g2, _mm256_set1_epi8(4)), _mm256_add_epi8(p0g2, _mm256_set1_epi8(5)), comb_45_g2lo, comb_45_g2hi);
+        make_combined(_mm512_castsi512_si256(pw_6), _mm512_castsi512_si256(pw_7), comb_67_g1lo, comb_67_g1hi);
+        make_combined(_mm256_add_epi8(p0g2, _mm256_set1_epi8(6)), _mm256_add_epi8(p0g2, _mm256_set1_epi8(7)), comb_67_g2lo, comb_67_g2hi);
+      }
+
       for (int y = y_from; y < y_to; y++)
       {
         __m512i data_src, data_src2, data_src_2, data_src2_2;
@@ -7590,23 +7832,18 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8_pretransposed_coeffs
         __m512i src_r2r3_0_31lo, src_r2r3_0_31hi, src_r2r3_32_63lo, src_r2r3_32_63hi;
 
         if constexpr (UseVNNI) {
-          // VBMI: native vpermi2b; extract each group's relevant half directly — no blend needed
-          __m512i s00 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256  (_mm512_permutex2var_epi8(data_src,   perm_0, data_src2)));
-          __m512i s0h = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(_mm512_permutex2var_epi8(data_src_2, perm_0, data_src2_2), 1));
-          __m512i s10 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256  (_mm512_permutex2var_epi8(data_src,   pw_1,   data_src2)));
-          __m512i s1h = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(_mm512_permutex2var_epi8(data_src_2, pw_1,   data_src2_2), 1));
-          __m512i s20 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256  (_mm512_permutex2var_epi8(data_src,   pw_2,   data_src2)));
-          __m512i s2h = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(_mm512_permutex2var_epi8(data_src_2, pw_2,   data_src2_2), 1));
-          __m512i s30 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256  (_mm512_permutex2var_epi8(data_src,   pw_3,   data_src2)));
-          __m512i s3h = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(_mm512_permutex2var_epi8(data_src_2, pw_3,   data_src2_2), 1));
-          src_r0r1_0_31lo  = _mm512_unpacklo_epi16(s00, s10);
-          src_r0r1_0_31hi  = _mm512_unpackhi_epi16(s00, s10);
-          src_r0r1_32_63lo = _mm512_unpacklo_epi16(s0h, s1h);
-          src_r0r1_32_63hi = _mm512_unpackhi_epi16(s0h, s1h);
-          src_r2r3_0_31lo  = _mm512_unpacklo_epi16(s20, s30);
-          src_r2r3_0_31hi  = _mm512_unpackhi_epi16(s20, s30);
-          src_r2r3_32_63lo = _mm512_unpacklo_epi16(s2h, s3h);
-          src_r2r3_32_63hi = _mm512_unpackhi_epi16(s2h, s3h);
+          // 512-bit vpermi2b keeps the full 128-byte source window (256-bit vpermi2b only
+          // addresses 64 bytes, corrupting pixels whose index falls in data_src[32..63]).
+          // castsi256_si512 on index = free (upper 32 index bytes are undefined but only
+          // affect output bytes 32-63 which are discarded by castsi512_si256 = also free).
+          src_r0r1_0_31lo  = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src,   _mm512_castsi256_si512(comb_01_g1lo), data_src2)));
+          src_r0r1_0_31hi  = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src,   _mm512_castsi256_si512(comb_01_g1hi), data_src2)));
+          src_r0r1_32_63lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src_2, _mm512_castsi256_si512(comb_01_g2lo), data_src2_2)));
+          src_r0r1_32_63hi = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src_2, _mm512_castsi256_si512(comb_01_g2hi), data_src2_2)));
+          src_r2r3_0_31lo  = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src,   _mm512_castsi256_si512(comb_23_g1lo), data_src2)));
+          src_r2r3_0_31hi  = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src,   _mm512_castsi256_si512(comb_23_g1hi), data_src2)));
+          src_r2r3_32_63lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src_2, _mm512_castsi256_si512(comb_23_g2lo), data_src2_2)));
+          src_r2r3_32_63hi = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src_2, _mm512_castsi256_si512(comb_23_g2hi), data_src2_2)));
         } else {
           // BASE: sim_get32 returns 32 16-bit words with gathered bytes in low 8 bits;
           // feed unpacklo/hi directly — avoids cvtepu8_epi16 round-trip
@@ -7653,22 +7890,14 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8_pretransposed_coeffs
         __m512i src_r6r7_0_31lo, src_r6r7_0_31hi, src_r6r7_32_63lo, src_r6r7_32_63hi;
 
         if constexpr (UseVNNI) {
-          __m512i s40 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256  (_mm512_permutex2var_epi8(data_src,   pw_4,   data_src2)));
-          __m512i s4h = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(_mm512_permutex2var_epi8(data_src_2, pw_4,   data_src2_2), 1));
-          __m512i s50 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256  (_mm512_permutex2var_epi8(data_src,   pw_5,   data_src2)));
-          __m512i s5h = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(_mm512_permutex2var_epi8(data_src_2, pw_5,   data_src2_2), 1));
-          __m512i s60 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256  (_mm512_permutex2var_epi8(data_src,   pw_6,   data_src2)));
-          __m512i s6h = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(_mm512_permutex2var_epi8(data_src_2, pw_6,   data_src2_2), 1));
-          __m512i s70 = _mm512_cvtepu8_epi16(_mm512_castsi512_si256  (_mm512_permutex2var_epi8(data_src,   pw_7,   data_src2)));
-          __m512i s7h = _mm512_cvtepu8_epi16(_mm512_extracti64x4_epi64(_mm512_permutex2var_epi8(data_src_2, pw_7,   data_src2_2), 1));
-          src_r4r5_0_31lo  = _mm512_unpacklo_epi16(s40, s50);
-          src_r4r5_0_31hi  = _mm512_unpackhi_epi16(s40, s50);
-          src_r4r5_32_63lo = _mm512_unpacklo_epi16(s4h, s5h);
-          src_r4r5_32_63hi = _mm512_unpackhi_epi16(s4h, s5h);
-          src_r6r7_0_31lo  = _mm512_unpacklo_epi16(s60, s70);
-          src_r6r7_0_31hi  = _mm512_unpackhi_epi16(s60, s70);
-          src_r6r7_32_63lo = _mm512_unpacklo_epi16(s6h, s7h);
-          src_r6r7_32_63hi = _mm512_unpackhi_epi16(s6h, s7h);
+          src_r4r5_0_31lo  = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src,   _mm512_castsi256_si512(comb_45_g1lo), data_src2)));
+          src_r4r5_0_31hi  = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src,   _mm512_castsi256_si512(comb_45_g1hi), data_src2)));
+          src_r4r5_32_63lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src_2, _mm512_castsi256_si512(comb_45_g2lo), data_src2_2)));
+          src_r4r5_32_63hi = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src_2, _mm512_castsi256_si512(comb_45_g2hi), data_src2_2)));
+          src_r6r7_0_31lo  = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src,   _mm512_castsi256_si512(comb_67_g1lo), data_src2)));
+          src_r6r7_0_31hi  = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src,   _mm512_castsi256_si512(comb_67_g1hi), data_src2)));
+          src_r6r7_32_63lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src_2, _mm512_castsi256_si512(comb_67_g2lo), data_src2_2)));
+          src_r6r7_32_63hi = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(_mm512_permutex2var_epi8(data_src_2, _mm512_castsi256_si512(comb_67_g2hi), data_src2_2)));
         } else {
           __m512i d4l = _permutex2var_epi8_sim_get32(wi_lo_4, sa_lo_4, data_src, data_src2);
           __m512i d4h = _permutex2var_epi8_sim_get32(wi_hi_4, sa_hi_4, data_src_2, data_src2_2);
@@ -7754,8 +7983,6 @@ void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8_pretransposed_coeffs
 template<bool lessthan16bit, bool UseVNNI>
 void resize_h_planar_uint16_avx512_permutex_vstripe_mp_2s32_ks4_pretransposed_coeffs_internal(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
 {
-  const int filter_size = program->filter_size;
-
   const uint16_t* src = (uint16_t*)src8;
   uint16_t* AVS_RESTRICT dst = (uint16_t* AVS_RESTRICT)dst8;
   dst_pitch = dst_pitch / sizeof(uint16_t);
