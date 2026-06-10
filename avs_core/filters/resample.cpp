@@ -202,8 +202,10 @@ void resize_prepare_coeffs(ResamplingProgram* p, IScriptEnvironment* env, int fi
     checkAndSetOverread(start_pos + 32 - 1, p->safelimit_32_pixels, start_pos, i, p->source_size);
     // for permutex-based AVX2 ks4 float H resizers, where we read 8 pixels at a time exactly from
     // start_pos of each Nth pixel output block
-    if (i % 8 == 0)
+    if (i % 8 == 0) {
       checkAndSetOverread(start_pos + 8 - 1, p->safelimit_8_pixels_each8th_target, start_pos, i, p->source_size);
+      checkAndSetOverread(start_pos + 16 - 1, p->safelimit_16_pixels_each8th_target, start_pos, i, p->source_size);
+    }
     if (i % 16 == 0)
       checkAndSetOverread(start_pos + 16 - 1, p->safelimit_16_pixels_each16th_target, start_pos, i, p->source_size);
     if (i % 32 == 0) // avx512 uint16_t 32 target pixels, handling 64 source pixels
@@ -1013,7 +1015,7 @@ AVS_FORCEINLINE static void process_two_pixels_h_uint8_16(const pixel_t* AVS_RES
 }
 
 
-// NO Forceinline! Helps MSVC, by starting a new stack trame and have enough registers again.
+// NO Forceinline! Helps MSVC, by starting a new stack frame and have enough registers again.
 template<bool is_safe, typename pixel_t, bool lessthan16bit>
 static void process_eight_pixels_h_uint8_16(const pixel_t * AVS_RESTRICT src, int x, const short* current_coeff_base, int filter_size,
   const Int32x4& rounder128, const Int16x8& shifttosigned, const uint16_t clamp_limit,
@@ -1078,7 +1080,7 @@ static void process_eight_pixels_h_uint8_16(const pixel_t * AVS_RESTRICT src, in
     sumQuad5678 += shiftfromsigned;
   }
 
-  const int current_fp_scale_bits = (sizeof(pixel_t) == 1) ? FPScale8bits : FPScale16bits;
+  constexpr int current_fp_scale_bits = (sizeof(pixel_t) == 1) ? FPScale8bits : FPScale16bits;
   // scale back, store
   sumQuad1234 >>= current_fp_scale_bits;
   sumQuad5678 >>= current_fp_scale_bits;
@@ -1697,6 +1699,22 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
       // feature flag, grouping many avx512 features
       // in case of optimized avx512_permutex_vstripe resizer found, set alternative resizer for MT use
       out_resampler_h_alternative_for_mt = resizer_h_avx2_generic_uint8_t; // AVX2 should present if AVX512 present
+      //
+      // AVX-512 uint8 horizontal resizer selection (pretransposed-coeffs variants, normal builds):
+      //
+      // Function                                  | Pixels/iter | Source window | Use case
+      // ------------------------------------------|-------------|---------------|------------------------------------------
+      // mpz_ks4_pretransposed_coeffs              |     64      |  128 bytes    | filter_size <= 4, upscale / mild downscale
+      // mpz_ks8_pretransposed_coeffs              |     64      |  128 bytes    | filter_size <= 8, upscale / mild downscale (1st choice)
+      // 2s32_ks8_pretransposed_coeffs             |   2x32      | 2x128 bytes   | filter_size <= 8, heavier downscale (~0.5x), two independent source strips
+      // mpz_ks16_pretransposed_coeffs             |     32      |  128 bytes    | filter_size <= 16, upscale / mild downscale
+      // 2s32_ks64_pretransposed_coeffs            |   2x32      | 2x128 bytes   | filter_size up to ~64, variable inner loop over taps
+      //
+      // "mpz" = maskz-permutex: single 128-byte source window per 64 (or 32) target pixels.
+      // "2s32" = two strips of 32: two independent 128-byte windows to cover wider source spans.
+      // VNNI path: uses native vpermi2b (VBMI) + dpwssd. BASE path: simulates vpermi2b via
+      // precomputed word-index/shift-amount pairs fed to vpermw+vpsrlvw (avoids costly VBMI instruction).
+      //
       if (program->filter_size_real <= 4) {
         if (!program->resize_h_planar_gather_permutex_vstripe_check(64/*iSamplesInTheGroup*/, 128/*permutex_index_diff_limit*/, 4/*kernel_size*/)) {
           /*
@@ -2058,6 +2076,14 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
           }
         }
       }
+      // "ks48" catch-all: handles any filter_size_real that fits within the
+      // _mm512_permutex2var_epi16 index range of 64 uint16 elements (two ZMMs).
+      // The check condition is: pixel_offset[x+15] - pixel_offset[x] + filter_size_real - 1 < 64.
+      // At 1:1 scale the 16-pixel group spans 15 source positions, leaving room for
+      // filter_size_real up to 48 (max even value: 15 + 48 - 1 = 62 < 64; 49 rounds up
+      // to 50 → 15 + 49 = 64, fails). For downscaling the offset span grows and the
+      // usable kernel shrinks — the check enforces this automatically per x-group.
+      // The function itself has no hard 48 limit; it loops over filter_size_real directly.
       if (!program->resize_h_planar_gather_permutex_vstripe_check(16/*iSamplesInTheGroup*/, 64/*permutex_index_diff_limit*/, program->filter_size_real/*kernel_size*/))
       {
         resize_prepare_coeffs_AVX512_H(program, env, 64/*iSamplesInTheGroup*/, 1/*iGroupsCount*/);
@@ -2136,24 +2162,53 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
       }
 
       if (program->filter_size_real <= 16) {
-        // up to 16 coeffs it can be highly optimized with transposes, gather/permutex choice
+        // Dispatcher for float ks16 (filter_size_real 9..16).
+        //
+        // check(N, 32, ks) returns TRUE when N consecutive output pixels' source span
+        // EXCEEDS 32 floats (two ZMMs), making _mm512_permutex2var_ps unusable for that
+        // group size. FALSE means the group fits and permutex is valid.
+        //
+        // Strategy: try the widest feasible group first (best parallelism), fall back
+        // to progressively narrower groups, then to generic if none fit.
+        //
+        //   check(16)=false → ks16:   all 16-px groups fit in 32 sources  (mild downscale / upscale)
+        //   check(16)=true,
+        //     check(8)=false → 2s8:   16-px groups too wide, but 8-px groups fit  (moderate downscale)
+        //     check(8)=true,
+        //       check(4)=false → 4s4: even 8-px groups too wide, but 4-px groups fit (heavy downscale)
+        //       check(4)=true → generic: even 4-px groups too wide (very heavy downscale)
+        //
+        // Note: 4s4_ks16 is benchmarked SLOWER than generic in its applicable range because
+        // at such heavy downscale ratios the source taps are nearly consecutive in memory,
+        // so the generic's sequential-load FMA tree outperforms 4x permutex2var + 3x blend
+        // (112 port-5 ops vs generic's streaming loads). Kept for possible future use.
         out_resampler_h_alternative_for_mt = resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16; // jolly joker
         if (program->resize_h_planar_gather_permutex_vstripe_check(16/*iSamplesInTheGroup*/, 32/*permutex_index_diff_limit*/, 16/*kernel_size*/)) {
+          // 16-px groups are too wide for permutex2var_ps — ks16 cannot be used.
           if (!program->resize_h_planar_gather_permutex_vstripe_check(8/*iSamplesInTheGroup*/, 32/*permutex_index_diff_limit*/, 16/*kernel_size*/)) {
-            // LanczosResize(int(width * 0.9 + 0.5), height, taps = 4) # case K: H kernel size 9
-            // LanczosResize(int(width * 0.5 + 0.5), height, taps = 3) # case N: H kernel size 12
-
-            // Speed ranking fps, just to have a clue, higher is better.
-            // 1902 2809 resize_h_planar_float_avx512_permutex_vstripe_ks16 (invalid here, but for reference)
-            // 1356 2137 resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16 
-            // 1278 1997 resize_h_planar_float_avx512_permutex_vstripe_2s8_ks16 test 2x8 output version
-
-            // return resize_h_planar_float_avx512_permutex_vstripe_2s8_ks16; // This one is slower than the generic version
-            // Anyway we keep this branch, maybe in future 2s8_ks16 can be optimized better, till then, use generic.
-            return resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16;
+            // 8-px groups fit: use 2s8_ks16 (2 independent groups of 8, each in a 32-float window).
+            // generic resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16: 2650 fps
+            // 2s8: 3392 fps
+            resize_prepare_coeffs_AVX512_float_H(program, env);
+            return resize_h_planar_float_avx512_permutex_vstripe_2s8_ks16;
           }
-          return resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16; // todo: _ks16 transpose-based version to be designed and checked 
+          // 8-px groups are also too wide.
+#if 0
+          // 4s4_ks16 DISABLED: slower than generic in this range (heavy downscale).
+          // At such ratios source taps are nearly sequential, so generic's streaming
+          // loads beat 4x permutex2var + 3x blend (112 vs ~48 port-5 ops per y).
+          // generic: 4081 fps, 4s4_ks16: 3113 fps
+          if (!program->resize_h_planar_gather_permutex_vstripe_check(4/*iSamplesInTheGroup*/, 32/*permutex_index_diff_limit*/, 16/*kernel_size*/)) {
+            resize_prepare_coeffs_AVX512_float_H(program, env);
+            return resize_h_planar_float_avx512_permutex_vstripe_4s4_ks16;
+          }
+#endif
+          // Even 4-px groups too wide (or 4s4 disabled): fall back to generic.
+          return resizer_h_avx512_generic_float_pix16_sub4_ks_4_8_16;
         }
+        // 16-px groups fit: use ks16 (single source group, best case).
+        // ks16: 5500 fps (reference), generic: 2650 fps
+        resize_prepare_coeffs_AVX512_float_H(program, env);
         return resize_h_planar_float_avx512_permutex_vstripe_ks16;
       }
       
@@ -2185,6 +2240,23 @@ ResamplerH FilteredResizeH::GetResampler(int CPU, int pixelsize, int bits_per_pi
         }
         return resize_h_planar_float_avx2_permutex_vstripe_ks4;
       }
+#if 0
+      // ks8 DISABLED: slower than generic (1102 fps vs 1196 fps).
+      // Root cause: avx2_permutex2var_ps (dual-source simulation) costs 3 port-5 ops per call
+      // (2x permutevar8x32 + blendv). With 8 taps: 24 port-5 ops per y-iteration, making port 5
+      // the bottleneck at ~24 cycles. The generic uses gather (ports 2+3, load units) instead,
+      // not competing on port 5 at all. Single-source ks4 uses 1 port-5 per tap (4 total) and wins;
+      // dual-source ks8 uses 3x that and loses. Crossover is around tap 5.
+      // Pre-transposing coefficients is feasible but saves only outside-y-loop cost (amortized
+      // over height scanlines = negligible) and does not touch the y-loop bottleneck.
+      if (program->filter_size_real <= 8) {
+        // check(8,16,8)=false: 8 output pixels' source span fits in 16 floats (two YMMs via avx2_permutex2var_ps)
+        if (!program->resize_h_planar_gather_permutex_vstripe_check(8, 16, 8)) {
+          out_resampler_h_alternative_for_mt = resizer_h_avx2_generic_float_pix16_sub4_ks_4_8_16;
+          return resize_h_planar_float_avx2_permutex_vstripe_ks8;
+        }
+      }
+#endif
       return resizer_h_avx2_generic_float_pix16_sub4_ks_4_8_16; // new generic, like avx512 version
       // return resizer_h_avx2_generic_float; old generic would be named pix8_sub2_ks8
     }

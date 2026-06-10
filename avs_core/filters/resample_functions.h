@@ -75,9 +75,11 @@ struct ResamplingProgram {
   // Array of array of coefficient for each pixel
   // {{pixel[0]_coeff}, {pixel[1]_coeff}, ...}
   short* pixel_coefficient;
-  float* pixel_coefficient_float;
-  // Pre-transposed/unpacked coefficient table for AVX512 permute-based H-resizers
+#if defined(INTEL_INTRINSICS_AVX512)
   short* pixel_coefficient_AVX512_H;
+  float* pixel_coefficient_AVX512_float_H;
+#endif
+  float* pixel_coefficient_float;
   // Array of real kernel size, handles edge cases! <= filter_size
   // for SIMD, coefficients are copied over a padded aligned storage
   std::vector<short> kernel_sizes; // temporary, used during setup only
@@ -101,6 +103,7 @@ struct ResamplingProgram {
   SafeLimit safelimit_16_pixels = { false, -1, -1 };
   SafeLimit safelimit_32_pixels = { false, -1, -1 };
   SafeLimit safelimit_8_pixels_each8th_target = { false, -1, -1 };
+  SafeLimit safelimit_16_pixels_each8th_target = { false, -1, -1 };  // AVX2 ks8: 16-float loads, 8 pixels/cycle
   SafeLimit safelimit_16_pixels_each16th_target = { false, -1, -1 };
   SafeLimit safelimit_64_pixels_each32th_target = { false, -1, -1 };
   SafeLimit safelimit_128_pixels_each64th_target = { false, -1, -1 };
@@ -111,12 +114,16 @@ struct ResamplingProgram {
 
   ResamplingProgram(int filter_size, int source_size, int target_size, double crop_start, double crop_size, int bits_per_pixel, IScriptEnvironment* env)
     : Env(env), source_size(source_size), target_size(target_size), crop_start(crop_start), crop_size(crop_size), filter_size(filter_size), filter_size_real(filter_size),
-    bits_per_pixel(bits_per_pixel), pixel_coefficient(0), pixel_coefficient_float(0), pixel_coefficient_AVX512_H(0), cache_size_L2(0), max_scanlines(0)
+    bits_per_pixel(bits_per_pixel), pixel_coefficient(0), pixel_coefficient_float(0), cache_size_L2(0), max_scanlines(0)
   {
 
     filter_size_alignment = 1;
     // align target_size to 8 units to allow safe up to 8 pixels/cycle in H resizers. modded later.
     target_size_alignment = 1;
+#if defined(INTEL_INTRINSICS_AVX512)
+    pixel_coefficient_AVX512_H = nullptr;
+    pixel_coefficient_AVX512_float_H = nullptr;
+#endif
     // resize_prepare_coeff can override and realign the size of coefficient table
     if (bits_per_pixel < 32)
       pixel_coefficient = (short*)Env->Allocate(sizeof(short) * target_size * filter_size, 64, AVS_NORMAL_ALLOC);
@@ -142,7 +149,10 @@ struct ResamplingProgram {
   ~ResamplingProgram() {
     Env->Free(pixel_coefficient);
     Env->Free(pixel_coefficient_float);
-    if (pixel_coefficient_AVX512_H != 0) Env->Free(pixel_coefficient_AVX512_H);
+#if defined(INTEL_INTRINSICS_AVX512)
+    Env->Free(pixel_coefficient_AVX512_H);
+    Env->Free(pixel_coefficient_AVX512_float_H);
+#endif
   };
 };
 

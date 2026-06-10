@@ -1598,7 +1598,7 @@ void resize_h_planar_float_avx2_transpose_vstripe_ks4(BYTE* dst8, const BYTE* sr
 
 // Helper for permutex style horizontal resampling 32 bit float
 // Safe partial load for 1-7 floats, padding with zeros to avoid NaN contamination
-static __m256 _mm256_load_partial_safe(const float* src_ptr, int floats_to_load) {
+static inline __m256 _mm256_load_partial_safe(const float* src_ptr, int floats_to_load) {
   if (floats_to_load == 1)
     return _mm256_setr_ps(src_ptr[0], 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
   if (floats_to_load == 2)
@@ -1762,6 +1762,129 @@ void resize_h_planar_float_avx2_permutex_vstripe_ks4(BYTE* dst8, const BYTE* src
   }
 }
 
+#if 0
+// resize_h_planar_float_avx2_permutex_vstripe_ks8:
+// Like ks4 but handles kernel sizes 5-8 using avx2_permutex2var_ps (two YMMs = 16-float range).
+// Dispatch condition: check(8, 16, 8) = false — 8 output pixels' source span <= 16 floats.
+// Covers upscale through ~0.875x downscale with LanczosResize(taps=4..8) / Spline36 etc.
+void resize_h_planar_float_avx2_permutex_vstripe_ks8(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel)
+{
+  const int filter_size = program->filter_size;
+
+  src_pitch /= sizeof(float);
+  dst_pitch /= sizeof(float);
+
+  float* src = (float*)src8;
+  float* dst = (float*)dst8;
+
+  constexpr int PIXELS_AT_A_TIME = 8;
+
+  // Safe limit: check only at every 8th target pixel start, loading 16 floats from src+pixel_offset[x].
+  // Beyond source_overread_beyond_targetx, load 16 floats at once is unsafe — switch to partial loads.
+  const int width_safe_mod = (program->safelimit_16_pixels_each8th_target.overread_possible
+    ? program->safelimit_16_pixels_each8th_target.source_overread_beyond_targetx
+    : width) / PIXELS_AT_A_TIME * PIXELS_AT_A_TIME;
+
+  assert(program->filter_size_real <= 8);
+  assert(program->target_size_alignment >= 8);
+  assert(program->filter_size_alignment >= 8); // need 8 floats/pixel so +4 offset into tap-row is valid
+
+  const int max_scanlines = program->max_scanlines;
+
+  for (int y_from = 0; y_from < height; y_from += max_scanlines) {
+    int y_to = std::min(y_from + max_scanlines, height);
+    const float* AVS_RESTRICT current_coeff = program->pixel_coefficient_float;
+
+    int x = 0;
+
+    auto do_h_float_core = [&](auto partial_load) {
+      // Load 8 taps per pixel for 8 output pixels.
+      // Two groups of 4 taps each, transposed so that each coef_k vector holds
+      // tap k for all 8 output pixels simultaneously.
+      //
+      // Taps 0-3: load from current_coeff + filter_size*j + 0..3 for j=0,1,...,7
+      __m256 coef_0 = _mm256_load_2_m128(current_coeff + filter_size * 0, current_coeff + filter_size * 4);
+      __m256 coef_1 = _mm256_load_2_m128(current_coeff + filter_size * 1, current_coeff + filter_size * 5);
+      __m256 coef_2 = _mm256_load_2_m128(current_coeff + filter_size * 2, current_coeff + filter_size * 6);
+      __m256 coef_3 = _mm256_load_2_m128(current_coeff + filter_size * 3, current_coeff + filter_size * 7);
+      _MM_TRANSPOSE8_LANE4_PS(coef_0, coef_1, coef_2, coef_3);
+      // Taps 4-7: load from current_coeff + filter_size*j + 4 for j=0,1,...,7
+      // filter_size is multiple of 8, so +4 floats (+16 bytes) keeps 16-byte alignment for _mm_load_ps.
+      __m256 coef_4 = _mm256_load_2_m128(current_coeff + filter_size * 0 + 4, current_coeff + filter_size * 4 + 4);
+      __m256 coef_5 = _mm256_load_2_m128(current_coeff + filter_size * 1 + 4, current_coeff + filter_size * 5 + 4);
+      __m256 coef_6 = _mm256_load_2_m128(current_coeff + filter_size * 2 + 4, current_coeff + filter_size * 6 + 4);
+      __m256 coef_7 = _mm256_load_2_m128(current_coeff + filter_size * 3 + 4, current_coeff + filter_size * 7 + 4);
+      _MM_TRANSPOSE8_LANE4_PS(coef_4, coef_5, coef_6, coef_7);
+      // After transpose: coef_k[lane i] = tap k coefficient for output pixel i.
+
+      // Permute indices: perm_k[i] = pixel_offset[x+i] - iStart + k.
+      // Guaranteed 0..15 by check(8,16,8)=false, suitable for avx2_permutex2var_ps (16-float range).
+      __m256i perm_0 = _mm256_loadu_si256((__m256i*)(&program->pixel_offset[x]));
+      const int iStart = program->pixel_offset[x];
+      perm_0 = _mm256_sub_epi32(perm_0, _mm256_set1_epi32(iStart));
+      const __m256i one_epi32 = _mm256_set1_epi32(1);
+      __m256i perm_1 = _mm256_add_epi32(perm_0, one_epi32);
+      __m256i perm_2 = _mm256_add_epi32(perm_1, one_epi32);
+      __m256i perm_3 = _mm256_add_epi32(perm_2, one_epi32);
+      __m256i perm_4 = _mm256_add_epi32(perm_3, one_epi32);
+      __m256i perm_5 = _mm256_add_epi32(perm_4, one_epi32);
+      __m256i perm_6 = _mm256_add_epi32(perm_5, one_epi32);
+      __m256i perm_7 = _mm256_add_epi32(perm_6, one_epi32);
+
+      float* AVS_RESTRICT dst_ptr = dst + x + y_from * dst_pitch;
+      const float* src_ptr = src + iStart + y_from * src_pitch;
+
+      // For partial_load: how many valid floats from iStart (capped at 8 per YMM).
+      const int remaining = program->source_size - iStart;
+      const int floats_to_load_a = std::min(remaining, 8);
+      const int floats_to_load_b = std::max(remaining - 8, 0); // 0 → setzero in _mm256_load_partial_safe
+
+      for (int y = y_from; y < y_to; ++y) {
+        __m256 data_src, data_src2;
+        if constexpr (partial_load) {
+          data_src  = _mm256_load_partial_safe(src_ptr, floats_to_load_a);
+          data_src2 = _mm256_load_partial_safe(src_ptr + 8, floats_to_load_b);
+        }
+        else {
+          data_src  = _mm256_loadu_ps(src_ptr);
+          data_src2 = _mm256_loadu_ps(src_ptr + 8);
+        }
+
+        // Gather each tap for all 8 output pixels from the 16-float window.
+        __m256 data_0 = avx2_permutex2var_ps(data_src, data_src2, perm_0);
+        __m256 data_1 = avx2_permutex2var_ps(data_src, data_src2, perm_1);
+        __m256 data_2 = avx2_permutex2var_ps(data_src, data_src2, perm_2);
+        __m256 data_3 = avx2_permutex2var_ps(data_src, data_src2, perm_3);
+        __m256 data_4 = avx2_permutex2var_ps(data_src, data_src2, perm_4);
+        __m256 data_5 = avx2_permutex2var_ps(data_src, data_src2, perm_5);
+        __m256 data_6 = avx2_permutex2var_ps(data_src, data_src2, perm_6);
+        __m256 data_7 = avx2_permutex2var_ps(data_src, data_src2, perm_7);
+
+        // Two parallel FMA chains to reduce dependency depth.
+        __m256 result0 = _mm256_mul_ps(data_0, coef_0);
+        __m256 result1 = _mm256_mul_ps(data_2, coef_2);
+        result0 = _mm256_fmadd_ps(data_1, coef_1, result0);
+        result1 = _mm256_fmadd_ps(data_3, coef_3, result1);
+        result0 = _mm256_fmadd_ps(data_4, coef_4, result0);
+        result1 = _mm256_fmadd_ps(data_5, coef_5, result1);
+        result0 = _mm256_fmadd_ps(data_6, coef_6, result0);
+        result1 = _mm256_fmadd_ps(data_7, coef_7, result1);
+
+        _mm256_stream_ps(dst_ptr, _mm256_add_ps(result0, result1));
+
+        dst_ptr += dst_pitch;
+        src_ptr += src_pitch;
+      }
+      current_coeff += filter_size * 8;
+    }; // end of lambda
+
+    for (; x < width_safe_mod; x += PIXELS_AT_A_TIME)
+      do_h_float_core(std::false_type{});
+    for (; x < width; x += PIXELS_AT_A_TIME)
+      do_h_float_core(std::true_type{});
+  }
+}
+#endif
 
 // Simulating the AVX512 case, where 16-way permutes are possible.
 // H, kernel size 4, 2x8 pix version, 16 output pixels.
