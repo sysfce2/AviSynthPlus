@@ -46,97 +46,12 @@
 
 #include "resample_avx512.hpp"
 
-void resize_h_planar_uint8_avx512_permutex_vstripe_ks4_vbmi(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // true template parameter: VBMI version
-  resize_h_planar_uint8_avx512_permutex_vstripe_ks4_internal<true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
+// uint8_t h pretransposed_coeffs _vnni wrappers
 
-void resize_h_planar_uint8_avx512_permutex_vstripe_ks8_vbmi(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // true template parameter: VBMI version
-  resize_h_planar_uint8_avx512_permutex_vstripe_ks8_internal<true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
-
-void resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8_vbmi(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // true template parameter: VBMI version
-  resize_h_planar_uint8_avx512_permutex_vstripe_2s32_ks8_internal<true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
-
-void resize_h_planar_uint8_avx512_permutex_vstripe_ks16_vbmi(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // true template parameter: VBMI version
-  resize_h_planar_uint8_avx512_permutex_vstripe_ks16_internal<true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
-
-// uint8_t h "mpz" avx512base 4,8,16
-
-void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_vnni(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // template parameter true: UseVNNI
-  resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_internal<true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
 void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_pretransposed_coeffs_vnni(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
   // template parameter true: UseVNNI
   resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks4_pretransposed_coeffs_internal<true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
 }
-void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_vnni(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // template parameter true: UseVNNI
-  resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_internal<true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
-void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_vnni(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // template parameter true: UseVNNI
-  resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks16_internal<true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
-
-
-// uint16_t h "mp" avx512fast vnni 4,8,16
-
-template<bool lessthan16bit>
-void resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_vnni(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // true template parameter: VNNI version
-  resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_internal<lessthan16bit, true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
-template<bool lessthan16bit>
-void resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_vnni(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // true template parameter: VNNI version
-  resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_internal<lessthan16bit, true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
-template<bool lessthan16bit>
-void resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks16_vnni(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // true template parameter: VNNI version
-  resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks16_internal<lessthan16bit, true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
-
-template<bool lessthan16bit>
-void resize_h_planar_uint16_avx512_permutex_vstripe_mp_2s32_ks4_vnni(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // true template parameter: VNNI version
-  resize_h_planar_uint16_avx512_permutex_vstripe_mp_2s32_ks4_internal<lessthan16bit, true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
-template<bool lessthan16bit>
-void resize_h_planar_uint16_avx512_permutex_vstripe_mp_2s32_ks8_vnni(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // true template parameter: VNNI version
-  resize_h_planar_uint16_avx512_permutex_vstripe_mp_2s32_ks8_internal<lessthan16bit, true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
-template<bool lessthan16bit>
-void resize_h_planar_uint16_avx512_permutex_vstripe_mp_4s16_ks8_vnni(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
-  // true template parameter: VNNI version
-  resize_h_planar_uint16_avx512_permutex_vstripe_mp_4s16_ks8_internal<lessthan16bit, true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
-}
-
-// Explicit template instantiations
-template void resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_vnni<false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks4_vnni<true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_vnni<false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks8_vnni<true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks16_vnni<false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_uint16_avx512_permutex_vstripe_mp_ks16_vnni<true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_uint16_avx512_permutex_vstripe_mp_2s32_ks4_vnni<false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_uint16_avx512_permutex_vstripe_mp_2s32_ks4_vnni<true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_uint16_avx512_permutex_vstripe_mp_2s32_ks8_vnni<false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_uint16_avx512_permutex_vstripe_mp_2s32_ks8_vnni<true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_uint16_avx512_permutex_vstripe_mp_4s16_ks8_vnni<false>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-template void resize_h_planar_uint16_avx512_permutex_vstripe_mp_4s16_ks8_vnni<true>(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel);
-
-
-// uint8_t h pretransposed_coeffs _vnni wrappers
-
 void resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_pretransposed_coeffs_vnni(BYTE* dst8, const BYTE* src8, int dst_pitch, int src_pitch, ResamplingProgram* program, int width, int height, int bits_per_pixel) {
   resize_h_planar_uint8_avx512_permutex_vstripe_mpz_ks8_pretransposed_coeffs_internal<true>(dst8, src8, dst_pitch, src_pitch, program, width, height, bits_per_pixel);
 }
