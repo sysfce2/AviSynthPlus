@@ -58,7 +58,7 @@
 #include "overlay/blend_common.h"  // MaskMode, PLACEMENT_*
 #include <vector>
 #ifdef INTEL_INTRINSICS
-#include "intel/getalpharect_impl.h"
+#include "getalpharect_impl.h"
 #endif
 
 /*
