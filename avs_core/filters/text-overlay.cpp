@@ -42,7 +42,7 @@
 #include "text-overlay.h"
 #ifdef INTEL_INTRINSICS
 #include "intel/text-overlay_sse.h"
-#include "intel/getalpharect_impl.h"
+#include "getalpharect_impl.h"
 #ifdef INTEL_INTRINSICS_AVX512
 #include "intel/getalpharect_avx512.h"
 #endif
