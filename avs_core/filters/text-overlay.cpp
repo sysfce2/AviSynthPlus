@@ -49,7 +49,7 @@
 #include "overlay/intel/masked_rowprep_sse41.h"
 #include "overlay/intel/masked_rowprep_avx2.h"
 #endif
-#include "intel/getalpharect_scalar.h"
+#include "getalpharect_scalar.h"
 #include "../convert/convert_matrix.h"  // for RGB2YUV_Rec601
 #include "../convert/convert_helper.h"  // chroma location
 
