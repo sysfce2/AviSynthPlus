@@ -78,7 +78,7 @@
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
 #ifdef INTEL_INTRINSICS_AVX512
 
-#include "getalpharect_impl.h"
+#include "../getalpharect_impl.h"
 #include "check_avx512.h"
 
 #ifdef AVS_WINDOWS
