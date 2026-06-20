@@ -252,10 +252,9 @@ template void convert_rgba_to_rgbp_avx2<uint16_t, true>(const BYTE* srcp, BYTE* 
 //   uint8_t:  16 pixels → 4 × _mm_store_si128
 //   uint16_t:  8 pixels → 4 × _mm_store_si128
 //
-// Scanline alignment is 64 bytes (Avisynth guarantee), so no remainder
-// handling is needed beyond the one optional 64-byte tail.  Width is
-// assumed to be a multiple of 16 (uint8_t) / 8 (uint16_t) — the same
-// constraint as convert_rgba_to_rgbp_avx2.
+// Scanline alignment is 64 bytes (Avisynth guarantee), so aligned SIMD
+// loads/stores are safe. The tail is handled fully in SIMD, potentially
+// overreading/overwriting into padded bytes (same strategy as SSE2 path).
 
 template<typename pixel_t, bool hasSrcAlpha>
 void convert_rgbp_to_rgba_avx2(const BYTE* (&srcp)[4], BYTE* dstp, int(&src_pitch)[4], int dst_pitch, int width, int height)
@@ -307,9 +306,9 @@ void convert_rgbp_to_rgba_avx2(const BYTE* (&srcp)[4], BYTE* dstp, int(&src_pitc
       _mm256_store_si256(reinterpret_cast<__m256i*>(d + 96), _mm256_permute2x128_si256(u2, u3, 0x31));
     }
 
-    // tail: 64 bytes output (at most one, since width % big = small or 0)
-    if (wmod < width) {
-      const int tx = wmod;
+    // tail: process remaining pixels in small SIMD chunks
+    // (may touch padded bytes beyond logical width)
+    for (int tx = wmod; tx < width; tx += small_pixels) {
       __m128i tG = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp[0] + tx * sizeof(pixel_t)));
       __m128i tB = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp[1] + tx * sizeof(pixel_t)));
       __m128i tR = _mm_load_si128(reinterpret_cast<const __m128i*>(srcp[2] + tx * sizeof(pixel_t)));
