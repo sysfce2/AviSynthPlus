@@ -1,4 +1,4 @@
-﻿// Avisynth v2.5.  Copyright 2002 Ben Rudiak-Gould et al.
+// Avisynth v2.5.  Copyright 2002 Ben Rudiak-Gould et al.
 // http://avisynth.nl
 
 // This program is free software; you can redistribute it and/or modify
@@ -325,7 +325,7 @@ void Antialiaser::Apply(const VideoInfo& vi, PVideoFrame* frame, int pitch)
     }
     // Compute MaskMode from clip subsampling + stored chromaplacement
     MaskMode mode = MASK444;
-    if (vi.IsYUV() || vi.IsYUVA()) {
+    if ((vi.IsYUV() || vi.IsYUVA()) && !vi.IsY()) {
       const int sx = vi.GetPlaneWidthSubsampling(PLANAR_U);
       const int sy = vi.GetPlaneHeightSubsampling(PLANAR_U);
       if (sx == 2) {
