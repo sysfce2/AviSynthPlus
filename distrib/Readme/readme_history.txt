@@ -9,8 +9,52 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
+20260622 3.7.5.r4626 (pre 3.7.6)
+--------------------------------
+- Fix (20260518-dev) regression: Subtitle raised an error on grayscale (Y-only) clips
+  (regression from recent gdi/placement refactoring).
+- Make Overlay's internal 444 conversion to give bit-identical results for C and SIMD, add AVX2 remove ISSE path
+- Make Overlay's "multiply" to give bit-identical results for C and SIMD
+
+20260620 3.7.5.rXXXX (pre 3.7.6)
+--------------------------------
+- Fix #485: AVX2 horizontal resampler for PlanarRGB(A) to packed RGB32/RGB64
+  missed processing the right-edge tail pixels in each row.
+
+20260611 3.7.5.rXXXX (pre 3.7.6)
+--------------------------------
+- Resampler AVX512: cleanup — remove obsolete/duplicate kernel variants superseded
+  by the pretransposed-coefficient approach introduced on 20260610.
+
+20260610 3.7.5.rXXXX (pre 3.7.6)
+--------------------------------
+- Resizers: AVX512 H-resizer precomputed coefficient table (contribution: DTL2020).
+  resize_prepare_coeffs_AVX512_H builds a transposed/unpacked coefficient table
+  (pixel_coefficient_AVX512_H) before the row loop, so permute indices and
+  coefficients are no longer re-derived per-row inside the kernel.
+- Resizers: new AVX512 H-resizer "_pretransposed_coeffs" kernels for uint8
+  (mpz_ks4/ks8/ks16, mpz_2s32_ks64, 2s32_ks8) and uint16
+  (mp_ks8, 2s32_ks4/ks8, 4s16_ks8, 4s16_ks48); each templated on UseVNNI so
+  one implementation covers both VNNI/VBMI ("fast") and BASE AVX512 paths.
+  2s32_ks8 uint8 kernel reworked into this common VNNI/BASE-friendly form.
+  New kernels wired into the AVX512 H-resizer dispatcher.
+- Resizers: fix permutex2var_epi8 simulation — rework and correct castsi
+  zero-extension usage; fix coefficient table layout in resize_prepare_coeffs_AVX512_H.
+- Resizers: AVX512/AVX2 float H-resizer dispatch updated for the pretransposed-coeff
+  path; dispatching logic and comments revised.
+
+20260529 3.7.5.rXXXX (pre 3.7.6)
+--------------------------------
+- Fix #482: YV411 (4:1:1) to higher-bit-depth YUV conversion: perform chroma
+  subsampling first, then bit-depth conversion, instead of the reverse order that
+  produced incorrect output for all non-8-bit targets.
+- Layer: fix regression in PlanarRGB(A) "add" mode — opacity was inadvertently
+  ignored after the recent packed/planar RGB refactoring.
+
 20260518 3.7.5.r45XX (pre 3.7.6)
 --------------------------------
+- Fix: 32-bit MSVC build — __popcnt64 is unavailable in 32-bit targets; use the
+  32-bit-compatible equivalent instead.
 - Subtitle: add "placement" string parameter — chroma location hint for subsampled
   YUV (4:2:0, 4:2:2, 4:1:1). When gdi=true, all three siting modes are supported:
   "MPEG2"/"left" (default), "MPEG1"/"center", and "top_left" (UHD 4:2:0/4:2:2).
