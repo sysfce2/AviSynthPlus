@@ -89,6 +89,8 @@ private:
   // we get num_threads later via SetCacheHints callback with constants CACHE_INFORM_NUM_THREADS.
   ResamplerH resampler_h_luma_mt;
   ResamplerH resampler_h_chroma_mt;
+  // when false, _mt fallback pointers are cleared and the primary resampler is always used.
+  bool use_alternative_h_avx512_mt_fallback;
   bool fast_resize;
 
   ResamplerV resampler_luma;

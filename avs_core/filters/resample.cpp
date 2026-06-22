@@ -1337,6 +1337,7 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
   resampling_program_luma(nullptr), resampling_program_chroma(nullptr),
   resampler_h_luma(nullptr), resampler_h_chroma(nullptr),
   resampler_h_luma_mt(nullptr), resampler_h_chroma_mt(nullptr),
+  use_alternative_h_avx512_mt_fallback(false),
   resampler_luma(nullptr), resampler_chroma(nullptr),
   num_threads(0)
 
@@ -1553,6 +1554,11 @@ FilteredResizeH::FilteredResizeH(PClip _child, double subrange_left, double subr
 
     if (!grey && !isRGBPfamily) {
       resampler_h_chroma = GetResampler(cpu, pixelsize, bits_per_pixel, resampling_program_chroma, /*out*/resampler_h_chroma_mt, env);
+    }
+
+    if (!use_alternative_h_avx512_mt_fallback) {
+      resampler_h_luma_mt = nullptr;
+      resampler_h_chroma_mt = nullptr;
     }
   }
   // Change target video info size
