@@ -34,18 +34,33 @@
 
 // Overlay (c) 2003, 2004 by Klaus Post
 
-#ifndef __444Convert_h
-#define __444Convert_h
+#ifndef __444Convert_sse_h
+#define __444Convert_sse_h
 
-#include <avisynth.h>
+#include <avs/types.h>
 
-void Convert444FromYV16(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env);
-void Convert444FromYV12(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env);
-void Convert444FromYUY2(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env);
-void Convert444ToYV16(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env);
-void Convert444ToYV12(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env);
-void Convert444ToYUY2(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env);
-void ConvertYToYV12Chroma(BYTE *dst, BYTE *src, int dstpitch, int srcpitch, int pixelsize, int w, int h, IScriptEnvironment* env);
-void ConvertYToYV16Chroma(BYTE *dst, BYTE *src, int dstpitch, int srcpitch, int pixelsize, int w, int h, IScriptEnvironment* env);
+// YV12 -> YV24 chroma upsamplers (typed wrappers around SSE2 uint8_t/uint16_t templates)
+void conv_yv12_to_yv24_chroma_u8_sse2 (BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int src_width, int src_height);
+void conv_yv12_to_yv24_chroma_u16_sse2(BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int src_width, int src_height);
 
-#endif //444Convert
+// YV16 -> YV24 chroma upsamplers (typed wrappers around SSE2 uint8_t/uint16_t templates)
+void conv_yv16_to_yv24_chroma_u8_sse2 (BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int src_width, int src_height);
+void conv_yv16_to_yv24_chroma_u16_sse2(BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int src_width, int src_height);
+
+// YV24 -> YV12 chroma downsamplers
+void convert_yv24_chroma_to_yv12_u8_ssse3               (BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+void convert_yv24_chroma_to_yv12_u16_lessthan16bit_ssse3 (BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+void convert_yv24_chroma_to_yv12_u16_sse41              (BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+void convert_yv24_chroma_to_yv12_float_sse2             (BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+// typed wrappers around the bool template (lessthan16bits=true/false)
+void conv_yv24_to_yv12_chroma_u16_lessthan16bit_sse2    (BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+void conv_yv24_to_yv12_chroma_u16_true16bit_sse2        (BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+
+// YV24 -> YV16 chroma downsamplers (typed wrappers around SSE2/SSE4.1 uint8_t/uint16_t templates)
+void conv_yv24_to_yv16_chroma_u8_sse2  (BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+void conv_yv24_to_yv16_chroma_u16_sse2 (BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+void conv_yv24_to_yv16_chroma_u8_sse41 (BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+void conv_yv24_to_yv16_chroma_u16_sse41(BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+void convert_yv24_chroma_to_yv16_float_sse2(BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+
+#endif // __444Convert_sse_h

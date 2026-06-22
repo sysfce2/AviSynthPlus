@@ -34,21 +34,13 @@
 
 // Overlay (c) 2003, 2004 by Klaus Post
 
-#ifndef __444Convert_h
-#define __444Convert_h
+#ifndef __444Convert_avx2_h
+#define __444Convert_avx2_h
 
-#include <avisynth.h>
+#include <avs/types.h>
 
-void Convert444FromYV16(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env);
-void Convert444FromYV12(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env);
-void Convert444FromYUY2(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env);
-void Convert444ToYV16(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env);
-void Convert444ToYV12(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env);
-void Convert444ToYUY2(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env);
-#if 0
-// history
-void ConvertYToYV12Chroma(BYTE *dst, BYTE *src, int dstpitch, int srcpitch, int pixelsize, int w, int h, IScriptEnvironment* env);
-void ConvertYToYV16Chroma(BYTE *dst, BYTE *src, int dstpitch, int srcpitch, int pixelsize, int w, int h, IScriptEnvironment* env);
-#endif
+void convert_yv24_chroma_to_yv12_u8_avx2(BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+void convert_yv24_chroma_to_yv12_u16_lessthan16bit_avx2(BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
+void convert_yv24_chroma_to_yv12_u16_avx2(BYTE *dstp, const BYTE *srcp, int dst_pitch, int src_pitch, int dst_width, int dst_height);
 
-#endif //444Convert
+#endif // __444Convert_avx2_h

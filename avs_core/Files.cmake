@@ -90,8 +90,6 @@ IF(ENABLE_INTEL_SIMD)
     "filters/overlay/intel/*.cpp"
     "filters/overlay/intel/*.hpp"
     "filters/overlay/intel/*.h")
-  LIST(REMOVE_ITEM AvsCore_Sources "filters/overlay/444convert.cpp"
-                                   "filters/overlay/444convert.h")
   LIST(APPEND AvsCore_Sources "${Overlay_Cpu_Sources}")
 ENDIF()
 

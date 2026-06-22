@@ -38,9 +38,14 @@
 #include "../../core/internal.h"
 #include <avs/alignment.h>
 
+#ifdef INTEL_INTRINSICS
+#include "intel/444convert_sse.h"
+#include "intel/444convert_avx2.h"
+#endif
+
 // fast in-place conversions from and to 4:4:4
 
-/***** YV12 -> YUV 4:4:4   ******/
+/***** C fallback worker templates (used by all build configurations) *****/
 
 template<typename pixel_t>
 static void convert_yv12_chroma_to_yv24_c(BYTE *dstp8, const BYTE *srcp8, int dst_pitch, int src_pitch, int src_width, int src_height) {
@@ -60,44 +65,6 @@ static void convert_yv12_chroma_to_yv24_c(BYTE *dstp8, const BYTE *srcp8, int ds
   }
 }
 
-void Convert444FromYV12(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env)
-{
-  AVS_UNUSED(bits_per_pixel);
-  env->BitBlt(dst->GetWritePtr(PLANAR_Y), dst->GetPitch(PLANAR_Y), src->GetReadPtr(PLANAR_Y),src->GetPitch(PLANAR_Y), src->GetRowSize(PLANAR_Y), src->GetHeight());
-
-  const BYTE* srcU = src->GetReadPtr(PLANAR_U);
-  const BYTE* srcV = src->GetReadPtr(PLANAR_V);
-
-  int srcUVpitch = src->GetPitch(PLANAR_U);
-
-  BYTE* dstU = dst->GetWritePtr(PLANAR_U);
-  BYTE* dstV = dst->GetWritePtr(PLANAR_V);
-
-  int dstUVpitch = dst->GetPitch(PLANAR_U);
-
-  int width = src->GetRowSize(PLANAR_U) / pixelsize;
-  int height = src->GetHeight(PLANAR_U);
-
-      if (pixelsize == 1) {
-        convert_yv12_chroma_to_yv24_c<uint8_t>(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
-        convert_yv12_chroma_to_yv24_c<uint8_t>(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
-      } else if(pixelsize == 2) {
-        convert_yv12_chroma_to_yv24_c<uint16_t>(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
-        convert_yv12_chroma_to_yv24_c<uint16_t>(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
-      }
-      else {
-        convert_yv12_chroma_to_yv24_c<float>(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
-        convert_yv12_chroma_to_yv24_c<float>(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
-      }
-
-  env->BitBlt(dst->GetWritePtr(PLANAR_A), dst->GetPitch(PLANAR_A),
-    src->GetReadPtr(PLANAR_A), src->GetPitch(PLANAR_A), dst->GetRowSize(PLANAR_A), dst->GetHeight(PLANAR_A));
-
-
-}
-
-/***** YV16 -> YUV 4:4:4   ******/
-
 template<typename pixel_t>
 static void convert_yv16_chroma_to_yv24_c(BYTE *dstp8, const BYTE *srcp8, int dst_pitch, int src_pitch, int src_width, int src_height) {
   pixel_t *dstp = reinterpret_cast<pixel_t *>(dstp8);
@@ -106,50 +73,52 @@ static void convert_yv16_chroma_to_yv24_c(BYTE *dstp8, const BYTE *srcp8, int ds
   src_pitch /= sizeof(pixel_t);
   for (int y = 0; y < src_height; ++y) {
     for (int x = 0; x < src_width; ++x) {
-      dstp[x*2]             = srcp[x];
-      dstp[x*2+1]           = srcp[x];
+      dstp[x*2]   = srcp[x];
+      dstp[x*2+1] = srcp[x];
     }
     dstp += dst_pitch;
     srcp += src_pitch;
   }
 }
 
-void Convert444FromYV16(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env)
-{
-  AVS_UNUSED(bits_per_pixel);
-  env->BitBlt(dst->GetWritePtr(PLANAR_Y), dst->GetPitch(PLANAR_Y), src->GetReadPtr(PLANAR_Y),src->GetPitch(PLANAR_Y), src->GetRowSize(PLANAR_Y), src->GetHeight());
-
-  const BYTE* srcU = src->GetReadPtr(PLANAR_U);
-  const BYTE* srcV = src->GetReadPtr(PLANAR_V);
-
-  int srcUVpitch = src->GetPitch(PLANAR_U);
-
-  BYTE* dstU = dst->GetWritePtr(PLANAR_U);
-  BYTE* dstV = dst->GetWritePtr(PLANAR_V);
-
-  int dstUVpitch = dst->GetPitch(PLANAR_U);
-
-  int width = src->GetRowSize(PLANAR_U) / pixelsize;
-  int height = src->GetHeight(PLANAR_U);
-
-      if (pixelsize == 1) {
-        convert_yv16_chroma_to_yv24_c<uint8_t>(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
-        convert_yv16_chroma_to_yv24_c<uint8_t>(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
-      } else if(pixelsize == 2) {
-        convert_yv16_chroma_to_yv24_c<uint16_t>(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
-        convert_yv16_chroma_to_yv24_c<uint16_t>(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
-      }
-      else {
-        convert_yv16_chroma_to_yv24_c<float>(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
-        convert_yv16_chroma_to_yv24_c<float>(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
-      }
-
-  env->BitBlt(dst->GetWritePtr(PLANAR_A), dst->GetPitch(PLANAR_A),
-    src->GetReadPtr(PLANAR_A), src->GetPitch(PLANAR_A), dst->GetRowSize(PLANAR_A), dst->GetHeight(PLANAR_A));
-
+template<typename pixel_t>
+static void convert_yv24_chroma_to_yv12_c(BYTE *dstp8, const BYTE *srcp8, int dst_pitch, int src_pitch, int dst_width, const int dst_height) {
+  const pixel_t *srcp = reinterpret_cast<const pixel_t *>(srcp8);
+  pixel_t *dstp = reinterpret_cast<pixel_t *>(dstp8);
+  dst_pitch /= sizeof(pixel_t);
+  src_pitch /= sizeof(pixel_t);
+  for (int y = 0; y < dst_height; y++) {
+    for (int x = 0; x < dst_width; x++) {
+      if constexpr (sizeof(pixel_t) == 4)
+        dstp[x] = (srcp[x * 2] + srcp[x * 2 + 1] + srcp[x * 2 + src_pitch] + srcp[x * 2 + src_pitch + 1]) * 0.25f;
+      else
+        dstp[x] = (srcp[x * 2] + srcp[x * 2 + 1] + srcp[x * 2 + src_pitch] + srcp[x * 2 + src_pitch + 1] + 2) >> 2;
+    }
+    srcp += src_pitch * 2;
+    dstp += dst_pitch;
+  }
 }
 
-/***** YUY2 -> YUV 4:4:4   ******/
+template<typename pixel_t>
+static void convert_yv24_chroma_to_yv16_c(BYTE *dstp8, const BYTE *srcp8, int dst_pitch, int src_pitch, int dst_width, const int dst_height) {
+  const pixel_t *srcp = reinterpret_cast<const pixel_t *>(srcp8);
+  pixel_t *dstp = reinterpret_cast<pixel_t *>(dstp8);
+  dst_pitch /= sizeof(pixel_t);
+  src_pitch /= sizeof(pixel_t);
+  for (int y = 0; y < dst_height; y++) {
+    for (int x = 0; x < dst_width; x++) {
+      if constexpr (sizeof(pixel_t) == 4)
+        dstp[x] = (srcp[x * 2] + srcp[x * 2 + 1]) * 0.5f;
+      else
+        dstp[x] = (srcp[x * 2] + srcp[x * 2 + 1] + 1) >> 1;
+    }
+    srcp += src_pitch;
+    dstp += dst_pitch;
+  }
+}
+
+
+/***** YUY2 <-> YUV 4:4:4  (pure C, no SIMD variant) *****/
 
 void Convert444FromYUY2(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env) {
   AVS_UNUSED(pixelsize);
@@ -168,153 +137,20 @@ void Convert444FromYUY2(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int b
   int w = src->GetRowSize() / 2;
   int h = src->GetHeight();
 
-  for (int y=0; y<h; y++) {
-    for (int x=0; x<w; x+=2) {
-      int x2 = x<<1;
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x += 2) {
+      int x2 = x << 1;
       dstY[x]   = srcP[x2];
       dstU[x]   = dstU[x+1] = srcP[x2+1];
       dstV[x]   = dstV[x+1] = srcP[x2+3];
       dstY[x+1] = srcP[x2+2];
     }
-    srcP+=srcPitch;
-
-    dstY+=dstPitch;
-    dstU+=dstPitch;
-    dstV+=dstPitch;
+    srcP += srcPitch;
+    dstY += dstPitch;
+    dstU += dstPitch;
+    dstV += dstPitch;
   }
 }
-
-template<typename pixel_t>
-static void convert_yv24_chroma_to_yv12_c(BYTE *dstp8, const BYTE *srcp8, int dst_pitch, int src_pitch, int dst_width, const int dst_height) {
-  const pixel_t *srcp = reinterpret_cast<const pixel_t *>(srcp8);
-  pixel_t *dstp = reinterpret_cast<pixel_t *>(dstp8);
-  dst_pitch /= sizeof(pixel_t);
-  src_pitch /= sizeof(pixel_t);
-  for (int y = 0; y < dst_height; y++) {
-    for (int x = 0; x < dst_width; x++) {
-      if constexpr (sizeof(pixel_t) == 4)
-        dstp[x] = (srcp[x * 2] + srcp[x * 2 + 1] + srcp[x * 2 + src_pitch] + srcp[x * 2 + src_pitch + 1]) * 0.25f; // /4
-      else
-        dstp[x] = (srcp[x * 2] + srcp[x * 2 + 1] + srcp[x * 2 + src_pitch] + srcp[x * 2 + src_pitch + 1] + 2) >> 2;
-    }
-    srcp += src_pitch * 2;
-    dstp += dst_pitch;
-  }
-}
-
-template<typename pixel_t>
-static void convert_yv24_chroma_to_yv16_c(BYTE *dstp8, const BYTE *srcp8, int dst_pitch, int src_pitch, int dst_width, const int dst_height) {
-  const pixel_t *srcp = reinterpret_cast<const pixel_t *>(srcp8);
-  pixel_t *dstp = reinterpret_cast<pixel_t *>(dstp8);
-  dst_pitch /= sizeof(pixel_t);
-  src_pitch /= sizeof(pixel_t);
-  for (int y=0; y < dst_height; y++) {
-    for (int x=0; x < dst_width; x++) {
-      if constexpr (sizeof(pixel_t) == 4)
-        dstp[x] = (srcp[x * 2] + srcp[x * 2 + 1]) * 0.5f;
-      else
-        dstp[x] = (srcp[x * 2] + srcp[x * 2 + 1] + 1) >> 1;
-    }
-    srcp+=src_pitch;
-    dstp+=dst_pitch;
-  }
-}
-
-void ConvertYToYV12Chroma(BYTE *dst, BYTE *src, int dstpitch, int srcpitch, int pixelsize, int w, int h, IScriptEnvironment* env)
-{
-    if(pixelsize==1)
-      convert_yv24_chroma_to_yv12_c<uint8_t>(dst, src, dstpitch, srcpitch, w, h);
-    else if (pixelsize == 2)
-      convert_yv24_chroma_to_yv12_c<uint16_t>(dst, src, dstpitch, srcpitch, w, h);
-    else // if (pixelsize == 4)
-      convert_yv24_chroma_to_yv12_c<float>(dst, src, dstpitch, srcpitch, w, h);
-}
-
-void ConvertYToYV16Chroma(BYTE *dst, BYTE *src, int dstpitch, int srcpitch, int pixelsize, int w, int h, IScriptEnvironment* env)
-{
-    if(pixelsize==1)
-      convert_yv24_chroma_to_yv16_c<uint8_t>(dst, src, dstpitch, srcpitch, w, h);
-    else if (pixelsize == 2)
-      convert_yv24_chroma_to_yv16_c<uint16_t>(dst, src, dstpitch, srcpitch, w, h);
-    else // if (pixelsize == 4)
-      convert_yv24_chroma_to_yv16_c<float>(dst, src, dstpitch, srcpitch, w, h);
-}
-
-void Convert444ToYV16(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env)
-{
-  AVS_UNUSED(bits_per_pixel);
-  env->BitBlt(dst->GetWritePtr(PLANAR_Y), dst->GetPitch(PLANAR_Y),
-    src->GetReadPtr(PLANAR_Y), src->GetPitch(), dst->GetRowSize(PLANAR_Y), dst->GetHeight());
-
-  const BYTE* srcU = src->GetReadPtr(PLANAR_U);
-  const BYTE* srcV = src->GetReadPtr(PLANAR_V);
-
-  int srcUVpitch = src->GetPitch(PLANAR_U);
-
-  BYTE* dstU = dst->GetWritePtr(PLANAR_U);
-  BYTE* dstV = dst->GetWritePtr(PLANAR_V);
-
-  int dstUVpitch = dst->GetPitch(PLANAR_U);
-
-  int w = dst->GetRowSize(PLANAR_U);
-  int h = dst->GetHeight(PLANAR_U);
-
-      if(pixelsize==1) {
-        convert_yv24_chroma_to_yv16_c<uint8_t>(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
-        convert_yv24_chroma_to_yv16_c<uint8_t>(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
-      }
-      else if (pixelsize == 2) {
-        convert_yv24_chroma_to_yv16_c<uint16_t>(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
-        convert_yv24_chroma_to_yv16_c<uint16_t>(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
-      }
-      else { // if (pixelsize == 4)
-        convert_yv24_chroma_to_yv16_c<float>(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
-        convert_yv24_chroma_to_yv16_c<float>(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
-      }
-
-  env->BitBlt(dst->GetWritePtr(PLANAR_A), dst->GetPitch(PLANAR_A),
-    src->GetReadPtr(PLANAR_A), src->GetPitch(PLANAR_A), dst->GetRowSize(PLANAR_A), dst->GetHeight(PLANAR_A));
-}
-
-
-void Convert444ToYV12(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env)
-{
-  AVS_UNUSED(bits_per_pixel);
-  env->BitBlt(dst->GetWritePtr(PLANAR_Y), dst->GetPitch(PLANAR_Y),
-    src->GetReadPtr(PLANAR_Y), src->GetPitch(), dst->GetRowSize(PLANAR_Y), dst->GetHeight());
-
-  const BYTE* srcU = src->GetReadPtr(PLANAR_U);
-  const BYTE* srcV = src->GetReadPtr(PLANAR_V);
-
-  int srcUVpitch = src->GetPitch(PLANAR_U);
-
-  BYTE* dstU = dst->GetWritePtr(PLANAR_U);
-  BYTE* dstV = dst->GetWritePtr(PLANAR_V);
-
-  int dstUVpitch = dst->GetPitch(PLANAR_U);
-
-  int w = dst->GetRowSize(PLANAR_U);
-  int h = dst->GetHeight(PLANAR_U);
-
-  if(pixelsize==1) {
-    convert_yv24_chroma_to_yv12_c<uint8_t>(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
-    convert_yv24_chroma_to_yv12_c<uint8_t>(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
-  }
-  else if (pixelsize == 2) {
-    convert_yv24_chroma_to_yv12_c<uint16_t>(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
-    convert_yv24_chroma_to_yv12_c<uint16_t>(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
-  }
-  else { // if (pixelsize == 4)
-    convert_yv24_chroma_to_yv12_c<float>(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
-    convert_yv24_chroma_to_yv12_c<float>(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
-  }
-
-  env->BitBlt(dst->GetWritePtr(PLANAR_A), dst->GetPitch(PLANAR_A),
-    src->GetReadPtr(PLANAR_A), src->GetPitch(PLANAR_A), dst->GetRowSize(PLANAR_A), dst->GetHeight(PLANAR_A));
-
-}
-
-/*****   YUV 4:4:4 -> YUY2   *******/
 
 void Convert444ToYUY2(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env) {
   AVS_UNUSED(bits_per_pixel);
@@ -333,17 +169,329 @@ void Convert444ToYUY2(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bit
   int w = src->GetRowSize() / pixelsize;
   int h = src->GetHeight();
 
-  for (int y=0; y<h; y++) {
-    for (int x=0; x<w; x+=2) {
-      int x2 = x<<1;
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x += 2) {
+      int x2 = x << 1;
       dstP[x2]   = srcY[x];
-      dstP[x2+1] = (srcU[x] + srcU[x+1] + 1)>>1;
+      dstP[x2+1] = (srcU[x] + srcU[x+1] + 1) >> 1;
       dstP[x2+2] = srcY[x+1];
-      dstP[x2+3] = (srcV[x] + srcV[x+1] + 1)>>1;
+      dstP[x2+3] = (srcV[x] + srcV[x+1] + 1) >> 1;
     }
-    srcY+=srcPitch;
-    srcU+=srcPitch;
-    srcV+=srcPitch;
-    dstP+=dstPitch;
+    srcY += srcPitch;
+    srcU += srcPitch;
+    srcV += srcPitch;
+    dstP += dstPitch;
   }
+}
+
+
+/***** YV12 -> YUV 4:4:4   ******/
+
+void Convert444FromYV12(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env)
+{
+  AVS_UNUSED(bits_per_pixel);
+  env->BitBlt(dst->GetWritePtr(PLANAR_Y), dst->GetPitch(PLANAR_Y), src->GetReadPtr(PLANAR_Y), src->GetPitch(PLANAR_Y), src->GetRowSize(PLANAR_Y), src->GetHeight());
+
+  const BYTE* srcU = src->GetReadPtr(PLANAR_U);
+  const BYTE* srcV = src->GetReadPtr(PLANAR_V);
+  int srcUVpitch = src->GetPitch(PLANAR_U);
+  BYTE* dstU = dst->GetWritePtr(PLANAR_U);
+  BYTE* dstV = dst->GetWritePtr(PLANAR_V);
+  int dstUVpitch = dst->GetPitch(PLANAR_U);
+  int width = src->GetRowSize(PLANAR_U) / pixelsize;
+  int height = src->GetHeight(PLANAR_U);
+
+#ifdef INTEL_INTRINSICS
+  if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(dstU, 16) && IsPtrAligned(dstV, 16))
+  {
+    if (pixelsize == 1) {
+      conv_yv12_to_yv24_chroma_u8_sse2(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
+      conv_yv12_to_yv24_chroma_u8_sse2(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
+    } else {
+      conv_yv12_to_yv24_chroma_u16_sse2(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
+      conv_yv12_to_yv24_chroma_u16_sse2(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
+    }
+  }
+  else
+#endif
+  {
+    if (pixelsize == 1) {
+      convert_yv12_chroma_to_yv24_c<uint8_t>(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
+      convert_yv12_chroma_to_yv24_c<uint8_t>(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
+    } else if (pixelsize == 2) {
+      convert_yv12_chroma_to_yv24_c<uint16_t>(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
+      convert_yv12_chroma_to_yv24_c<uint16_t>(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
+    } else {
+      convert_yv12_chroma_to_yv24_c<float>(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
+      convert_yv12_chroma_to_yv24_c<float>(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
+    }
+  }
+
+  env->BitBlt(dst->GetWritePtr(PLANAR_A), dst->GetPitch(PLANAR_A),
+    src->GetReadPtr(PLANAR_A), src->GetPitch(PLANAR_A), dst->GetRowSize(PLANAR_A), dst->GetHeight(PLANAR_A));
+}
+
+
+/***** YV16 -> YUV 4:4:4   ******/
+
+void Convert444FromYV16(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env)
+{
+  AVS_UNUSED(bits_per_pixel);
+  env->BitBlt(dst->GetWritePtr(PLANAR_Y), dst->GetPitch(PLANAR_Y), src->GetReadPtr(PLANAR_Y), src->GetPitch(PLANAR_Y), src->GetRowSize(PLANAR_Y), src->GetHeight());
+
+  const BYTE* srcU = src->GetReadPtr(PLANAR_U);
+  const BYTE* srcV = src->GetReadPtr(PLANAR_V);
+  int srcUVpitch = src->GetPitch(PLANAR_U);
+  BYTE* dstU = dst->GetWritePtr(PLANAR_U);
+  BYTE* dstV = dst->GetWritePtr(PLANAR_V);
+  int dstUVpitch = dst->GetPitch(PLANAR_U);
+  int width = src->GetRowSize(PLANAR_U) / pixelsize;
+  int height = src->GetHeight(PLANAR_U);
+
+#ifdef INTEL_INTRINSICS
+  if ((pixelsize == 1 || pixelsize == 2) && (env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(dstU, 16) && IsPtrAligned(dstV, 16))
+  {
+    if (pixelsize == 1) {
+      conv_yv16_to_yv24_chroma_u8_sse2(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
+      conv_yv16_to_yv24_chroma_u8_sse2(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
+    } else {
+      conv_yv16_to_yv24_chroma_u16_sse2(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
+      conv_yv16_to_yv24_chroma_u16_sse2(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
+    }
+  }
+  else
+#endif
+  {
+    if (pixelsize == 1) {
+      convert_yv16_chroma_to_yv24_c<uint8_t>(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
+      convert_yv16_chroma_to_yv24_c<uint8_t>(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
+    } else if (pixelsize == 2) {
+      convert_yv16_chroma_to_yv24_c<uint16_t>(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
+      convert_yv16_chroma_to_yv24_c<uint16_t>(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
+    } else {
+      convert_yv16_chroma_to_yv24_c<float>(dstU, srcU, dstUVpitch, srcUVpitch, width, height);
+      convert_yv16_chroma_to_yv24_c<float>(dstV, srcV, dstUVpitch, srcUVpitch, width, height);
+    }
+  }
+
+  env->BitBlt(dst->GetWritePtr(PLANAR_A), dst->GetPitch(PLANAR_A),
+    src->GetReadPtr(PLANAR_A), src->GetPitch(PLANAR_A), dst->GetRowSize(PLANAR_A), dst->GetHeight(PLANAR_A));
+}
+
+#if 0
+// kept for historical reasons, but not used anymore (mask down conversion, now masks are done in "rowprep" functions)
+
+/***** YV24 -> YV12 chroma downsampler (single-plane, used by imghelpers) *****/
+
+void ConvertYToYV12Chroma(BYTE *dst, BYTE *src, int dstpitch, int srcpitch, int pixelsize, int w, int h, IScriptEnvironment* env)
+{
+#ifdef INTEL_INTRINSICS
+  if (env->GetCPUFlags() & CPUF_SSE2)
+  {
+    if (pixelsize == 1) {
+      if (env->GetCPUFlags() & CPUF_AVX2)
+        convert_yv24_chroma_to_yv12_u8_avx2(dst, src, dstpitch, srcpitch, w, h);
+      else if (env->GetCPUFlags() & CPUF_SSSE3)
+        convert_yv24_chroma_to_yv12_u8_ssse3(dst, src, dstpitch, srcpitch, w, h);
+      else
+        convert_yv24_chroma_to_yv12_c<uint8_t>(dst, src, dstpitch, srcpitch, w, h);
+    }
+    else if (pixelsize == 2) {
+      // No bits_per_pixel here — conservative true-16-bit path.
+      if (env->GetCPUFlags() & CPUF_AVX2)
+        convert_yv24_chroma_to_yv12_u16_avx2(dst, src, dstpitch, srcpitch, w * pixelsize, h);
+      else if (env->GetCPUFlags() & CPUF_SSE4)
+        convert_yv24_chroma_to_yv12_u16_sse41(dst, src, dstpitch, srcpitch, w * pixelsize, h);
+      else
+        conv_yv24_to_yv12_chroma_u16_true16bit_sse2(dst, src, dstpitch, srcpitch, w * pixelsize, h);
+    }
+    else
+      convert_yv24_chroma_to_yv12_float_sse2(dst, src, dstpitch, srcpitch, w * pixelsize, h);
+    return;
+  }
+#endif
+  if (pixelsize == 1)
+    convert_yv24_chroma_to_yv12_c<uint8_t>(dst, src, dstpitch, srcpitch, w, h);
+  else if (pixelsize == 2)
+    convert_yv24_chroma_to_yv12_c<uint16_t>(dst, src, dstpitch, srcpitch, w, h);
+  else
+    convert_yv24_chroma_to_yv12_c<float>(dst, src, dstpitch, srcpitch, w, h);
+}
+
+
+/***** YV24 -> YV16 chroma downsampler (single-plane, used by imghelpers) *****/
+
+void ConvertYToYV16Chroma(BYTE *dst, BYTE *src, int dstpitch, int srcpitch, int pixelsize, int w, int h, IScriptEnvironment* env)
+{
+#ifdef INTEL_INTRINSICS
+  if ((env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(src, 16) && IsPtrAligned(dst, 16)
+    && w * pixelsize >= 16)
+  {
+    if (pixelsize == 1)
+      conv_yv24_to_yv16_chroma_u8_sse2(dst, src, dstpitch, srcpitch, w, h);
+    else if (pixelsize == 2) {
+      if (env->GetCPUFlags() & CPUF_SSE4)
+        conv_yv24_to_yv16_chroma_u16_sse41(dst, src, dstpitch, srcpitch, w * pixelsize, h);
+      else
+        conv_yv24_to_yv16_chroma_u16_sse2(dst, src, dstpitch, srcpitch, w * pixelsize, h);
+    }
+    else
+      convert_yv24_chroma_to_yv16_float_sse2(dst, src, dstpitch, srcpitch, w * pixelsize, h);
+    return;
+  }
+#endif
+  if (pixelsize == 1)
+    convert_yv24_chroma_to_yv16_c<uint8_t>(dst, src, dstpitch, srcpitch, w, h);
+  else if (pixelsize == 2)
+    convert_yv24_chroma_to_yv16_c<uint16_t>(dst, src, dstpitch, srcpitch, w, h);
+  else
+    convert_yv24_chroma_to_yv16_c<float>(dst, src, dstpitch, srcpitch, w, h);
+}
+#endif
+
+/***** YUV 4:4:4 -> YV16   ******/
+
+void Convert444ToYV16(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env)
+{
+  AVS_UNUSED(bits_per_pixel);
+  env->BitBlt(dst->GetWritePtr(PLANAR_Y), dst->GetPitch(PLANAR_Y),
+    src->GetReadPtr(PLANAR_Y), src->GetPitch(), dst->GetRowSize(PLANAR_Y), dst->GetHeight());
+
+  const BYTE* srcU = src->GetReadPtr(PLANAR_U);
+  const BYTE* srcV = src->GetReadPtr(PLANAR_V);
+  int srcUVpitch = src->GetPitch(PLANAR_U);
+  BYTE* dstU = dst->GetWritePtr(PLANAR_U);
+  BYTE* dstV = dst->GetWritePtr(PLANAR_V);
+  int dstUVpitch = dst->GetPitch(PLANAR_U);
+  int w = dst->GetRowSize(PLANAR_U);
+  int h = dst->GetHeight(PLANAR_U);
+
+#ifdef INTEL_INTRINSICS
+  if ((env->GetCPUFlags() & CPUF_SSE2) && IsPtrAligned(srcU, 16) && IsPtrAligned(srcV, 16) && IsPtrAligned(dstU, 16) && IsPtrAligned(dstV, 16))
+  {
+    if (pixelsize == 1) {
+      conv_yv24_to_yv16_chroma_u8_sse2(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+      conv_yv24_to_yv16_chroma_u8_sse2(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+    }
+    else if (pixelsize == 2) {
+      if (env->GetCPUFlags() & CPUF_SSE4) {
+        conv_yv24_to_yv16_chroma_u16_sse41(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+        conv_yv24_to_yv16_chroma_u16_sse41(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+      } else {
+        conv_yv24_to_yv16_chroma_u16_sse2(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+        conv_yv24_to_yv16_chroma_u16_sse2(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+      }
+    }
+    else {
+      convert_yv24_chroma_to_yv16_float_sse2(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+      convert_yv24_chroma_to_yv16_float_sse2(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+    }
+  }
+  else
+#endif
+  {
+    if (pixelsize == 1) {
+      convert_yv24_chroma_to_yv16_c<uint8_t>(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+      convert_yv24_chroma_to_yv16_c<uint8_t>(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+    } else if (pixelsize == 2) {
+      convert_yv24_chroma_to_yv16_c<uint16_t>(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+      convert_yv24_chroma_to_yv16_c<uint16_t>(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+    } else {
+      convert_yv24_chroma_to_yv16_c<float>(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+      convert_yv24_chroma_to_yv16_c<float>(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+    }
+  }
+
+  env->BitBlt(dst->GetWritePtr(PLANAR_A), dst->GetPitch(PLANAR_A),
+    src->GetReadPtr(PLANAR_A), src->GetPitch(PLANAR_A), dst->GetRowSize(PLANAR_A), dst->GetHeight(PLANAR_A));
+}
+
+
+/***** YUV 4:4:4 -> YV12   ******/
+
+void Convert444ToYV12(PVideoFrame &src, PVideoFrame &dst, int pixelsize, int bits_per_pixel, IScriptEnvironment* env)
+{
+  env->BitBlt(dst->GetWritePtr(PLANAR_Y), dst->GetPitch(PLANAR_Y),
+    src->GetReadPtr(PLANAR_Y), src->GetPitch(), dst->GetRowSize(PLANAR_Y), dst->GetHeight());
+
+  const BYTE* srcU = src->GetReadPtr(PLANAR_U);
+  const BYTE* srcV = src->GetReadPtr(PLANAR_V);
+  int srcUVpitch = src->GetPitch(PLANAR_U);
+  BYTE* dstU = dst->GetWritePtr(PLANAR_U);
+  BYTE* dstV = dst->GetWritePtr(PLANAR_V);
+  int dstUVpitch = dst->GetPitch(PLANAR_U);
+  int w = dst->GetRowSize(PLANAR_U); // bytes
+  int h = dst->GetHeight(PLANAR_U);
+
+#ifdef INTEL_INTRINSICS
+  if (env->GetCPUFlags() & CPUF_SSE2)
+  {
+    const bool has_avx2 = (env->GetCPUFlags() & CPUF_AVX2) != 0;
+
+    if (pixelsize == 1) {
+      if (has_avx2) {
+        convert_yv24_chroma_to_yv12_u8_avx2(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+        convert_yv24_chroma_to_yv12_u8_avx2(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+      }
+      else if (env->GetCPUFlags() & CPUF_SSSE3) {
+        convert_yv24_chroma_to_yv12_u8_ssse3(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+        convert_yv24_chroma_to_yv12_u8_ssse3(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+      }
+      else {
+        convert_yv24_chroma_to_yv12_c<uint8_t>(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+        convert_yv24_chroma_to_yv12_c<uint8_t>(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+      }
+    }
+    else if (pixelsize == 2) {
+      const bool lt16 = bits_per_pixel < 16;
+      if (has_avx2 && lt16) {
+        convert_yv24_chroma_to_yv12_u16_lessthan16bit_avx2(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+        convert_yv24_chroma_to_yv12_u16_lessthan16bit_avx2(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+      }
+      else if (has_avx2) {
+        convert_yv24_chroma_to_yv12_u16_avx2(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+        convert_yv24_chroma_to_yv12_u16_avx2(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+      }
+      else if (lt16 && (env->GetCPUFlags() & CPUF_SSSE3)) {
+        convert_yv24_chroma_to_yv12_u16_lessthan16bit_ssse3(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+        convert_yv24_chroma_to_yv12_u16_lessthan16bit_ssse3(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+      }
+      else if (env->GetCPUFlags() & CPUF_SSE4) {
+        convert_yv24_chroma_to_yv12_u16_sse41(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+        convert_yv24_chroma_to_yv12_u16_sse41(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+      }
+      else if (lt16) {
+        conv_yv24_to_yv12_chroma_u16_lessthan16bit_sse2(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+        conv_yv24_to_yv12_chroma_u16_lessthan16bit_sse2(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+      }
+      else {
+        conv_yv24_to_yv12_chroma_u16_true16bit_sse2(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+        conv_yv24_to_yv12_chroma_u16_true16bit_sse2(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+      }
+    }
+    else {
+      convert_yv24_chroma_to_yv12_float_sse2(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+      convert_yv24_chroma_to_yv12_float_sse2(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+    }
+  }
+  else
+#endif
+  {
+    // w is GetRowSize (bytes); C template loops over pixels, so divide by pixelsize.
+    if (pixelsize == 1) {
+      convert_yv24_chroma_to_yv12_c<uint8_t>(dstU, srcU, dstUVpitch, srcUVpitch, w, h);
+      convert_yv24_chroma_to_yv12_c<uint8_t>(dstV, srcV, dstUVpitch, srcUVpitch, w, h);
+    }
+    else if (pixelsize == 2) {
+      convert_yv24_chroma_to_yv12_c<uint16_t>(dstU, srcU, dstUVpitch, srcUVpitch, w / 2, h);
+      convert_yv24_chroma_to_yv12_c<uint16_t>(dstV, srcV, dstUVpitch, srcUVpitch, w / 2, h);
+    }
+    else {
+      convert_yv24_chroma_to_yv12_c<float>(dstU, srcU, dstUVpitch, srcUVpitch, w / 4, h);
+      convert_yv24_chroma_to_yv12_c<float>(dstV, srcV, dstUVpitch, srcUVpitch, w / 4, h);
+    }
+  }
+
+  env->BitBlt(dst->GetWritePtr(PLANAR_A), dst->GetPitch(PLANAR_A),
+    src->GetReadPtr(PLANAR_A), src->GetPitch(PLANAR_A), dst->GetRowSize(PLANAR_A), dst->GetHeight(PLANAR_A));
 }
