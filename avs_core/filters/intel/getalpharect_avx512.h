@@ -34,6 +34,6 @@
 
 #pragma once
 #ifdef INTEL_INTRINSICS_AVX512
-#include "getalpharect_impl.h"
+#include "../getalpharect_impl.h"
 getalpharect_fn_t GetAlphaRect_select_avx512(bool noaa, bool interlaced);
 #endif

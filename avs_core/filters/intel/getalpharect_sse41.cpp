@@ -44,7 +44,7 @@
 #if defined(AVS_WINDOWS) && !defined(NO_WIN_GDI)
 #ifdef INTEL_INTRINSICS
 
-#include "getalpharect_impl.h"
+#include "../getalpharect_impl.h"
 
 #ifdef AVS_WINDOWS
 #include <avs/win.h>

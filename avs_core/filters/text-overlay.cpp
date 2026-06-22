@@ -40,10 +40,10 @@
 #endif
 
 #include "text-overlay.h"
+#include "getalpharect_impl.h"
+#include "getalpharect_scalar.h"
 #ifdef INTEL_INTRINSICS
 #include "intel/text-overlay_sse.h"
-#include "intel/getalpharect_impl.h"
-#include "intel/getalpharect_scalar.h"
 #ifdef INTEL_INTRINSICS_AVX512
 #include "intel/getalpharect_avx512.h"
 #endif
@@ -93,7 +93,7 @@ extern const AVSFunction Text_filters[] = {
   { "ShowSMPTE",BUILTIN_FUNC_PREFIX,
   "c[fps]f[offset]s[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b[gdi]b",
   ShowSMPTE::CreateSMTPE },
-
+    
   { "ShowTime",BUILTIN_FUNC_PREFIX,
   "c[offset_f]i[x]f[y]f[font]s[size]f[text_color]i[halo_color]i[font_width]f[font_angle]f[bold]b[italic]b[noaa]b[gdi]b",
   ShowSMPTE::CreateTime },
