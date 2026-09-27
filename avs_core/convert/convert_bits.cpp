@@ -1381,6 +1381,26 @@ AVSValue __cdecl ConvertBits::Create(AVSValue args, void* user_data, IScriptEnvi
   auto stage_fulls_arg = [&](bool resolved_fulls) { return defer_range ? AVSValue() : AVSValue(resolved_fulls); };
   const AVSValue stage_fulld_arg = defer_range ? args[6] : AVSValue(fulld);
 
+  // Dither works on planar data only: packed RGB is converted to planar RGB(A) on the fly and
+  // back at the end. This must happen before the dither pre-steps below: they invoke ConvertBits with
+  // intermediate bit depths (e.g. 16->10 for dither_bits=2), which do not exist for packed RGB.
+  // Only when dithering will really happen: packed RGB is 8 or 16 bit, dither is ignored when
+  // dither_bits equals the source bit depth.
+  const bool packed_rgb_dither = dither_type >= 0 && source_bitdepth != dither_bitdepth;
+  const bool need_convert_24 = vi.IsRGB24() && packed_rgb_dither;
+  const bool need_convert_32 = vi.IsRGB32() && packed_rgb_dither;
+  const bool need_convert_48 = vi.IsRGB48() && packed_rgb_dither;
+  const bool need_convert_64 = vi.IsRGB64() && packed_rgb_dither;
+
+  if (need_convert_24 || need_convert_48) {
+    AVSValue new_args[1] = { clip };
+    clip = env->Invoke("ConvertToPlanarRGB", AVSValue(new_args, 1)).AsClip();
+  }
+  else if (need_convert_32 || need_convert_64) {
+    AVSValue new_args[1] = { clip };
+    clip = env->Invoke("ConvertToPlanarRGBA", AVSValue(new_args, 1)).AsClip();
+  }
+
   // 32 bit float dithering is not implemented, thus we convert to 16 bit intermediate clip
   if (source_bitdepth == 32 && (dither_type == 0 || dither_type == 1)) {
     // c[bits]i[truerange]b[dither]i[dither_bits]i[fulls]b[fulld]b
@@ -1476,23 +1496,9 @@ AVSValue __cdecl ConvertBits::Create(AVSValue args, void* user_data, IScriptEnvi
     // source_16_bit.ConvertTo16bit(bits=10, truerange=false) : leaves data, only format conversion
 
   // yuy2 is autoconverted to/from YV16. fulls-fulld and dither to lower bit depths are supported
+  // (8 bit only: no dither pre-step can happen, so it is fine to convert here, after the no-op check)
   bool need_convert_yuy2 = vi.IsYUY2();
-  // for dither, planar rgb conversion happens
-  bool need_convert_24 = vi.IsRGB24() && dither_type >= 0;
-  bool need_convert_32 = vi.IsRGB32() && dither_type >= 0;
-  bool need_convert_48 = vi.IsRGB48() && dither_type >= 0;
-  bool need_convert_64 = vi.IsRGB64() && dither_type >= 0;
-
-  // convert to planar on the fly if dither was asked
-  if (need_convert_24 || need_convert_48) {
-    AVSValue new_args[1] = { clip };
-    clip = env->Invoke("ConvertToPlanarRGB", AVSValue(new_args, 1)).AsClip();
-  }
-  else if (need_convert_32 || need_convert_64) {
-    AVSValue new_args[1] = { clip };
-    clip = env->Invoke("ConvertToPlanarRGBA", AVSValue(new_args, 1)).AsClip();
-  }
-  else if (need_convert_yuy2) {
+  if (need_convert_yuy2) {
     AVSValue new_args[1] = { clip };
     clip = env->Invoke("ConvertToYV16", AVSValue(new_args, 1)).AsClip();
   }
