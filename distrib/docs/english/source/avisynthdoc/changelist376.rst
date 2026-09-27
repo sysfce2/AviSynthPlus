@@ -372,6 +372,9 @@ Bugfixes
 - Fix #509: "ConvertBits" automatic preconversion for large ``dither_bits`` gaps (e.g.
   16-bit source with ``dither_bits=1``) silently dropped the dithering, falling back to
   a plain bit-depth expansion.
+- Fix: "ConvertBits" ordered dither on packed RGB48/RGB64 with ``dither_bits`` 1-7 (bit-depth gap
+  over 8) failed with "truerange specified for non-planar source". The packed->planar conversion
+  used for dithering now happens before the automatic preconversion, so the whole dither chain runs planar.
 - Fix #510: "Layer" "Mul" raw multiply product was rounded down incorrectly, so
   near-max products came out one unit too low (e.g. 255*255 -> 254).
 - Fix #511: "ConvertYUV444ToRGB"/"ConvertRGBToYUV444" left the synthesized alpha plane
@@ -382,7 +385,8 @@ Bugfixes
 - Fix: ``ArrayIns``/``ArraySet``/``ArrayDel``: bounds check the index parameter(s)
   (preventing Access Violation).
 - Fix: "TurnLeft"/"TurnRight": for asymmetrically H/V-subsampled sources (4:2:2, 4:1:1, 4:4:0),
-  the mod-alignment check (before-after dimension rules)
+  the mod-alignment check tested the source dimensions instead of the post-turn ones (e.g. 4:2:2
+  needs a mod-2 source height, which becomes the width), so invalid clips passed.
 
 
 Optimizations
