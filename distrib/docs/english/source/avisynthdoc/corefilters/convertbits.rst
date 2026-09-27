@@ -55,8 +55,9 @@ If the conversion is not possible – for example, converting RGB32 to 14bit –
         Dithering is allowed only for scaling down (bit depth reduction), not up. Bit depth can be kept though
         if a smaller dither_bits is given. 
         
-        Note: (behind the scenes) 32 bit float clips are first converted down to 16 (or less if needed) bits, 
-        then are further dithered down from this intermediate clip. 
+        Note: behind the scenes, float sources are first converted to 16 bits (no float dither kernel), ordered
+        dither pre-reduces the source to at most ``dither_bits+8`` bits (Bayer matrix is max 16x16), rounded down
+        to even (valid formats), and if that ends up below ``bits``, the dithered result is scaled back up.
 
 .. describe:: dither_bits
 
@@ -73,8 +74,8 @@ If the conversion is not possible – for example, converting RGB32 to 14bit –
 
     bool  fulls = (auto)
 
-        Use the default value unless you know what you are doing. 
-        Default value can come from _ChromaRange frame property 
+        Use the default value unless you know what you are doing.
+        Default value can come from _ColorRange frame property
         If true (RGB default), scale by multiplication: 0-255 → 0-65535;
 
         Note: full scale U and V chroma is specially handled
@@ -87,10 +88,22 @@ If the conversion is not possible – for example, converting RGB32 to 14bit –
 
     bool  fulld = fulls
 
-        Use the default value unless you know what you are doing. 
+        Use the default value unless you know what you are doing.
+
+        Note: if ``fulls`` is not given, source-range detection is deferred and re-evaluated for every frame from its own ``_ColorRange`` property (or the RGB/YUV
+        default when the property is absent), instead of being fixed once from frame 0 at filter
+        creation time. This matters for clips whose range varies along their length (e.g. spliced
+        sources with different ``_ColorRange`` flags) and avoids an upfront ``GetFrame(0)`` call
+        during script evaluation. ``fulld``, in this case, can either be left unspecified too
+        (it then mirrors the per-frame ``fulls``, e.g. a plain bit-depth-only conversion that
+        keeps whatever range each frame has), or be pinned to a fixed true/false value of its
+        own (e.g. normalize the output range while still decoding each frame according to its
+        own detected range). As soon as ``fulls`` is specified explicitly,
+        the range is taken from the parameter and stays fixed for the lifetime of the filter.
 
 
-ConvertBits writes _ChromaRange frame property (0-full or 1-limited) 
+ConvertBits writes _ColorRange frame property (0-full or 1-limited)
+
 
 Examples
 --------
@@ -123,10 +136,13 @@ Changelog
     +-----------------+---------------------------------------------------------------------------+
     | Version         | Changes                                                                   |
     +=================+===========================================================================+
-    | v3.7.6          || Documented (and discouraged) the previously-undocumented 'truerange'     |
+    | 3.7.6           || Documented (and discouraged) the previously-undocumented 'truerange'     |
     |                 |  parameter, kept only for scripts/plugins already relying on positional   |
     |                 || Supports 4:4:0 and 4:1:0 formats                                         |
     |                 || Supports 4:1:1 over 8-bits                                               |
+    |                 || Per-frame source range (_ColorRange) detection when fulls is not         |
+    |                 |  given, fulld mirrors it unless given explicitly                          |
+    |                 || Fixed doc: the relevant frame property is _ColorRange, not _ChromaRange  |
     +-----------------+---------------------------------------------------------------------------+
     | 3.7.1           || Support YUY2 (by autoconverting to and from YV16), support YV411         |
     |                 || "bits" parameter is not compulsory, bit depth can stay as it was         |
@@ -153,4 +169,4 @@ Changelog
     | Avisynth+       | First added                                                               |
     +-----------------+---------------------------------------------------------------------------+
 
-$Date: 2026/09/15 17:46:00 $
+$Date: 2026/09/27 11:55:00 $
