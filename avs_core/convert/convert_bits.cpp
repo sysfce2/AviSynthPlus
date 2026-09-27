@@ -46,6 +46,7 @@
 #include <map>
 #include <algorithm>
 #include <vector>
+#include <cstring>
 
 #ifdef AVS_WINDOWS
 #include <avs/win.h>
@@ -604,6 +605,17 @@ static void convert_uint_limited_c(const BYTE* srcp, BYTE* dstp, int src_rowsize
 
   const int src_width = src_rowsize / sizeof(pixel_t_s);
 
+  if (target_bitdepth == source_bitdepth) {
+    // Shortcut: same bit depth, limited to limited: plain copy
+    // The reduce-range path would compute 1 << (0 - 1) and for 8 bits, read bytes as words.
+    for (int y = 0; y < src_height; y++) {
+      std::memcpy(dstp0, srcp0, src_width * sizeof(pixel_t_d));
+      dstp0 += dst_pitch;
+      srcp0 += src_pitch;
+    }
+    return;
+  }
+
   if (target_bitdepth > source_bitdepth) // expandrange
   {
     const int shift_bits = target_bitdepth - source_bitdepth;
@@ -737,6 +749,16 @@ static void convert_float_to_float_c(const BYTE* srcp, BYTE* dstp, int src_rowsi
   dst_pitch = dst_pitch / sizeof(float);
 
   const int src_width = src_rowsize / sizeof(float);
+
+  if constexpr (fulls == fulld) {
+    // identity: copy, shortcut (x - offset) * 1.0f + offset
+    for (int y = 0; y < src_height; y++) {
+      std::memcpy(dstp0, srcp0, src_width * sizeof(float));
+      dstp0 += dst_pitch;
+      srcp0 += src_pitch;
+    }
+    return;
+  }
 
   //-----------------------
   bits_conv_constants d;
@@ -1162,7 +1184,10 @@ ConvertBits::ConvertBits(PClip _child, const int _dither_mode, const int _target
   GenericVideoFilter(_child),
   conv_function(nullptr), conv_function_chroma(nullptr), conv_function_a(nullptr),
   target_bitdepth(_target_bitdepth), dither_mode(_dither_mode), dither_bitdepth(_dither_bitdepth),
-  fulls(false), fulld(false), truerange(_truerange)
+  fulls(false), fulld(false),
+  dynamic_range(_ColorRange_src == -2),
+  dest_fulld_pinned(false), dest_fulld_pinned_value(false),
+  truerange(_truerange)
 {
 
   pixelsize = vi.ComponentSize();
@@ -1175,14 +1200,29 @@ ConvertBits::ConvertBits(PClip _child, const int _dither_mode, const int _target
   const bool avx2 = !!(env->GetCPUFlags() & CPUF_AVX2);
 #endif
 
-  // full or limited decision
-  // dest: if undefined, use src
-  if (_ColorRange_dest != ColorRange_Compat_e::AVS_COLORRANGE_LIMITED && _ColorRange_dest != ColorRange_Compat_e::AVS_COLORRANGE_FULL) {
-    _ColorRange_dest = _ColorRange_src;
+  if (!dynamic_range) {
+    // static across the whole clip
+    // full or limited decision
+    // _ColorRange_src is never -1 (undefined) here: static mode means fulls was given explicitly.
+    // _ColorRange_dest is already resolved to src in Create when fulld is omitted.
+    // dest: if undefined, use src
+    if (_ColorRange_dest != ColorRange_Compat_e::AVS_COLORRANGE_LIMITED && _ColorRange_dest != ColorRange_Compat_e::AVS_COLORRANGE_FULL) {
+      _ColorRange_dest = _ColorRange_src;
+    }
+    //
+    fulls = _ColorRange_src == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
+    fulld = _ColorRange_dest == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
   }
-  //
-  fulls = _ColorRange_src == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
-  fulld = _ColorRange_dest == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
+  else {
+    // fulls is resolved per-frame in GetFrame.
+    // fulld either
+    // - mirrors fulls per-frame (auto, when _ColorRange_dest is undefined)
+    // - stays pinned to a fixed value given explicitly
+    if (_ColorRange_dest == ColorRange_Compat_e::AVS_COLORRANGE_LIMITED || _ColorRange_dest == ColorRange_Compat_e::AVS_COLORRANGE_FULL) {
+      dest_fulld_pinned = true;
+      dest_fulld_pinned_value = _ColorRange_dest == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
+    }
+  }
 
   if (!truerange) {
     if ((target_bitdepth == 8 || target_bitdepth == 32) && pixelsize == 2)
@@ -1193,11 +1233,27 @@ ConvertBits::ConvertBits(PClip _child, const int _dither_mode, const int _target
       format_change_only = true;
   }
 
+  if (!dynamic_range) {
 #ifdef INTEL_INTRINSICS
-  get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma, conv_function_a);
+    get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fulls, fulld, sse2, sse4, avx2, conv_function, conv_function_chroma, conv_function_a);
 #else
-  get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
+    get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fulls, fulld, conv_function, conv_function_chroma, conv_function_a);
 #endif
+  }
+  else {
+    // per-frame range support, pre-fill fulls-fulld combination dispatch table
+    for (int fs = 0; fs < 2; ++fs) {
+      for (int fd = 0; fd < 2; ++fd) {
+#ifdef INTEL_INTRINSICS
+        get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fs != 0, fd != 0, sse2, sse4, avx2,
+          conv_function_table[fs][fd], conv_function_chroma_table[fs][fd], conv_function_a_table[fs][fd]);
+#else
+        get_convert_any_bits_functions(dither_mode, bits_per_pixel, target_bitdepth, fs != 0, fd != 0,
+          conv_function_table[fs][fd], conv_function_chroma_table[fs][fd], conv_function_a_table[fs][fd]);
+#endif
+      }
+    }
+  }
 
   // Set VideoInfo
   if (vi.IsPlanar()) {
@@ -1270,30 +1326,33 @@ AVSValue __cdecl ConvertBits::Create(AVSValue args, void* user_data, IScriptEnvi
   }
 
   // retrieve full/limited
+  // fulls omitted => source-range detection is deferred to per-frame (ConvertBits::GetFrame).
+  // fulld
+  // - may be pinned to a fixed value given explicitly
+  // - left to automatically mirror the per-frame source range (also omitted).
+  // No GetFrame(0) happens in Create: fulls is either given or resolved per-frame.
+  // Dithering (ordered/Floyd) may build chained intermediate conversions (float source, or
+  // bit-depth gap > 8 for ordered dither, expand back after low dither_bits). Their structure depends
+  // only on bit depths, so in deferred mode they are deferred as well: each stage reads the
+  // _ColorRange written by the previous one.
+  const bool defer_range = !args[5].Defined(); // fulls omitted => deferred range detection
+
   int ColorRange_src;
   int ColorRange_dest;
-  if (args[5].Defined())
-    ColorRange_src = args[5].AsBool() ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
+  // ColorRange_src is either given by fulls, or -2 (deferred).
+  // The former -1 (undefined) state, which triggered a one-time frame#0 _ColorRange lookup here,
+  // no longer exists: an omitted fulls always means deferred per-frame detection, thus GetFrame(0) was removed.
+  if (defer_range)
+    ColorRange_src = -2; // per-frame in ConvertBits::GetFrame
   else
-    ColorRange_src = -1; // undefined. A frame property may override
-  if (args[6].Defined())
+    ColorRange_src = args[5].AsBool() ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
+  if (args[6].Defined()) // fulld
     ColorRange_dest = args[6].AsBool() ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
   else
-    ColorRange_dest = -1; // undefined. A frame property or ColorRange_src may override
-  if (ColorRange_src != ColorRange_Compat_e::AVS_COLORRANGE_LIMITED && ColorRange_src != ColorRange_Compat_e::AVS_COLORRANGE_FULL) {
-    // try getting frame props if parameter is not specified
-    auto frame0 = clip->GetFrame(0, env);
-    const AVSMap* props = env->getFramePropsRO(frame0);
-    if (env->propNumElements(props, "_ColorRange") > 0) {
-      ColorRange_src = (int)env->propGetIntSaturated(props, "_ColorRange", 0, nullptr);
-    }
-    else {
-      // no param, no frame property -> rgb is full others are limited
-      ColorRange_src = vi.IsRGB() ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
-    }
-  }
+    ColorRange_dest = -1; // undefined: mirrors ColorRange_src (static: right below; deferred: per-frame in GetFrame)
   // cr_dest = cr_source if not specified
-  if (ColorRange_dest != ColorRange_Compat_e::AVS_COLORRANGE_LIMITED && ColorRange_dest != ColorRange_Compat_e::AVS_COLORRANGE_FULL) {
+  // n/a when deferred range (-2), GetFrame mirrors the per-frame detected source property
+  if (ColorRange_src != -2 && ColorRange_dest != ColorRange_Compat_e::AVS_COLORRANGE_LIMITED && ColorRange_dest != ColorRange_Compat_e::AVS_COLORRANGE_FULL) {
     ColorRange_dest = ColorRange_src;
   }
   bool fulls = ColorRange_src == ColorRange_Compat_e::AVS_COLORRANGE_FULL;
@@ -1314,9 +1373,15 @@ AVSValue __cdecl ConvertBits::Create(AVSValue args, void* user_data, IScriptEnvi
       env->ThrowError("ConvertBits: dithering is not allowed into 32 bit float target");
   }
 
-  // 3.7.1 t25
-  // Unfortunately 32 bit float dithering is not implemented, thus we convert to 16 bit 
-  // intermediate clip
+  // Range arguments for the chained intermediate ConvertBits stages below.
+  // fulls: deferred => omitted/Undefined AVSValue() (will use per-frame from the previous stage's _ColorRange)
+  //        else the resolved source range of that stage (fulls for the pre-steps, fulld for the expand-back)
+  // fulld: deferred => passed as given in parameter (undefined/fixed)
+  //        else based on pre-established ColorRange_dest
+  auto stage_fulls_arg = [&](bool resolved_fulls) { return defer_range ? AVSValue() : AVSValue(resolved_fulls); };
+  const AVSValue stage_fulld_arg = defer_range ? args[6] : AVSValue(fulld);
+
+  // 32 bit float dithering is not implemented, thus we convert to 16 bit intermediate clip
   if (source_bitdepth == 32 && (dither_type == 0 || dither_type == 1)) {
     // c[bits]i[truerange]b[dither]i[dither_bits]i[fulls]b[fulld]b
 
@@ -1329,13 +1394,15 @@ AVSValue __cdecl ConvertBits::Create(AVSValue args, void* user_data, IScriptEnvi
         source_bitdepth--; // must be even
     }
     
-    AVSValue new_args[7] = { clip, source_bitdepth, true, -1 /* no dither */, AVSValue() /*dither_bits*/, fulls, fulld };
+    AVSValue new_args[7] = { clip, source_bitdepth, true, -1 /* no dither */, AVSValue() /*dither_bits*/, stage_fulls_arg(fulls), stage_fulld_arg };
     clip = env->Invoke("ConvertBits", AVSValue(new_args, 7)).AsClip();
 
     clip = env->Invoke("Cache", AVSValue(clip)).AsClip();
     // and now the source range becomes the previous target
+    // (deferred: stays -2, the next stage reads the _ColorRange written by this one)
     fulls = fulld;
-    ColorRange_src = ColorRange_dest;
+    if (!defer_range)
+      ColorRange_src = ColorRange_dest;
   }
 
   // solving ordered dither maximum bit depth difference of 8 problem
@@ -1346,13 +1413,15 @@ AVSValue __cdecl ConvertBits::Create(AVSValue args, void* user_data, IScriptEnvi
     if (source_bitdepth % 2)
       source_bitdepth--; // must be even
 
-    AVSValue new_args[7] = { clip, source_bitdepth, true, -1 /* no dither */, AVSValue() /*dither_bits*/, fulls, fulld };
+    AVSValue new_args[7] = { clip, source_bitdepth, true, -1 /* no dither */, AVSValue() /*dither_bits*/, stage_fulls_arg(fulls), stage_fulld_arg };
     clip = env->Invoke("ConvertBits", AVSValue(new_args, 7)).AsClip();
 
     clip = env->Invoke("Cache", AVSValue(clip)).AsClip();
     // and now the source range becomes the previous target
+    // (deferred: stays -2, the next stage reads the _ColorRange written by this one)
     fulls = fulld;
-    ColorRange_src = ColorRange_dest;
+    if (!defer_range)
+      ColorRange_src = ColorRange_dest;
   }
 
   if (source_bitdepth == dither_bitdepth)
@@ -1375,7 +1444,14 @@ AVSValue __cdecl ConvertBits::Create(AVSValue args, void* user_data, IScriptEnvi
 
   // no change -> return unmodified if no transform required
   if (source_bitdepth == target_bitdepth) { // 10->10 .. 16->16
-    if((dither_type < 0 || dither_bitdepth == target_bitdepth) && fulls == fulld)
+    if (defer_range) {
+      // When fulls/fulld are unresolved, but an undefined parameter (unpinned) fulld mirrors the
+      // per-frame fulls => no range change
+      // When fulld is given (pinned), it needs the per-frame decision, so we don't return here. param 6: fulld
+      if ((dither_type < 0 || dither_bitdepth == target_bitdepth) && !args[6].Defined())
+        return clip;
+    }
+    else if ((dither_type < 0 || dither_bitdepth == target_bitdepth) && fulls == fulld)
       return clip;
   }
 
@@ -1439,7 +1515,7 @@ AVSValue __cdecl ConvertBits::Create(AVSValue args, void* user_data, IScriptEnvi
 
   if (need_expand_back_after_dither) {
     // scale back w/o dithering
-    AVSValue new_args[7] = { result, final_target_bitdepth, true, -1 /* no dither */, AVSValue() /*dither_bits*/, fulld, fulld };
+    AVSValue new_args[7] = { result, final_target_bitdepth, true, -1 /* no dither */, AVSValue() /*dither_bits*/, stage_fulls_arg(fulld), stage_fulld_arg };
     result = env->Invoke("ConvertBits", AVSValue(new_args, 7)).AsClip();
     target_bitdepth = final_target_bitdepth; // back to the originally requested bit-depth
   }
@@ -1478,10 +1554,40 @@ PVideoFrame __stdcall ConvertBits::GetFrame(int n, IScriptEnvironment* env) {
     return src;
   }
 
+  // Static range (fulls given explicitly): fulls/fulld and the conversion functions were fixed in the constructor.
+  // (There is no frame#0 based range detection in ConvertBits anymore.
+  // An omitted fulls always means dynamic_range.
+  bool actual_fulld = fulld;
+  BitDepthConvFuncPtr actual_conv_function = conv_function;
+  BitDepthConvFuncPtr actual_conv_function_chroma = conv_function_chroma;
+  BitDepthConvFuncPtr actual_conv_function_a = conv_function_a;
+
+  if (dynamic_range) {
+    // per-frame range detection based on actual source frame props
+    const AVSMap* src_props = env->getFramePropsRO(src);
+    int established_ColorRange_src;
+    if (env->propNumElements(src_props, "_ColorRange") > 0)
+      established_ColorRange_src = (int)env->propGetIntSaturated(src_props, "_ColorRange", 0, nullptr);
+    else
+      // no frame property: RGB full, others limited (usual default)
+      established_ColorRange_src = vi.IsRGB() ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED;
+
+    const int actual_fulls = established_ColorRange_src == ColorRange_Compat_e::AVS_COLORRANGE_FULL ? 1 : 0;
+    // dest mirrors src (e.g. simple bitdepth-only conversion keeping the range) unless pinned
+    // to a fixed value. Use case: we can normalize output range regardless of per-frame source range
+    const int actual_fulld_idx = dest_fulld_pinned ? (dest_fulld_pinned_value ? 1 : 0) : actual_fulls;
+    actual_fulld = actual_fulld_idx != 0;
+
+    // dispatch table set in the constructor
+    actual_conv_function = conv_function_table[actual_fulls][actual_fulld_idx];
+    actual_conv_function_chroma = conv_function_chroma_table[actual_fulls][actual_fulld_idx];
+    actual_conv_function_a = conv_function_a_table[actual_fulls][actual_fulld_idx];
+  }
+
   PVideoFrame dst = env->NewVideoFrameP(vi, &src);
 
   auto props = env->getFramePropsRW(dst);
-  update_ColorRange(props, fulld ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED, env);
+  update_ColorRange(props, actual_fulld ? ColorRange_Compat_e::AVS_COLORRANGE_FULL : ColorRange_Compat_e::AVS_COLORRANGE_LIMITED, env);
 
   if(vi.IsPlanar())
   {
@@ -1492,27 +1598,27 @@ PVideoFrame __stdcall ConvertBits::GetFrame(int n, IScriptEnvironment* env) {
     for (int p = 0; p < vi.NumComponents(); ++p) {
       const int plane = planes[p];
       if (plane == PLANAR_A) {
-        if (conv_function_a == nullptr)
+        if (actual_conv_function_a == nullptr)
           env->BitBlt(dst->GetWritePtr(plane), dst->GetPitch(plane), src->GetReadPtr(plane), src->GetPitch(plane), src->GetRowSize(plane), src->GetHeight(plane));
         else
-          conv_function_a(src->GetReadPtr(plane), dst->GetWritePtr(plane),
+          actual_conv_function_a(src->GetReadPtr(plane), dst->GetWritePtr(plane),
             src->GetRowSize(plane), src->GetHeight(plane),
             src->GetPitch(plane), dst->GetPitch(plane),
             bits_per_pixel, target_bitdepth, dither_bitdepth
           );
       }
-      else if (conv_function == nullptr)
+      else if (actual_conv_function == nullptr)
         env->BitBlt(dst->GetWritePtr(plane), dst->GetPitch(plane), src->GetReadPtr(plane), src->GetPitch(plane), src->GetRowSize(plane), src->GetHeight(plane));
       else {
         const bool chroma = (plane == PLANAR_U || plane == PLANAR_V);
-        if (chroma && conv_function_chroma != nullptr)
+        if (chroma && actual_conv_function_chroma != nullptr)
           // 32bit float and 8-16 when full-range involved needs separate signed-aware conversion
-          conv_function_chroma(src->GetReadPtr(plane), dst->GetWritePtr(plane),
+          actual_conv_function_chroma(src->GetReadPtr(plane), dst->GetWritePtr(plane),
             src->GetRowSize(plane), src->GetHeight(plane),
             src->GetPitch(plane), dst->GetPitch(plane),
             bits_per_pixel, target_bitdepth, dither_bitdepth);
         else
-          conv_function(src->GetReadPtr(plane), dst->GetWritePtr(plane),
+          actual_conv_function(src->GetReadPtr(plane), dst->GetWritePtr(plane),
             src->GetRowSize(plane), src->GetHeight(plane),
             src->GetPitch(plane), dst->GetPitch(plane),
             bits_per_pixel, target_bitdepth, dither_bitdepth);
@@ -1521,7 +1627,7 @@ PVideoFrame __stdcall ConvertBits::GetFrame(int n, IScriptEnvironment* env) {
   }
   else {
     // packed RGBs
-    conv_function(src->GetReadPtr(), dst->GetWritePtr(),
+    actual_conv_function(src->GetReadPtr(), dst->GetWritePtr(),
       src->GetRowSize(), src->GetHeight(),
       src->GetPitch(), dst->GetPitch(),
       bits_per_pixel, target_bitdepth, dither_bitdepth);

@@ -35,6 +35,7 @@
 
 #include <avs/alignment.h>
 #include <avs/minmax.h>
+#include <cstring>
 
 #ifdef _MSC_VER
     #include <intrin.h>
@@ -217,6 +218,17 @@ static void convert_uint_limited_avx2(const BYTE* srcp, BYTE* dstp, int src_rows
   dst_pitch = dst_pitch / sizeof(pixel_t_d);
 
   const int src_width = src_rowsize / sizeof(pixel_t_s);
+
+  if (target_bitdepth == source_bitdepth) {
+    // Shortcut: same bit depth, limited to limited: plain copy
+    // The reduce-range path would compute 1 << (0 - 1) and for 8 bits, read bytes as words.
+    for (int y = 0; y < src_height; y++) {
+      std::memcpy(dstp0, srcp0, src_width * sizeof(pixel_t_d));
+      dstp0 += dst_pitch;
+      srcp0 += src_pitch;
+    }
+    return;
+  }
 
   if (target_bitdepth > source_bitdepth) // expandrange. pixel_t_d is always uint16_t
   {

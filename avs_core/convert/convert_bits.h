@@ -96,6 +96,12 @@ private:
   int dither_bitdepth;
   bool fulls; // source is full range (defaults: rgb=true, yuv=false (bit shift))
   bool fulld; // destination is full range (defaults: rgb=true, yuv=false (bit shift))
+  bool dynamic_range; // per-frame range detection mode
+  bool dest_fulld_pinned; // dynamic_range only: true if fulld was given explicitly, so it stays fixed instead of mirroring the per-frame fulls
+  bool dest_fulld_pinned_value; // dynamic_range only: the fixed fulld value when dest_fulld_pinned
+  BitDepthConvFuncPtr conv_function_table[2][2];        // [fulls][fulld], only when dynamic_range
+  BitDepthConvFuncPtr conv_function_chroma_table[2][2]; // 32bit float YUV chroma
+  BitDepthConvFuncPtr conv_function_a_table[2][2];
   bool truerange; // if 16->10 range reducing or e.g. 14->16 bit range expansion needed
   int pixelsize;
   int bits_per_pixel;

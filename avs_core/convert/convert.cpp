@@ -266,7 +266,9 @@ AVSValue __cdecl CreateConvertToRGB(AVSValue args, void* user_data, IScriptEnvir
       const bool needConvertFinalBitdepth = finalBitdepth != -1;
 
       if (needConvertFinalBitdepth && !bitdepthConverted) {
-        AVSValue new_args[] = { clip, finalBitdepth };
+        AVSValue new_args[2] = { clip, finalBitdepth };
+        // plain Invoke instead of "new ConvertBits", this detects and keeps source and target ranges.
+        // Since no fulls and fulld is given, actual range detection happens per-frame in GetFrame
         clip = env->Invoke("ConvertBits", AVSValue(new_args, 2)).AsClip();
         vi = clip->GetVideoInfo();
       }
@@ -305,8 +307,9 @@ AVSValue __cdecl CreateConvertToRGB(AVSValue args, void* user_data, IScriptEnvir
 
     // Convert bit depth if needed
     if (vi.BitsPerComponent() != target_bits_per_pixel) {
-      AVSValue args[] = { clip, target_bits_per_pixel };
-      // plain Invoke instead of "new ConvertBits", this detects and keeps source and target ranges
+      AVSValue args[2] = { clip, target_bits_per_pixel };
+      // plain Invoke instead of "new ConvertBits", this detects and keeps source and target ranges.
+      // Since no fulls and fulld is given, actual range detection happens per-frame in GetFrame
       clip = env->Invoke("ConvertBits", AVSValue(args, 2)).AsClip();
     }
 
@@ -330,8 +333,9 @@ AVSValue __cdecl CreateConvertToRGB(AVSValue args, void* user_data, IScriptEnvir
     // target_bits_per_pixel is same as target_rgbtype
 
     if (vi.BitsPerComponent() != target_bits_per_pixel) {
-      AVSValue args[] = { clip, target_bits_per_pixel };
-      // using Invoke instead of new ConvertBits, this detects and keeps source and target ranges
+      AVSValue args[2] = { clip, target_bits_per_pixel };
+      // plain Invoke instead of "new ConvertBits", this detects and keeps source and target ranges.
+      // Since no fulls and fulld is given, actual range detection happens per-frame in GetFrame
       clip = env->Invoke("ConvertBits", AVSValue(args, 2)).AsClip();
       vi = clip->GetVideoInfo();
     }
