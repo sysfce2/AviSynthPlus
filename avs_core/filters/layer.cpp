@@ -227,11 +227,13 @@ PVideoFrame __stdcall Mask::GetFrame(int n, IScriptEnvironment* env)
 
     // clip1_alpha = greyscale(clip2)
 #ifdef INTEL_INTRINSICS
-    if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2))
+    // SIMD versions need at least 16 bytes (4 RGB32 pixels) per row.
+    // Reason: unaligned row-tail step processes the last 16 bytes,
+    if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_AVX2) && vi.width >= 4)
     {
       mask_avx2(src1p, src2p, src1_pitch, src2_pitch, vi.width, vi.height);
     }
-    else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2))
+    else if ((pixelsize == 1) && (env->GetCPUFlags() & CPUF_SSE2) && vi.width >= 4)
     {
       mask_sse2(src1p, src2p, src1_pitch, src2_pitch, vi.width, vi.height);
     }

@@ -87,6 +87,8 @@ void mask_avx2(BYTE* srcp, const BYTE* alphap, int src_pitch, int alpha_pitch, s
   __m128i round_mask = _mm_set1_epi32(16384);
   __m128i not_alpha_mask = _mm_set1_epi32(0x00FFFFFF);
 
+  // width must be >= 4 (width_bytes >= 16): the row-tail step below re-processes the last 16 bytes
+  // Checked before calling this function
   size_t width_bytes = width * 4;
   size_t width_mod16 = width_bytes / 16 * 16;
 
