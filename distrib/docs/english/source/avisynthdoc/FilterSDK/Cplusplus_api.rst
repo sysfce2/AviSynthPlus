@@ -2074,17 +2074,19 @@ as C++ plugins will have access to this pointer.
         // This assumes IScriptEnvironment provides a way to check its version.
         if (use_v12_global_lock)
         {
-          // We must use a try-catch block if AcquireGlobalLock can throw,
-          // or just assume it blocks and returns success/failure.
-          // Assuming it blocks and returns true/false for success.
-          m_acquired = m_env_ptr->AcquireGlobalLock(m_lockName);
-          if (m_acquired) {
-            m_is_legacy_lock = false; // Successfully acquired V12 lock
-            return; // Lock acquired, exit constructor
-          }
+          // AcquireGlobalLock blocks until the named lock is available.
+          // It returns false only on invalid input (e.g. lock name is nullptr). This is an operational
+          // failure, not a missing capability, so do not fall back silently to the legacy mutex:
+          // that would lose the cross-plugin exclusion the global lock is meant to provide.
+          // An underlying mutex failure is reported by a std::system_error exception instead.
+          if (!m_env_ptr->AcquireGlobalLock(m_lockName))
+            m_env_ptr->ThrowError("GlobalLockGuard: failed to acquire global lock '%s'", m_lockName);
+          m_acquired = true;
+          m_is_legacy_lock = false; // Successfully acquired V12 lock
+          return; // Lock acquired, exit constructor
         }
 
-        // If we reach here, V12 lock wasn't used/acquired, fall back to legacy mutex.
+        // If we reach here, V12 lock was not requested (interface is older than v12), use legacy mutex.
         if (strcmp(m_lockName, "fftw") == 0) {
           fftw_legacy_mutex.lock(); // Acquire the legacy mutex
           m_acquired = true;
@@ -2213,10 +2215,10 @@ the ``avs_`` C functions for acquiring and releasing the lock.
             // Acquire the global "fftw" lock using the C-compatible RAII wrapper.
             GlobalLockGuardC fftw_lock(env, "fftw");
 
-            // You might want to check if the lock was acquired, though avs_acquire_global_lock
-            // will typically block until successful.
-            // If you need to handle acquisition failure, you would check fftw_lock.is_acquired().
-            // In a pure C plugin, you would return an error AVS_Value.
+            // avs_acquire_global_lock blocks until the lock is available.
+            // It fails only on invalid input => we return an error AVS_Value
+            if (!fftw_lock.is_acquired())
+                return avs_new_value_error("MyFilter: failed to acquire global lock 'fftw'");
 
             // --- CRITICAL SECTION START ---
             // Code here is protected by the global "fftw" lock.
