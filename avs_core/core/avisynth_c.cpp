@@ -782,17 +782,46 @@ int AVSC_CC avs_is_411(const AVS_VideoInfo * p)
 // C_VideoFilter
 //
 
+// #519: per-call copy of the filter's C-side state.
+// The plugin callbacks get an AVS_FilterInfo whose error fields (fi->error, fi->child->error,
+// fi->env->error) are per call, and whose env/child use the env of the current call.
+// With MT_NICE_FILTER one filter instance is called concurrently; sharing these fields would
+// lose or mix up error messages between threads.
+// user_data is copied back, so lazy initialization inside a callback still persists.
+struct C_FilterCallContext {
+  AVS_ScriptEnvironment env;
+  AVS_Clip child;
+  AVS_FilterInfo d;
+
+  C_FilterCallContext(const AVS_FilterInfo& src, IScriptEnvironment* e) : env(e), d(src) {
+    d.env = &env;
+    d.error = 0;
+    if (src.child) {
+      child.clip = src.child->clip;
+      child.env = e;
+      d.child = &child;
+    }
+  }
+
+  // copy back user_data, then report the errors of this call
+  void Finish(AVS_FilterInfo& orig) {
+    if (d.user_data != orig.user_data)
+      orig.user_data = d.user_data;
+    if (d.error)
+      throw AvisynthError(d.error);
+    if (d.child && child.error)
+      throw AvisynthError(child.error);
+  }
+};
+
 PVideoFrame C_VideoFilter::GetFrame(int n, IScriptEnvironment* env)
 {
   if (d.get_frame) {
-    d.error = 0;
-    AVS_VideoFrame* f = d.get_frame(&d, n);
-    if (d.error)
-      throw AvisynthError(d.error);
-    if (d.child != NULL && d.child->error)
-      throw AvisynthError(d.child->error);
+    C_FilterCallContext call(d, env);
+    AVS_VideoFrame* f = d.get_frame(&call.d, n);
     PVideoFrame fr((VideoFrame*)f);
     ((PVideoFrame*)&f)->~PVideoFrame();
+    call.Finish(d);
     return fr;
   }
   else {
@@ -803,10 +832,9 @@ PVideoFrame C_VideoFilter::GetFrame(int n, IScriptEnvironment* env)
 void __stdcall C_VideoFilter::GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env)
 {
   if (d.get_audio) {
-    d.error = 0;
-    d.get_audio(&d, buf, start, count);
-    if (d.error)
-      throw AvisynthError(d.error);
+    C_FilterCallContext call(d, env);
+    d.get_audio(&call.d, buf, start, count);
+    call.Finish(d);
   }
   else {
     d.child->clip->GetAudio(buf, start, count, env);
@@ -821,10 +849,9 @@ const VideoInfo& __stdcall C_VideoFilter::GetVideoInfo()
 bool __stdcall C_VideoFilter::GetParity(int n)
 {
   if (d.get_parity) {
-    d.error = 0;
-    int res = d.get_parity(&d, n);
-    if (d.error)
-      throw AvisynthError(d.error);
+    C_FilterCallContext call(d, env.env); // no env parameter here: the one stored at creation
+    int res = d.get_parity(&call.d, n);
+    call.Finish(d);
     return !!res;
   }
   else {
@@ -835,10 +862,9 @@ bool __stdcall C_VideoFilter::GetParity(int n)
 int __stdcall C_VideoFilter::SetCacheHints(int cachehints, int frame_range)
 {
   if (d.set_cache_hints) {
-    d.error = 0;
-    int res = d.set_cache_hints(&d, cachehints, frame_range);
-    if (d.error)
-      throw AvisynthError(d.error);
+    C_FilterCallContext call(d, env.env); // no env parameter here: the one stored at creation
+    int res = d.set_cache_hints(&call.d, cachehints, frame_range);
+    call.Finish(d);
     return res;
   }
   // We do not pass cache requests upwards, only to the hosted filter.
