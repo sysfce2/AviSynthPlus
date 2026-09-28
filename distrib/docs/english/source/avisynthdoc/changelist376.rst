@@ -386,6 +386,17 @@ Bugfixes
   before the row (memory corruption before the frame buffer).
 - Fix #520: Possible access violation on script environment destruction when a frame held another frame
   as a frame property depending on internal frame registry ordering.
+- Fix #519: C API filters running as ``MT_NICE_FILTER``: concurrent calls on the same filter instance
+  shared the wrapper's error fields. Thus there was a possibility that errors could be lost or reported
+  for the wrong frame, or vice versa, raised for a frame that was otherwise O.K. 
+  Now each call gets its own copy of the filter info.
+- Fix #495 (debug builds only): ``VideoFrame::CheckMemory()`` ignored the allocation margin and
+  reported a buffer overrun for every frame.
+- Fix #495 POSIX debug builds failed to compile (now forwards the error to ``stderr``).
+- Fix #523: C++ API (``AVS_Linkage``), V13 test build regression: the new V13 ``VideoInfo`` entries
+  shifted ``GetNeoEnv`` (plugins using ``PNeoEnv`` crashed); the original layout is restored.
+  The linkage call macros now also check entries for null, so plugins built with the V13 header
+  fall back to defaults instead of crashing on older runtimes.
 - Fix: ``ArrayIns``/``ArraySet``/``ArrayDel``: bounds check the index parameter(s)
   (preventing Access Violation).
 - Fix: "TurnLeft"/"TurnRight": for asymmetrically H/V-subsampled sources (4:2:2, 4:1:1, 4:4:0),

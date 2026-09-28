@@ -9,7 +9,21 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
-20260928 3.7.5.r471X (pre 3.7.6)
+20260928 3.7.5.rXXXX (pre 3.7.6)
+--------------------------------
+- Fix #519: C API filters running as ``MT_NICE_FILTER``: concurrent calls on the same filter instance
+  shared the wrapper's error fields. Thus there was a possibility that errors could be lost or reported
+  for the wrong frame, or vice versa, raised for a frame that was otherwise O.K. 
+  Now each call gets its own copy of the filter info.
+- Fix #495 (debug builds only): VideoFrame::CheckMemory() ignored the allocation margin and
+  reported a buffer overrun for every frame.
+- Fix #495 POSIX debug builds failed to compile (now forwards the error to stderr).
+- Fix #523: C++ API (AVS_Linkage), interface V13 regression (r4721 test build):
+  - new V13 VideoInfo entries were added but without shrinking the reserved area (GetNeoEnv moved by 4 pointers)
+  - Plugins built with the V13 header called the new VideoInfo functions through null entries 
+    when used against older runtimes. Now the linkage call macros also check the entry for null
+
+20260928 3.7.5.r4721 (pre 3.7.6)
 --------------------------------
 - ConvertBits: source range (_ColorRange) is now detected per frame when "fulls" is not given, instead
   of being fixed once from frame 0 at filter creation. Fixes #516: the frame#0 request during filter
