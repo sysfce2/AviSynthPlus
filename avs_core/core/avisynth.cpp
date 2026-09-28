@@ -3688,7 +3688,7 @@ VideoFrame* ScriptEnvironment::AllocateFrame(size_t vfb_size, size_t margin, Dev
 static void DebugOut(char* s)
 {
 #ifdef AVS_POSIX
-  LogMsg(LOGLEVEL_DEBUG, s);
+  fputs(s, stderr);
 #else
   _RPT0(0, s);
 #endif
