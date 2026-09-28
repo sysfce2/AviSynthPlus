@@ -382,6 +382,10 @@ Bugfixes
 - Fix #512: "Overlay" masked "add"/"subtract"/"darken"/"lighten"/"difference"/"exclusion"/
   "softlight"/"hardlight" a fully-opaque mask did not reproduce the same result as omitting the mask.
   As a side effect, also added finer opacity-granularity over 8 bits at integer formats.
+- Fix #518: "Mask" on RGB32 clips narrower than 4 pixels: the SSE2/AVX2 code wrote 16 bytes starting
+  before the row (memory corruption before the frame buffer).
+- Fix #520: Possible access violation on script environment destruction when a frame held another frame
+  as a frame property depending on internal frame registry ordering.
 - Fix: ``ArrayIns``/``ArraySet``/``ArrayDel``: bounds check the index parameter(s)
   (preventing Access Violation).
 - Fix: "TurnLeft"/"TurnRight": for asymmetrically H/V-subsampled sources (4:2:2, 4:1:1, 4:4:0),
@@ -497,7 +501,7 @@ Documentation
 Please report bugs at `github AviSynthPlus page`_ - or - `Doom9's AviSynth+
 forum`_
 
-$Date: 2026/08/27 14:15:00 $
+$Date: 2026/08/28 09:07:00 $
 
 .. _github AviSynthPlus page:
     https://github.com/AviSynth/AviSynthPlus

@@ -9,7 +9,7 @@ For online documentation check https://avisynthplus.readthedocs.io/en/latest/
 Actual:
 https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
 
-20260927 3.7.5.r471X (pre 3.7.6)
+20260928 3.7.5.r471X (pre 3.7.6)
 --------------------------------
 - ConvertBits: source range (_ColorRange) is now detected per frame when "fulls" is not given, instead
   of being fixed once from frame 0 at filter creation. Fixes #516: the frame#0 request during filter
@@ -36,6 +36,10 @@ https://avisynthplus.readthedocs.io/en/latest/avisynthdoc/changelist376.html
   - BuildPixelType: 440/410/YA support.
   - Added "YUV410"/"YUVA410" to the allowed 8-bit format strings, and FFmpeg-style alternate names for
     32-bit float formats (e.g. YUV420PF32, RGBPF32, YF32, YAF32).
+- Fix #518: "Mask" on RGB32 clips narrower than 4 pixels: the SSE2/AVX2 code wrote 16 bytes starting
+  before the row (memory corruption before the frame buffer).
+- Fix #520: Possible access violation on script environment destruction when a frame held another frame
+  as a frame property depending on internal frame registry ordering.
 - Bump interface version to v13 (new video format constants).
 - Fix: ConvertBits: ordered dither on packed RGB48/RGB64 with dither_bits 1-7 (bit-depth gap over 8)
   failed with "truerange specified for non-planar source". The packed->planar conversion used for
