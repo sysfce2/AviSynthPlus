@@ -1191,6 +1191,14 @@ private:
   void InitMT();
 };
 
+namespace VFBHelper {
+  int GetMargin(const VideoFrameBuffer* vfb) {
+    // Used for the debug overrun guard calculation.
+    // (vfb's are always ScriptEnvironment::VFBStorage in real).
+    return static_cast<const ScriptEnvironment::VFBStorage*>(vfb)->margin;
+  }
+}
+
 #ifdef ALTERNATIVE_VFB_TIMESTAMP
 // wrapper for VideoFrameBuffer destroy
 namespace VFBHelper {

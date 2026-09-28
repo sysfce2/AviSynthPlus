@@ -77,8 +77,13 @@ public:
 	}
 };
 
-#ifdef ALTERNATIVE_VFB_TIMESTAMP
 class VideoFrameBuffer;
+
+namespace VFBHelper {
+  int GetMargin(const VideoFrameBuffer* vfb);
+}
+
+#ifdef ALTERNATIVE_VFB_TIMESTAMP
 
 // Forward declarations - don't expose full classes
 class ScriptEnvironment;
