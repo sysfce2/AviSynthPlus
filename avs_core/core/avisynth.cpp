@@ -2788,6 +2788,25 @@ ScriptEnvironment::~ScriptEnvironment() {
   }
   ThreadPoolRegistry.clear();
 
+  // Clear all frame properties before the final FrameRegistry cleanup.
+  // Frame properties can hold PVideoFrame references, so the order of freeing matters.
+  // The final cleanup frees frame buffers in buffer size order. A frame held in the properties of
+  // a frame that comes later in this order loses its buffer first. When the container frame is then
+  // deleted, releasing its properties hits the already freed buffer and crashes.
+  // The frames are collected first and their properties are released after the registry walk.
+  // Why: releasing a clip property may run filter destructors, which could modify the registry
+  // while we are iterating it. (PClip objects are also valid frame property elements.)
+  {
+    std::vector<VideoFrame*> frames_with_props;
+    for (auto& it : FrameRegistry2)
+      for (auto& it2 : it.second)
+        for (auto& it3 : it2.second)
+          if (it3.frame->properties)
+            frames_with_props.push_back(it3.frame);
+    for (VideoFrame* frame : frames_with_props)
+      frame->properties->clear();
+  }
+
   // delete ThreadScriptEnvironment
   threadEnv = nullptr;
 
@@ -2814,7 +2833,8 @@ ScriptEnvironment::~ScriptEnvironment() {
   // ListFrameRegistry(0,10000000000000ull, true, device); // list all
 #endif
   // and deleting the frame buffer from FrameRegistry2 as well
-  bool somethingLeaks = false;
+  // but before the environment destruction let's count how many frame references are still alive
+  int leaked_frames = 0;
   for (auto &it: FrameRegistry2)
   {
     for (auto &it2: it.second)
@@ -2835,14 +2855,17 @@ ScriptEnvironment::~ScriptEnvironment() {
         }
         else
         {
-          somethingLeaks = true;
+          ++leaked_frames; // still referenced, not released 
         }
       } // it3
     } // it2
   } // it
 
-  if (somethingLeaks) {
-    LogMsg(LOGLEVEL_WARNING, "A plugin or the host application might be causing memory leaks.");
+  if (leaked_frames > 0) {
+    // frames still referenced here were not released by the host application or plugin
+    // before the script environment was destroyed
+    LogMsg(LOGLEVEL_WARNING, "A plugin or the host application might be causing memory leaks: "
+      "%d video frame(s) were not released before the script environment was destroyed.", leaked_frames);
   }
 
   delete plugin_manager;
